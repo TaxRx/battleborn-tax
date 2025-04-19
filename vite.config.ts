@@ -39,6 +39,31 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       'process.env': env
-    }
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            vendor: [
+              'react',
+              'react-dom',
+              'react-router-dom',
+              '@supabase/supabase-js',
+              'zustand',
+            ],
+            ui: [
+              '@headlessui/react',
+              '@heroicons/react',
+              'tailwindcss',
+            ],
+            utils: [
+              'html2canvas',
+              'jspdf',
+            ],
+          },
+        },
+      },
+      chunkSizeWarningLimit: 1000,
+    },
   }
 });

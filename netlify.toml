@@ -3,9 +3,22 @@
   publish = "dist"
 
 [build.environment]
-  NODE_VERSION = "18.17.0"
-  NPM_VERSION = "9.6.7"
-  NODE_OPTIONS = "--max_old_space_size=4096"
+  NODE_VERSION = "20.0.0"
+  NPM_VERSION = "10.0.0"
+
+# Support client-side routing
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Add security headers
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    Content-Security-Policy = "default-src 'self' https://cozy-sprite-1c6fec.netlify.app https://battleborn.life https://*.supabase.co; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://*.unsplash.com https://*.supabase.co; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co https://api.web3forms.com;"
 
 # Redirect all routes to index.html for SPA
 [[redirects]]
