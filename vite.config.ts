@@ -26,13 +26,13 @@ export default defineConfig(({ mode }) => {
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
         'Access-Control-Allow-Headers': 'X-Requested-With, content-type, Authorization, X-Client-Info, X-Client-Site',
         'Content-Security-Policy': [
-          `default-src 'self' ${netlifyUrl} ${supabaseUrl}`,
-          `connect-src 'self' ${netlifyUrl} ${supabaseUrl} wss://*.supabase.co https://maps.googleapis.com`,
-          `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${netlifyUrl} https://maps.googleapis.com`,
-          `style-src 'self' 'unsafe-inline' ${netlifyUrl}`,
-          `img-src 'self' data: ${netlifyUrl} https://*.googleapis.com https://*.gstatic.com`,
-          `font-src 'self' data: ${netlifyUrl}`,
-          `frame-src 'self' ${netlifyUrl} ${supabaseUrl}`,
+          `default-src 'self' ${netlifyUrl} ${supabaseUrl} https://*.googleapis.com https://*.gstatic.com`,
+          `connect-src 'self' ${netlifyUrl} ${supabaseUrl} wss://*.supabase.co https://*.googleapis.com https://maps.googleapis.com`,
+          `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${netlifyUrl} https://*.googleapis.com https://maps.googleapis.com`,
+          `style-src 'self' 'unsafe-inline' ${netlifyUrl} https://fonts.googleapis.com https://*.googleapis.com`,
+          `img-src 'self' data: ${netlifyUrl} https://*.googleapis.com https://*.gstatic.com https://*.unsplash.com blob:`,
+          `font-src 'self' data: ${netlifyUrl} https://fonts.gstatic.com`,
+          `frame-src 'self' ${netlifyUrl} ${supabaseUrl} https://*.google.com`,
           `worker-src 'self' blob: ${netlifyUrl}`,
         ].join('; ')
       }
