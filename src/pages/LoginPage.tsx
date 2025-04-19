@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase, testConnection } from '../lib/supabase';
+import { useUserStore } from '../store/userStore';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -9,44 +10,72 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'error'>('checking');
   const navigate = useNavigate();
+  const { fetchUserProfile, user, loading: profileLoading, error: profileError } = useUserStore();
 
   // Check network connectivity
   useEffect(() => {
-    const checkConnection = async () => {
+    let mounted = true;
+    let retryTimeout: NodeJS.Timeout;
+    
+    const checkNetwork = async () => {
       try {
-        console.log('Checking Supabase connectivity...');
-        console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
-        console.log('Anon Key exists:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
+        console.log('Checking network connection...');
+        const isConnected = await testConnection();
+        console.log('Connection test result:', isConnected);
         
-        // First try a basic fetch to the Supabase URL
-        const response = await fetch(import.meta.env.VITE_SUPABASE_URL);
-        console.log('Basic connectivity check:', {
-          status: response.status,
-          ok: response.ok,
-          statusText: response.statusText
-        });
-
-        // Then try to get the session
-        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-        console.log('Session check:', {
-          hasSession: !!sessionData?.session,
-          sessionError: sessionError?.message
-        });
-
-        if (response.ok) {
+        if (!mounted) return;
+        
+        if (isConnected) {
           setConnectionStatus('connected');
+          setError('');
         } else {
           setConnectionStatus('error');
-          setError('Unable to connect to the authentication service');
+          setError('Unable to connect to the server. Please check your internet connection and try again.');
+          
+          // Retry connection check after 5 seconds
+          retryTimeout = setTimeout(() => {
+            if (mounted) {
+              checkNetwork();
+            }
+          }, 5000);
         }
       } catch (err) {
-        console.error('Connection check failed:', err);
+        console.error('Network check failed:', err);
+        if (!mounted) return;
         setConnectionStatus('error');
-        setError('Unable to connect to the authentication service. Please check your network connection.');
+        setError('Unable to connect to the server. Please check your internet connection and try again.');
+        
+        // Retry connection check after 5 seconds
+        retryTimeout = setTimeout(() => {
+          if (mounted) {
+            checkNetwork();
+          }
+        }, 5000);
       }
     };
-    checkConnection();
+
+    checkNetwork();
+    
+    return () => {
+      mounted = false;
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
+    };
   }, []);
+
+  // Handle navigation after successful login
+  useEffect(() => {
+    if (user && !profileLoading && !profileError) {
+      if (user.isAdmin) {
+        console.log('Admin user detected, redirecting to leads page...');
+        navigate('/leads', { replace: true });
+      } else {
+        console.log('Regular user detected, redirecting to dashboard...');
+        navigate('/dashboard', { replace: true });
+      }
+    }
+  }, [user, profileLoading, profileError, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,70 +83,42 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      console.log('Starting sign in process...');
-      console.log('Connection status:', connectionStatus);
+      console.log('Starting login process...');
       
-      // Validate input
       if (!email || !password) {
         throw new Error('Please enter both email and password');
       }
 
-      // Log the request we're about to make
-      console.log('Preparing sign in request:', {
-        email,
-        url: import.meta.env.VITE_SUPABASE_URL,
-        hasAnonKey: !!import.meta.env.VITE_SUPABASE_ANON_KEY
-      });
+      // Test connection before attempting sign in
+      const isConnected = await testConnection();
+      if (!isConnected) {
+        throw new Error('Unable to connect to the authentication service. Please check your network connection.');
+      }
 
+      console.log('Attempting to sign in...');
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      console.log('Sign in response:', {
-        hasData: !!data,
-        hasError: !!signInError,
-        errorMessage: signInError?.message,
-        errorStatus: signInError?.status
-      });
-
       if (signInError) {
-        console.error('Sign in error details:', {
-          message: signInError.message,
-          status: signInError.status,
-          name: signInError.name,
-          stack: signInError.stack
-        });
-        
-        if (signInError.message.includes('fetch')) {
-          setError('Unable to connect to the authentication service. Please check your internet connection and try again.');
-        } else {
-          setError(signInError.message);
+        console.error('Sign in error:', signInError);
+        if (signInError.message.includes('Invalid login credentials')) {
+          throw new Error('Invalid email or password. Please try again.');
         }
-        return;
+        throw new Error(signInError.message);
       }
 
-      if (data?.user) {
-        console.log('Sign in successful, user:', {
-          id: data.user.id,
-          email: data.user.email,
-          role: data.user.role
-        });
-        
-        // Wait a moment for the auth state to update
-        await new Promise(resolve => setTimeout(resolve, 500));
-        navigate('/dashboard', { replace: true });
-      } else {
-        console.error('No user data received');
-        setError('Login successful but no user data received. Please try again.');
+      if (!data?.user) {
+        throw new Error('Login successful but no user data received. Please try again.');
       }
+
+      console.log('Login successful, fetching user profile...');
+      await fetchUserProfile();
+
     } catch (err) {
-      console.error('Unexpected error during sign in:', {
-        error: err,
-        message: err instanceof Error ? err.message : 'Unknown error',
-        stack: err instanceof Error ? err.stack : undefined
-      });
-      setError('An unexpected error occurred. Please try again.');
+      console.error('Login error:', err);
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred during login');
     } finally {
       setIsLoading(false);
     }
@@ -146,7 +147,7 @@ export default function LoginPage() {
                   type="email"
                   autoComplete="email"
                   required
-                  disabled={isLoading}
+                  disabled={isLoading || connectionStatus === 'checking'}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-[#12ab61] focus:border-[#12ab61] sm:text-sm"
@@ -165,7 +166,7 @@ export default function LoginPage() {
                   type="password"
                   autoComplete="current-password"
                   required
-                  disabled={isLoading}
+                  disabled={isLoading || connectionStatus === 'checking'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-[#12ab61] focus:border-[#12ab61] sm:text-sm"
@@ -182,10 +183,10 @@ export default function LoginPage() {
             <div>
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || connectionStatus !== 'connected'}
                 className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-[#12ab61] hover:bg-[#0f9654] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#12ab61] disabled:opacity-50"
               >
-                {isLoading ? 'Signing in...' : 'Sign in'}
+                {isLoading ? 'Signing in...' : connectionStatus === 'checking' ? 'Checking connection...' : 'Sign in'}
               </button>
             </div>
           </form>

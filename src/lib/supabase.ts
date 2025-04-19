@@ -2,12 +2,11 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const isProd = import.meta.env.PROD;
 
 console.log('Initializing Supabase client:', {
   url: supabaseUrl,
-  environment: isProd ? 'production' : 'development',
-  anonKey: supabaseAnonKey?.substring(0, 10) + '...' // Only log part of the key for security
+  environment: import.meta.env.MODE,
+  hasAnonKey: !!supabaseAnonKey
 });
 
 if (!supabaseUrl || !supabaseAnonKey) {
@@ -23,46 +22,86 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    flowType: 'pkce',
-    storage: isProd ? window.localStorage : window.sessionStorage // Use sessionStorage for development
+    storage: window.localStorage,
+    flowType: 'pkce'
   },
   global: {
     headers: {
-      'X-Client-Info': `tax-calculator@${import.meta.env.VITE_APP_VERSION || '0.0.0'}`,
+      'X-Client-Info': 'tax-calculator@1.0.0',
+      'X-Client-Site': typeof window !== 'undefined' ? window.location.origin : '',
+    }
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 2
     }
   }
 });
 
-// Test connection immediately
-;(async () => {
-  try {
-    console.log('Testing Supabase connection...');
-    const { data: { session }, error } = await supabase.auth.getSession();
-    console.log('Supabase connection test result:', {
-      environment: isProd ? 'production' : 'development',
-      hasSession: !!session,
-      error: error?.message || null
-    });
+// Test connection function with retries and proper error handling
+export const testConnection = async (retries = 3, delay = 1000) => {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      console.log(`Testing Supabase connection (attempt ${attempt}/${retries})...`);
 
-    // Test CORS with a simple query
-    const { error: corsError } = await supabase
-      .from('_test_connection')
-      .select('*')
-      .limit(1)
-      .single();
+      // First, verify the client is initialized
+      if (!supabase) {
+        console.error('Supabase client not initialized');
+        continue;
+      }
 
-    if (corsError) {
-      console.log('CORS test result:', {
-        error: corsError.message,
-        code: corsError.code,
-        details: corsError.details
-      });
-    } else {
-      console.log('CORS test successful');
+      // Check if we have valid credentials
+      if (!supabaseUrl || !supabaseAnonKey) {
+        console.error('Missing Supabase credentials');
+        continue;
+      }
+
+      // Test a simple query to verify database access
+      const { data, error: queryError } = await supabase
+        .from('user_profiles')
+        .select('count')
+        .limit(1);
+
+      if (queryError) {
+        // Check if it's a permissions error (which is actually good - means we can connect)
+        if (queryError.code === 'PGRST301') {
+          console.log('Connection test successful (permission denied but connection works)');
+          return true;
+        }
+        console.error('Database connection test failed:', queryError);
+        if (attempt < retries) {
+          console.log(`Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        return false;
+      }
+
+      console.log('Connection test successful');
+      return true;
+
+    } catch (error) {
+      console.error(`Connection test attempt ${attempt} failed:`, error);
+      if (attempt < retries) {
+        console.log(`Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      return false;
     }
-  } catch (err) {
-    console.error('Error testing Supabase connection:', err);
   }
-})();
+
+  console.error('All connection attempts failed');
+  return false;
+};
+
+// Set up auth state change listener with error handling
+supabase.auth.onAuthStateChange((event, session) => {
+  console.log('Auth state changed:', event, {
+    email: session?.user?.email,
+    id: session?.user?.id,
+    timestamp: new Date().toISOString()
+  });
+});
 
 export default supabase;

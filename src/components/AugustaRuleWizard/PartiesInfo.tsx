@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { GoogleMap, Marker, useJsApiLoader } from '@react-google-maps/api';
+import { GoogleMap, Marker } from '@react-google-maps/api';
 import { useTaxStore } from '../../store/taxStore';
 import { useUserStore } from '../../store/userStore';
 import Autocomplete from 'react-google-autocomplete';
 import SignatureCanvas from 'react-signature-canvas';
+import { useGoogleMaps, mapOptions, defaultMapContainerStyle } from '../../lib/hooks/useGoogleMaps';
 
 interface FormData {
   businessInfo?: {
@@ -25,19 +26,8 @@ interface CorporateOfficer {
   role: string;
 }
 
-const mapOptions = {
-  mapTypeId: 'satellite',
-  mapTypeControl: false,
-  streetViewControl: false,
-  rotateControl: false,
-  fullscreenControl: false
-};
-
 const PartiesInfo = ({ formData = { businessInfo: { businessAddress: '' } }, onNext, onBack, onSave }: PartiesInfoProps) => {
-  const { isLoaded: isScriptLoaded, loadError: isScriptError } = useJsApiLoader({
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-    libraries: ['places']
-  });
+  const { isLoaded: isScriptLoaded, loadError: isScriptError } = useGoogleMaps();
 
   const { taxInfo } = useTaxStore();
   const { user } = useUserStore();
@@ -67,15 +57,8 @@ const PartiesInfo = ({ formData = { businessInfo: { businessAddress: '' } }, onN
   const [isHomeMapLoading, setIsHomeMapLoading] = useState(true);
   const [isBusinessMapLoading, setIsBusinessMapLoading] = useState(true);
 
-  const homeMapContainerStyle = {
-    width: '100%',
-    height: '300px'
-  };
-
-  const businessMapContainerStyle = {
-    width: '100%',
-    height: '300px'
-  };
+  const homeMapContainerStyle = defaultMapContainerStyle;
+  const businessMapContainerStyle = defaultMapContainerStyle;
 
   const handleHomeAddressSelect = (place: any) => {
     if (place.geometry) {

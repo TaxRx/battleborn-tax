@@ -15,18 +15,32 @@ import IntroInfo from './components/IntroInfo';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import LeadsPage from './pages/LeadsPage';
-import { TaxInfo, TaxStrategy, SavedCalculation } from './types';
+import TaxCalculator from './components/TaxCalculator.tsx';
+import AccountPage from './components/AccountPage';
+import HireChildrenCalculator from './components/HireChildrenCalculator';
+import CostSegregationCalculator from './components/CostSegregationCalculator';
+import { TaxInfo, TaxStrategy, SavedCalculation, User } from './types';
+
+interface ProtectedRouteProps {
+  isAuthenticated: boolean;
+  children: React.ReactNode;
+}
+
+const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ isAuthenticated, children }) => {
+  if (!isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
+};
 
 function App() {
-  console.log('App component rendering');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [authChecked, setAuthChecked] = useState(false);
+  const [loading, setLoading] = useState<boolean>(true);
   const location = useLocation();
   const navigate = useNavigate();
 
   // Initialize stores
-  const { user, fetchUserProfile, reset: resetUserStore } = useUserStore();
+  const { user, fetchUserProfile, reset: resetUserStore, loading: userLoading } = useUserStore();
   const { setupRealtimeSync: setupCalculationSync, fetchCalculations } = useCalculationStore();
   const { 
     taxInfo, 
@@ -87,100 +101,93 @@ function App() {
     }
   };
 
-  // Auth state management
   useEffect(() => {
-    console.log('Auth effect running');
-    let isMounted = true;
-
+    console.log('App component rendering');
+    
+    // Check initial auth state
     const checkAuth = async () => {
-      console.log('Checking auth...');
       try {
+        console.log('Checking auth...');
         const { data: { session }, error } = await supabase.auth.getSession();
         console.log('Auth check result:', { session, error });
         
         if (error) {
-          console.error('Session check error:', error);
-          if (isMounted) {
-            setIsAuthenticated(false);
-            setIsLoading(false);
-            setAuthChecked(true);
-          }
+          console.error('Auth check error:', error);
+          setIsAuthenticated(false);
+          setLoading(false);
           return;
         }
-
+        
         if (session) {
           console.log('Session found, setting up user');
-          if (isMounted) {
-            setIsAuthenticated(true);
-            await fetchUserProfile();
-            await setupCalculationSync(session.user.id);
-            await fetchCalculations(session.user.id);
-            await loadCalculation(selectedYear);
-          }
+          setIsAuthenticated(true);
+          await fetchUserProfile();
         } else {
           console.log('No session found');
-          if (isMounted) {
-            setIsAuthenticated(false);
-            resetTaxStore();
-          }
-        }
-      } catch (error) {
-        console.error('Auth check error:', error);
-        if (isMounted) {
           setIsAuthenticated(false);
         }
-      } finally {
+        
+        setLoading(false);
         console.log('Auth check complete');
-        if (isMounted) {
-          setIsLoading(false);
-          setAuthChecked(true);
-        }
+      } catch (error) {
+        console.error('Error checking auth:', error);
+        setIsAuthenticated(false);
+        setLoading(false);
       }
     };
 
     checkAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('Auth state changed:', event, session);
-      if (!isMounted) return;
-
-      if (event === 'SIGNED_OUT') {
-        setIsAuthenticated(false);
-        resetTaxStore();
-        resetUserStore();
-        navigate('/', { replace: true });
-      } else if (event === 'SIGNED_IN' && session) {
+    // Set up auth state change listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event, session?.user?.email);
+      
+      if (event === 'SIGNED_IN') {
         setIsAuthenticated(true);
-        fetchUserProfile();
-        setupCalculationSync(session.user.id);
-        fetchCalculations(session.user.id);
-        loadCalculation(selectedYear);
-        navigate('/dashboard', { replace: true });
+        await fetchUserProfile();
+      } else if (event === 'SIGNED_OUT') {
+        setIsAuthenticated(false);
+        navigate('/');
       }
     });
 
     return () => {
       console.log('Auth effect cleanup');
-      isMounted = false;
       subscription.unsubscribe();
     };
-  }, [fetchUserProfile, setupCalculationSync, fetchCalculations, loadCalculation, selectedYear, navigate, resetUserStore]);
+  }, [navigate]);
 
-  // Show loading state
-  if (isLoading || !authChecked) {
+  // Separate effect for handling navigation after user data is loaded
+  useEffect(() => {
+    if (user && isAuthenticated && !userLoading) {
+      if (user.email?.toLowerCase() === 'admin@taxrxgroup.com') {
+        console.log('Admin user detected, redirecting to leads page...');
+        navigate('/leads', { replace: true });
+      } else {
+        console.log('Regular user detected, redirecting to dashboard...');
+        navigate('/dashboard', { replace: true });
+      }
+    }
+  }, [user, isAuthenticated, userLoading, navigate]);
+
+  if (loading || userLoading) {
     console.log('Showing loading state');
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#12ab61]"></div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#12ab61] mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
       </div>
     );
   }
 
   console.log('Rendering main app content', { isAuthenticated, location: location.pathname });
+  
   return (
     <div className="min-h-screen bg-gray-50">
-      {isAuthenticated && location.pathname !== '/' && (
-        <Navigation
+      {isAuthenticated && (
+        <Navigation 
           currentView={location.pathname.substring(1) || 'home'}
           onViewChange={(view) => navigate(`/${view}`)}
           isAuthenticated={isAuthenticated}
@@ -188,106 +195,75 @@ function App() {
           onLogoutClick={handleLogout}
         />
       )}
-      
-      <Routes>
-        <Route 
-          path="/" 
-          element={
-            isAuthenticated ? (
-              <Navigate to="/dashboard" replace />
-            ) : (
-              <LandingPage />
-            )
-          } 
-        />
-        <Route 
-          path="/login" 
-          element={
-            isAuthenticated ? (
-              <Navigate to="/dashboard" replace />
-            ) : (
-              <LoginPage />
-            )
-          } 
-        />
-        <Route
-          path="/dashboard/*"
-          element={
-            isAuthenticated ? (
-              <Dashboard />
-            ) : (
-              <Navigate to="/" replace />
-            )
-          }
-        />
-        <Route
-          path="/leads"
-          element={
-            isAuthenticated && user?.isAdmin ? (
-              <LeadsPage />
-            ) : (
-              <Navigate to="/" replace />
-            )
-          }
-        />
-        <Route
-          path="/calculator"
-          element={
-            isAuthenticated ? (
-              <InfoForm onSubmit={handleInfoSubmit} initialData={taxInfo} />
-            ) : (
-              <Navigate to="/" replace />
-            )
-          }
-        />
-        <Route
-          path="/results"
-          element={
-            isAuthenticated && taxInfo ? (
-              <TaxResults
-                taxInfo={taxInfo}
-                selectedYear={selectedYear}
-                onYearChange={setSelectedYear}
-                onStrategiesSelect={handleStrategySelect}
-                onSaveCalculation={handleSaveCalculation}
-                onStrategyAction={handleStrategyAction}
+      <main className={isAuthenticated ? 'ml-64' : ''}>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/dashboard" element={<ProtectedRoute isAuthenticated={isAuthenticated}><Dashboard /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute isAuthenticated={isAuthenticated}><SettingsPage /></ProtectedRoute>} />
+          <Route path="/account" element={<ProtectedRoute isAuthenticated={isAuthenticated}><AccountPage /></ProtectedRoute>} />
+          <Route path="/leads" element={<ProtectedRoute isAuthenticated={isAuthenticated}><LeadsPage /></ProtectedRoute>} />
+          <Route path="/tax-calculator" element={<ProtectedRoute isAuthenticated={isAuthenticated}><TaxCalculator /></ProtectedRoute>} />
+          <Route path="/augusta-rule" element={<ProtectedRoute isAuthenticated={isAuthenticated}><AugustaRuleWizard onClose={() => {}} /></ProtectedRoute>} />
+          <Route path="/calculator/hire-children" element={
+            <ProtectedRoute isAuthenticated={isAuthenticated}>
+              <HireChildrenCalculator
+                dependents={0}
+                onSavingsChange={() => {}}
+                taxInfo={taxInfo || {
+                  standardDeduction: true,
+                  customDeduction: 0,
+                  businessOwner: false,
+                  fullName: '',
+                  email: '',
+                  filingStatus: 'single',
+                  dependents: 0,
+                  homeAddress: '',
+                  state: 'CA',
+                  wagesIncome: 0,
+                  passiveIncome: 0,
+                  unearnedIncome: 0,
+                  capitalGains: 0,
+                  businessName: '',
+                  entityType: 'Sole Prop',
+                  businessAddress: '',
+                  ordinaryK1Income: 0,
+                  guaranteedK1Income: 0
+                }}
+                rates={{ federal: 0, state: 0 }}
               />
-            ) : (
-              <Navigate to="/" replace />
-            )
-          }
-        />
-        <Route
-          path="/settings"
-          element={
-            isAuthenticated ? (
-              <SettingsPage />
-            ) : (
-              <Navigate to="/" replace />
-            )
-          }
-        />
-        <Route
-          path="/documents"
-          element={
-            isAuthenticated ? (
-              <DocumentsPage />
-            ) : (
-              <Navigate to="/" replace />
-            )
-          }
-        />
-      </Routes>
-
-      {showAugustaWizard && (
-        <AugustaRuleWizard
-          onClose={() => setShowAugustaWizard(false)}
-        />
-      )}
-
-      {showIntroInfo && (
-        <IntroInfo onComplete={() => setShowIntroInfo(false)} />
-      )}
+            </ProtectedRoute>
+          } />
+          <Route path="/calculator/cost-segregation" element={
+            <ProtectedRoute isAuthenticated={isAuthenticated}>
+              <CostSegregationCalculator
+                taxInfo={taxInfo || {
+                  standardDeduction: true,
+                  customDeduction: 0,
+                  businessOwner: false,
+                  fullName: '',
+                  email: '',
+                  filingStatus: 'single',
+                  dependents: 0,
+                  homeAddress: '',
+                  state: 'CA',
+                  wagesIncome: 0,
+                  passiveIncome: 0,
+                  unearnedIncome: 0,
+                  capitalGains: 0,
+                  businessName: '',
+                  entityType: 'Sole Prop',
+                  businessAddress: '',
+                  ordinaryK1Income: 0,
+                  guaranteedK1Income: 0
+                }}
+                onSavingsChange={() => {}}
+                rates={{ federal: 0, state: 0 }}
+              />
+            </ProtectedRoute>
+          } />
+        </Routes>
+      </main>
     </div>
   );
 }

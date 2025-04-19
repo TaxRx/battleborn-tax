@@ -170,6 +170,7 @@ export interface TaxInfo {
   guaranteedK1Income?: number;
   businessAddress?: string;
   deductionLimitReached?: boolean;
+  householdIncome?: number;
 }
 
 export interface SavedCalculation {

@@ -13,13 +13,13 @@ interface TaxStore {
   selectedStrategies: TaxStrategy[];
   strategies: TaxStrategy[];
   includeFica: boolean;
-  setTaxInfo: (info: TaxInfo) => void;
+  setTaxInfo: (info: TaxInfo | null) => void;
   setSelectedYear: (year: number) => void;
   setSavedCalculations: (calculations: SavedCalculation[]) => void;
   setSelectedStrategies: (strategies: TaxStrategy[]) => void;
   setIncludeFica: (include: boolean) => void;
   addSavedCalculation: (calculation: SavedCalculation) => Promise<void>;
-  loadCalculation: (year: number) => Promise<void>;
+  loadCalculation: (id: string) => Promise<void>;
   saveInitialState: (info: TaxInfo, year: number) => Promise<void>;
   updateStrategy: (strategyId: string, updatedStrategy: TaxStrategy) => Promise<void>;
   reset: () => void;
@@ -37,10 +37,7 @@ export const useTaxStore = create<TaxStore>()(
 
       setTaxInfo: (info) => set({ taxInfo: info }),
       
-      setSelectedYear: async (year) => {
-        set({ selectedYear: year });
-        await get().loadCalculation(year);
-      },
+      setSelectedYear: (year) => set({ selectedYear: year }),
       
       setSavedCalculations: (calculations) => set({ savedCalculations: calculations }),
       
@@ -121,68 +118,64 @@ export const useTaxStore = create<TaxStore>()(
         }
       },
 
-      loadCalculation: async (year) => {
+      loadCalculation: async (id) => {
         try {
-          const { data: { user } } = await supabase.auth.getUser();
+          console.log('Loading calculation with ID:', id);
+          const { data, error } = await supabase
+            .from('tax_calculations')
+            .select('*')
+            .eq('id', id)
+            .single();
           
-          // If user is authenticated, try to load from database first
-          if (user) {
-            const { data: calculation, error } = await supabase
-              .from('tax_calculations')
-              .select('*')
-              .eq('user_id', user.id)
-              .eq('year', year)
-              .order('updated_at', { ascending: false })
-              .limit(1)
-              .single();
-
-            if (!error && calculation) {
-              set({
-                taxInfo: calculation.tax_info,
-                selectedStrategies: calculation.strategies,
-                savedCalculations: get().savedCalculations.map(calc =>
-                  calc.year === year ? calculation : calc
-                )
-              });
+          if (error) {
+            console.error('Error loading calculation:', error);
+            if (error.code === 'PGRST116') {
+              console.log('No calculation found with ID:', id);
               return;
             }
+            throw error;
           }
-
-          // If not authenticated or no database record, load from local storage
-          const localCalculation = get().savedCalculations.find(calc => calc.year === year);
-          if (localCalculation) {
-            set({
-              taxInfo: localCalculation.taxInfo,
-              selectedStrategies: localCalculation.strategies
-            });
+          
+          if (!data) {
+            console.log('No calculation data found');
+            return;
           }
+          
+          console.log('Loaded calculation:', data);
+          set({
+            taxInfo: data.tax_info as TaxInfo,
+            selectedYear: data.year as number,
+            selectedStrategies: (data.strategies || []) as TaxStrategy[]
+          });
         } catch (error) {
-          console.error('Failed to load calculation:', error);
-          // Don't throw error here, as we want to fallback to local data
+          console.error('Error loading tax calculation:', error);
+          throw error;
         }
       },
 
       saveInitialState: async (info: TaxInfo, year: number) => {
         try {
-          set({ selectedYear: year });
-
-          const strategies = getTaxStrategies(info, calculateTaxBreakdown(info, taxRates[year]));
-          const updatedStrategies = strategies.map(strategy => 
-            strategy.id === 'augusta_rule' ? { ...strategy, enabled: true } : strategy
-          );
-
-          const calculation: SavedCalculation = {
-            id: Date.now().toString(),
-            year,
-            date: new Date().toISOString(),
-            taxInfo: info,
-            breakdown: calculateTaxBreakdown(info, taxRates[year], updatedStrategies),
-            strategies: updatedStrategies
-          };
-
-          await get().addSavedCalculation(calculation);
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) throw new Error('No authenticated user');
+          
+          const { data, error } = await supabase
+            .from('tax_calculations')
+            .insert([
+              {
+                user_id: user.id,
+                tax_info: info,
+                year,
+                created_at: new Date().toISOString()
+              }
+            ])
+            .select()
+            .single();
+          
+          if (error) throw error;
+          
+          set({ taxInfo: info, selectedYear: year });
         } catch (error) {
-          console.error('Failed to save initial state:', error);
+          console.error('Error saving tax calculation:', error);
           throw error;
         }
       },

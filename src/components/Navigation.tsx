@@ -56,7 +56,7 @@ export default function Navigation({
       gradient: 'from-blue-500 to-blue-600'
     },
     {
-      id: 'calculator',
+      id: 'tax-calculator',
       label: 'Tax Estimator',
       icon: Calculator,
       gradient: 'from-emerald-500 to-emerald-600'
