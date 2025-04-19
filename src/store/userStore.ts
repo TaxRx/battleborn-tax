@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { supabase } from '../lib/supabase';
+import { supabase, testConnection } from '../lib/supabase';
 import { User } from '../types/user';
 
 interface UserStore {
@@ -24,17 +24,25 @@ export const useUserStore = create<UserStore>()(
       setUser: (user) => set({ user }),
 
       fetchUserProfile: async () => {
-        set({ loading: true, error: null, user: null });
+        set({ loading: true, error: null });
         console.log('Fetching user profile...');
         
         try {
+          // Test database connection first
+          const isConnected = await testConnection();
+          if (!isConnected) {
+            throw new Error('Unable to connect to the database. Please check your connection.');
+          }
+
           const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
           
           if (authError) {
+            console.error('Auth error:', authError);
             throw new Error(authError.message);
           }
           
           if (!authUser) {
+            console.error('No authenticated user found');
             throw new Error('No authenticated user found');
           }
           
@@ -56,7 +64,7 @@ export const useUserStore = create<UserStore>()(
                     user_id: authUser.id,
                     email: authUser.email,
                     full_name: authUser.user_metadata?.full_name || '',
-                    is_admin: authUser.user_metadata?.is_admin || false,
+                    is_admin: false,
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString()
                   }
@@ -65,10 +73,12 @@ export const useUserStore = create<UserStore>()(
                 .single();
               
               if (createError) {
+                console.error('Error creating profile:', createError);
                 throw new Error(createError.message);
               }
               
               if (!newProfile) {
+                console.error('Failed to create user profile');
                 throw new Error('Failed to create user profile');
               }
               
@@ -81,16 +91,18 @@ export const useUserStore = create<UserStore>()(
                 app_metadata: authUser.app_metadata
               };
               
+              console.log('Created new profile:', userData);
               set({ user: userData, loading: false, error: null });
               return;
             }
             
+            console.error('Profile error:', profileError);
             throw new Error(profileError.message);
           }
           
           if (!profile) {
-            set({ error: 'No profile data received', loading: false, user: null });
-            return;
+            console.error('No profile data received');
+            throw new Error('No profile data received');
           }
           
           const userData: User = {
@@ -102,6 +114,7 @@ export const useUserStore = create<UserStore>()(
             app_metadata: authUser.app_metadata
           };
           
+          console.log('Fetched existing profile:', userData);
           set({ user: userData, loading: false, error: null });
         } catch (error) {
           console.error('Error in fetchUserProfile:', error);
@@ -121,6 +134,12 @@ export const useUserStore = create<UserStore>()(
           if (!currentUser) {
             throw new Error('No user logged in');
           }
+
+          // Test database connection first
+          const isConnected = await testConnection();
+          if (!isConnected) {
+            throw new Error('Unable to connect to the database. Please check your connection.');
+          }
           
           const { error } = await supabase
             .from('user_profiles')
@@ -135,8 +154,14 @@ export const useUserStore = create<UserStore>()(
             throw new Error(error.message);
           }
           
+          const updatedUser = {
+            ...currentUser,
+            ...data
+          };
+          
+          console.log('Updated profile:', updatedUser);
           set({ 
-            user: { ...currentUser, ...data },
+            user: updatedUser,
             loading: false,
             error: null
           });
@@ -149,9 +174,13 @@ export const useUserStore = create<UserStore>()(
         }
       },
 
-      reset: () => set({ user: null, loading: false, error: null }),
+      reset: () => {
+        console.log('Resetting user store');
+        set({ user: null, loading: false, error: null });
+      },
 
       cleanup: () => {
+        console.log('Cleaning up user store');
         const subscription = supabase.auth.onAuthStateChange(() => {});
         subscription.data.subscription.unsubscribe();
       }

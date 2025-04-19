@@ -1,10 +1,11 @@
 [build]
-  command = "npm run build"
+  command = "npm install && npm run build"
   publish = "dist"
 
 [build.environment]
   NODE_VERSION = "18.17.0"
   NPM_VERSION = "9.6.7"
+  NODE_OPTIONS = "--max_old_space_size=4096"
 
 # Redirect all routes to index.html for SPA
 [[redirects]]
@@ -25,12 +26,23 @@
   [headers.values]
     Access-Control-Allow-Origin = "*"
     Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, PATCH, OPTIONS"
-    Access-Control-Allow-Headers = "X-Requested-With, content-type, Authorization, apikey"
-    Content-Security-Policy = "default-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.googleapis.com https://*.gstatic.com; font-src 'self' data:; frame-src 'self'; worker-src 'self' blob:;"
+    Access-Control-Allow-Headers = "X-Requested-With, content-type, Authorization, apikey, X-Client-Info"
+    Content-Security-Policy = """
+      default-src 'self';
+      connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.googleapis.com https://maps.googleapis.com;
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://maps.googleapis.com;
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.googleapis.com;
+      style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.googleapis.com;
+      font-src 'self' data: https://fonts.gstatic.com;
+      img-src 'self' data: https://*.googleapis.com https://*.gstatic.com https://images.unsplash.com https://*.unsplash.com blob:;
+      frame-src 'self' https://*.supabase.co https://*.googleapis.com;
+      worker-src 'self' blob:;
+      manifest-src 'self';
+    """
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Permissions-Policy = "geolocation=(), camera=(), microphone=()"
+    Permissions-Policy = "geolocation=(self), camera=(), microphone=()"
     Strict-Transport-Security = "max-age=31536000; includeSubDomains"
 
 [functions]
