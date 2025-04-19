@@ -34,20 +34,20 @@ export const useUserStore = create<UserStore>()(
             throw new Error('Unable to connect to the authentication service. Please check your network connection.');
           }
 
-          // Get the current session
-          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-          if (sessionError) {
-            console.error('Session error:', sessionError);
-            throw new Error('Authentication session error. Please try logging in again.');
+          // Get the current user
+          const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+          
+          if (authError) {
+            console.error('Auth error:', authError);
+            throw new Error('Authentication error. Please try logging in again.');
           }
 
-          if (!session?.user) {
+          if (!authUser) {
             console.error('No authenticated user found');
             set({ user: null, loading: false });
             return;
           }
 
-          const authUser = session.user;
           console.log('Found authenticated user:', authUser.id);
 
           // Fetch user profile
@@ -126,7 +126,6 @@ export const useUserStore = create<UserStore>()(
             error: error instanceof Error ? error.message : 'An unexpected error occurred',
             loading: false
           });
-          throw error; // Re-throw to handle in the UI
         }
       },
 
@@ -174,7 +173,6 @@ export const useUserStore = create<UserStore>()(
             error: error instanceof Error ? error.message : 'An unexpected error occurred',
             loading: false
           });
-          throw error; // Re-throw to handle in the UI
         }
       },
 
