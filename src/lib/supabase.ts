@@ -38,61 +38,34 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 });
 
-// Test connection function with retries and proper error handling
-export const testConnection = async (retries = 3, delay = 1000) => {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      console.log(`Testing Supabase connection (attempt ${attempt}/${retries})...`);
-
-      // First, verify the client is initialized
-      if (!supabase) {
-        console.error('Supabase client not initialized');
-        continue;
-      }
-
-      // Check if we have valid credentials
-      if (!supabaseUrl || !supabaseAnonKey) {
-        console.error('Missing Supabase credentials');
-        continue;
-      }
-
-      // Test a simple query to verify database access
-      const { data, error: queryError } = await supabase
-        .from('user_profiles')
-        .select('count')
-        .limit(1);
-
-      if (queryError) {
-        // Check if it's a permissions error (which is actually good - means we can connect)
-        if (queryError.code === 'PGRST301') {
-          console.log('Connection test successful (permission denied but connection works)');
-          return true;
-        }
-        console.error('Database connection test failed:', queryError);
-        if (attempt < retries) {
-          console.log(`Retrying in ${delay}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
-        }
-        return false;
-      }
-
-      console.log('Connection test successful');
-      return true;
-
-    } catch (error) {
-      console.error(`Connection test attempt ${attempt} failed:`, error);
-      if (attempt < retries) {
-        console.log(`Retrying in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        continue;
-      }
+export const testConnection = async () => {
+  try {
+    // First check if we have a session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError) {
+      console.error('Session error:', sessionError);
       return false;
     }
-  }
 
-  console.error('All connection attempts failed');
-  return false;
+    // Try to make a simple query to test the connection
+    const { error: queryError } = await supabase
+      .from('user_profiles')
+      .select('count')
+      .limit(1)
+      .single();
+
+    // PGRST116 means no rows found, which is fine for a connection test
+    if (queryError && queryError.code !== 'PGRST116') {
+      console.error('Query error:', queryError);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Connection test error:', error);
+    return false;
+  }
 };
 
 // Set up auth state change listener with error handling

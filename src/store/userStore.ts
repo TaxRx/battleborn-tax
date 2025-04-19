@@ -25,36 +25,40 @@ export const useUserStore = create<UserStore>()(
 
       fetchUserProfile: async () => {
         set({ loading: true, error: null });
-        console.log('Fetching user profile...');
+        console.log('Starting user profile fetch...');
         
         try {
           // Test database connection first
           const isConnected = await testConnection();
           if (!isConnected) {
-            throw new Error('Unable to connect to the database. Please check your connection.');
+            throw new Error('Unable to connect to the authentication service. Please check your network connection.');
           }
 
-          const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
-          
-          if (authError) {
-            console.error('Auth error:', authError);
-            throw new Error(authError.message);
+          // Get the current session
+          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+          if (sessionError) {
+            console.error('Session error:', sessionError);
+            throw new Error('Authentication session error. Please try logging in again.');
           }
-          
-          if (!authUser) {
+
+          if (!session?.user) {
             console.error('No authenticated user found');
-            throw new Error('No authenticated user found');
+            set({ user: null, loading: false });
+            return;
           }
-          
-          console.log('Authenticated user:', authUser.id);
-          
+
+          const authUser = session.user;
+          console.log('Found authenticated user:', authUser.id);
+
+          // Fetch user profile
           const { data: profile, error: profileError } = await supabase
             .from('user_profiles')
             .select('*')
             .eq('user_id', authUser.id)
             .single();
-          
+
           if (profileError) {
+            // If profile doesn't exist, create it
             if (profileError.code === 'PGRST116') {
               console.log('Creating new user profile...');
               const { data: newProfile, error: createError } = await supabase
@@ -71,17 +75,16 @@ export const useUserStore = create<UserStore>()(
                 ])
                 .select()
                 .single();
-              
+
               if (createError) {
                 console.error('Error creating profile:', createError);
-                throw new Error(createError.message);
+                throw new Error('Failed to create user profile. Please try again.');
               }
-              
+
               if (!newProfile) {
-                console.error('Failed to create user profile');
-                throw new Error('Failed to create user profile');
+                throw new Error('Failed to create user profile. No data returned.');
               }
-              
+
               const userData: User = {
                 id: authUser.id,
                 email: authUser.email || '',
@@ -90,21 +93,21 @@ export const useUserStore = create<UserStore>()(
                 user_metadata: authUser.user_metadata,
                 app_metadata: authUser.app_metadata
               };
-              
-              console.log('Created new profile:', userData);
+
+              console.log('Successfully created new profile:', userData);
               set({ user: userData, loading: false, error: null });
               return;
             }
-            
-            console.error('Profile error:', profileError);
-            throw new Error(profileError.message);
+
+            // Handle other profile errors
+            console.error('Profile fetch error:', profileError);
+            throw new Error('Failed to fetch user profile. Please try again.');
           }
-          
+
           if (!profile) {
-            console.error('No profile data received');
-            throw new Error('No profile data received');
+            throw new Error('No profile data found.');
           }
-          
+
           const userData: User = {
             id: authUser.id,
             email: authUser.email || '',
@@ -113,35 +116,35 @@ export const useUserStore = create<UserStore>()(
             user_metadata: authUser.user_metadata,
             app_metadata: authUser.app_metadata
           };
-          
-          console.log('Fetched existing profile:', userData);
+
+          console.log('Successfully fetched existing profile:', userData);
           set({ user: userData, loading: false, error: null });
         } catch (error) {
           console.error('Error in fetchUserProfile:', error);
-          set({ 
-            user: null, 
-            error: error instanceof Error ? error.message : 'An unexpected error occurred', 
-            loading: false 
+          set({
+            user: null,
+            error: error instanceof Error ? error.message : 'An unexpected error occurred',
+            loading: false
           });
+          throw error; // Re-throw to handle in the UI
         }
       },
 
       updateUserProfile: async (data: Partial<User>) => {
+        set({ loading: true, error: null });
+        
         try {
-          set({ loading: true, error: null });
           const currentUser = get().user;
-          
           if (!currentUser) {
             throw new Error('No user logged in');
           }
 
-          // Test database connection first
           const isConnected = await testConnection();
           if (!isConnected) {
             throw new Error('Unable to connect to the database. Please check your connection.');
           }
-          
-          const { error } = await supabase
+
+          const { error: updateError } = await supabase
             .from('user_profiles')
             .update({
               full_name: data.fullName,
@@ -149,28 +152,29 @@ export const useUserStore = create<UserStore>()(
               updated_at: new Date().toISOString()
             })
             .eq('user_id', currentUser.id);
-          
-          if (error) {
-            throw new Error(error.message);
+
+          if (updateError) {
+            throw new Error(`Failed to update profile: ${updateError.message}`);
           }
-          
+
           const updatedUser = {
             ...currentUser,
             ...data
           };
-          
-          console.log('Updated profile:', updatedUser);
-          set({ 
+
+          console.log('Successfully updated profile:', updatedUser);
+          set({
             user: updatedUser,
             loading: false,
             error: null
           });
         } catch (error) {
           console.error('Error updating user profile:', error);
-          set({ 
-            error: error instanceof Error ? error.message : 'An unexpected error occurred', 
-            loading: false 
+          set({
+            error: error instanceof Error ? error.message : 'An unexpected error occurred',
+            loading: false
           });
+          throw error; // Re-throw to handle in the UI
         }
       },
 
