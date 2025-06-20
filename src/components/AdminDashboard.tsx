@@ -1,11 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { useUserStore } from '../store/userStore';
 import { useAdminStore } from '../store/adminStore';
 import { useSubscriptionStore } from '../store/subscriptionStore';
 import { Users, FileText, Bell, Download, RefreshCw, Settings, Inbox } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Outlet, Routes, Route } from 'react-router-dom';
+import { AdminQRAUpload } from "./AdminQRAUpload";
+import { Advisor, Group, Client, AuditLog, Notification, CharitableDonation } from '../types/user';
+import { advisorService, transferAdvisor, transferGroup, transferClient, getNotifications, sendNotification, getDocuments, uploadDocument, deleteDocument, deleteAdvisor, deleteGroup, deleteClient, getAllCharitableDonationsByYear, updateCharitableDonationStatus } from '../services/advisorService';
+import type { Document } from '../types/document';
+import toast from 'react-hot-toast';
+import debounce from 'lodash.debounce';
+import Sidebar from '../features/rd-wizard/src/components/layout/Sidebar';
+import AdminClientsPage from './AdminClientsPage';
+import { UserProvider } from '../features/rd-wizard/src/context/UserContext';
+import useAuthStore from '../store/authStore';
 
 function generateRandomPassword() {
   const length = 12;
@@ -17,82 +27,348 @@ function generateRandomPassword() {
   return password;
 }
 
+// Placeholder for strategies; replace with real type if available
+interface ClientStrategy {
+  id: string;
+  name: string;
+  status: string;
+}
+
+interface EntityListProps<T> {
+  title: string;
+  entities: T[];
+  onView: (entity: T) => void;
+  onEdit: (entity: T) => void;
+  onTransfer?: (entity: T) => void;
+  searchTerm: string;
+  setSearchTerm: (s: string) => void;
+  renderExtra?: (entity: T) => React.ReactNode;
+  selectedIds: string[];
+  onToggleSelect: (id: string) => void;
+  onBulkDelete?: () => void;
+  onBulkTransfer?: () => void;
+}
+
+function EntityList<T extends { id: string; name?: string }>({
+  title,
+  entities,
+  onView,
+  onEdit,
+  onTransfer,
+  searchTerm,
+  setSearchTerm,
+  renderExtra,
+  selectedIds,
+  onToggleSelect,
+  onBulkDelete,
+  onBulkTransfer
+}: EntityListProps<T>) {
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-xl font-bold">{title}</h3>
+        <input
+          type="text"
+          placeholder={`Search ${title.toLowerCase()}...`}
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          className="px-4 py-2 border rounded"
+        />
+      </div>
+      <div className="flex space-x-2 mb-2">
+        {onBulkDelete && (
+          <button onClick={onBulkDelete} className="px-3 py-1 bg-red-600 text-white rounded" disabled={selectedIds.length === 0}>Delete Selected</button>
+        )}
+        {onBulkTransfer && (
+          <button onClick={onBulkTransfer} className="px-3 py-1 bg-blue-600 text-white rounded" disabled={selectedIds.length === 0}>Transfer Selected</button>
+        )}
+      </div>
+      <div className="bg-white rounded-lg shadow divide-y">
+        {entities.length === 0 ? (
+          <div className="p-4 text-center text-gray-500">No {title.toLowerCase()} found.</div>
+        ) : (
+          entities.map((entity) => (
+            <div key={entity.id} className="flex items-center justify-between p-4">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(entity.id)}
+                  onChange={() => onToggleSelect(entity.id)}
+                />
+                <div>
+                  <div className="font-medium text-gray-900">{entity.name}</div>
+                  <div className="text-xs text-gray-500">ID: {entity.id}</div>
+                  {renderExtra && renderExtra(entity)}
+                </div>
+              </div>
+              <div className="space-x-2">
+                <button onClick={() => onView(entity)} className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">View</button>
+                <button onClick={() => onEdit(entity)} className="px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700">Edit</button>
+                {onTransfer && (
+                  <button onClick={() => onTransfer(entity)} className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700">Transfer</button>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
-  const { user, setUser } = useUserStore();
+  const { profile } = useUserStore();
+  const { demoMode, userType } = useAuthStore();
   const { fees, setFees } = useAdminStore();
   const { subscriptions, setSubscriptionStatus } = useSubscriptionStore();
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [transactionFee, setTransactionFee] = useState(fees.transactionFee);
   const [serviceFee, setServiceFee] = useState(fees.serviceFee);
   const navigate = useNavigate();
+  const [tab, setTab] = useState<'advisors' | 'groups' | 'clients'>('advisors');
+  const [advisors, setAdvisors] = useState<Advisor[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [searchAdvisor, setSearchAdvisor] = useState('');
+  const [searchGroup, setSearchGroup] = useState('');
+  const [searchClient, setSearchClient] = useState('');
+  const [selectedAdvisor, setSelectedAdvisor] = useState<Advisor | null>(null);
+  const [showAdvisorModal, setShowAdvisorModal] = useState(false);
+  const [showAdvisorTransferModal, setShowAdvisorTransferModal] = useState(false);
+  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [showGroupTransferModal, setShowGroupTransferModal] = useState(false);
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [showClientModal, setShowClientModal] = useState(false);
+  const [showClientTransferModal, setShowClientTransferModal] = useState(false);
+  const [transferGroupId, setTransferGroupId] = useState('');
+  const [transferAdvisorId, setTransferAdvisorId] = useState('');
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [auditLogLoading, setAuditLogLoading] = useState(false);
+  const [auditLogError, setAuditLogError] = useState<string | null>(null);
+  const [auditLogAction, setAuditLogAction] = useState('');
+  const [auditLogUser, setAuditLogUser] = useState('');
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notificationLoading, setNotificationLoading] = useState(false);
+  const [notificationError, setNotificationError] = useState<string | null>(null);
+  const [notificationRecipient, setNotificationRecipient] = useState('');
+  const [notificationMessage, setNotificationMessage] = useState('');
+  const [notificationFilter, setNotificationFilter] = useState('');
+  const [docEntityType, setDocEntityType] = useState<'client' | 'group'>('client');
+  const [docEntityId, setDocEntityId] = useState('');
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [docLoading, setDocLoading] = useState(false);
+  const [docError, setDocError] = useState<string | null>(null);
+  const [docUploadLoading, setDocUploadLoading] = useState(false);
+  const [auditLogFilters, setAuditLogFilters] = useState<{
+    action?: string;
+    targetType?: 'advisor' | 'client' | 'group' | 'document';
+    startDate?: string;
+    endDate?: string;
+  }>({});
+
+  // Filter state
+  const [advisorGroupFilter, setAdvisorGroupFilter] = useState('');
+  const [groupAdvisorFilter, setGroupAdvisorFilter] = useState('');
+  const [clientAdvisorFilter, setClientAdvisorFilter] = useState('');
+  const [clientGroupFilter, setClientGroupFilter] = useState('');
+  const [auditLogUserFilter, setAuditLogUserFilter] = useState('');
+
+  // Debounced search state
+  const [debouncedSearchAdvisor, setDebouncedSearchAdvisor] = useState(searchAdvisor);
+  const [debouncedSearchGroup, setDebouncedSearchGroup] = useState(searchGroup);
+  const [debouncedSearchClient, setDebouncedSearchClient] = useState(searchClient);
 
   useEffect(() => {
-    // Simulate fetching users
-    setUsers([
-      {
-        id: '1',
-        fullName: 'John Doe',
-        email: 'john@example.com',
-        password: '********',
-        subscription: 'active'
-      },
-      {
-        id: '2',
-        fullName: 'Jane Smith',
-        email: 'jane@example.com',
-        password: '********',
-        subscription: 'inactive'
-      }
-    ]);
-  }, []);
+    const handler = debounce(() => setDebouncedSearchAdvisor(searchAdvisor), 300);
+    handler();
+    return () => handler.cancel();
+  }, [searchAdvisor]);
+  useEffect(() => {
+    const handler = debounce(() => setDebouncedSearchGroup(searchGroup), 300);
+    handler();
+    return () => handler.cancel();
+  }, [searchGroup]);
+  useEffect(() => {
+    const handler = debounce(() => setDebouncedSearchClient(searchClient), 300);
+    handler();
+    return () => handler.cancel();
+  }, [searchClient]);
 
-  if (!user?.isAdmin) {
-    return (
-      <div className="p-8">
-        <div className="max-w-6xl mx-auto">
-          <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
-          <p className="mt-2 text-gray-600">
-            You do not have permission to view this page.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // Filtered lists
+  const filteredAdvisors = useMemo(() =>
+    advisors.filter(a =>
+      (debouncedSearchAdvisor === '' ||
+        a.name.toLowerCase().includes(debouncedSearchAdvisor.toLowerCase()) ||
+        a.email?.toLowerCase().includes(debouncedSearchAdvisor.toLowerCase())) &&
+      (advisorGroupFilter === '' || groups.find(g => g.id === advisorGroupFilter)?.advisorId === a.id)
+    ), [advisors, debouncedSearchAdvisor, advisorGroupFilter, groups]
+  );
 
-  const handleExportCSV = () => {
-    const csvContent = [
-      ['Full Name', 'Email'],
-      ...users.map(user => [user.fullName, user.email])
-    ].map(row => row.join(',')).join('\n');
+  const filteredGroups = useMemo(() =>
+    groups.filter(g =>
+      (debouncedSearchGroup === '' ||
+        g.name.toLowerCase().includes(debouncedSearchGroup.toLowerCase())) &&
+      (groupAdvisorFilter === '' || g.advisorId === groupAdvisorFilter)
+    ), [groups, debouncedSearchGroup, groupAdvisorFilter]
+  );
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'users_export.csv';
-    a.click();
-    window.URL.revokeObjectURL(url);
+  const filteredClients = useMemo(() =>
+    clients.filter(c => {
+      const matchesSearch =
+        debouncedSearchClient === '' ||
+        c.name.toLowerCase().includes(debouncedSearchClient.toLowerCase()) ||
+        c.email?.toLowerCase().includes(debouncedSearchClient.toLowerCase()) ||
+        (Array.isArray(c.groupIds) && c.groupIds.some(gid => groups.find(g => g.id === gid)?.name.toLowerCase().includes(debouncedSearchClient.toLowerCase())));
+      const matchesAdvisor = clientAdvisorFilter === '' || c.advisorId === clientAdvisorFilter;
+      const matchesGroup = clientGroupFilter === '' || (Array.isArray(c.groupIds) && c.groupIds.includes(clientGroupFilter));
+      return matchesSearch && matchesAdvisor && matchesGroup;
+    }), [clients, debouncedSearchClient, clientAdvisorFilter, clientGroupFilter, groups]
+  );
+
+  const filteredAuditLogs = useMemo(() =>
+    auditLogs.filter(log =>
+      (auditLogAction ? log.action === auditLogAction : true) &&
+      (auditLogUser ? log.userId === auditLogUser : true) &&
+      (auditLogUserFilter ? log.userId === auditLogUserFilter : true)
+    ), [auditLogs, auditLogAction, auditLogUser, auditLogUserFilter]
+  );
+
+  // Add filteredNotifications definition
+  const filteredNotifications = useMemo(() =>
+    notifications.filter((n: Notification) =>
+      notificationFilter ? n.userId === notificationFilter : true
+    ), [notifications, notificationFilter]
+  );
+
+  // Helper for toggling selection
+  const toggleSelection = (id: string, selected: string[], setSelected: (ids: string[]) => void) => {
+    setSelected(selected.includes(id) ? selected.filter(i => i !== id) : [...selected, id]);
   };
 
-  const handleLoginAsUser = (userId: string) => {
-    const selectedUser = users.find(u => u.id === userId);
-    if (selectedUser) {
-      setUser({
-        ...selectedUser,
-        isAdmin: false
-      });
+  const loadAll = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const [advisors, groups, clients] = await Promise.all([
+        advisorService.getAdvisors(),
+        advisorService.getGroups(''),
+        advisorService.getClients('')
+      ]);
+      setAdvisors(advisors);
+      setGroups(groups);
+      setClients(clients);
+    } catch (error) {
+      setError('Failed to load admin data.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleResetPassword = (userId: string) => {
-    const newPassword = generateRandomPassword();
-    setUsers(users.map(u => 
-      u.id === userId ? { ...u, password: newPassword } : u
-    ));
-    alert(`New password for user: ${newPassword}`);
+  const loadAuditLogs = async () => {
+    try {
+      setAuditLogLoading(true);
+      setAuditLogError(null);
+      const logs = await advisorService.getAuditLogs('', auditLogFilters);
+      setAuditLogs(logs);
+    } catch (err) {
+      setAuditLogError('Failed to load audit logs.');
+    } finally {
+      setAuditLogLoading(false);
+    }
   };
+
+  const loadNotifications = async () => {
+    try {
+      setNotificationLoading(true);
+      setNotificationError(null);
+      let all: Notification[] = [];
+      for (const advisor of advisors) {
+        all = all.concat(await getNotifications(advisor.id));
+      }
+      for (const client of clients) {
+        all = all.concat(await getNotifications(client.id));
+      }
+      setNotifications(all);
+    } catch (err) {
+      setNotificationError('Failed to load notifications.');
+    } finally {
+      setNotificationLoading(false);
+    }
+  };
+
+  const loadDocuments = async () => {
+    if (!docEntityId) return setDocuments([]);
+    try {
+      setDocLoading(true);
+      setDocError(null);
+      const docs = await getDocuments();
+      setDocuments(docs);
+    } catch (err) {
+      setDocError('Failed to load documents.');
+    } finally {
+      setDocLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAll();
+    loadAuditLogs();
+    loadNotifications();
+    loadDocuments();
+  }, []);
+
+  useEffect(() => {
+    loadAuditLogs();
+  }, [auditLogFilters]);
+
+  useEffect(() => {
+    loadDocuments();
+  }, [docEntityId, docEntityType]);
+
+  const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !docEntityId) return;
+    setDocUploadLoading(true);
+    setDocUploadError(null);
+    try {
+      const file = e.target.files[0];
+      await uploadDocument(file, docEntityId);
+      await loadDocuments();
+    } catch (err) {
+      setDocUploadError('Failed to upload document.');
+    } finally {
+      setDocUploadLoading(false);
+    }
+  };
+
+  const handleDeleteDocument = async (id: string) => {
+    if (!window.confirm('Delete this document?')) return;
+    try {
+      setDocLoading(true);
+      await deleteDocument(id);
+      await loadDocuments();
+    } catch (err) {
+      setDocError('Failed to delete document.');
+    } finally {
+      setDocLoading(false);
+    }
+  };
+
+  // Create effective profile for demo mode
+  const effectiveProfile = demoMode ? { 
+    email: 'admin@taxrxgroup.com', 
+    role: 'admin',
+    id: 'demo-admin'
+  } : profile;
+
+  if (!effectiveProfile) {
+    return <div className="p-8 text-center">Loading profile...</div>;
+  }
+  if (effectiveProfile.role !== 'admin') {
+    return <div className="p-8 text-center text-red-600">Access denied. Admins only.</div>;
+  }
 
   const handleResetAdminPassword = () => {
     const newPassword = generateRandomPassword();
@@ -109,283 +385,196 @@ export default function AdminDashboard() {
 
   const handleToggleSubscription = (userId: string, status: 'active' | 'inactive') => {
     setSubscriptionStatus(userId, status);
-    setUsers(users.map(u => 
-      u.id === userId ? { ...u, subscription: status } : u
-    ));
   };
 
+  const handleSendNotification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!notificationRecipient || !notificationMessage) return;
+    try {
+      setNotificationLoading(true);
+      setNotificationError(null);
+      await sendNotification({
+        userId: notificationRecipient,
+        message: notificationMessage,
+        type: 'info',
+        read: false,
+        createdAt: new Date().toISOString(),
+      });
+      setNotificationMessage('');
+      await loadNotifications();
+    } catch (err) {
+      setNotificationError('Failed to send notification.');
+    } finally {
+      setNotificationLoading(false);
+    }
+  };
+
+  // Bulk transfer/delete logic
+  const handleBulkAdvisorDelete = async () => {
+    if (!window.confirm('Delete selected advisors?')) return;
+    setBulkActionLoading(true);
+    setBulkActionError(null);
+    let failed: string[] = [];
+    for (const id of selectedAdvisorIds) {
+      try {
+        await deleteAdvisor(id);
+        await advisorService.createAuditLog({
+          action: 'delete_advisor',
+          userId: effectiveProfile.id,
+          createdAt: new Date().toISOString(),
+          details: 'Bulk delete',
+          metadata: {}
+        });
+      } catch (err) {
+        failed.push(id);
+      }
+    }
+    setBulkActionLoading(false);
+    setSelectedAdvisorIds([]);
+    await loadAll();
+    if (failed.length === 0) {
+      toast.success('All selected advisors deleted.');
+    } else {
+      toast.error(`Failed to delete: ${failed.join(', ')}`);
+      setBulkActionError('Some advisors could not be deleted.');
+    }
+  };
+
+  const handleBulkGroupDelete = async () => {
+    if (!window.confirm('Delete selected groups?')) return;
+    setBulkActionLoading(true);
+    setBulkActionError(null);
+    let failed: string[] = [];
+    for (const id of selectedGroupIds) {
+      try {
+        await deleteGroup(id);
+        await advisorService.createAuditLog({
+          action: 'delete_group',
+          userId: effectiveProfile.id,
+          createdAt: new Date().toISOString(),
+          details: 'Bulk delete',
+          metadata: {}
+        });
+      } catch (err) {
+        failed.push(id);
+      }
+    }
+    setBulkActionLoading(false);
+    setSelectedGroupIds([]);
+    await loadAll();
+    if (failed.length === 0) {
+      toast.success('All selected groups deleted.');
+    } else {
+      toast.error(`Failed to delete: ${failed.join(', ')}`);
+      setBulkActionError('Some groups could not be deleted.');
+    }
+  };
+
+  const handleBulkClientDelete = async () => {
+    if (!window.confirm('Delete selected clients?')) return;
+    setBulkActionLoading(true);
+    setBulkActionError(null);
+    let failed: string[] = [];
+    for (const id of selectedClientIds) {
+      try {
+        await deleteClient(id);
+        await advisorService.createAuditLog({
+          action: 'delete_client',
+          userId: effectiveProfile.id,
+          createdAt: new Date().toISOString(),
+          details: 'Bulk delete',
+          metadata: {}
+        });
+      } catch (err) {
+        failed.push(id);
+      }
+    }
+    setBulkActionLoading(false);
+    setSelectedClientIds([]);
+    await loadAll();
+    if (failed.length === 0) {
+      toast.success('All selected clients deleted.');
+    } else {
+      toast.error(`Failed to delete: ${failed.join(', ')}`);
+      setBulkActionError('Some clients could not be deleted.');
+    }
+  };
+
+  const [cdLoading, setCdLoading] = useState(false);
+  const [cdError, setCdError] = useState<string | null>(null);
+  const [charitableDonations, setCharitableDonations] = useState<CharitableDonation[]>([]);
+  const currentYear = new Date().getFullYear();
+
+  // Load Charitable Donations for current year
+  const loadCharitableDonations = async () => {
+    setCdLoading(true);
+    setCdError(null);
+    try {
+      const cds = await getAllCharitableDonationsByYear(currentYear);
+      setCharitableDonations(cds);
+    } catch (err) {
+      setCdError('Failed to load Charitable Donations.');
+    } finally {
+      setCdLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'charitableDonations') {
+      loadCharitableDonations();
+    }
+  }, [activeTab]);
+
+  // Handle status/final amount update
+  const handleCDUpdate = async (id: string, status: CharitableDonation['status'], finalAmount?: number) => {
+    setCdLoading(true);
+    setCdError(null);
+    try {
+      const updated = await updateCharitableDonationStatus(id, status, finalAmount);
+      if (updated) {
+        setCharitableDonations(prev => prev.map(cd => cd.id === id ? updated : cd));
+        await sendNotification({
+          userId: updated.advisorId,
+          message: `Charitable Donation for ${updated.year} (${updated.clientId}) status updated to ${updated.status}${finalAmount ? `, Final Amount: $${finalAmount.toLocaleString()}` : ''}`,
+          type: 'info',
+          read: false,
+          createdAt: new Date().toISOString(),
+        });
+        toast.success('Charitable Donation updated.');
+      }
+    } catch (err) {
+      setCdError('Failed to update Charitable Donation.');
+    } finally {
+      setCdLoading(false);
+    }
+  };
+
+  // All state and hooks must be inside this function!
+  const [selectedAdvisorIds, setSelectedAdvisorIds] = useState<string[]>([]);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  const [selectedClientIds, setSelectedClientIds] = useState<string[]>([]);
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
+  const [bulkActionError, setBulkActionError] = useState<string | null>(null);
+  const [docUploadError, setDocUploadError] = useState<string | null>(null);
+
+  // Move all helper functions that use these state variables here, after the state declarations
+  // ...
+  // Example:
+  // const handleBulkAdvisorDelete = async () => { ... }
+  // const handleBulkGroupDelete = async () => { ... }
+  // const handleBulkClientDelete = async () => { ... }
+  // const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => { ... }
+  // ...
+
+  // New layout: sidebar + main content
   return (
-    <div className="p-8">
-      <div className="max-w-6xl mx-auto">
-        <Tabs.Root value={activeTab} onValueChange={setActiveTab}>
-          <Tabs.List className="flex space-x-1 border-b mb-8">
-            <Tabs.Trigger
-              value="dashboard"
-              className={`px-6 py-3 text-sm font-medium transition-colors
-                ${activeTab === 'dashboard' 
-                  ? 'border-b-2 border-blue-600 text-blue-600' 
-                  : 'text-gray-600 hover:text-gray-900'}`}
-            >
-              Dashboard
-            </Tabs.Trigger>
-            <Tabs.Trigger
-              value="users"
-              className={`px-6 py-3 text-sm font-medium transition-colors
-                ${activeTab === 'users' 
-                  ? 'border-b-2 border-blue-600 text-blue-600' 
-                  : 'text-gray-600 hover:text-gray-900'}`}
-            >
-              Users
-            </Tabs.Trigger>
-            <Tabs.Trigger
-              value="leads"
-              className={`px-6 py-3 text-sm font-medium transition-colors
-                ${activeTab === 'leads' 
-                  ? 'border-b-2 border-blue-600 text-blue-600' 
-                  : 'text-gray-600 hover:text-gray-900'}`}
-            >
-              Leads
-            </Tabs.Trigger>
-            <Tabs.Trigger
-              value="management"
-              className={`px-6 py-3 text-sm font-medium transition-colors
-                ${activeTab === 'management' 
-                  ? 'border-b-2 border-blue-600 text-blue-600' 
-                  : 'text-gray-600 hover:text-gray-900'}`}
-            >
-              Management
-            </Tabs.Trigger>
-          </Tabs.List>
-
-          <Tabs.Content value="dashboard">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <div className="flex items-center space-x-3 mb-4">
-                    <Users className="h-6 w-6 text-blue-600" />
-                    <h2 className="text-lg font-semibold">Total Users</h2>
-                  </div>
-                  <div className="text-3xl font-bold">{users.length}</div>
-                  <p className="text-sm text-gray-600 mt-1">Active accounts</p>
-                </div>
-
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <div className="flex items-center space-x-3 mb-4">
-                    <FileText className="h-6 w-6 text-green-600" />
-                    <h2 className="text-lg font-semibold">Calculations</h2>
-                  </div>
-                  <div className="text-3xl font-bold">0</div>
-                  <p className="text-sm text-gray-600 mt-1">Total calculations</p>
-                </div>
-
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <div className="flex items-center space-x-3 mb-4">
-                    <Bell className="h-6 w-6 text-purple-600" />
-                    <h2 className="text-lg font-semibold">Notifications</h2>
-                  </div>
-                  <div className="text-3xl font-bold">0</div>
-                  <p className="text-sm text-gray-600 mt-1">Pending alerts</p>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl shadow-sm p-6">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-lg font-semibold">Recent Activity</h2>
-                  <button
-                    onClick={handleResetAdminPassword}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    Reset My Password
-                  </button>
-                </div>
-                <p className="text-gray-600">No recent activity to display.</p>
-              </div>
-            </motion.div>
-          </Tabs.Content>
-
-          <Tabs.Content value="users">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white rounded-xl shadow-sm p-6"
-            >
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-lg font-semibold">User Management</h2>
-                <button
-                  onClick={handleExportCSV}
-                  className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                >
-                  <Download size={16} />
-                  <span>Export CSV</span>
-                </button>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Full Name
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Email
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Password
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Subscription
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {users.map((user) => (
-                      <tr key={user.id}>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          {user.fullName}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          {user.email}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap font-mono">
-                          {user.password}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            user.subscription === 'active' 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-red-100 text-red-800'
-                          }`}>
-                            {user.subscription}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right">
-                          <button
-                            onClick={() => handleLoginAsUser(user.id)}
-                            className="text-blue-600 hover:text-blue-900 mr-4"
-                          >
-                            Log In as User
-                          </button>
-                          <button
-                            onClick={() => handleResetPassword(user.id)}
-                            className="text-blue-600 hover:text-blue-900"
-                          >
-                            Reset Password
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </motion.div>
-          </Tabs.Content>
-
-          <Tabs.Content value="leads">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white rounded-xl shadow-sm p-6"
-            >
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-lg font-semibold">Lead Management</h2>
-                <button
-                  onClick={() => navigate('/leads')}
-                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  <Inbox size={16} />
-                  <span>View All Leads</span>
-                </button>
-              </div>
-
-              <p className="text-gray-600">
-                Access and manage all leads from the charitable donation calculator.
-                Click "View All Leads" to see the full list and details.
-              </p>
-            </motion.div>
-          </Tabs.Content>
-
-          <Tabs.Content value="management">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <h2 className="text-lg font-semibold mb-6">Fee Management</h2>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Transaction Fee (%)
-                      </label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={transactionFee}
-                        onChange={(e) => setTransactionFee(parseFloat(e.target.value))}
-                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Service Fee ($)
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={serviceFee}
-                        onChange={(e) => setServiceFee(parseFloat(e.target.value))}
-                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                    <button
-                      onClick={handleSaveFees}
-                      className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                      Save Fees
-                    </button>
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <h2 className="text-lg font-semibold mb-6">Subscription Management</h2>
-                  <div className="space-y-4">
-                    {users.map((user) => (
-                      <div
-                        key={user.id}
-                        className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
-                      >
-                        <div>
-                          <h3 className="font-medium">{user.fullName}</h3>
-                          <p className="text-sm text-gray-600">{user.email}</p>
-                        </div>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={user.subscription === 'active'}
-                            onChange={() => handleToggleSubscription(
-                              user.id,
-                              user.subscription === 'active' ? 'inactive' : 'active'
-                            )}
-                            className="sr-only peer"
-                          />
-                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </Tabs.Content>
-        </Tabs.Root>
+    <UserProvider>
+      <div className="flex min-h-screen">
+        <Sidebar onCollapse={() => {}} />
+        <main className="flex-1 p-8 bg-gray-50">
+          <Outlet />
+        </main>
       </div>
-    </div>
+    </UserProvider>
   );
 }

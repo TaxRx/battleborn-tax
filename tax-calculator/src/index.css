@@ -1,0 +1,73 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --modal-header: #efebe2;
+  --accent-green: #15a46f;
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+}
+
+/* Form field styles */
+.form-field {
+  @apply mb-6;
+}
+
+.form-label {
+  @apply block text-xs font-medium text-gray-500 uppercase mb-1;
+}
+
+.form-input {
+  @apply w-full bg-transparent border-0 border-b border-[#15a46f] px-0 py-2 text-lg font-medium focus:ring-0 focus:border-[#15a46f];
+}
+
+.form-select {
+  @apply w-full bg-transparent border-0 border-b border-[#15a46f] px-0 py-2 text-lg font-medium focus:ring-0 focus:border-[#15a46f];
+  background-image: none;
+}
+
+/* Section styles */
+.form-section {
+  @apply mb-8;
+}
+
+.section-label {
+  @apply text-xs font-medium text-gray-500 uppercase mb-4;
+}
+
+/* Checkbox styles */
+.checkbox-group {
+  @apply flex items-center space-x-6 mb-8;
+}
+
+.checkbox-label {
+  @apply flex items-center space-x-2;
+}
+
+.checkbox-input {
+  @apply w-5 h-5 rounded border-gray-300 text-[#15a46f] focus:ring-[#15a46f];
+}
+
+/* Button styles */
+.btn-primary {
+  @apply px-6 py-2 bg-[#15a46f] text-white rounded-lg hover:bg-[#12965f] transition-colors;
+}
+
+.btn-secondary {
+  @apply px-6 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors;
+}
+
+/* Input underline style */
+.underline-input {
+  @apply w-full bg-transparent border-0 border-b border-[#15a46f] px-0 py-2 text-lg font-medium focus:ring-0 focus:border-[#15a46f];
+}
+
+/* Numeric input style */
+.numeric-input {
+  @apply w-full bg-transparent border-0 border-b border-[#15a46f] px-0 py-2 text-lg font-medium focus:ring-0 focus:border-[#15a46f];
+}

@@ -3,37 +3,21 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { motion } from 'framer-motion';
 import { TaxInfo } from '../types';
 import { states } from '../data/states';
-import { MapPin } from 'lucide-react';
-import { GoogleMap, Marker, useJsApiLoader } from '@react-google-maps/api';
-import Autocomplete from 'react-google-autocomplete';
 import { NumericFormat } from 'react-number-format';
 import { useTaxStore } from '../store/taxStore';
+import { useUserStore } from '../store/userStore';
+import useAuthStore from '../store/authStore';
+import { supabase } from '../lib/supabase';
 
 interface InfoFormProps {
   onSubmit: (data: TaxInfo, year: number) => void;
   initialData?: TaxInfo | null;
 }
 
-const mapOptions = {
-  mapTypeId: 'satellite',
-  mapTypeControl: false,
-  streetViewControl: false,
-  rotateControl: false,
-  fullscreenControl: false,
-  zoomControl: true
-};
-
-const mapContainerStyle = {
-  width: '100%',
-  height: '300px'
-};
-
 export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
-  const { saveInitialState } = useTaxStore();
-  const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-    libraries: ['places']
-  });
+  const { saveInitialState, setTaxInfo } = useTaxStore();
+  const { user, fetchUserProfile } = useUserStore();
+  const { demoMode } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState('profile');
   const [selectedYear] = useState(new Date().getFullYear());
@@ -42,7 +26,7 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
     customDeduction: 0,
     businessOwner: false,
     fullName: '',
-    email: '',
+    email: user?.email || '',
     filingStatus: 'single',
     dependents: 0,
     homeAddress: '',
@@ -52,10 +36,12 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
     unearnedIncome: 0,
     capitalGains: 0,
     businessName: '',
-    entityType: 'LLC',
+    entityType: undefined,
     businessAddress: '',
     ordinaryK1Income: 0,
-    guaranteedK1Income: 0
+    guaranteedK1Income: 0,
+    householdIncome: 0,
+    deductionLimitReached: false
   });
 
   // Update form data when initialData changes
@@ -65,40 +51,13 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
     }
   }, [initialData]);
 
-  const [homeLocation, setHomeLocation] = useState({ 
-    lat: initialData?.homeLatitude || 40.7128, 
-    lng: initialData?.homeLongitude || -74.0060 
-  });
-  
-  const [businessLocation, setBusinessLocation] = useState({ 
-    lat: initialData?.businessLatitude || 40.7128, 
-    lng: initialData?.businessLongitude || -74.0060 
-  });
-
-  const handleHomeAddressSelect = (place: any) => {
-    if (place?.geometry?.location) {
-      const lat = place.geometry.location.lat();
-      const lng = place.geometry.location.lng();
-      setHomeLocation({ lat, lng });
-      setFormData(prev => ({ ...prev, homeAddress: place.formatted_address }));
-    }
-  };
-
-  const handleBusinessAddressSelect = (place: any) => {
-    if (place?.geometry?.location) {
-      const lat = place.geometry.location.lat();
-      const lng = place.geometry.location.lng();
-      setBusinessLocation({ lat, lng });
-      setFormData(prev => ({ ...prev, businessAddress: place.formatted_address }));
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     // Validate required fields
-    if (!formData.fullName || !formData.email || !formData.homeAddress) {
-      alert('Please fill in all required fields: Full Name, Email, and Home Address');
+    if (!formData.fullName) {
+      console.error('Validation error: Full name is required');
+      alert('Please enter your full name');
       return;
     }
 
@@ -113,30 +72,135 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
                      ));
 
     if (!hasIncome) {
+      console.error('Validation error: No income sources provided');
       alert('Please enter at least one source of income');
       return;
     }
 
-    // If business owner, validate business fields
-    if (formData.businessOwner) {
-      if (!formData.businessName || !formData.businessAddress) {
-        alert('Please fill in all business information');
-        return;
-      }
+    if (demoMode) {
+      // In demo mode, skip Supabase operations
+      console.log('Demo mode: Skipping Supabase operations');
+      setTaxInfo(formData);
+      onSubmit(formData, selectedYear);
+      return;
     }
 
     try {
-      // Call the onSubmit callback
+      // Get current user from Supabase auth
+      const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!currentUser) {
+        throw new Error('No authenticated user found');
+      }
+
+      // Try to get existing profile
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', currentUser.id)
+        .single();
+
+      if (profileError && profileError.code === 'PGRST116') {
+        // Profile doesn't exist, create it
+        const { data: newProfile, error: createError } = await supabase
+          .from('profiles')
+          .insert([{
+            id: currentUser.id,
+            email: currentUser.email,
+            full_name: formData.fullName,
+            role: 'user',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }])
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        console.log('Created new profile:', newProfile);
+      } else if (profileError) {
+        throw profileError;
+      }
+
+      // Now save the tax info
+      console.log('Upserting tax profile:', {
+        user_id: currentUser.id,
+        ...formData,
+        updated_at: new Date().toISOString()
+      });
+      const { error: taxError } = await supabase
+        .from('tax_profiles')
+        .upsert([
+          {
+            user_id: currentUser.id,
+            filing_status: formData.filingStatus,
+            standard_deduction: formData.standardDeduction,
+            custom_deduction: formData.customDeduction,
+            business_owner: formData.businessOwner,
+            full_name: formData.fullName,
+            email: formData.email,
+            dependents: formData.dependents,
+            home_address: formData.homeAddress,
+            state: formData.state,
+            wages_income: formData.wagesIncome,
+            passive_income: formData.passiveIncome,
+            unearned_income: formData.unearnedIncome,
+            capital_gains: formData.capitalGains,
+            business_name: formData.businessName,
+            entity_type: formData.entityType,
+            business_address: formData.businessAddress,
+            ordinary_k1_income: formData.ordinaryK1Income,
+            guaranteed_k1_income: formData.guaranteedK1Income,
+            household_income: formData.householdIncome,
+            deduction_limit_reached: formData.deductionLimitReached,
+            updated_at: new Date().toISOString()
+          }
+        ], { onConflict: 'user_id' });
+
+      if (taxError) throw taxError;
+
+      // Update Zustand store with the latest form data
+      setTaxInfo(formData);
+      console.log('Updated tax info in store:', formData);
+
+      // Call the onSubmit callback with the form data
       onSubmit(formData, selectedYear);
     } catch (error) {
-      console.error('Failed to save form data:', error);
-      alert('Failed to save form data. Please try again.');
+      console.error('Error in handleSubmit:', error);
+      if (error instanceof Error) {
+        console.error('Error details:', {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        });
+      }
+      alert(`Failed to save form data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
-  if (!isLoaded) {
-    return <div>Loading...</div>;
-  }
+  // Add professional input formatting and validation
+  const formatCurrency = (value: string): string => {
+    // Remove non-numeric characters except decimal
+    const numericValue = value.replace(/[^\d.]/g, '');
+    
+    // Parse and format with commas
+    const number = parseFloat(numericValue);
+    if (isNaN(number)) return '';
+    
+    return number.toLocaleString('en-US');
+  };
+
+  const validateIncome = (income: number): string | null => {
+    if (income < 0) return 'Income cannot be negative';
+    if (income > 100000000) return 'Please contact us for high-net-worth planning above $100M';
+    if (income < 1000) return 'Minimum income of $1,000 required for analysis';
+    return null;
+  };
+
+  const validateAge = (age: number): string | null => {
+    if (age < 18) return 'Must be 18 or older';
+    if (age > 120) return 'Please enter a valid age';
+    return null;
+  };
 
   return (
     <div className="max-w-6xl mx-auto p-8">
@@ -175,63 +239,29 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
               animate={{ opacity: 1, y: 0 }}
               className="bg-white rounded-xl shadow-sm p-8"
             >
-              <div className="flex items-start space-x-6 mb-8">
-                <label className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={formData.standardDeduction}
-                    onChange={(e) => setFormData(prev => ({ ...prev, standardDeduction: e.target.checked }))}
-                    className="w-5 h-5 rounded border-gray-300 text-[#12ab61] focus:ring-[#12ab61]"
-                  />
-                  <span>Standard Deduction</span>
-                </label>
-                <label className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={formData.businessOwner}
-                    onChange={(e) => setFormData(prev => ({ ...prev, businessOwner: e.target.checked }))}
-                    className="w-5 h-5 rounded border-gray-300 text-[#12ab61] focus:ring-[#12ab61]"
-                  />
-                  <span>Business Owner</span>
-                </label>
-              </div>
-
-              {!formData.standardDeduction && (
-                <div className="mb-8">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Custom Deduction Amount
-                  </label>
-                  <NumericFormat
-                    value={formData.customDeduction}
-                    onValueChange={(values) => setFormData(prev => ({ ...prev, customDeduction: values.floatValue || 0 }))}
-                    thousandSeparator={true}
-                    prefix="$"
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#12ab61]"
-                    placeholder="Enter custom deduction amount"
-                  />
-                </div>
-              )}
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
-                  <select
-                    value={formData.state}
-                    onChange={(e) => setFormData(prev => ({ ...prev, state: e.target.value }))}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#12ab61]"
-                  >
-                    {states.map(state => (
-                      <option key={state.code} value={state.code}>{state.name}</option>
-                    ))}
-                  </select>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Full Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.fullName}
+                    onChange={(e) => setFormData(prev => ({ ...prev, fullName: e.target.value }))}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
+                    required
+                  />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Filing Status</label>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Filing Status <span className="text-red-500">*</span>
+                  </label>
                   <select
                     value={formData.filingStatus}
-                    onChange={(e) => setFormData(prev => ({ ...prev, filingStatus: e.target.value as TaxInfo['filingStatus'] }))}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#12ab61]"
+                    onChange={(e) => setFormData(prev => ({ ...prev, filingStatus: e.target.value as any }))}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
+                    required
                   >
                     <option value="single">Single</option>
                     <option value="married_joint">Married Filing Jointly</option>
@@ -241,212 +271,181 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Number of Dependents</label>
+                  <label className="block text-sm font-medium text-gray-700">
+                    State <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={formData.state}
+                    onChange={(e) => setFormData(prev => ({ ...prev, state: e.target.value }))}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
+                    required
+                  >
+                    {states.map(state => (
+                      <option key={state.code} value={state.code}>
+                        {state.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Number of Dependents
+                  </label>
                   <input
                     type="number"
                     min="0"
                     value={formData.dependents}
                     onChange={(e) => setFormData(prev => ({ ...prev, dependents: parseInt(e.target.value) || 0 }))}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#12ab61]"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                  <input
-                    type="text"
-                    value={formData.fullName}
-                    onChange={(e) => setFormData(prev => ({ ...prev, fullName: e.target.value }))}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#12ab61]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                  <input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#12ab61]"
-                  />
-                </div>
-
-                <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Home Address</label>
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                    <Autocomplete
-                      apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY}
-                      defaultValue={formData.homeAddress}
-                      onPlaceSelected={handleHomeAddressSelect}
-                      className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#12ab61]"
-                      options={{
-                        types: ['address'],
-                        componentRestrictions: { country: 'us' }
-                      }}
+                  <label className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.businessOwner}
+                      onChange={(e) => setFormData(prev => ({ ...prev, businessOwner: e.target.checked }))}
+                      className="rounded border-gray-300 text-[#12ab61] focus:ring-[#12ab61]"
                     />
-                  </div>
-                  <div className="mt-4 h-[300px] rounded-lg overflow-hidden">
-                    <GoogleMap
-                      center={homeLocation}
-                      zoom={18}
-                      mapContainerStyle={mapContainerStyle}
-                      options={mapOptions}
-                    >
-                      <Marker position={homeLocation} />
-                    </GoogleMap>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">W-2 Income</label>
-                  <NumericFormat
-                    value={formData.wagesIncome}
-                    onValueChange={(values) => setFormData(prev => ({ ...prev, wagesIncome: values.floatValue || 0 }))}
-                    thousandSeparator={true}
-                    prefix="$"
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#12ab61]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Passive Income</label>
-                  <NumericFormat
-                    value={formData.passiveIncome}
-                    onValueChange={(values) => setFormData(prev => ({ ...prev, passiveIncome: values.floatValue || 0 }))}
-                    thousandSeparator={true}
-                    prefix="$"
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#12ab61]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Unearned Income</label>
-                  <NumericFormat
-                    value={formData.unearnedIncome}
-                    onValueChange={(values) => setFormData(prev => ({ ...prev, unearnedIncome: values.floatValue || 0 }))}
-                    thousandSeparator={true}
-                    prefix="$"
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#12ab61]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Capital Gains</label>
-                  <NumericFormat
-                    value={formData.capitalGains}
-                    onValueChange={(values) => setFormData(prev => ({ ...prev, capitalGains: values.floatValue || 0 }))}
-                    thousandSeparator={true}
-                    prefix="$"
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#12ab61]"
-                  />
+                    <span className="text-sm font-medium text-gray-700">I own a business</span>
+                  </label>
                 </div>
               </div>
 
-              {formData.businessOwner && (
-                <div className="mt-8 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('business')}
-                    className="flex items-center space-x-2 text-[#12ab61] hover:text-[#0f9654]"
-                  >
-                    <span>Next: Business Information</span>
-                    <MapPin size={20} />
-                  </button>
-                </div>
-              )}
-            </motion.div>
-          </Tabs.Content>
-
-          <Tabs.Content value="business">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white rounded-xl shadow-sm p-8"
-            >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Business Name</label>
-                  <input
-                    type="text"
-                    value={formData.businessName}
-                    onChange={(e) => setFormData(prev => ({ ...prev, businessName: e.target.value }))}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#12ab61]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Entity Type</label>
-                  <select
-                    value={formData.entityType}
-                    onChange={(e) => setFormData(prev => ({ ...prev, entityType: e.target.value as TaxInfo['entityType'] }))}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#12ab61]"
-                  >
-                    <option value="LLC">LLC</option>
-                    <option value="S-Corp">S-Corporation</option>
-                    <option value="C-Corp">C-Corporation</option>
-                    <option value="Sole Prop">Sole Proprietorship</option>
-                  </select>
-                </div>
-
-                <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Business Address</label>
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                    <Autocomplete
-                      apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY}
-                      defaultValue={formData.businessAddress}
-                      onPlaceSelected={handleBusinessAddressSelect}
-                      className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#12ab61]"
-                      options={{
-                        types: ['address'],
-                        componentRestrictions: { country: 'us' }
-                      }}
+              <div className="mt-8">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Income Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Wages/Salary Income
+                    </label>
+                    <NumericFormat
+                      value={formData.wagesIncome}
+                      onValueChange={(values) => setFormData(prev => ({ ...prev, wagesIncome: values.floatValue || 0 }))}
+                      thousandSeparator={true}
+                      prefix="$"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
                     />
                   </div>
-                  <div className="mt-4 h-[300px] rounded-lg overflow-hidden">
-                    <GoogleMap
-                      center={businessLocation}
-                      zoom={18}
-                      mapContainerStyle={mapContainerStyle}
-                      options={mapOptions}
-                    >
-                      <Marker position={businessLocation} />
-                    </GoogleMap>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Passive Income
+                    </label>
+                    <NumericFormat
+                      value={formData.passiveIncome}
+                      onValueChange={(values) => setFormData(prev => ({ ...prev, passiveIncome: values.floatValue || 0 }))}
+                      thousandSeparator={true}
+                      prefix="$"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
+                    />
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Ordinary K-1 Income</label>
-                  <NumericFormat
-                    value={formData.ordinaryK1Income}
-                    onValueChange={(values) => setFormData(prev => ({ ...prev, ordinaryK1Income: values.floatValue || 0 }))}
-                    thousandSeparator={true}
-                    prefix="$"
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#12ab61]"
-                  />
-                </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Unearned Income
+                    </label>
+                    <NumericFormat
+                      value={formData.unearnedIncome}
+                      onValueChange={(values) => setFormData(prev => ({ ...prev, unearnedIncome: values.floatValue || 0 }))}
+                      thousandSeparator={true}
+                      prefix="$"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Guaranteed K-1 Income</label>
-                  <NumericFormat
-                    value={formData.guaranteedK1Income}
-                    onValueChange={(values) => setFormData(prev => ({ ...prev, guaranteedK1Income: values.floatValue || 0 }))}
-                    thousandSeparator={true}
-                    prefix="$"
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#12ab61]"
-                  />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Capital Gains
+                    </label>
+                    <NumericFormat
+                      value={formData.capitalGains}
+                      onValueChange={(values) => setFormData(prev => ({ ...prev, capitalGains: values.floatValue || 0 }))}
+                      thousandSeparator={true}
+                      prefix="$"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
+                    />
+                  </div>
                 </div>
               </div>
             </motion.div>
           </Tabs.Content>
+
+          {formData.businessOwner && (
+            <Tabs.Content value="business">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-white rounded-xl shadow-sm p-8"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Business Name
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.businessName}
+                      onChange={(e) => setFormData(prev => ({ ...prev, businessName: e.target.value }))}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Entity Type
+                    </label>
+                    <select
+                      value={formData.entityType || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, entityType: e.target.value as 'LLC' | 'S-Corp' | 'C-Corp' | 'Sole Prop' | undefined }))}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
+                    >
+                      <option value="">Select Entity Type</option>
+                      <option value="LLC">LLC</option>
+                      <option value="S-Corp">S-Corporation</option>
+                      <option value="C-Corp">C-Corporation</option>
+                      <option value="Sole Prop">Sole Proprietorship</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Ordinary K-1 Income
+                    </label>
+                    <NumericFormat
+                      value={formData.ordinaryK1Income}
+                      onValueChange={(values) => setFormData(prev => ({ ...prev, ordinaryK1Income: values.floatValue || 0 }))}
+                      thousandSeparator={true}
+                      prefix="$"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Guaranteed K-1 Income
+                    </label>
+                    <NumericFormat
+                      value={formData.guaranteedK1Income}
+                      onValueChange={(values) => setFormData(prev => ({ ...prev, guaranteedK1Income: values.floatValue || 0 }))}
+                      thousandSeparator={true}
+                      prefix="$"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
+                    />
+                  </div>
+                </div>
+              </motion.div>
+            </Tabs.Content>
+          )}
 
           <div className="mt-8 flex justify-end">
             <button
               type="submit"
-              className="px-6 py-2 bg-[#12ab61] text-white rounded-lg hover:bg-[#0f9654]"
+              className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-[#12ab61] hover:bg-[#0f9a57] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#12ab61]"
             >
-              Calculate Tax Savings
+              Save and Continue
             </button>
           </div>
         </form>

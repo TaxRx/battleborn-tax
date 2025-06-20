@@ -1,0 +1,62 @@
+[build]
+  command = "npm install && npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20.5.0"
+  NPM_VERSION = "10.0.0"
+
+# Support client-side routing
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Add security headers
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    Content-Security-Policy = "default-src 'self' https://cozy-sprite-1c6fec.netlify.app https://battleborn.life https://*.supabase.co; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://*.unsplash.com https://*.supabase.co; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co https://api.web3forms.com;"
+
+# Redirect all routes to index.html for SPA
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Force HTTPS
+[[redirects]]
+  from = "http://*"
+  to = "https://:splat"
+  status = 301
+  force = true
+
+# Headers to handle CORS and security
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+    Access-Control-Allow-Headers = "X-Requested-With, content-type, Authorization, apikey, X-Client-Info"
+    Content-Security-Policy = """
+      default-src 'self';
+      connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.googleapis.com https://maps.googleapis.com;
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://maps.googleapis.com;
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.googleapis.com;
+      style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.googleapis.com;
+      font-src 'self' data: https://fonts.gstatic.com;
+      img-src 'self' data: https://*.googleapis.com https://*.gstatic.com https://images.unsplash.com https://*.unsplash.com blob:;
+      frame-src 'self' https://*.supabase.co https://*.googleapis.com https://*.google.com;
+      worker-src 'self' blob:;
+      manifest-src 'self';
+    """
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(self), camera=(), microphone=()"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+
+[functions]
+  node_bundler = "esbuild" 

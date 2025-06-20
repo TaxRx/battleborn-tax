@@ -1,8 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ChevronDown, ChevronUp, ToggleLeft, ToggleRight } from 'lucide-react';
-import { TaxInfo, TaxRates, TaxStrategy } from '../types';
+import { TaxInfo, TaxRates, TaxStrategy, TaxBreakdown } from '../types';
 import { calculateTaxBreakdown } from '../utils/taxCalculations';
 import { useTaxStore } from '../store/taxStore';
+
+interface ProgressBarData {
+  totalIncome: number;
+  shiftedIncome: number;
+  deferredIncome: number;
+  baseBreakdown: TaxBreakdown;
+  strategyBreakdown: TaxBreakdown;
+  charitableDonationAmount: number;
+  progressColors: { [key: string]: string };
+}
 
 interface TaxBracketBreakdownProps {
   taxInfo: TaxInfo;
@@ -10,6 +20,67 @@ interface TaxBracketBreakdownProps {
   strategies: TaxStrategy[];
   isExpanded: boolean;
   onToggle: () => void;
+  progressBarData?: ProgressBarData;
+}
+
+// Clean Progress Bar Component
+interface CleanProgressBarProps {
+  title: string;
+  data: { label: string; value: number; color: string }[];
+  total: number;
+}
+
+function CleanProgressBar({ title, data, total }: CleanProgressBarProps) {
+  const validData = data.filter(item => item.value > 0);
+  
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="heading-tertiary text-professional-navy mb-1">{title}</h3>
+        <div className="text-sm text-gray-600">
+          Total: <span className="font-semibold">${Math.round(total).toLocaleString()}</span>
+        </div>
+      </div>
+      
+      {/* Single stacked progress bar */}
+      <div>
+        <div className="w-full bg-gray-200 h-6 flex overflow-hidden" style={{ borderRadius: '4px' }}>
+          {validData.map((item, index) => {
+            const percentage = total > 0 ? (item.value / total) * 100 : 0;
+            return (
+              <div
+                key={index}
+                className="h-full"
+                style={{
+                  width: `${percentage}%`,
+                  backgroundColor: item.color,
+                }}
+                title={`${item.label}: $${Math.round(item.value).toLocaleString()} (${percentage.toFixed(1)}%)`}
+              />
+            );
+          })}
+        </div>
+        
+        {/* Legend */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 mt-3">
+          {validData.map((item, index) => {
+            const percentage = total > 0 ? (item.value / total) * 100 : 0;
+            return (
+              <div key={index} className="flex items-center space-x-2 text-xs">
+                <div
+                  className="w-3 h-3 flex-shrink-0"
+                  style={{ backgroundColor: item.color, borderRadius: '2px' }}
+                />
+                <span className="text-gray-700 truncate">
+                  {item.label}: ${Math.round(item.value).toLocaleString()}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function TaxBracketBreakdown({
@@ -17,7 +88,8 @@ export default function TaxBracketBreakdown({
   rates,
   strategies,
   isExpanded,
-  onToggle
+  onToggle,
+  progressBarData
 }: TaxBracketBreakdownProps) {
   const [showFederalBrackets, setShowFederalBrackets] = useState(false);
   const [showStateBrackets, setShowStateBrackets] = useState(false);
@@ -62,14 +134,12 @@ export default function TaxBracketBreakdown({
       }, 0);
   }, [strategies]);
 
-  // Calculate deferred income
+  // Calculate deferred income (simplified for now)
   const deferredIncome = useMemo(() => {
     return strategies
       .filter(s => s.enabled && s.category === 'income_deferred')
       .reduce((total, strategy) => {
-        if (strategy.details?.deferredAmount) {
-          return total + strategy.details.deferredAmount;
-        }
+        // Add specific logic for deferred income strategies when they exist
         return total;
       }, 0);
   }, [strategies]);
@@ -126,6 +196,62 @@ export default function TaxBracketBreakdown({
 
       {isExpanded && (
         <>
+          {/* Progress Bars Section */}
+          {progressBarData && (
+            <div className="card-professional mb-6">
+              <div className="space-y-8">
+                {/* Income Distribution */}
+                <CleanProgressBar
+                  title="Income Distribution"
+                  data={[
+                    { label: 'W-2 Income', value: taxInfo.wagesIncome, color: progressBarData.progressColors.w2Income },
+                    { label: 'Passive Income', value: taxInfo.passiveIncome, color: progressBarData.progressColors.passiveIncome },
+                    { label: 'Unearned Income', value: taxInfo.unearnedIncome, color: progressBarData.progressColors.unearnedIncome },
+                    { label: 'Ordinary K-1', value: taxInfo.ordinaryK1Income || 0, color: progressBarData.progressColors.ordinaryK1 },
+                    { label: 'Guaranteed K-1', value: taxInfo.guaranteedK1Income || 0, color: progressBarData.progressColors.guaranteedK1 }
+                  ]}
+                  total={progressBarData.totalIncome}
+                />
+
+                {/* Divider */}
+                <div className="border-t border-gray-200"></div>
+
+                {/* Before Strategies */}
+                <CleanProgressBar
+                  title="Before Strategies"
+                  data={[
+                    { label: 'Federal Tax', value: progressBarData.baseBreakdown.federal, color: progressBarData.progressColors.federal },
+                    { label: 'State Tax', value: progressBarData.baseBreakdown.state, color: progressBarData.progressColors.state },
+                    { label: 'Social Security', value: progressBarData.baseBreakdown.socialSecurity, color: progressBarData.progressColors.socialSecurity },
+                    { label: 'Medicare', value: progressBarData.baseBreakdown.medicare, color: progressBarData.progressColors.medicare },
+                    { label: 'Self-Employment Tax', value: progressBarData.baseBreakdown.selfEmployment, color: progressBarData.progressColors.selfEmployment },
+                    { label: 'Take Home', value: progressBarData.totalIncome - progressBarData.baseBreakdown.total, color: progressBarData.progressColors.takeHome }
+                  ]}
+                  total={progressBarData.totalIncome}
+                />
+
+                {/* Divider */}
+                <div className="border-t border-gray-200"></div>
+
+                {/* After Strategies */}
+                <CleanProgressBar
+                  title="After Strategies"
+                  data={[
+                    { label: 'Federal Tax', value: progressBarData.strategyBreakdown.federal, color: progressBarData.progressColors.federal },
+                    { label: 'State Tax', value: progressBarData.strategyBreakdown.state, color: progressBarData.progressColors.state },
+                    { label: 'Social Security', value: progressBarData.strategyBreakdown.socialSecurity, color: progressBarData.progressColors.socialSecurity },
+                    { label: 'Medicare', value: progressBarData.strategyBreakdown.medicare, color: progressBarData.progressColors.medicare },
+                    { label: 'Self-Employment Tax', value: progressBarData.strategyBreakdown.selfEmployment, color: progressBarData.progressColors.selfEmployment },
+                    { label: 'Income Shifted', value: progressBarData.shiftedIncome, color: progressBarData.progressColors.incomeShifted },
+                    { label: 'Income Deferred', value: progressBarData.deferredIncome, color: progressBarData.progressColors.incomeDeferred },
+                    { label: 'Take Home', value: progressBarData.totalIncome - progressBarData.strategyBreakdown.total - progressBarData.shiftedIncome - progressBarData.deferredIncome, color: progressBarData.progressColors.takeHome }
+                  ]}
+                  total={progressBarData.totalIncome}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="bg-gray-50 rounded-xl p-6 mb-6">
             {taxInfo.deductionLimitReached && (
               <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">

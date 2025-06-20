@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
-import ChartDataLabels from 'chartjs-plugin-datalabels';
-import { Doughnut } from 'react-chartjs-2';
-import { ChevronDown, ChevronRight, Save, BarChart2, Table as TableIcon } from 'lucide-react';
+import { ChevronDown, ChevronRight, Save, BarChart2, Table as TableIcon, Shield, Lock, Info } from 'lucide-react';
 import { TaxInfo, TaxRates, TaxStrategy, TaxBreakdown, SavedCalculation } from '../types';
 import { taxRates } from '../data/taxRates';
 import { calculateTaxBreakdown, calculateStrategyTaxSavings } from '../utils/taxCalculations';
+import { debugCalculations } from '../utils/debug';
 import { getTaxStrategies } from '../utils/taxStrategies';
 import TaxBracketBreakdown from './TaxBracketBreakdown';
 import AugustaRuleCalculator from './AugustaRuleCalculator';
@@ -13,11 +11,11 @@ import HireChildrenCalculator from './HireChildrenCalculator';
 import CharitableDonationCalculator from './CharitableDonationCalculator';
 import CostSegregationCalculator from './CostSegregationCalculator';
 import FmcModal from './FmcModal';
-import UpdateDialog from './UpdateDialog';
+import InfoForm from './InfoForm';
 import StrategyCards from './StrategyCards';
 import styled from 'styled-components';
-
-ChartJS.register(ArcElement, Tooltip, Legend, ChartDataLabels);
+import { useTaxStore } from '../store/taxStore';
+import * as Dialog from '@radix-ui/react-dialog';
 
 interface TaxResultsProps {
   taxInfo: TaxInfo;
@@ -32,6 +30,59 @@ interface TaxBreakdownTableProps {
   breakdown: TaxBreakdown;
   totalIncome: number;
   label: string;
+}
+
+// Professional Trust Header Component
+function ProfessionalHeader() {
+  return (
+    <div className="professional-header mb-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <div>
+            <h1 className="heading-primary text-professional-navy">Tax Strategy Calculator</h1>
+            <div className="flex items-center space-x-4 mt-2">
+              <div className="certification-badge">
+                Professional Tax Analysis
+              </div>
+              <div className="security-indicator">
+                <Lock className="h-4 w-4" />
+                <span>Secure & Confidential</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="trust-badge mb-2">
+            <Shield className="h-4 w-4 mr-1" />
+            Licensed Professional
+          </div>
+          <div className="text-sm text-gray-600">
+            Calculations based on current tax code
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Professional Disclaimer Component
+function ProfessionalDisclaimer() {
+  return (
+    <div className="alert-info">
+      <div className="flex items-start space-x-2">
+        <Info className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+        <div className="text-sm">
+          <p className="font-semibold mb-1">Professional Disclaimer</p>
+          <p>
+            This calculator provides estimates based on current tax laws and your inputs. 
+            Results are for informational purposes only and should not be considered as tax advice. 
+            Individual circumstances may affect actual tax liability. 
+            <strong> Consult with a qualified tax professional for personalized advice.</strong>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function TaxBreakdownTable({ breakdown, totalIncome, label }: TaxBreakdownTableProps) {
@@ -58,175 +109,158 @@ function TaxBreakdownTable({ breakdown, totalIncome, label }: TaxBreakdownTableP
 
   return (
     <div className="w-full">
-      <table className="w-full text-left">
-        <thead>
-          <tr className="border-b">
-            <th className="py-2 text-xs font-medium text-gray-500 uppercase tracking-wider leading-[1.1]">
-              {label}
-            </th>
-            <th className="py-2 text-xs font-medium text-gray-500 uppercase tracking-wider text-right leading-[1.1]">
-              ANNUAL RESULTS
-            </th>
-            <th className="py-2 text-xs font-medium text-gray-500 uppercase tracking-wider text-right leading-[1.1]">
-              MARGINAL
-            </th>
-            <th className="py-2 text-xs font-medium text-gray-500 uppercase tracking-wider text-right leading-[1.1]">
-              AVERAGE
-            </th>
-          </tr>
-        </thead>
-        <tbody className="text-sm">
-          <tr className="border-b">
-            <td className="py-2">Federal Tax:</td>
-            <td className="text-right">${breakdown.federal.toLocaleString()}</td>
-            <td className="text-right">{getMarginalRate('federal')}</td>
-            <td className="text-right">{getAverageRate(breakdown.federal)}</td>
-          </tr>
-          <tr className="border-b">
-            <td className="py-2">State Tax:</td>
-            <td className="text-right">${breakdown.state.toLocaleString()}</td>
-            <td className="text-right">{getMarginalRate('state')}</td>
-            <td className="text-right">{getAverageRate(breakdown.state)}</td>
-          </tr>
-          <tr className="border-b">
-            <td className="py-2">Self-Employment Tax:</td>
-            <td className="text-right">${breakdown.selfEmployment.toLocaleString()}</td>
-            <td className="text-right">{getMarginalRate('selfEmployment')}</td>
-            <td className="text-right">{getAverageRate(breakdown.selfEmployment)}</td>
-          </tr>
-          <tr className="border-b">
-            <td className="py-2">Social Security Tax:</td>
-            <td className="text-right">${breakdown.socialSecurity.toLocaleString()}</td>
-            <td className="text-right">{getMarginalRate('socialSecurity')}</td>
-            <td className="text-right">{getAverageRate(breakdown.socialSecurity)}</td>
-          </tr>
-          <tr className="border-b">
-            <td className="py-2">Medicare Tax:</td>
-            <td className="text-right">${breakdown.medicare.toLocaleString()}</td>
-            <td className="text-right">{getMarginalRate('medicare')}</td>
-            <td className="text-right">{getAverageRate(breakdown.medicare)}</td>
-          </tr>
-          <tr className="border-t-2 font-bold">
-            <td className="py-2">TOTAL TAX:</td>
-            <td className="text-right">${breakdown.total.toLocaleString()}</td>
-            <td className="text-right">-</td>
-            <td className="text-right">{getAverageRate(breakdown.total)}</td>
-          </tr>
-          <tr className="font-bold text-green-600">
-            <td className="py-2">YOU KEEP:</td>
-            <td className="text-right">${(totalIncome - breakdown.total).toLocaleString()}</td>
-            <td className="text-right">-</td>
-            <td className="text-right">{((1 - breakdown.total / totalIncome) * 100).toFixed(2)}%</td>
-          </tr>
-        </tbody>
-      </table>
+      <div className="data-table">
+        <table className="w-full">
+          <thead>
+            <tr>
+              <th className="text-left">
+                {label}
+              </th>
+              <th className="text-right">
+                ANNUAL RESULTS
+              </th>
+              <th className="text-right">
+                MARGINAL
+              </th>
+              <th className="text-right">
+                AVERAGE
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Federal Tax:</td>
+              <td className="text-right font-semibold">${breakdown.federal.toLocaleString()}</td>
+              <td className="text-right">{getMarginalRate('federal')}</td>
+              <td className="text-right">{getAverageRate(breakdown.federal)}</td>
+            </tr>
+            <tr>
+              <td>State Tax:</td>
+              <td className="text-right font-semibold">${breakdown.state.toLocaleString()}</td>
+              <td className="text-right">{getMarginalRate('state')}</td>
+              <td className="text-right">{getAverageRate(breakdown.state)}</td>
+            </tr>
+            <tr>
+              <td>Self-Employment Tax:</td>
+              <td className="text-right font-semibold">${breakdown.selfEmployment.toLocaleString()}</td>
+              <td className="text-right">{getMarginalRate('selfEmployment')}</td>
+              <td className="text-right">{getAverageRate(breakdown.selfEmployment)}</td>
+            </tr>
+            <tr>
+              <td>Social Security Tax:</td>
+              <td className="text-right font-semibold">${breakdown.socialSecurity.toLocaleString()}</td>
+              <td className="text-right">{getMarginalRate('socialSecurity')}</td>
+              <td className="text-right">{getAverageRate(breakdown.socialSecurity)}</td>
+            </tr>
+            <tr>
+              <td>Medicare Tax:</td>
+              <td className="text-right font-semibold">${breakdown.medicare.toLocaleString()}</td>
+              <td className="text-right">{getMarginalRate('medicare')}</td>
+              <td className="text-right">{getAverageRate(breakdown.medicare)}</td>
+            </tr>
+            <tr className="bg-gray-50 font-bold">
+              <td className="font-bold">TOTAL TAX:</td>
+              <td className="text-right font-bold text-lg">${breakdown.total.toLocaleString()}</td>
+              <td className="text-right">-</td>
+              <td className="text-right">{getAverageRate(breakdown.total)}</td>
+            </tr>
+            <tr className="bg-green-50 font-bold text-green-700">
+              <td className="font-bold">YOU KEEP:</td>
+              <td className="text-right font-bold text-lg">${(totalIncome - breakdown.total).toLocaleString()}</td>
+              <td className="text-right">-</td>
+              <td className="text-right">{((1 - breakdown.total / totalIncome) * 100).toFixed(2)}%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
-const KPIContainer = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 2rem;
-  margin: 2rem 0;
-  padding: 1rem;
-  background: #f8fafc;
-  border-radius: 16px;
-`;
+// Progress bar colors
+const progressColors = {
+  federal: '#3b82f6',      // Blue
+  state: '#ef4444',        // Red  
+  socialSecurity: '#f59e0b', // Yellow
+  medicare: '#8b5cf6',     // Purple
+  selfEmployment: '#f97316', // Orange
+  takeHome: '#10b981',     // Green
+  incomeShifted: '#dc2626', // Dark Red
+  incomeDeferred: '#059669', // Dark Green
+  w2Income: '#3b82f6',     // Blue
+  passiveIncome: '#ef4444', // Red
+  unearnedIncome: '#f59e0b', // Yellow
+  ordinaryK1: '#8b5cf6',   // Purple
+  guaranteedK1: '#f97316'  // Orange
+};
 
-const KPICard = styled.div`
-  background: white;
-  border-radius: 12px;
-  padding: 2rem;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  transition: transform 0.2s ease-in-out;
+// Clean Progress Bar Component matching the provided image design
+interface CleanProgressBarProps {
+  title: string;
+  data: { label: string; value: number; color: string }[];
+  total: number;
+}
+
+function CleanProgressBar({ title, data, total }: CleanProgressBarProps) {
+  const validData = data.filter(item => item.value > 0);
   
-  &:hover {
-    transform: translateY(-4px);
-  }
-`;
-
-const KPILabel = styled.div`
-  font-size: 1rem;
-  color: #475569;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-`;
-
-const KPIValue = styled.div`
-  font-size: 2.25rem;
-  font-weight: 700;
-  color: #1e293b;
-  font-feature-settings: "tnum";
-  font-variant-numeric: tabular-nums;
-`;
-
-const KPISubtext = styled.div`
-  font-size: 0.875rem;
-  color: #64748b;
-  line-height: 1.5;
-`;
-
-const MissionContainer = styled.div`
-  background: linear-gradient(135deg, #1a1a3f 0%, #2d2d67 100%);
-  border-radius: 16px;
-  padding: 3rem;
-  color: white;
-  margin-bottom: 3rem;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-`;
-
-const MissionTitle = styled.h2`
-  font-size: 2.5rem;
-  font-weight: 700;
-  margin-bottom: 2rem;
-  background: linear-gradient(90deg, #fff 0%, #e0e7ff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-`;
-
-const MissionText = styled.p`
-  font-size: 1.125rem;
-  line-height: 1.75;
-  color: #e2e8f0;
-  margin-bottom: 2rem;
-`;
-
-const MissionList = styled.ul`
-  list-style-type: none;
-  padding: 0;
-  margin: 1.5rem 0;
-`;
-
-const MissionItem = styled.li`
-  display: flex;
-  align-items: center;
-  margin-bottom: 1rem;
-  font-size: 1.125rem;
-  color: #e2e8f0;
-  
-  &:before {
-    content: "•";
-    color: #818cf8;
-    font-weight: bold;
-    margin-right: 1rem;
-  }
-`;
-
-const MissionSection = styled.div`
-  margin-top: 2rem;
-  
-  h3 {
-    font-size: 1.5rem;
-    font-weight: 600;
-    color: #818cf8;
-    margin-bottom: 1rem;
-  }
-`;
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="heading-tertiary text-professional-navy mb-1">{title}</h3>
+        <div className="text-sm text-gray-600">
+          Total: <span className="font-semibold">${Math.round(total).toLocaleString()}</span>
+        </div>
+      </div>
+      
+      {/* Single stacked progress bar */}
+      <div>
+        <div className="w-full bg-gray-200 h-6 flex overflow-hidden" style={{ borderRadius: '4px' }}>
+          {validData.map((item, index) => {
+            const percentage = total > 0 ? (item.value / total) * 100 : 0;
+            return (
+              <div
+                key={index}
+                className="h-full flex items-center justify-center text-xs font-medium text-white"
+                style={{
+                  backgroundColor: item.color,
+                  width: `${percentage}%`,
+                  minWidth: percentage > 5 ? 'auto' : '0px'
+                }}
+              >
+                {percentage > 8 && `${percentage.toFixed(1)}%`}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      
+      {/* Legend */}
+      <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+        {validData.map((item, index) => {
+          const percentage = total > 0 ? (item.value / total) * 100 : 0;
+          return (
+            <div key={index} className="flex items-center space-x-2">
+              <div 
+                className="w-3 h-3 flex-shrink-0" 
+                style={{ 
+                  backgroundColor: item.color,
+                  borderRadius: '2px'
+                }}
+              />
+              <span className="text-sm text-gray-700 flex-1">
+                {item.label}
+              </span>
+              <span className="text-sm font-medium text-gray-900">
+                {percentage.toFixed(1)}%
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function TaxResults({ 
   taxInfo, 
@@ -239,8 +273,7 @@ export default function TaxResults({
   const [expandedCategories, setExpandedCategories] = useState<string[]>(['income_shifted']);
   const [expandedStrategies, setExpandedStrategies] = useState<string[]>([]);
   const [showBracketBreakdown, setShowBracketBreakdown] = useState(false);
-  const [showUpdateButton, setShowUpdateButton] = useState(false);
-  const [showUpdateDialog, setShowUpdateDialog] = useState(false);
+  const [showInfoForm, setShowInfoForm] = useState(false);
   const [showBeforeTable, setShowBeforeTable] = useState(false);
   const [showAfterTable, setShowAfterTable] = useState(false);
   const [showFmcModal, setShowFmcModal] = useState(false);
@@ -265,9 +298,28 @@ export default function TaxResults({
     [currentTaxInfo, rates, strategies]
   );
 
+  const { setTaxInfo, selectedStrategies, updateStrategy, removeStrategy } = useTaxStore();
+
   useEffect(() => {
     setCurrentTaxInfo(taxInfo);
   }, [taxInfo]);
+
+  // Sync strategies with store - merge local generated strategies with store strategies
+  useEffect(() => {
+    const generatedStrategies = getTaxStrategies(currentTaxInfo, calculateTaxBreakdown(currentTaxInfo, taxRates[selectedYear]));
+    
+    // Merge store strategies with generated strategies
+    const mergedStrategies = generatedStrategies.map(generated => {
+      const storeStrategy = selectedStrategies.find(s => s.id === generated.id);
+      if (storeStrategy) {
+        // Use store strategy if it exists (it's enabled and has details)
+        return storeStrategy;
+      }
+      return generated;
+    });
+
+    setStrategies(mergedStrategies);
+  }, [currentTaxInfo, selectedYear, selectedStrategies]);
 
   useEffect(() => {
     const enabledStrategies = strategies.filter(s => s.enabled);
@@ -282,12 +334,24 @@ export default function TaxResults({
   }, [strategies, onStrategiesSelect]);
 
   const handleStrategySelect = useCallback((strategyId: string) => {
-    setShowUpdateButton(true);
     setExpandedStrategies(prev =>
       prev.includes(strategyId)
         ? prev.filter(id => id !== strategyId)
         : [...prev, strategyId]
     );
+    
+    // Special handling for Family Management Company
+    if (strategyId === 'family_management_company') {
+      const strategy = strategies.find(s => s.id === strategyId);
+      if (strategy?.enabled) {
+        // If enabled, remove it from the store
+        removeStrategy(strategyId);
+      } else {
+        // If disabled, open modal to configure it
+        setShowFmcModal(true);
+      }
+      return;
+    }
     
     setStrategies(prevStrategies => {
       const updatedStrategies = prevStrategies.map(strategy => {
@@ -309,17 +373,38 @@ export default function TaxResults({
 
       return updatedStrategies;
     });
-  }, [currentTaxInfo, rates]);
+  }, [currentTaxInfo, rates, strategies, removeStrategy]);
 
   const handleStrategySavingsChange = useCallback((strategyId: string, details: any) => {
+    console.log(`TaxResults: handleStrategySavingsChange for ${strategyId}:`, details);
+    
     setStrategies(prevStrategies => {
       const updatedStrategies = prevStrategies.map(s => {
         if (s.id === strategyId) {
           const updatedStrategy = { ...s, details };
-          const { federal, state } = calculateStrategyTaxSavings(currentTaxInfo, rates, updatedStrategy);
+          
+          // For display purposes, show the gross tax benefit (not net for charitable donations)
+          let displayValue = 0;
+          if (strategyId === 'charitable_donation' && details.charitableDonation?.federalSavings !== undefined) {
+            // Show total tax savings, not net benefit for charitable donations in the card
+            displayValue = details.charitableDonation.federalSavings + details.charitableDonation.stateSavings;
+          } else if (strategyId === 'augusta_rule' && details.augustaRule?.totalBenefit !== undefined) {
+            displayValue = details.augustaRule.totalBenefit;
+          } else if (strategyId === 'family_management_company' && details.familyManagementCompany?.totalBenefit !== undefined) {
+            displayValue = details.familyManagementCompany.totalBenefit;
+          } else if (strategyId === 'hire_children' && details.hireChildren?.totalBenefit !== undefined) {
+            displayValue = details.hireChildren.totalBenefit;
+          } else if (strategyId === 'cost_segregation' && details.costSegregation?.totalBenefit !== undefined) {
+            displayValue = details.costSegregation.totalBenefit;
+          } else {
+            // Fallback to tax savings calculation
+            const { federal, state } = calculateStrategyTaxSavings(currentTaxInfo, rates, updatedStrategy);
+            displayValue = federal + state;
+          }
+
           return {
             ...updatedStrategy,
-            estimatedSavings: federal + state
+            estimatedSavings: displayValue
           };
         }
         return s;
@@ -385,34 +470,24 @@ export default function TaxResults({
     const charitableStrategy = strategies.find(s => s.enabled && s.id === 'charitable_donation');
     const charitableDonationAmount = charitableStrategy?.details?.charitableDonation?.donationAmount || 0;
 
-    // Calculate total benefits from all strategies
-    const totalBenefits = strategies
-      .filter(s => s.enabled)
-      .reduce((total, strategy) => {
-        if (strategy.id === 'charitable_donation' && strategy.details?.charitableDonation) {
-          // For charitable donations, use the net benefit
-          return total + strategy.details.charitableDonation.totalBenefit;
-        }
-        if (strategy.details?.augustaRule) {
-          return total + (strategy.details.augustaRule.totalBenefit || 0);
-        }
-        if (strategy.details?.familyManagementCompany) {
-          return total + (strategy.details.familyManagementCompany.totalBenefit || 0);
-        }
-        if (strategy.details?.hireChildren) {
-          return total + (strategy.details.hireChildren.totalBenefit || 0);
-        }
-        if (strategy.details?.costSegregation) {
-          return total + (strategy.details.costSegregation.totalBenefit || 0);
-        }
-        return total + (strategy.estimatedSavings || 0);
-      }, 0);
+    // Calculate raw savings (total tax reduction) - this is the TRUE combined benefit
+    const rawSavings = Math.round(baseBreakdown.total - strategyBreakdown.total);
 
-    // Calculate raw savings (total tax reduction)
-    const rawSavings = baseBreakdown.total - strategyBreakdown.total;
+    // For charitable donations, we need to subtract the donation cost from the tax savings
+    const charitableDonationCost = charitableStrategy?.details?.charitableDonation?.donationAmount || 0;
+    
+    // Net annual savings = tax savings minus any costs (like charitable donations)
+    const annualSavings = Math.round(rawSavings - charitableDonationCost);
 
-    // Use total benefits as annual savings (this is the net benefit)
-    const annualSavings = totalBenefits;
+    // Debug calculations (only when needed)
+    if (strategies.some(s => s.enabled) && process.env.NODE_ENV === 'development') {
+      // Only debug when there are significant changes to prevent spam
+      const enabledIds = strategies.filter(s => s.enabled).map(s => s.id).sort().join(',');
+      if (enabledIds !== (window as any).lastDebugIds) {
+        debugCalculations(currentTaxInfo, rates, strategies);
+        (window as any).lastDebugIds = enabledIds;
+      }
+    }
 
     // Calculate 5-year value with 8% growth
     const fiveYearValue = annualSavings * 5 * 1.08;
@@ -433,115 +508,6 @@ export default function TaxResults({
     };
   }, [currentTaxInfo, strategies, baseBreakdown, strategyBreakdown]);
 
-  const beforeChartData = {
-    labels: ['Federal Tax', 'State Tax', 'Social Security', 'Medicare', 'Self-Employment Tax', 'Take Home'],
-    datasets: [{
-      data: [
-        baseBreakdown.federal,
-        baseBreakdown.state,
-        baseBreakdown.socialSecurity,
-        baseBreakdown.medicare,
-        baseBreakdown.selfEmployment,
-        totalIncome - baseBreakdown.total
-      ],
-      backgroundColor: [
-        'rgba(54, 162, 235, 0.8)',   // Federal - Blue
-        'rgba(255, 99, 132, 0.8)',   // State - Red
-        'rgba(255, 206, 86, 0.8)',   // Social Security - Yellow
-        'rgba(153, 102, 255, 0.8)',  // Medicare - Purple
-        'rgba(255, 159, 64, 0.8)',   // Self-Employment - Orange
-        'rgba(75, 192, 192, 0.8)'    // Take Home - Teal
-      ],
-      borderWidth: 0
-    }]
-  };
-
-  const afterChartData = {
-    labels: ['Federal Tax', 'State Tax', 'Social Security', 'Medicare', 'Self-Employment Tax', 'Income Shifted', 'Income Deferred', 'Take Home'],
-    datasets: [{
-      data: [
-        strategyBreakdown.federal,
-        strategyBreakdown.state,
-        strategyBreakdown.socialSecurity,
-        strategyBreakdown.medicare,
-        strategyBreakdown.selfEmployment,
-        shiftedIncome,
-        deferredIncome,
-        totalIncome - strategyBreakdown.total - shiftedIncome - deferredIncome
-      ],
-      backgroundColor: [
-        'rgba(54, 162, 235, 0.8)',   // Federal - Blue
-        'rgba(255, 99, 132, 0.8)',   // State - Red
-        'rgba(255, 206, 86, 0.8)',   // Social Security - Yellow
-        'rgba(153, 102, 255, 0.8)',  // Medicare - Purple
-        'rgba(255, 159, 64, 0.8)',   // Self-Employment - Orange
-        'rgba(220, 53, 69, 0.8)',    // Income Shifted - Dark Red
-        'rgba(40, 167, 69, 0.8)',    // Income Deferred - Green
-        'rgba(75, 192, 192, 0.8)'    // Take Home - Teal
-      ],
-      borderWidth: 0
-    }]
-  };
-
-  const incomeDistributionData = {
-    labels: ['W-2 Income', 'Passive Income', 'Unearned Income', 'Ordinary K-1', 'Guaranteed K-1'],
-    datasets: [{
-      data: [
-        currentTaxInfo.wagesIncome,
-        currentTaxInfo.passiveIncome,
-        currentTaxInfo.unearnedIncome,
-        currentTaxInfo.ordinaryK1Income || 0,
-        currentTaxInfo.guaranteedK1Income || 0
-      ],
-      backgroundColor: [
-        'rgba(54, 162, 235, 0.8)',   // W-2 - Blue
-        'rgba(255, 99, 132, 0.8)',   // Passive - Red
-        'rgba(255, 206, 86, 0.8)',   // Unearned - Yellow
-        'rgba(153, 102, 255, 0.8)',  // Ordinary K-1 - Purple
-        'rgba(255, 159, 64, 0.8)'    // Guaranteed K-1 - Orange
-      ],
-      borderWidth: 0
-    }]
-  };
-
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'bottom' as const,
-        labels: {
-          boxWidth: 12,
-          padding: 15,
-          font: {
-            family: 'Inter, system-ui, sans-serif',
-            weight: 'normal' as const
-          },
-          color: '#4B5563'
-        }
-      },
-      tooltip: {
-        callbacks: {
-          label: function(context: any) {
-            const value = context.raw;
-            return ` ${context.label}: $${value.toLocaleString()}`;
-          }
-        }
-      },
-      datalabels: {
-        color: '#fff',
-        font: {
-          weight: 'bold' as const,
-          size: 11
-        },
-        formatter: (value: number) => {
-          if (value < 1000) return '';
-          return `$${(value / 1000).toFixed(0)}K`;
-        }
-      }
-    }
-  };
-
   const saveCalculation = useCallback(() => {
     const calculation: SavedCalculation = {
       id: Date.now().toString(),
@@ -552,20 +518,25 @@ export default function TaxResults({
       strategies: strategies.filter(s => s.enabled)
     };
     onSaveCalculation(calculation);
-    setShowUpdateButton(false);
   }, [currentTaxInfo, selectedYear, strategyBreakdown, strategies, onSaveCalculation]);
 
   const handleUpdateInfo = useCallback((updatedInfo: TaxInfo) => {
     setCurrentTaxInfo(updatedInfo);
     const newStrategies = getTaxStrategies(updatedInfo, calculateTaxBreakdown(updatedInfo, rates));
     setStrategies(newStrategies);
-    setShowUpdateDialog(false);
-    setShowUpdateButton(true);
+    setShowInfoForm(false);
   }, [rates]);
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-8">
-      <div className="flex justify-between items-center mb-6 bg-gradient-to-r from-[#1a1a3f] to-[#2d2d67] rounded-xl shadow-xl p-6 text-white">
+      {/* Professional Header */}
+      <ProfessionalHeader />
+      
+      {/* Professional Disclaimer */}
+      <ProfessionalDisclaimer />
+      
+      {/* User Info Bar */}
+      <div className="flex justify-between items-center mb-6 bg-gradient-to-r from-[#1a1a3f] to-[#2d2d67] shadow-xl p-6 text-white" style={{ borderRadius: '4px' }}>
         <div className="flex items-center space-x-4">
           <h2 className="text-2xl font-bold">{currentTaxInfo.fullName}</h2>
           <span className="text-gray-300">|</span>
@@ -581,141 +552,50 @@ export default function TaxResults({
             <option value={2025}>2025</option>
           </select>
           <button
-            onClick={() => setShowUpdateDialog(true)}
+            onClick={() => setShowInfoForm(true)}
             className="px-4 py-2 text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-colors"
           >
             Update Info
           </button>
           <button
             onClick={saveCalculation}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-colors
-              ${showUpdateButton 
-                ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
-                : 'bg-blue-500 hover:bg-blue-600 text-white'} shadow-lg`}
+            className="flex items-center space-x-2 px-4 py-2 rounded-md transition-colors bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg"
           >
             <Save size={16} />
-            <span>{showUpdateButton ? 'Save Updates' : 'Save'}</span>
+            <span>Save</span>
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden transform transition-transform hover:scale-[1.02] duration-300">
-          <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-6 py-4">
-            <div className="flex justify-between items-start">
-              <h3 className="text-xl font-semibold text-white">Before Strategies</h3>
-              <button
-                onClick={() => setShowBeforeTable(!showBeforeTable)}
-                className="text-white/80 hover:text-white"
-              >
-                {showBeforeTable ? <BarChart2 size={20} /> : <TableIcon size={20} />}
-              </button>
-            </div>
-          </div>
-          <div className="p-6 bg-gradient-to-b from-white to-gray-50">
-            {showBeforeTable ? (
-              <TaxBreakdownTable
-                breakdown={baseBreakdown}
-                totalIncome={totalIncome}
-                label="Before Strategies"
-              />
-            ) : (
-              <>
-                <div className="h-64 mb-4">
-                  <Doughnut data={beforeChartData} options={chartOptions} />
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold">
-                    ${baseBreakdown.total.toLocaleString()}
-                    <span className="text-red-600 ml-1">({beforeRate}%)</span>
-                  </div>
-                  <span className="text-sm font-medium text-gray-600 uppercase tracking-wider">TOTAL TAX</span>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden transform transition-transform hover:scale-[1.02] duration-300">
-          <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 px-6 py-4">
-            <div className="flex justify-between items-start">
-              <h3 className="text-xl font-semibold text-white">After Strategies</h3>
-              <button
-                onClick={() => setShowAfterTable(!showAfterTable)}
-                className="text-white/80 hover:text-white"
-              >
-                {showAfterTable ? <BarChart2 size={20} /> : <TableIcon size={20} />}
-              </button>
-            </div>
-          </div>
-          <div className="p-6 bg-gradient-to-b from-white to-gray-50">
-            {showAfterTable ? (
-              <TaxBreakdownTable
-                breakdown={strategyBreakdown}
-                totalIncome={totalIncome}
-                label="After Strategies"
-              />
-            ) : (
-              <>
-                <div className="h-64 mb-4">
-                  <Doughnut data={afterChartData} options={chartOptions} />
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold">
-                    ${strategyBreakdown.total.toLocaleString()}
-                    <span className="text-emerald-600 ml-1">({afterRate}%)</span>
-                  </div>
-                  <span className="text-sm font-medium text-gray-600 uppercase tracking-wider">TOTAL TAX</span>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden transform transition-transform hover:scale-[1.02] duration-300">
-          <div className="bg-gradient-to-r from-purple-500 to-purple-600 px-6 py-4">
-            <h3 className="text-xl font-semibold text-white">Income Distribution</h3>
-          </div>
-          <div className="p-6 bg-gradient-to-b from-white to-gray-50">
-            <div className="h-64 mb-4">
-              <Doughnut data={incomeDistributionData} options={chartOptions} />
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold">${totalIncome.toLocaleString()}</div>
-              <span className="text-sm font-medium text-gray-600 uppercase tracking-wider">TOTAL INCOME</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+      {/* Sticky Tax Savings Value */}
+      <div className="sticky top-0 z-30 bg-white shadow-xl overflow-hidden mb-8" style={{ borderRadius: '4px' }}>
         <div className="bg-gradient-to-r from-indigo-500 to-indigo-600 px-6 py-4">
           <h3 className="text-xl font-semibold text-white">Tax Savings Value</h3>
         </div>
         <div className="p-6 bg-gradient-to-b from-white to-gray-50">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="text-center p-8 bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl relative group shadow-lg hover:shadow-xl transition-shadow">
-              <span className="block text-4xl font-bold text-emerald-600 mb-2">
-                ${Math.max(0, annualSavings).toLocaleString()}
+            <div className="text-center p-8 bg-gradient-to-br from-blue-50 to-blue-100 relative group shadow-lg hover:shadow-xl transition-shadow" style={{ borderRadius: '4px' }}>
+              <span className="block heading-primary text-professional-navy mb-3">
+                ${Math.max(0, Math.round(rawSavings - charitableDonationAmount)).toLocaleString()}
               </span>
-              <span className="text-gray-600 font-medium tracking-wider">Annual Savings</span>
+              <span className="body-regular text-gray-600 font-medium uppercase tracking-wider">Annual Savings</span>
               {charitableDonationAmount > 0 && (
-                <div className="absolute hidden group-hover:block bg-gray-800 text-white text-sm rounded-lg p-3 -mt-2 z-10 shadow-xl">
-                  Net benefit after subtracting ${charitableDonationAmount.toLocaleString()} donation
+                <div className="absolute hidden group-hover:block bg-gray-800 text-white text-sm p-3 -mt-2 z-10 shadow-xl" style={{ borderRadius: '4px' }}>
+                  Net benefit after subtracting ${Math.round(charitableDonationAmount).toLocaleString()} donation
                 </div>
               )}
             </div>
-            <div className="text-center p-8 bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-2xl shadow-lg hover:shadow-xl transition-shadow">
-              <span className="block text-4xl font-bold text-emerald-700 mb-2">
-                ${Math.max(0, fiveYearValue).toLocaleString()}
+            <div className="text-center p-8 bg-gradient-to-br from-green-50 to-green-100 shadow-lg hover:shadow-xl transition-shadow" style={{ borderRadius: '4px' }}>
+              <span className="block heading-primary text-professional-success mb-3">
+                ${Math.max(0, Math.round((rawSavings - charitableDonationAmount) * 5 * 1.08)).toLocaleString()}
               </span>
-              <span className="text-gray-600 font-medium tracking-wider">5 Year Value at 8%</span>
+              <span className="body-regular text-gray-600 font-medium uppercase tracking-wider">5 Year Value at 8%</span>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+      <div className="bg-white shadow-xl overflow-hidden" style={{ borderRadius: '4px' }}>
         <div className="bg-gradient-to-r from-gray-800 to-gray-900 px-6 py-4">
           <h3 className="text-xl font-semibold text-white">Tax Bracket Analysis</h3>
         </div>
@@ -726,12 +606,21 @@ export default function TaxResults({
             strategies={strategies}
             isExpanded={showBracketBreakdown}
             onToggle={() => setShowBracketBreakdown(!showBracketBreakdown)}
+            progressBarData={{
+              totalIncome,
+              shiftedIncome,
+              deferredIncome,
+              baseBreakdown,
+              strategyBreakdown,
+              charitableDonationAmount,
+              progressColors
+            }}
           />
         </div>
       </div>
 
-      <div className="space-y-6">
-        <h3 className="text-2xl font-bold text-gray-900">Available Tax Benefits</h3>
+      <div className="space-y-8">
+        <h3 className="heading-secondary text-gray-900">Available Tax Benefits</h3>
         <StrategyCards
           strategies={strategies}
           onStrategyChange={handleStrategySelect}
@@ -742,65 +631,32 @@ export default function TaxResults({
         />
       </div>
 
-      <UpdateDialog
-        isOpen={showUpdateDialog}
-        onClose={() => setShowUpdateDialog(false)}
-        taxInfo={currentTaxInfo}
-        onUpdate={handleUpdateInfo}
-      />
+      {showInfoForm && (
+        <Dialog.Root open={showInfoForm} onOpenChange={setShowInfoForm}>
+          <Dialog.Portal>
+            <Dialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
+            <Dialog.Content className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white shadow-2xl p-0 w-full max-w-2xl z-50 focus:outline-none" style={{ borderRadius: '4px' }}>
+              <Dialog.Title className="text-xl font-bold px-8 pt-8">Update Tax Information</Dialog.Title>
+              <Dialog.Description className="px-8 pb-2 text-gray-500">Update your tax profile and recalculate your strategies.</Dialog.Description>
+              <InfoForm
+                initialData={taxInfo}
+                onSubmit={(data, year) => {
+                  setTaxInfo(data);
+                  setCurrentTaxInfo(data);
+                  const newStrategies = getTaxStrategies(data, calculateTaxBreakdown(data, taxRates[selectedYear]));
+                  setStrategies(newStrategies);
+                  setShowInfoForm(false);
+                }}
+              />
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
+      )}
 
       <FmcModal
         isOpen={showFmcModal}
         onClose={() => setShowFmcModal(false)}
       />
-
-      <div>
-        <KPIContainer>
-          <KPICard>
-            <KPILabel>Net Tax Savings</KPILabel>
-            <KPIValue>${(rawSavings - charitableDonationAmount).toLocaleString()}</KPIValue>
-            <KPISubtext>Net annual savings after charitable contributions</KPISubtext>
-          </KPICard>
-          <KPICard>
-            <KPILabel>5 Year Value</KPILabel>
-            <KPIValue>${Math.max(0, (rawSavings - charitableDonationAmount) * 5 * 1.08).toLocaleString()}</KPIValue>
-            <KPISubtext>Projected net savings over 5 years at 8% growth</KPISubtext>
-          </KPICard>
-          <KPICard>
-            <KPILabel>Total Income</KPILabel>
-            <KPIValue>${totalIncome.toLocaleString()}</KPIValue>
-            <KPISubtext>Combined income from all sources</KPISubtext>
-          </KPICard>
-        </KPIContainer>
-      </div>
-
-      <MissionContainer>
-        <MissionTitle>Join the Philanthropic Tax Benefit Movement</MissionTitle>
-        <MissionText>
-          Strategically leverage medical and biotechnology donations to achieve exceptional social impact and substantial tax savings. Our expert team coordinates every detail, working directly with:
-        </MissionText>
-        <MissionList>
-          <MissionItem>Philanthropic donation specialists to identify high-impact opportunities.</MissionItem>
-          <MissionItem>Vetted 501(c)(3) charities to ensure compliance and maximize benefits.</MissionItem>
-          <MissionItem>Legal and accounting experts to safeguard and optimize your clients' returns.</MissionItem>
-        </MissionList>
-        <MissionText>
-          Doing good and benefiting financially aren't mutually exclusive—they amplify each other.
-        </MissionText>
-        
-        <MissionSection>
-          <h3>At BattleBorn Advisory, we're:</h3>
-          <MissionList>
-            <MissionItem>A dedicated team of tax attorneys, technologists, and investment architects.</MissionItem>
-            <MissionItem>Committed to delivering proven, IRS-compliant tax strategies.</MissionItem>
-            <MissionItem>Focused on converting tax savings into meaningful, long-term investments and legacies.</MissionItem>
-          </MissionList>
-        </MissionSection>
-        
-        <MissionText style={{ fontSize: '1.5rem', fontWeight: '600', marginTop: '2rem', textAlign: 'center' }}>
-          Do good. Get good. Together.
-        </MissionText>
-      </MissionContainer>
     </div>
   );
 }

@@ -22,6 +22,8 @@ interface TaxStore {
   loadCalculation: (id: string) => Promise<void>;
   saveInitialState: (info: TaxInfo, year: number) => Promise<void>;
   updateStrategy: (strategyId: string, updatedStrategy: TaxStrategy) => Promise<void>;
+  removeStrategy: (strategyId: string) => Promise<void>;
+  toggleStrategy: (strategyId: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -35,7 +37,62 @@ export const useTaxStore = create<TaxStore>()(
       strategies: [],
       includeFica: true,
 
-      setTaxInfo: (info) => set({ taxInfo: info }),
+      setTaxInfo: (info) => {
+        set({ taxInfo: info });
+        // If info is null, we're resetting - no need to save to DB
+        if (info) {
+          const saveToDb = async () => {
+            try {
+              const { data: { user } } = await supabase.auth.getUser();
+              if (!user) {
+                console.log('No authenticated user found, skipping DB save');
+                return;
+              }
+
+              console.log('Saving tax info to DB:', {
+                user_id: user.id,
+                ...info
+              });
+
+              const { error } = await supabase
+                .from('tax_profiles')
+                .upsert({
+                  user_id: user.id,
+                  filing_status: info.filingStatus,
+                  standard_deduction: info.standardDeduction,
+                  custom_deduction: info.customDeduction,
+                  business_owner: info.businessOwner,
+                  full_name: info.fullName,
+                  email: info.email,
+                  dependents: info.dependents,
+                  home_address: info.homeAddress,
+                  state: info.state,
+                  wages_income: info.wagesIncome,
+                  passive_income: info.passiveIncome,
+                  unearned_income: info.unearnedIncome,
+                  capital_gains: info.capitalGains,
+                  business_name: info.businessName,
+                  entity_type: info.entityType,
+                  business_address: info.businessAddress,
+                  ordinary_k1_income: info.ordinaryK1Income,
+                  guaranteed_k1_income: info.guaranteedK1Income,
+                  household_income: info.householdIncome,
+                  deduction_limit_reached: info.deductionLimitReached,
+                  updated_at: new Date().toISOString()
+                }, { onConflict: 'user_id' });
+
+              if (error) {
+                console.error('Error saving tax info to DB:', error);
+                throw error;
+              }
+              console.log('Successfully saved tax info to DB');
+            } catch (error) {
+              console.error('Error syncing tax info to DB:', error);
+            }
+          };
+          saveToDb();
+        }
+      },
       
       setSelectedYear: (year) => set({ selectedYear: year }),
       
@@ -48,6 +105,13 @@ export const useTaxStore = create<TaxStore>()(
       updateStrategy: async (strategyId: string, updatedStrategy: TaxStrategy) => {
         const { taxInfo, selectedYear, selectedStrategies } = get();
         if (!taxInfo) return;
+
+        // Check if strategy already exists
+        const existingStrategy = selectedStrategies.find(s => s.id === strategyId);
+        if (existingStrategy && existingStrategy.enabled) {
+          console.warn(`Strategy ${strategyId} is already enabled. Use removeStrategy first to replace it.`);
+          return;
+        }
 
         const filteredStrategies = selectedStrategies.filter(s => s.id !== strategyId);
         const updatedStrategies = [...filteredStrategies, updatedStrategy];
@@ -64,6 +128,40 @@ export const useTaxStore = create<TaxStore>()(
 
         await get().addSavedCalculation(calculation);
         set({ selectedStrategies: updatedStrategies });
+      },
+
+      removeStrategy: async (strategyId: string) => {
+        const { taxInfo, selectedYear, selectedStrategies } = get();
+        if (!taxInfo) return;
+
+        const filteredStrategies = selectedStrategies.filter(s => s.id !== strategyId);
+        const breakdown = calculateTaxBreakdown(taxInfo, taxRates[selectedYear], filteredStrategies);
+
+        const calculation: SavedCalculation = {
+          id: Date.now().toString(),
+          year: selectedYear,
+          date: new Date().toISOString(),
+          taxInfo,
+          breakdown,
+          strategies: filteredStrategies
+        };
+
+        await get().addSavedCalculation(calculation);
+        set({ selectedStrategies: filteredStrategies });
+      },
+
+      toggleStrategy: async (strategyId: string) => {
+        const { selectedStrategies } = get();
+        const existingStrategy = selectedStrategies.find(s => s.id === strategyId);
+        
+        if (existingStrategy) {
+          // Strategy exists, remove it
+          await get().removeStrategy(strategyId);
+        } else {
+          // Strategy doesn't exist, user needs to configure it first
+          // This will be handled by opening the appropriate modal/form
+          console.log(`Strategy ${strategyId} needs to be configured first`);
+        }
       },
 
       addSavedCalculation: async (calculation) => {

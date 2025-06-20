@@ -3,7 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { X, Plus, Check } from 'lucide-react';
 import { NumericFormat } from 'react-number-format';
 import { TaxInfo, TaxStrategy } from '../types';
-import { calculateTaxBreakdown, calculateMarginalRate } from '../utils/taxCalculations';
+import { calculateTaxBreakdown, calculateMarginalRate, calculateEffectiveStrategyBenefit } from '../utils/taxCalculations';
 import { useTaxStore } from '../store/taxStore';
 import { taxRates } from '../data/taxRates';
 
@@ -31,13 +31,13 @@ interface FmcModalProps {
 }
 
 export default function FmcModal({ isOpen, onClose }: FmcModalProps) {
-  const { taxInfo, selectedYear, updateStrategy, strategies } = useTaxStore();
+  const { taxInfo, selectedYear, updateStrategy } = useTaxStore();
   const rates = useMemo(() => taxRates[selectedYear], [selectedYear]);
 
   // Get existing FMC strategy if it exists
   const existingFmcStrategy = useMemo(() => 
-    strategies.find((s: TaxStrategy) => s.id === 'family_management_company'),
-    [strategies]
+    useTaxStore.getState().selectedStrategies.find((s: TaxStrategy) => s.id === 'family_management_company'),
+    []
   );
 
   const [members, setMembers] = useState<FamilyMember[]>(() => {
@@ -99,32 +99,11 @@ export default function FmcModal({ isOpen, onClose }: FmcModalProps) {
   };
 
   const { stateBenefit, federalBenefit, ficaBenefit, totalBenefit } = useMemo(() => {
-    if (!taxInfo || !rates) {
+    if (!taxInfo || !rates || totalSalaries <= 0) {
       return { stateBenefit: 0, federalBenefit: 0, ficaBenefit: 0, totalBenefit: 0 };
     }
 
-    // Calculate base tax breakdown
-    const baseBreakdown = calculateTaxBreakdown(taxInfo, rates);
-
-    // Create modified tax info with reduced income
-    const modifiedTaxInfo = { ...taxInfo };
-
-    // Reduce business income first if available
-    if (modifiedTaxInfo.ordinaryK1Income) {
-      modifiedTaxInfo.ordinaryK1Income = Math.max(
-        0,
-        modifiedTaxInfo.ordinaryK1Income - totalSalaries
-      );
-    } else if (modifiedTaxInfo.wagesIncome > 160000) {
-      // If no business income but high W2, reduce that instead
-      const w2Reduction = Math.min(
-        modifiedTaxInfo.wagesIncome - 160000,
-        totalSalaries
-      );
-      modifiedTaxInfo.wagesIncome -= w2Reduction;
-    }
-
-    // Calculate tax with FMC income reduction using standard income shifting path
+    // Create FMC strategy for effective calculation
     const fmcStrategy: TaxStrategy = {
       id: 'family_management_company',
       name: 'Family Management Company',
@@ -149,60 +128,78 @@ export default function FmcModal({ isOpen, onClose }: FmcModalProps) {
       }
     };
 
-    const fmcBreakdown = calculateTaxBreakdown(modifiedTaxInfo, rates, [fmcStrategy]);
-
-    // Calculate the differences using the standard method
-    const stateBenefit = Math.max(0, baseBreakdown.state - fmcBreakdown.state);
-    const federalBenefit = Math.max(0, baseBreakdown.federal - fmcBreakdown.federal);
-    const ficaBenefit = Math.max(
-      0,
-      baseBreakdown.fica - fmcBreakdown.fica
-    );
-
-    // Calculate total benefit
-    const totalBenefit = stateBenefit + federalBenefit + ficaBenefit;
+    // Use unified effective strategy benefit calculation
+    const { federal, state, fica, total } = calculateEffectiveStrategyBenefit(taxInfo, rates, fmcStrategy, []);
 
     return {
-      stateBenefit,
-      federalBenefit,
-      ficaBenefit,
-      totalBenefit
+      federalBenefit: federal,
+      stateBenefit: state,
+      ficaBenefit: fica,
+      totalBenefit: total
     };
   }, [taxInfo, rates, totalSalaries, members]);
 
   const handleSave = async () => {
-    // Create the FMC strategy
-    const fmcStrategy: TaxStrategy = {
-      id: 'family_management_company',
-      name: 'Family Management Company',
-      category: 'income_shifted',
-      description: 'Create a family management company to handle Augusta Rule rentals and maximize tax benefits through strategic income shifting',
-      estimatedSavings: totalBenefit,
-      enabled: true,
-      details: {
-        familyManagementCompany: {
-          members: members.map((m: FamilyMember) => ({
-            id: m.id,
-            name: m.name || `Family Member ${m.id}`,
-            role: m.role || (m.ageGroup === 'Under 18' ? 'Junior Associate' : 'Associate'),
-            salary: m.salary
-          })),
-          totalSalaries,
-          stateBenefit,
-          federalBenefit,
-          ficaBenefit,
-          totalBenefit
-        }
-      },
-      synergy: {
-        with: 'augusta_rule',
-        label: 'Synergy with Augusta Rule'
+    try {
+      // Validate that we have meaningful data
+      if (totalSalaries <= 0) {
+        alert('Please add family members with salaries before saving.');
+        return;
       }
-    };
 
-    // Update the strategy in the store
-    await updateStrategy('family_management_company', fmcStrategy);
-    onClose();
+      // Check if strategy already exists
+      const { selectedStrategies } = useTaxStore.getState();
+      const existingFmc = selectedStrategies.find((s: TaxStrategy) => s.id === 'family_management_company');
+      
+      if (existingFmc && existingFmc.enabled) {
+        const confirmReplace = window.confirm(
+          'Family Management Company strategy is already active. Do you want to replace it with the new configuration?'
+        );
+        if (!confirmReplace) {
+          return;
+        }
+        // Remove existing strategy first
+        await useTaxStore.getState().removeStrategy('family_management_company');
+      }
+
+      // Create the FMC strategy
+      const fmcStrategy: TaxStrategy = {
+        id: 'family_management_company',
+        name: 'Family Management Company',
+        category: 'income_shifted',
+        description: 'Create a family management company to handle Augusta Rule rentals and maximize tax benefits through strategic income shifting',
+        estimatedSavings: totalBenefit,
+        enabled: true,
+        details: {
+          familyManagementCompany: {
+            members: members.map((m: FamilyMember) => ({
+              id: m.id,
+              name: m.name || `Family Member ${m.id}`,
+              role: m.role || (m.ageGroup === 'Under 18' ? 'Junior Associate' : 'Associate'),
+              salary: m.salary
+            })),
+            totalSalaries,
+            stateBenefit,
+            federalBenefit,
+            ficaBenefit,
+            totalBenefit
+          }
+        },
+        synergy: {
+          with: 'augusta_rule',
+          label: 'Synergy with Augusta Rule'
+        }
+      };
+
+      // Update the strategy in the store
+      await updateStrategy('family_management_company', fmcStrategy);
+      
+      // Close the modal
+      onClose();
+    } catch (error) {
+      console.error('Error saving Family Management Company strategy:', error);
+      alert('Error saving strategy. Please try again.');
+    }
   };
 
   return (

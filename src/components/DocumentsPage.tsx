@@ -1,7 +1,41 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Lock, FileText } from 'lucide-react';
+import { useTaxProfileStore } from '../store/taxProfileStore';
+import InfoForm from './InfoForm';
+import * as Dialog from '@radix-ui/react-dialog';
 
 export default function DocumentsPage() {
+  const { taxProfile, loading, error, fetchTaxProfile, updateTaxProfile } = useTaxProfileStore();
+  const [showInfoForm, setShowInfoForm] = useState(false);
+
+  useEffect(() => {
+    fetchTaxProfile();
+  }, []);
+
+  if (loading) return <div>Loading...</div>;
+  if (error) return <div className="text-red-600">{error}</div>;
+
+  if (!taxProfile || showInfoForm) {
+    return (
+      <Dialog.Root open={true} onOpenChange={setShowInfoForm}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
+          <Dialog.Content className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl p-0 w-full max-w-2xl z-50 focus:outline-none">
+            <Dialog.Title className="text-xl font-bold px-8 pt-8">Enter Tax Information</Dialog.Title>
+            <Dialog.Description className="px-8 pb-2 text-gray-500">Please complete your tax profile to access documents.</Dialog.Description>
+            <InfoForm
+              initialData={taxProfile}
+              onSubmit={async (data) => {
+                await updateTaxProfile(data);
+                setShowInfoForm(false);
+              }}
+            />
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    );
+  }
+
   return (
     <div className="max-w-6xl mx-auto p-8">
       <h1 className="text-2xl font-bold mb-8">Documents</h1>

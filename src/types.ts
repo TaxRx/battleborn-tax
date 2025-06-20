@@ -206,6 +206,8 @@ export interface TaxBreakdown {
     tax: number;
   }>;
   totalDeductions: number;
+  strategyDeductions: number;
   shiftedIncome: number;
   deferredIncome: number;
+  taxableIncome: number;
 }

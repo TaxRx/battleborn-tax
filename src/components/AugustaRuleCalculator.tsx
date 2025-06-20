@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Check } from 'lucide-react';
 import { TaxInfo } from '../types';
-import { calculateTaxBreakdown } from '../utils/taxCalculations';
+import { calculateTaxBreakdown, calculateEffectiveStrategyBenefit } from '../utils/taxCalculations';
 import { useTaxStore } from '../store/taxStore';
 
 interface AugustaRuleCalculatorProps {
@@ -34,63 +34,43 @@ export default function AugustaRuleCalculator({
   // Calculate total rent
   const totalRent = daysRented * dailyRate;
 
-  // Memoize tax savings calculation
+  // Memoize tax savings calculation using unified effective approach
   const { stateBenefit, federalBenefit, ficaBenefit, totalBenefit } = useMemo(() => {
-    if (!rates || !taxInfo || !taxInfo.businessOwner) {
+    if (!rates || !taxInfo || !taxInfo.businessOwner || totalRent <= 0) {
       return { stateBenefit: 0, federalBenefit: 0, ficaBenefit: 0, totalBenefit: 0 };
     }
 
-    // Calculate tax without Augusta Rule
-    const baseBreakdown = calculateTaxBreakdown(taxInfo, rates);
-
-    // Create modified tax info with reduced income
-    const modifiedTaxInfo = { ...taxInfo };
-
-    // If W2 income is over $160,000, reduce it first up to that threshold
-    if (modifiedTaxInfo.wagesIncome > 160000) {
-      const w2Reduction = Math.min(
-        modifiedTaxInfo.wagesIncome - 160000,
-        totalRent
-      );
-      modifiedTaxInfo.wagesIncome -= w2Reduction;
-
-      // Any remaining rental amount reduces business income
-      const remainingReduction = totalRent - w2Reduction;
-      if (remainingReduction > 0 && modifiedTaxInfo.ordinaryK1Income) {
-        modifiedTaxInfo.ordinaryK1Income = Math.max(
-          0,
-          modifiedTaxInfo.ordinaryK1Income - remainingReduction
-        );
+    // Create Augusta Rule strategy for effective calculation
+    const augustaStrategy = {
+      id: 'augusta_rule',
+      name: 'Augusta Rule',
+      category: 'income_shifted' as const,
+      description: 'Rent your home to your business tax-free for up to 14 days per year',
+      estimatedSavings: 0,
+      enabled: true,
+      details: {
+        augustaRule: {
+          daysRented,
+          dailyRate,
+          totalRent,
+          stateBenefit: 0,
+          federalBenefit: 0,
+          ficaBenefit: 0,
+          totalBenefit: 0
+        }
       }
-    } else {
-      // If W2 is under $160,000, reduce business income first
-      if (modifiedTaxInfo.ordinaryK1Income) {
-        modifiedTaxInfo.ordinaryK1Income = Math.max(
-          0,
-          modifiedTaxInfo.ordinaryK1Income - totalRent
-        );
-      }
-    }
+    };
 
-    // Calculate tax with Augusta Rule income reduction
-    const augustaBreakdown = calculateTaxBreakdown(modifiedTaxInfo, rates);
-
-    // Calculate the differences
-    const stateBenefit = Math.max(0, baseBreakdown.state - augustaBreakdown.state);
-    const federalBenefit = Math.max(0, baseBreakdown.federal - augustaBreakdown.federal);
-    const ficaBenefit = Math.max(
-      0,
-      (baseBreakdown.socialSecurity + baseBreakdown.medicare) -
-      (augustaBreakdown.socialSecurity + augustaBreakdown.medicare)
-    );
+    // Use unified effective strategy benefit calculation
+    const { federal, state, fica, total } = calculateEffectiveStrategyBenefit(taxInfo, rates, augustaStrategy, []);
 
     return {
-      stateBenefit,
-      federalBenefit,
-      ficaBenefit,
-      totalBenefit: stateBenefit + federalBenefit + ficaBenefit
+      federalBenefit: federal,
+      stateBenefit: state,
+      ficaBenefit: fica,
+      totalBenefit: total
     };
-  }, [taxInfo, rates, totalRent]);
+  }, [taxInfo, rates, totalRent, daysRented, dailyRate]);
 
   // Memoize savings details
   const savingsDetails = useMemo(() => ({

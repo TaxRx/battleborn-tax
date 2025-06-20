@@ -3,7 +3,7 @@ import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 import { Doughnut } from 'react-chartjs-2';
 import { states } from '../data/states';
-import { calculateCharitableDonationNetSavings } from '../utils/taxCalculations';
+import { calculateEffectiveStrategyBenefit } from '../utils/taxCalculations';
 import { NumericFormat } from 'react-number-format';
 import { taxRates } from '../data/taxRates';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -11,6 +11,8 @@ import { TaxInfo } from '../types';
 import { useNavigate } from 'react-router-dom';
 import logo from '../assets/battleborn-logo.svg';
 import { saveLeadToDatabase } from '../lib/services/leads.service';
+import { supabase } from '../lib/supabase';
+import useAuthStore from '../store/authStore';
 
 ChartJS.register(ArcElement, Tooltip, Legend, ChartDataLabels);
 
@@ -90,17 +92,30 @@ export default function LandingPage() {
       customDeduction: 0
     };
 
-    const { federal, state: stateSavings } = calculateCharitableDonationNetSavings(
-      taxInfo,
-      taxRates[new Date().getFullYear()],
-      donationAmount,
-      donationAmount * 5,
-      []
-    );
+    // Create charitable donation strategy for unified calculation
+    const charitableStrategy = {
+      id: 'charitable_donation',
+      name: 'Charitable Donation',
+      category: 'new_deductions' as const,
+      description: 'Maximize deductions through strategic charitable giving',
+      estimatedSavings: 0,
+      enabled: true,
+      details: {
+        charitableDonation: {
+          donationAmount,
+          fmvMultiplier: 5,
+          agiLimit: 0.6,
+          deductionValue: donationAmount * 5,
+          federalSavings: 0,
+          stateSavings: 0,
+          totalBenefit: 0
+        }
+      }
+    };
 
-    // Calculate net savings (total tax benefit minus donation amount)
-    const totalBenefit = federal + stateSavings;
-    const netSavings = totalBenefit - donationAmount;
+    const { federal, state: stateSavings, net: netSavings, total: totalBenefit } = donationAmount > 0
+      ? calculateEffectiveStrategyBenefit(taxInfo, taxRates[new Date().getFullYear()], charitableStrategy, [])
+      : { federal: 0, state: 0, net: 0, total: 0 };
 
     return {
       heroesSupported: Math.floor(donationAmount / 5000),
@@ -189,6 +204,29 @@ export default function LandingPage() {
     }
   };
 
+  const handleDemoLogin = async (email: string) => {
+    try {
+      console.log('Attempting demo login for:', email);
+      
+      // Use local auth store for demo logins instead of Supabase
+      const { enableDemoMode } = useAuthStore.getState();
+      const userType = email === 'admin@taxrxgroup.com' ? 'admin' : 'client';
+      
+      enableDemoMode(userType);
+      console.log('Demo login successful:', { email, userType });
+      
+      // Navigate to appropriate dashboard
+      if (userType === 'admin') {
+        navigate('/admin');
+      } else {
+        navigate('/dashboard');
+      }
+    } catch (error) {
+      console.error('Demo login error:', error);
+      alert('Login failed. Please check the console for details.');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -197,6 +235,19 @@ export default function LandingPage() {
           <div className="flex items-center justify-between">
             <div className="text-2xl font-bold text-gray-900">Battleborn Advisors, LLC</div>
             <div className="flex items-center space-x-4">
+              {/* Demo Login Buttons */}
+              <button
+                onClick={() => handleDemoLogin('admin@taxrxgroup.com')}
+                className="px-4 py-2 text-sm font-medium text-white bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Demo Admin
+              </button>
+              <button
+                onClick={() => handleDemoLogin('demo.client@example.com')}
+                className="px-4 py-2 text-sm font-medium text-white bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Demo Client
+              </button>
               <button
                 onClick={() => {
                   console.log('Login button clicked');

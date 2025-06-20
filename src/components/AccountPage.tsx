@@ -6,6 +6,9 @@ import { states } from '../data/states';
 import { Lock, CreditCard, MapPin, Loader2 } from 'lucide-react';
 import { GoogleMap, Marker, useJsApiLoader } from '@react-google-maps/api';
 import Autocomplete from 'react-google-autocomplete';
+import { useTaxProfileStore } from '../store/taxProfileStore';
+import InfoForm from './InfoForm';
+import * as Dialog from '@radix-ui/react-dialog';
 
 const mapOptions = {
   mapTypeId: 'satellite',
@@ -47,6 +50,9 @@ export default function AccountPage() {
     height: '300px'
   };
 
+  const { taxProfile, loading, error, fetchTaxProfile, updateTaxProfile } = useTaxProfileStore();
+  const [showInfoForm, setShowInfoForm] = useState(false);
+
   // Update form data when user data changes
   useEffect(() => {
     if (user) {
@@ -86,6 +92,10 @@ export default function AccountPage() {
       }
     }
   }, [user]);
+
+  useEffect(() => {
+    fetchTaxProfile();
+  }, []);
 
   const handleHomeAddressSelect = (place: any) => {
     if (place?.geometry?.location) {
@@ -137,6 +147,9 @@ export default function AccountPage() {
       </div>
     );
   }
+
+  if (loading) return <div>Loading...</div>;
+  if (error) return <div className="text-red-600">{error}</div>;
 
   return (
     <div className="max-w-6xl mx-auto p-8">
@@ -351,6 +364,71 @@ export default function AccountPage() {
           </motion.div>
         </Tabs.Content>
       </Tabs.Root>
+
+      <div className="bg-white rounded-xl shadow-lg overflow-hidden p-6 mt-8">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-bold">Tax Profile</h2>
+          <button
+            onClick={() => setShowInfoForm(true)}
+            className="px-4 py-2 bg-emerald-600 text-white rounded-lg shadow hover:bg-emerald-700 transition"
+          >
+            Edit
+          </button>
+        </div>
+        {taxProfile ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <div className="mb-2"><strong>Name:</strong> {taxProfile.fullName}</div>
+              <div className="mb-2"><strong>Email:</strong> {taxProfile.email}</div>
+              <div className="mb-2"><strong>Filing Status:</strong> {taxProfile.filingStatus}</div>
+              <div className="mb-2"><strong>State:</strong> {taxProfile.state}</div>
+              <div className="mb-2"><strong>Dependents:</strong> {taxProfile.dependents}</div>
+              <div className="mb-2"><strong>Home Address:</strong> {taxProfile.homeAddress}</div>
+              <div className="mb-2"><strong>Business Owner:</strong> {taxProfile.businessOwner ? 'Yes' : 'No'}</div>
+              {taxProfile.businessOwner && (
+                <>
+                  <div className="mb-2"><strong>Business Name:</strong> {taxProfile.businessName}</div>
+                  <div className="mb-2"><strong>Entity Type:</strong> {taxProfile.entityType}</div>
+                  <div className="mb-2"><strong>Business Address:</strong> {taxProfile.businessAddress}</div>
+                </>
+              )}
+            </div>
+            <div>
+              <div className="mb-2"><strong>Wages Income:</strong> ${taxProfile.wagesIncome.toLocaleString()}</div>
+              <div className="mb-2"><strong>Passive Income:</strong> ${taxProfile.passiveIncome.toLocaleString()}</div>
+              <div className="mb-2"><strong>Unearned Income:</strong> ${taxProfile.unearnedIncome.toLocaleString()}</div>
+              <div className="mb-2"><strong>Capital Gains:</strong> ${taxProfile.capitalGains.toLocaleString()}</div>
+              {taxProfile.businessOwner && (
+                <>
+                  <div className="mb-2"><strong>Ordinary K-1 Income:</strong> ${taxProfile.ordinaryK1Income?.toLocaleString()}</div>
+                  <div className="mb-2"><strong>Guaranteed K-1 Income:</strong> ${taxProfile.guaranteedK1Income?.toLocaleString()}</div>
+                </>
+              )}
+              <div className="mb-2"><strong>Standard Deduction:</strong> {taxProfile.standardDeduction ? 'Yes' : 'No'}</div>
+              <div className="mb-2"><strong>Custom Deduction:</strong> ${taxProfile.customDeduction?.toLocaleString()}</div>
+            </div>
+          </div>
+        ) : (
+          <div>No tax profile found.</div>
+        )}
+      </div>
+
+      <Dialog.Root open={showInfoForm} onOpenChange={setShowInfoForm}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
+          <Dialog.Content className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl p-0 w-full max-w-2xl z-50 focus:outline-none">
+            <Dialog.Title className="text-xl font-bold px-8 pt-8">Edit Tax Profile</Dialog.Title>
+            <Dialog.Description className="px-8 pb-2 text-gray-500">Update your tax profile information.</Dialog.Description>
+            <InfoForm
+              initialData={taxProfile}
+              onSubmit={async (data) => {
+                await updateTaxProfile(data);
+                setShowInfoForm(false);
+              }}
+            />
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }
