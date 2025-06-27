@@ -155,6 +155,13 @@ export interface CommissionStats {
   active_assignments: number;
   completed_assignments: number;
   monthly_commission_volume: number;
+  // Additional dashboard properties
+  total_commissions: number;
+  pending_payouts: number;
+  pending_transactions: number;
+  active_experts: number;
+  expert_utilization: number;
+  average_commission: number;
   top_performing_affiliates: Array<{
     affiliate_id: string;
     affiliate_name: string;
@@ -168,6 +175,130 @@ export interface CommissionStats {
     max_capacity: number;
     utilization_rate: number;
   }>;
+}
+
+// CLIENT TRACKING - Critical for preventing client loss
+export interface ClientProfile {
+  id: string;
+  full_name: string;
+  email: string;
+  phone?: string;
+  company?: string;
+  
+  // Contact preferences
+  preferred_contact_method: 'email' | 'phone' | 'text';
+  timezone?: string;
+  
+  // Tax profile summary (for quick reference)
+  annual_income: number;
+  filing_status: string;
+  state: string;
+  business_owner: boolean;
+  
+  // Tracking & Status
+  current_stage: ClientStage;
+  last_contact_date?: string;
+  next_followup_date?: string;
+  assigned_affiliate_id: string;
+  assigned_expert_id?: string;
+  
+  // Engagement tracking
+  engagement_score: number; // 1-10 based on responsiveness
+  communication_log: ClientCommunication[];
+  
+  // Alerts
+  at_risk_of_loss: boolean;
+  days_since_last_contact: number;
+  
+  created_at: string;
+  updated_at: string;
+}
+
+export type ClientStage = 
+  | 'initial_contact'       // Affiliate first contact
+  | 'tax_analysis_complete' // Tax calculator completed
+  | 'proposal_created'      // Proposal generated
+  | 'proposal_submitted'    // Submitted to admin
+  | 'admin_review'          // Under admin review
+  | 'expert_assigned'       // Expert assigned
+  | 'expert_contacted'      // Expert reached out to client
+  | 'implementation_active' // Strategies being implemented
+  | 'completed'             // All strategies implemented
+  | 'lost_to_follow_up'     // Client stopped responding
+  | 'declined_services'     // Client declined to proceed
+  | 'competitor_lost';      // Lost to competitor
+
+export interface ClientCommunication {
+  id: string;
+  client_id: string;
+  user_id: string;
+  user_role: 'affiliate' | 'admin' | 'expert';
+  communication_type: 'email' | 'phone' | 'meeting' | 'text' | 'system_note';
+  subject?: string;
+  summary: string;
+  outcome: 'positive' | 'neutral' | 'negative' | 'no_response';
+  next_action_required?: string;
+  next_action_due_date?: string;
+  created_at: string;
+  
+  // Populated relationships
+  user?: {
+    full_name: string;
+    email: string;
+    role: string;
+  };
+}
+
+// CLIENT ALERTS - Prevent client loss
+export interface ClientAlert {
+  id: string;
+  client_id: string;
+  alert_type: ClientAlertType;
+  severity: 'low' | 'medium' | 'high' | 'urgent';
+  title: string;
+  description: string;
+  action_required: string;
+  assigned_to?: string;
+  due_date?: string;
+  is_resolved: boolean;
+  created_at: string;
+  resolved_at?: string;
+  
+  // Populated relationships
+  client?: ClientProfile;
+  assigned_user?: {
+    full_name: string;
+    email: string;
+    role: string;
+  };
+}
+
+export type ClientAlertType = 
+  | 'no_contact_7_days'
+  | 'no_contact_14_days'
+  | 'no_contact_30_days'
+  | 'expert_no_response'
+  | 'client_not_responding'
+  | 'proposal_stuck_in_review'
+  | 'implementation_delayed'
+  | 'payment_overdue'
+  | 'competitor_threat'
+  | 'dissatisfaction_detected';
+
+// ENHANCED PROPOSAL with client context
+export interface EnhancedProposal extends TaxProposal {
+  client_profile?: ClientProfile;
+  affiliate_info?: {
+    full_name: string;
+    email: string;
+    company: string;
+    affiliate_code: string;
+  };
+  expert_assignment?: ProposalAssignment;
+  communication_history?: ClientCommunication[];
+  active_alerts?: ClientAlert[];
+  days_in_current_stage: number;
+  risk_score: number; // 1-10, higher = more likely to lose client
 }
 
 export interface AffiliateCommissionDashboard {

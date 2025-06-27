@@ -1,16 +1,17 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { supabase } from './supabase'; // Import the existing client
 import { snakeToCamel, camelToSnake } from './utils/caseConversion';
 
 // Get environment variables
-const env = import.meta.env;
-const supabaseUrl = env.VITE_SUPABASE_URL;
-const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY;
+// const env = import.meta.env;
+// const supabaseUrl = env.VITE_SUPABASE_URL;
+// const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables');
-}
+// if (!supabaseUrl || !supabaseAnonKey) {
+//   throw new Error('Missing Supabase environment variables');
+// }
 
-const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+const supabaseClient = supabase; // Use the imported client
 
 // Helper function to wrap a query with case conversion
 const wrapQuery = (query: any) => {

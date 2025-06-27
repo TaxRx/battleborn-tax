@@ -20,6 +20,7 @@ import {
 import { TaxProposal, Expert, ProposalStatus } from '../../shared/types';
 import { adminService } from '../services/adminService';
 import { ApprovalModal, RejectionModal, ExpertAssignmentModal } from './ProposalModals';
+import { StrategyImplementationManager } from './StrategyImplementationManager';
 
 interface ProposalDetailViewProps {
   onBack?: () => void;
@@ -259,6 +260,51 @@ const ProposalDetailView: React.FC<ProposalDetailViewProps> = ({ onBack }) => {
                 )}
               </div>
             )}
+
+            {/* View Calculator Button - Always Available */}
+            <div className="flex space-x-3">
+              <button
+                onClick={() => {
+                  // Convert proposal data to TaxInfo format and open calculator
+                  if ((proposal as any).client_profile) {
+                    const clientProfile = (proposal as any).client_profile;
+                    const taxInfo = {
+                      standardDeduction: true,
+                      customDeduction: 0,
+                      businessOwner: clientProfile.tax_info.business_owner,
+                      fullName: clientProfile.personal_info.full_name,
+                      email: clientProfile.personal_info.email,
+                      filingStatus: clientProfile.tax_info.filing_status,
+                      dependents: clientProfile.tax_info.dependents,
+                      homeAddress: clientProfile.personal_info.address.street,
+                      state: clientProfile.personal_info.address.state,
+                      wagesIncome: clientProfile.tax_info.wages_income,
+                      passiveIncome: clientProfile.tax_info.passive_income,
+                      unearnedIncome: clientProfile.tax_info.other_income,
+                      capitalGains: clientProfile.tax_info.capital_gains,
+                      businessName: '',
+                      entityType: 'LLC',
+                      businessAddress: '',
+                      ordinaryK1Income: clientProfile.tax_info.business_owner ? clientProfile.tax_info.business_income * 0.7 : 0,
+                      guaranteedK1Income: clientProfile.tax_info.business_owner ? clientProfile.tax_info.business_income * 0.3 : 0,
+                      householdIncome: proposal.baseline_calculation.total_income,
+                      deductionLimitReached: false
+                    };
+                    
+                    // Open calculator in new tab with client data
+                    const calculatorUrl = `/calculator?data=${encodeURIComponent(JSON.stringify(taxInfo))}`;
+                    window.open(calculatorUrl, '_blank');
+                  } else {
+                    // Fallback to basic calculator
+                    window.open('/calculator', '_blank');
+                  }
+                }}
+                className="btn-primary flex items-center space-x-2"
+              >
+                <Eye className="h-4 w-4" />
+                <span>View Calculator</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -287,7 +333,7 @@ const ProposalDetailView: React.FC<ProposalDetailViewProps> = ({ onBack }) => {
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Total Income</p>
-                      <p className="font-medium text-gray-900">${proposal.baseline_calculation.total_income.toLocaleString()}</p>
+                      <p className="font-medium text-gray-900">${proposal.baseline_calculation?.total_income?.toLocaleString() || '0'}</p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
@@ -327,7 +373,7 @@ const ProposalDetailView: React.FC<ProposalDetailViewProps> = ({ onBack }) => {
                           <p className="text-sm text-gray-600 capitalize">{strategy.category.replace('_', ' ')}</p>
                         </div>
                         <div className="text-right">
-                          <p className="font-semibold text-green-600">${strategy.estimated_savings.toLocaleString()}</p>
+                          <p className="font-semibold text-green-600">${strategy.estimated_savings?.toLocaleString() || '0'}</p>
                           <p className="text-xs text-gray-500">Annual Savings</p>
                         </div>
                       </div>
@@ -362,15 +408,15 @@ const ProposalDetailView: React.FC<ProposalDetailViewProps> = ({ onBack }) => {
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span className="text-gray-600">Federal Tax:</span>
-                        <span className="font-medium">${proposal.baseline_calculation.federal_tax.toLocaleString()}</span>
+                        <span className="font-medium">${proposal.baseline_calculation?.federal_tax?.toLocaleString() || '0'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">State Tax:</span>
-                        <span className="font-medium">${proposal.baseline_calculation.state_tax.toLocaleString()}</span>
+                        <span className="font-medium">${proposal.baseline_calculation?.state_tax?.toLocaleString() || '0'}</span>
                       </div>
                       <div className="flex justify-between border-t pt-2">
                         <span className="text-gray-900 font-medium">Total Tax:</span>
-                        <span className="font-bold">${proposal.baseline_calculation.total_tax.toLocaleString()}</span>
+                        <span className="font-bold">${proposal.baseline_calculation?.total_tax?.toLocaleString() || '0'}</span>
                       </div>
                     </div>
                   </div>
@@ -379,16 +425,16 @@ const ProposalDetailView: React.FC<ProposalDetailViewProps> = ({ onBack }) => {
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span className="text-gray-600">Annual Savings:</span>
-                        <span className="font-medium text-green-600">${proposal.projected_savings.annual_savings.toLocaleString()}</span>
+                        <span className="font-medium text-green-600">${proposal.projected_savings?.annual_savings?.toLocaleString() || '0'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">5-Year Value:</span>
-                        <span className="font-medium text-green-600">${proposal.projected_savings.five_year_value.toLocaleString()}</span>
+                        <span className="font-medium text-green-600">${proposal.projected_savings?.five_year_value?.toLocaleString() || '0'}</span>
                       </div>
                       <div className="flex justify-between border-t pt-2">
                         <span className="text-gray-900 font-medium">ROI:</span>
                         <span className="font-bold text-green-600">
-                          {((proposal.projected_savings.annual_savings / proposal.baseline_calculation.total_tax) * 100).toFixed(1)}%
+                          {((proposal.projected_savings?.annual_savings || 0) / (proposal.baseline_calculation?.total_tax || 0) * 100).toFixed(1)}%
                         </span>
                       </div>
                     </div>
@@ -396,6 +442,193 @@ const ProposalDetailView: React.FC<ProposalDetailViewProps> = ({ onBack }) => {
                 </div>
               </div>
             </div>
+
+            {/* Enhanced Calculator Data - Client Profile */}
+            {(proposal as any).client_profile && (
+              <div className="card-professional">
+                <div className="p-6">
+                  <h2 className="text-lg font-semibold text-gray-900 mb-4">Client Profile</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <h3 className="font-medium text-gray-900 mb-3">Personal Information</h3>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Full Name:</span>
+                          <span className="font-medium">{(proposal as any).client_profile.personal_info.full_name}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Email:</span>
+                          <span className="font-medium">{(proposal as any).client_profile.personal_info.email}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">State:</span>
+                          <span className="font-medium">{(proposal as any).client_profile.personal_info.address.state}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Filing Status:</span>
+                          <span className="font-medium capitalize">{(proposal as any).client_profile.tax_info.filing_status.replace('_', ' ')}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Dependents:</span>
+                          <span className="font-medium">{(proposal as any).client_profile.tax_info.dependents}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-gray-900 mb-3">Income Breakdown</h3>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Wages Income:</span>
+                          <span className="font-medium">${(proposal as any).client_profile.tax_info.wages_income?.toLocaleString() || '0'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Business Income:</span>
+                          <span className="font-medium">${(proposal as any).client_profile.tax_info.business_income?.toLocaleString() || '0'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Passive Income:</span>
+                          <span className="font-medium">${(proposal as any).client_profile.tax_info.passive_income?.toLocaleString() || '0'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Capital Gains:</span>
+                          <span className="font-medium">${(proposal as any).client_profile.tax_info.capital_gains?.toLocaleString() || '0'}</span>
+                        </div>
+                        <div className="flex justify-between border-t pt-2">
+                          <span className="text-gray-900 font-medium">Total Income:</span>
+                          <span className="font-bold">${proposal.baseline_calculation?.total_income?.toLocaleString() || '0'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Enhanced Calculator Data - Detailed Calculations */}
+            {(proposal as any).detailed_calculations && (
+              <div className="card-professional">
+                <div className="p-6">
+                  <h2 className="text-lg font-semibold text-gray-900 mb-4">Detailed Tax Calculations</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <h3 className="font-medium text-gray-900 mb-3">Baseline Breakdown</h3>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Total Income:</span>
+                          <span className="font-medium">${(proposal as any).detailed_calculations.baseline_breakdown?.total_income?.toLocaleString() || '0'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Federal Tax:</span>
+                          <span className="font-medium">${(proposal as any).detailed_calculations.baseline_breakdown?.federal_tax?.toLocaleString() || '0'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">State Tax:</span>
+                          <span className="font-medium">${(proposal as any).detailed_calculations.baseline_breakdown?.state_tax?.toLocaleString() || '0'}</span>
+                        </div>
+                        <div className="flex justify-between border-t pt-2">
+                          <span className="text-gray-900 font-medium">Total Tax:</span>
+                          <span className="font-bold">${(proposal as any).detailed_calculations.baseline_breakdown?.total_tax?.toLocaleString() || '0'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Effective Rate:</span>
+                          <span className="font-medium">{(proposal as any).detailed_calculations.baseline_breakdown?.effective_rate?.toFixed(2) || '0.00'}%</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-gray-900 mb-3">Strategy Breakdown</h3>
+                      <div className="space-y-2 text-sm">
+                        {(proposal as any).detailed_calculations.strategy_breakdown && Object.entries((proposal as any).detailed_calculations.strategy_breakdown).map(([strategyName, details]: [string, any]) => (
+                          <div key={strategyName} className="border-b border-gray-100 pb-2">
+                            <div className="font-medium text-gray-900 capitalize mb-1">{strategyName.replace('_', ' ')}</div>
+                            {details && typeof details === 'object' && Object.entries(details).map(([key, value]: [string, any]) => (
+                              <div key={key} className="flex justify-between text-xs">
+                                <span className="text-gray-600 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                                <span className="font-medium">
+                                  {typeof value === 'number' ? `$${value?.toLocaleString() || '0'}` : String(value || 'N/A')}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                    <p className="text-sm text-blue-800">
+                      <strong>Tax Year:</strong> {(proposal as any).detailed_calculations.selected_year || '2024'} | 
+                      <strong> Calculation Method:</strong> Professional tax calculation engine with current tax rates
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Enhanced Calculator Data - Strategy Details */}
+            {(proposal as any).strategy_details && (proposal as any).strategy_details.length > 0 && (
+              <div className="card-professional">
+                <div className="p-6">
+                  <h2 className="text-lg font-semibold text-gray-900 mb-4">Strategy Implementation Details</h2>
+                  <div className="space-y-4">
+                    {(proposal as any).strategy_details.map((strategy: any) => (
+                      <div key={strategy.id} className="border border-gray-200 rounded-lg p-4">
+                        <div className="flex items-start justify-between mb-3">
+                          <div>
+                            <h3 className="font-medium text-gray-900">{strategy.name}</h3>
+                            <p className="text-sm text-gray-600 capitalize">{strategy.category?.replace('_', ' ') || 'Strategy'}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-semibold text-green-600">${strategy.estimated_savings?.toLocaleString() || '0'}</p>
+                            <p className="text-xs text-gray-500">Annual Savings</p>
+                          </div>
+                        </div>
+                        
+                        {/* Strategy Details */}
+                        {strategy.details && Object.keys(strategy.details).length > 0 && (
+                          <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                            <h4 className="font-medium text-gray-900 mb-2">Calculation Details</h4>
+                            <div className="text-sm text-gray-700">
+                              {Object.entries(strategy.details).map(([key, value]: [string, any]) => (
+                                <div key={key} className="flex justify-between mb-1">
+                                  <span className="text-gray-600 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                                  <span className="font-medium">
+                                    {typeof value === 'number' ? `$${value?.toLocaleString() || '0'}` : String(value || 'N/A')}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Implementation Steps */}
+                        {strategy.implementation_steps && strategy.implementation_steps.length > 0 && (
+                          <div className="mt-3">
+                            <h4 className="font-medium text-gray-900 mb-2">Implementation Steps</h4>
+                            <ol className="list-decimal list-inside text-sm text-gray-700 space-y-1">
+                              {strategy.implementation_steps.map((step: string, index: number) => (
+                                <li key={index}>{step}</li>
+                              ))}
+                            </ol>
+                          </div>
+                        )}
+
+                        {/* Required Documents */}
+                        {strategy.required_documents && strategy.required_documents.length > 0 && (
+                          <div className="mt-3">
+                            <h4 className="font-medium text-gray-900 mb-2">Required Documents</h4>
+                            <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
+                              {strategy.required_documents.map((doc: string, index: number) => (
+                                <li key={index}>{doc}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Sidebar */}
@@ -523,6 +756,18 @@ const ProposalDetailView: React.FC<ProposalDetailViewProps> = ({ onBack }) => {
                 )}
               </div>
             </div>
+
+            {/* Strategy Implementation Tracking */}
+            {proposal.strategy_implementations && proposal.strategy_implementations.length > 0 && (
+              <StrategyImplementationManager
+                proposalId={proposal.id}
+                strategyImplementations={proposal.strategy_implementations}
+                onUpdate={(updatedImplementations) => {
+                  // In a real app, this would update the proposal in the database
+                  console.log('Updated strategy implementations:', updatedImplementations);
+                }}
+              />
+            )}
           </div>
         </div>
       </div>

@@ -351,6 +351,8 @@ export default function TaxResults({
     shiftedIncome,
     deferredIncome,
     charitableDonationAmount,
+    ctbPaymentAmount,
+    totalStrategyCosts,
     rawSavings,
     annualSavings,
     fiveYearValue,
@@ -381,9 +383,15 @@ export default function TaxResults({
       .filter(s => s.enabled && s.category === 'income_deferred')
       .reduce((total, s) => total + s.estimatedSavings, 0);
 
-    // Get charitable donation details
+    // Get strategy costs
     const charitableStrategy = strategies.find(s => s.enabled && s.id === 'charitable_donation');
     const charitableDonationAmount = charitableStrategy?.details?.charitableDonation?.donationAmount || 0;
+    
+    const ctbStrategy = strategies.find(s => s.enabled && s.id === 'convertible_tax_bonds');
+    const ctbPaymentAmount = ctbStrategy?.details?.convertibleTaxBonds?.ctbPayment || 0;
+
+    // Calculate total costs from all strategies
+    const totalStrategyCosts = charitableDonationAmount + ctbPaymentAmount;
 
     // Calculate total benefits from all strategies
     const totalBenefits = strategies
@@ -392,6 +400,10 @@ export default function TaxResults({
         if (strategy.id === 'charitable_donation' && strategy.details?.charitableDonation) {
           // For charitable donations, use the net benefit
           return total + strategy.details.charitableDonation.totalBenefit;
+        }
+        if (strategy.id === 'convertible_tax_bonds' && strategy.details?.convertibleTaxBonds) {
+          // For CTB, use the net savings
+          return total + strategy.details.convertibleTaxBonds.netSavings;
         }
         if (strategy.details?.augustaRule) {
           return total + (strategy.details.augustaRule.totalBenefit || 0);
@@ -425,6 +437,8 @@ export default function TaxResults({
       shiftedIncome,
       deferredIncome,
       charitableDonationAmount,
+      ctbPaymentAmount,
+      totalStrategyCosts,
       rawSavings,
       annualSavings,
       fiveYearValue,
@@ -700,9 +714,15 @@ export default function TaxResults({
                 ${Math.max(0, annualSavings).toLocaleString()}
               </span>
               <span className="text-gray-600 font-medium tracking-wider">Annual Savings</span>
-              {charitableDonationAmount > 0 && (
+              {totalStrategyCosts > 0 && (
                 <div className="absolute hidden group-hover:block bg-gray-800 text-white text-sm rounded-lg p-3 -mt-2 z-10 shadow-xl">
-                  Net benefit after subtracting ${charitableDonationAmount.toLocaleString()} donation
+                  <div className="font-semibold mb-1">Net Benefit after subtracting:</div>
+                  {charitableDonationAmount > 0 && (
+                    <div className="text-red-300">• ${Math.round(charitableDonationAmount).toLocaleString()} Donation Purchase Amount</div>
+                  )}
+                  {ctbPaymentAmount > 0 && (
+                    <div className="text-red-300">• ${Math.round(ctbPaymentAmount).toLocaleString()} Bond Purchase Amount</div>
+                  )}
                 </div>
               )}
             </div>
@@ -759,12 +779,12 @@ export default function TaxResults({
         <KPIContainer>
           <KPICard>
             <KPILabel>Net Tax Savings</KPILabel>
-            <KPIValue>${(rawSavings - charitableDonationAmount).toLocaleString()}</KPIValue>
-            <KPISubtext>Net annual savings after charitable contributions</KPISubtext>
+            <KPIValue>${annualSavings.toLocaleString()}</KPIValue>
+            <KPISubtext>Net annual savings after all strategy costs</KPISubtext>
           </KPICard>
           <KPICard>
             <KPILabel>5 Year Value</KPILabel>
-            <KPIValue>${Math.max(0, (rawSavings - charitableDonationAmount) * 5 * 1.08).toLocaleString()}</KPIValue>
+            <KPIValue>${Math.max(0, fiveYearValue).toLocaleString()}</KPIValue>
             <KPISubtext>Projected net savings over 5 years at 8% growth</KPISubtext>
           </KPICard>
           <KPICard>

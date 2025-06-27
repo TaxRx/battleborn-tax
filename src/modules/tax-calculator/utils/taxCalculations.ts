@@ -32,6 +32,9 @@ export function calculateStrategyDeductions(strategies: TaxStrategy[]): number {
       if (strategy.id === 'cost_segregation' && strategy.details?.costSegregation) {
         return total + Math.round(strategy.details.costSegregation.currentYearDeduction);
       }
+      if (strategy.id === 'reinsurance' && strategy.details?.reinsurance) {
+        return total + Math.round(strategy.details.reinsurance.userContribution);
+      }
       return total;
     }, 0);
 }
@@ -49,6 +52,18 @@ export function calculateShiftedIncome(strategies: TaxStrategy[]): number {
       if (strategy.id === 'family_management_company' && strategy.details?.familyManagementCompany) {
         return total + strategy.details.familyManagementCompany.totalSalaries;
       }
+      if (strategy.id === 'reinsurance' && strategy.details?.reinsurance) {
+        return total + strategy.details.reinsurance.userContribution;
+      }
+      return total;
+    }, 0);
+}
+
+export function calculateDeferredIncome(strategies: TaxStrategy[]): number {
+  return strategies
+    .filter(s => s.enabled && s.category === 'income_deferred')
+    .reduce((total, strategy) => {
+      // Reinsurance is now in income_shifted category, so no longer handled here
       return total;
     }, 0);
 }
@@ -187,14 +202,7 @@ export function calculateTaxBreakdown(taxInfo: TaxInfo, rates: TaxRates, strateg
 
   // Calculate shifted and deferred income
   const shiftedIncome = calculateShiftedIncome(strategies);
-  const deferredIncome = strategies
-    .filter(s => s.enabled && s.category === 'income_deferred')
-    .reduce((total, strategy) => {
-      if (strategy.details?.deferredIncome?.deferredAmount) {
-        return total + strategy.details.deferredIncome.deferredAmount;
-      }
-      return total;
-    }, 0);
+  const deferredIncome = calculateDeferredIncome(strategies);
 
   // Calculate federal taxable income
   const federalTaxableIncome = Math.max(0, totalIncome - shiftedIncome - deferredIncome - totalDeductions);

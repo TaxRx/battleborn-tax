@@ -93,13 +93,21 @@ export default function CostSegregationCalculator({
         : calculations.federalSavings + calculations.stateSavings;
 
       onSavingsChange({
-        property_value: propertyValue,
-        property_type: propertyType,
-        year_acquired: yearAcquired,
-        state_benefit: calculations.stateSavings,
-        federal_benefit: calculations.federalSavings,
-        fica_benefit: calculations.ficaSavings,
-        total_benefit: totalBenefit
+        costSegregation: {
+          propertyValue,
+          propertyType,
+          landValue,
+          improvementValue,
+          bonusDepreciationRate,
+          yearAcquired,
+          currentYearDeduction: calculations.firstYearDeduction,
+          years2to5Annual: calculations.years2to5Annual,
+          federalSavings: calculations.federalSavings,
+          stateSavings: calculations.stateSavings,
+          ficaSavings: calculations.ficaSavings,
+          totalBenefit: totalBenefit,
+          totalSavings: calculations.totalSavings
+        }
       });
     }
   }, [propertyValue, propertyType, landValue, improvementValue, bonusDepreciationRate, yearAcquired, 

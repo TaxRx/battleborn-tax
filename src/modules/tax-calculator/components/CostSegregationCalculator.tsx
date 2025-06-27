@@ -57,12 +57,22 @@ export default function CostSegregationCalculator({
     const remainingAccelerated = acceleratedPortion - acceleratedDepreciation;
     const years2to5Annual = Math.round(remainingAccelerated / 4);
 
-    // Calculate tax impact using TBB
+    // --- TAX BENEFIT CALCULATION (with/without deduction) ---
+    // Baseline: no cost segregation deduction
     const baseBreakdown = calculateTaxBreakdown(taxInfo, rates);
-    const modifiedTaxInfo = { ...taxInfo };
-    modifiedTaxInfo.customDeduction = (taxInfo.customDeduction || 0) + firstYearDeduction;
+    // With cost segregation: add deduction to customDeduction, force itemized if better
+    const standardDeduction = rates.federal.standardDeduction[taxInfo.filingStatus] || 0;
+    const currentItemizedDeductions = taxInfo.standardDeduction ? 0 : (taxInfo.customDeduction || 0);
+    const newItemizedTotal = currentItemizedDeductions + firstYearDeduction;
+    let modifiedTaxInfo = { ...taxInfo };
+    if (newItemizedTotal > standardDeduction) {
+      modifiedTaxInfo.standardDeduction = false;
+      modifiedTaxInfo.customDeduction = newItemizedTotal;
+    } else {
+      // If itemizing doesn't help, don't add the deduction
+      modifiedTaxInfo = { ...taxInfo };
+    }
     const strategyBreakdown = calculateTaxBreakdown(modifiedTaxInfo, rates);
-
     const federalSavings = Math.max(0, baseBreakdown.federal - strategyBreakdown.federal);
     const stateSavings = Math.max(0, baseBreakdown.state - strategyBreakdown.state);
     const ficaSavings = Math.max(0, baseBreakdown.fica - strategyBreakdown.fica);

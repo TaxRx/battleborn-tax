@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Check } from 'lucide-react';
+import { Check, Info } from 'lucide-react';
 import { TaxInfo } from '../types';
 import { calculateTaxBreakdown } from '../utils/taxCalculations';
 import { NumericFormat } from 'react-number-format';
@@ -143,133 +143,197 @@ export default function CharitableDonationCalculator({
   const netSavings = shouldCalculate ? Math.max(0, calculatedBenefits.totalBenefit - (donationAmount || 0)) : 0;
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="mb-8">
-        <p className="body-large text-gray-700 leading-relaxed">
-          Give with Purpose. Save with Confidence. Philanthropic tax benefit pathways allow you to reduce your tax burden while 
-          making a meaningful impact through qualified 501(c)(3) charities. These programs are designed to be non-reportable 
-          transactions under current IRS guidance.
-        </p>
+    <div className="max-w-6xl mx-auto">
+      {/* Information Header */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+        <div className="flex items-start space-x-3">
+          <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+          <div>
+            <h3 className="font-semibold text-blue-900 mb-2">How Charitable Donations Work</h3>
+            <p className="text-blue-800 text-sm leading-relaxed">
+              Give with Purpose. Save with Confidence. Philanthropic tax benefit pathways allow you to reduce your tax burden while 
+              making a meaningful impact through qualified 501(c)(3) charities. These programs are designed to be non-reportable 
+              transactions under current IRS guidance. The FMV multiplier allows you to claim a deduction value higher than your actual cash contribution.
+            </p>
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-[1.5fr,1fr] gap-12 items-start">
-        <div>
-          <h3 className="heading-tertiary text-professional-navy mb-8">
-            How We Help You Maximize Your Charitable Impact
-          </h3>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Left Column - Inputs and Services */}
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Configuration</h3>
+            
+            <div className="space-y-4">
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  AGI Deduction Limit
+                </label>
+                <select
+                  value={agiLimit}
+                  onChange={(e) => setAgiLimit(parseFloat(e.target.value))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value={0.3}>30% of AGI</option>
+                  <option value={0.5}>50% of AGI</option>
+                  <option value={0.6}>60% of AGI</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Maximum allowed: ${maxDonation.toLocaleString()}
+                </p>
+              </div>
 
-          <div className="space-y-8">
-            <div className="flex items-start space-x-4">
-              <Check className="w-5 h-5 text-blue-600 mt-1 flex-shrink-0" />
-              <div>
-                <h4 className="heading-tertiary text-gray-900 mb-3">Pre-Vetted Assets & Qualified Charities</h4>
-                <p className="body-regular text-gray-700">
-                  We connect you with wholesale-donated assets and ensure compliant delivery to 501(c)(3) organizations that 
-                  serve educational, disaster relief, and humanitarian missions.
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  FMV Multiplier
+                </label>
+                <select
+                  value={fmvMultiplier}
+                  onChange={(e) => setFmvMultiplier(parseFloat(e.target.value))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value={4}>4x Fair Market Value</option>
+                  <option value={4.5}>4.5x Fair Market Value</option>
+                  <option value={5}>5x Fair Market Value</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Multiplies your donation amount for deduction purposes
+                </p>
+              </div>
+
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Donation Amount
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+                  <NumericFormat
+                    value={donationAmount || ''}
+                    onValueChange={(values) => setDonationAmount(values.floatValue || null)}
+                    thousandSeparator={true}
+                    className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="0"
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Maximum allowed: ${maxDonation.toLocaleString()}
                 </p>
               </div>
             </div>
+          </div>
 
-            <div className="flex items-start space-x-4">
-              <Check className="w-5 h-5 text-blue-600 mt-1 flex-shrink-0" />
-              <div>
-                <h4 className="heading-tertiary text-gray-900 mb-3">Complete Filing Support</h4>
-                <p className="body-regular text-gray-700 mb-3">We prepare all required documents, including:</p>
-                <ul className="mt-3 space-y-2 body-regular text-gray-700">
-                  <li>• Appraisal Reports</li>
-                  <li>• Structuring (if needed)</li>
-                  <li>• IRS-compliant filing guides</li>
-                  <li>• Form 8283 (Non-cash Charitable Contributions)</li>
-                  <li>• Acknowledgment Letters</li>
-                </ul>
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <h4 className="font-semibold text-gray-900 mb-3">Implementation Services</h4>
+            <div className="space-y-3">
+              <div className="flex items-start space-x-3">
+                <Check className="w-4 h-4 text-emerald-600 mt-1 flex-shrink-0" />
+                <div>
+                  <h5 className="font-medium text-gray-900">Pre-Vetted Assets & Qualified Charities</h5>
+                  <p className="text-sm text-gray-600">We connect you with wholesale-donated assets and ensure compliant delivery to 501(c)(3) organizations</p>
+                </div>
               </div>
-            </div>
-
-            <div className="flex items-start space-x-4">
-              <Check className="w-5 h-5 text-blue-600 mt-1 flex-shrink-0" />
-              <div>
-                <h4 className="heading-tertiary text-gray-900 mb-3">Built-In Audit Support</h4>
-                <p className="body-regular text-gray-700 mb-3">Includes audit defense with:</p>
-                <ul className="mt-3 space-y-2 body-regular text-gray-700">
-                  <li>• Expert response team</li>
-                  <li>• Legal fund access</li>
-                  <li>• Documentation kits for state and IRS</li>
-                </ul>
+              <div className="flex items-start space-x-3">
+                <Check className="w-4 h-4 text-emerald-600 mt-1 flex-shrink-0" />
+                <div>
+                  <h5 className="font-medium text-gray-900">Complete Filing Support</h5>
+                  <p className="text-sm text-gray-600">Appraisal reports, IRS-compliant filing guides, Form 8283, and acknowledgment letters</p>
+                </div>
+              </div>
+              <div className="flex items-start space-x-3">
+                <Check className="w-4 h-4 text-emerald-600 mt-1 flex-shrink-0" />
+                <div>
+                  <h5 className="font-medium text-gray-900">Built-In Audit Support</h5>
+                  <p className="text-sm text-gray-600">Expert response team, legal fund access, and documentation kits for state and IRS</p>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Right Column */}
+        {/* Right Column - Results */}
         <div className="space-y-6">
-          <div className="card-professional p-6">
-            <p className="form-label mb-4">AGI Deduction Limit</p>
-            <select
-              value={agiLimit}
-              onChange={(e) => setAgiLimit(parseFloat(e.target.value))}
-              className="form-select heading-tertiary text-gray-900"
-            >
-              <option value={0.3}>30% of AGI</option>
-              <option value={0.5}>50% of AGI</option>
-              <option value={0.6}>60% of AGI</option>
-            </select>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Tax Benefit Summary</h3>
+            
+            <div className="space-y-4">
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-gray-600">Total Deduction Value</span>
+                </div>
+                <div className="bg-blue-50 p-3 rounded-lg">
+                  <span className="text-2xl font-bold text-blue-900">
+                    ${deductionValue.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-gray-600">State Tax Benefit</span>
+                </div>
+                <div className="bg-green-50 p-3 rounded-lg">
+                  <span className="text-2xl font-bold text-green-900">
+                    ${calculatedBenefits.stateSavings.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-gray-600">Federal Tax Benefit</span>
+                </div>
+                <div className="bg-green-50 p-3 rounded-lg">
+                  <span className="text-2xl font-bold text-green-900">
+                    ${calculatedBenefits.federalSavings.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-gray-600">Total Tax Savings</span>
+                </div>
+                <div className="bg-green-50 p-3 rounded-lg">
+                  <span className="text-2xl font-bold text-green-900">
+                    ${calculatedBenefits.totalBenefit.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 rounded-lg p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-emerald-100">Net Benefit</span>
+                </div>
+                <div className="bg-white/10 p-3 rounded-lg">
+                  <span className="text-3xl font-bold text-white">
+                    ${netSavings.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="card-professional p-6">
-            <p className="form-label mb-4">FMV Multiplier</p>
-            <select
-              value={fmvMultiplier}
-              onChange={(e) => setFmvMultiplier(parseFloat(e.target.value))}
-              className="form-select heading-tertiary text-gray-900"
-            >
-              <option value={4}>4x</option>
-              <option value={4.5}>4.5x</option>
-              <option value={5}>5x</option>
-            </select>
-          </div>
-
-          <div className="card-professional p-6">
-            <p className="form-label mb-4">Donation Amount</p>
-            <div className="flex items-center mb-3">
-              <span className="heading-secondary text-gray-900 mr-2">$</span>
-              <NumericFormat
-                value={donationAmount || ''}
-                onValueChange={(values) => setDonationAmount(values.floatValue || null)}
-                thousandSeparator={true}
-                className="form-input heading-secondary text-gray-900 border-0 p-0 bg-transparent focus:ring-0"
-                placeholder="0"
-              />
-            </div>
-            <p className="body-small text-gray-600">
-              Maximum allowed: ${maxDonation.toLocaleString()}
-            </p>
-          </div>
-
-          <div className="card-professional p-6 space-y-6">
-            <div>
-              <p className="form-label">Total Deduction Value</p>
-              <p className="heading-tertiary text-gray-900">${deductionValue.toLocaleString()}</p>
-            </div>
-
-            <div>
-              <p className="form-label">State Benefit</p>
-              <p className="heading-tertiary text-professional-success">${calculatedBenefits.stateSavings.toLocaleString()}</p>
-            </div>
-
-            <div>
-              <p className="form-label">Federal Benefit</p>
-              <p className="heading-tertiary text-professional-success">${calculatedBenefits.federalSavings.toLocaleString()}</p>
-            </div>
-
-            <div>
-              <p className="form-label">Total Tax Savings</p>
-              <p className="heading-tertiary text-professional-success">${(calculatedBenefits.federalSavings + calculatedBenefits.stateSavings).toLocaleString()}</p>
-            </div>
-
-            <div className="border-t border-professional pt-6">
-              <p className="form-label">Net Benefit</p>
-              <p className="heading-primary text-professional-navy">${netSavings.toLocaleString()}</p>
-            </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h4 className="font-semibold text-blue-900 mb-2">Key Benefits</h4>
+            <ul className="space-y-2 text-sm text-blue-800">
+              <li className="flex items-start space-x-2">
+                <Check className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                <span>FMV multiplier allows deduction value higher than cash contribution</span>
+              </li>
+              <li className="flex items-start space-x-2">
+                <Check className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                <span>Qualified 501(c)(3) charities ensure full tax deductibility</span>
+              </li>
+              <li className="flex items-start space-x-2">
+                <Check className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                <span>Non-reportable transactions under current IRS guidance</span>
+              </li>
+              <li className="flex items-start space-x-2">
+                <Check className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                <span>Complete audit defense and documentation support</span>
+              </li>
+            </ul>
           </div>
         </div>
       </div>

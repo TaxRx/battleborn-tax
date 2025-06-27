@@ -4,6 +4,15 @@ export type UserRole = 'affiliate' | 'admin' | 'client';
 
 export type ProposalStatus = 'draft' | 'submitted' | 'in_review' | 'approved' | 'rejected' | 'finalized' | 'implemented';
 
+// Strategy Implementation Status
+export type StrategyStatus = 'not_started' | 'referred' | 'engaged' | 'in_process' | 'completed' | 'cancelled';
+
+// Expert Referral Status
+export type ReferralStatus = 'pending' | 'sent' | 'accepted' | 'declined' | 'expired';
+
+// Commission Status
+export type CommissionStatus = 'pending' | 'earned' | 'paid' | 'cancelled';
+
 // User Profile Types
 export interface BaseUser {
   id: string;
@@ -117,6 +126,9 @@ export interface TaxProposal {
     total_tax_reduction: number;
   };
   
+  // Strategy Implementations (for admin workflow tracking)
+  strategy_implementations: StrategyImplementation[];
+  
   // Workflow
   submitted_at?: string;
   reviewed_at?: string;
@@ -126,6 +138,16 @@ export interface TaxProposal {
   
   // Documents
   documents: ProposalDocument[];
+  
+  // Enhanced data from calculator
+  client_profile?: ClientProfile;
+  detailed_calculations?: {
+    baseline_breakdown: any;
+    strategy_breakdown: any;
+    selected_year: number;
+    tax_rates_used: any;
+  };
+  strategy_details?: any[];
   
   created_at: string;
   updated_at: string;
@@ -263,4 +285,88 @@ export interface SearchParams {
   sort_order?: 'asc' | 'desc';
   page?: number;
   per_page?: number;
+}
+
+// Strategy Implementation Tracking
+export interface StrategyImplementation {
+  id: string;
+  proposal_id: string;
+  strategy_id: string;
+  strategy_name: string;
+  status: StrategyStatus;
+  estimated_savings: number;
+  actual_savings?: number;
+  transaction_value?: number;
+  commission_amount?: number;
+  commission_status: CommissionStatus;
+  
+  // Expert Referral
+  expert_referral?: ExpertReferral;
+  
+  // Admin Notes
+  admin_notes: StrategyNote[];
+  
+  // Timeline
+  referred_at?: string;
+  engaged_at?: string;
+  started_at?: string;
+  completed_at?: string;
+  cancelled_at?: string;
+  
+  created_at: string;
+  updated_at: string;
+}
+
+// Expert Referral
+export interface ExpertReferral {
+  id: string;
+  strategy_implementation_id: string;
+  expert_id: string;
+  expert_name: string;
+  expert_email: string;
+  expert_specialties: string[];
+  status: ReferralStatus;
+  referral_date: string;
+  response_date?: string;
+  response_notes?: string;
+  commission_rate: number;
+  estimated_commission: number;
+  actual_commission?: number;
+  
+  created_at: string;
+  updated_at: string;
+}
+
+// Strategy-specific Admin Notes
+export interface StrategyNote {
+  id: string;
+  strategy_implementation_id: string;
+  admin_id: string;
+  admin_name: string;
+  note: string;
+  note_type: 'general' | 'referral' | 'progress' | 'completion' | 'cancellation';
+  is_internal: boolean;
+  created_at: string;
+}
+
+// Commission Tracking
+export interface Commission {
+  id: string;
+  affiliate_id: string;
+  affiliate_name: string;
+  proposal_id: string;
+  client_id: string;
+  client_name: string;
+  strategy_implementation_id: string;
+  strategy_name: string;
+  commission_rate: number;
+  transaction_value: number;
+  commission_amount: number;
+  status: CommissionStatus;
+  earned_date?: string;
+  paid_date?: string;
+  payment_reference?: string;
+  
+  created_at: string;
+  updated_at: string;
 } 

@@ -24,23 +24,24 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
   const [formData, setFormData] = useState<TaxInfo>(initialData || {
     standardDeduction: true,
     customDeduction: 0,
-    businessOwner: false,
+    businessOwner: true,
     fullName: '',
     email: user?.email || '',
+    phone: '',
     filingStatus: 'single',
-    dependents: 0,
+    dependents: 1,
     homeAddress: '',
     state: 'CA',
-    wagesIncome: 0,
-    passiveIncome: 0,
-    unearnedIncome: 0,
-    capitalGains: 0,
-    businessName: '',
-    entityType: undefined,
+    wagesIncome: 200000,
+    passiveIncome: 50000,
+    unearnedIncome: 25000,
+    capitalGains: 10000,
+    businessName: 'Demo Business LLC',
+    entityType: 'LLC',
     businessAddress: '',
-    ordinaryK1Income: 0,
-    guaranteedK1Income: 0,
-    householdIncome: 0,
+    ordinaryK1Income: 150000,
+    guaranteedK1Income: 50000,
+    householdIncome: 500000,
     deductionLimitReached: false
   });
 
@@ -138,6 +139,7 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
             business_owner: formData.businessOwner,
             full_name: formData.fullName,
             email: formData.email,
+            phone: formData.phone,
             dependents: formData.dependents,
             home_address: formData.homeAddress,
             state: formData.state,
@@ -250,6 +252,31 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
                     onChange={(e) => setFormData(prev => ({ ...prev, fullName: e.target.value }))}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
                     required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Email <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Phone
+                  </label>
+                  <input
+                    type="tel"
+                    value={formData.phone}
+                    onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
                   />
                 </div>
 

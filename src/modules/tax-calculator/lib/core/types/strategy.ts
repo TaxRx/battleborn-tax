@@ -7,10 +7,14 @@ export interface TaxStrategy {
   link?: string;
   enabled: boolean;
   highIncome?: boolean;
+  featured?: boolean;
   synergy?: {
     with: string;
     label: string;
   };
+  steps?: Array<{
+    completed: boolean;
+  }>;
   details?: {
     augustaRule?: {
       daysRented: number;
@@ -68,6 +72,31 @@ export interface TaxStrategy {
       ficaSavings?: number;
       totalBenefit: number;
       totalSavings: number;
+    };
+    convertibleTaxBonds?: {
+      ctbPayment: number;
+      ctbTaxOffset: number;
+      netSavings: number;
+      remainingTaxAfterCtb: number;
+      reductionRatio: number;
+    };
+    reinsurance?: {
+      userContribution: number;
+      agiReduction: number;
+      federalTaxBenefit: number;
+      stateTaxBenefit: number;
+      totalTaxSavings: number;
+      netYear1Cost: number;
+      breakevenYears: number;
+      futureValue: number;
+      capitalGainsTax: number;
+      setupAdminCost: number;
+    };
+    deferredIncome?: {
+      deferredAmount: number;
+      federalSavings: number;
+      stateSavings: number;
+      totalBenefit: number;
     };
   };
 }

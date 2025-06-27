@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, User, Mail, Phone, Building, Star, AlertCircle } from 'lucide-react';
+import { Plus, Edit, User, Mail, Phone, Building, Star, AlertCircle, ArrowLeft } from 'lucide-react';
 import { Expert, CreateExpertForm } from '../../../types/commission';
 import { commissionService } from '../../shared/services/commissionService';
+import { useNavigate } from 'react-router-dom';
 
 const ExpertManagement: React.FC = () => {
   const [experts, setExperts] = useState<Expert[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingExpert, setEditingExpert] = useState<Expert | null>(null);
+  const [isDemoMode, setIsDemoMode] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     loadExperts();
@@ -18,8 +21,70 @@ const ExpertManagement: React.FC = () => {
     try {
       const data = await commissionService.getExperts(true); // Include inactive
       setExperts(data);
+      setIsDemoMode(false);
     } catch (error) {
       console.error('Error loading experts:', error);
+      // Provide mock data when database tables don't exist yet
+      const mockExperts: Expert[] = [
+        {
+          id: '1',
+          name: 'Dr. Sarah Johnson',
+          email: 'sarah.johnson@taxexperts.com',
+          phone: '(555) 123-4567',
+          company: 'Johnson Tax Consulting',
+          specialties: ['R&D Credits', 'Cost Segregation', 'Section 179'],
+          max_capacity: 5,
+          current_workload: 3,
+          hourly_rate: 150,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        {
+          id: '2',
+          name: 'Prof. Michael Chen',
+          email: 'mchen@university.edu',
+          phone: '(555) 234-5678',
+          company: 'University Tax Research',
+          specialties: ['R&D Credits', 'Academic Research'],
+          max_capacity: 4,
+          current_workload: 4,
+          hourly_rate: 200,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        {
+          id: '3',
+          name: 'Dr. Emily Rodriguez',
+          email: 'emily.rodriguez@strategictax.com',
+          phone: '(555) 345-6789',
+          company: 'Strategic Tax Solutions',
+          specialties: ['Cost Segregation', 'Section 179', 'Bonus Depreciation'],
+          max_capacity: 6,
+          current_workload: 2,
+          hourly_rate: 175,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        {
+          id: '4',
+          name: 'James Wilson',
+          email: 'jwilson@taxpartners.com',
+          phone: '(555) 456-7890',
+          company: 'Tax Partners Group',
+          specialties: ['R&D Credits', 'Manufacturing'],
+          max_capacity: 3,
+          current_workload: 0,
+          hourly_rate: 125,
+          is_active: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+      ];
+      setExperts(mockExperts);
+      setIsDemoMode(true);
     } finally {
       setLoading(false);
     }
@@ -32,6 +97,13 @@ const ExpertManagement: React.FC = () => {
       loadExperts();
     } catch (error) {
       console.error('Error creating expert:', error);
+      // Show user-friendly error message
+      if (error instanceof Error && error.message.includes('Database table does not exist')) {
+        alert('Database tables need to be created first. Please run the migration to enable expert creation.');
+      } else {
+        alert('Error creating expert. Please try again.');
+      }
+      // Don't close the modal if there was an error, let user try again
     }
   };
 
@@ -64,14 +136,50 @@ const ExpertManagement: React.FC = () => {
 
   return (
     <div className="p-6">
+      {/* Database Status Notification */}
+      <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+        <div className="flex items-center">
+          <AlertCircle className="h-5 w-5 text-yellow-600 mr-2" />
+          <div>
+            <h3 className="text-sm font-medium text-yellow-800">
+              {isDemoMode ? 'Demo Mode Active' : 'Database Connected'}
+            </h3>
+            <p className="text-sm text-yellow-700 mt-1">
+              {isDemoMode 
+                ? 'Showing demo data. Expert management tables need to be created. Run the database migration to enable full functionality.'
+                : 'Database is connected and working properly.'
+              }
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Expert Management</h1>
+        <div className="flex items-center space-x-4">
+          <button
+            onClick={() => navigate('/admin')}
+            className="btn-secondary flex items-center space-x-2"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span>Back to Dashboard</span>
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Expert Management</h1>
+            <p className="text-sm text-gray-600">Manage tax experts and their assignments</p>
+          </div>
+        </div>
         <button
           onClick={() => setShowCreateModal(true)}
-          className="btn-primary flex items-center space-x-2"
+          disabled={isDemoMode}
+          className={`flex items-center space-x-2 ${
+            isDemoMode 
+              ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+              : 'btn-primary'
+          }`}
+          title={isDemoMode ? 'Database migration required to add experts' : 'Add new expert'}
         >
           <Plus className="h-5 w-5" />
-          <span>Add Expert</span>
+          <span>{isDemoMode ? 'Add Expert (Demo)' : 'Add Expert'}</span>
         </button>
       </div>
 

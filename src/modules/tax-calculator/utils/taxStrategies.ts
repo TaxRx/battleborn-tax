@@ -1,4 +1,5 @@
-import { TaxInfo, TaxBreakdown, TaxStrategy } from '../types';
+import { TaxInfo, TaxBreakdown } from '../types';
+import { TaxStrategy } from '../../lib/core/types/strategy';
 
 export function getTaxStrategies(taxInfo: TaxInfo, breakdown: TaxBreakdown): TaxStrategy[] {
   const strategies: TaxStrategy[] = [];
@@ -54,38 +55,38 @@ export function getTaxStrategies(taxInfo: TaxInfo, breakdown: TaxBreakdown): Tax
       }
     });
 
-    if (taxInfo.dependents > 0) {
-      strategies.push({
-        id: 'hire_children',
-        category: 'income_shifted',
-        name: 'Hire Your Children',
-        description: "Savings through your children's lower tax bracket",
-        estimatedSavings: 0,
-        link: 'Get Started',
-        enabled: false,
-        details: {
-          hireChildren: {
-            children: Array(taxInfo.dependents).fill({
-              age: 'Under 18',
-              filingStatus: 'Single',
-              salary: 13850
-            }),
-            totalSalaries: 13850 * taxInfo.dependents,
-            stateBenefit: 0,
-            federalBenefit: 0,
-            ficaBenefit: 0,
-            totalBenefit: 0
-          }
+    // Make Hire Your Children available for demo purposes (even with 0 dependents)
+    strategies.push({
+      id: 'hire_children',
+      category: 'income_shifted',
+      name: 'Hire Your Children',
+      description: "Savings through your children's lower tax bracket",
+      estimatedSavings: 0,
+      link: 'Get Started',
+      enabled: false,
+      details: {
+        hireChildren: {
+          children: Array(Math.max(1, taxInfo.dependents)).fill({
+            age: 'Under 18',
+            filingStatus: 'Single',
+            salary: 13850
+          }),
+          totalSalaries: 13850 * Math.max(1, taxInfo.dependents),
+          stateBenefit: 0,
+          federalBenefit: 0,
+          ficaBenefit: 0,
+          totalBenefit: 0
         }
-      });
-    }
+      }
+    });
   }
 
-  // New Deductions
+  // New Deductions - Lower threshold for demo purposes
   const totalIncome = taxInfo.wagesIncome + taxInfo.passiveIncome + taxInfo.unearnedIncome +
     (taxInfo.businessOwner ? (taxInfo.ordinaryK1Income || 0) + (taxInfo.guaranteedK1Income || 0) : 0);
 
-  if (totalIncome > 100000) {
+  // Lower threshold from 100000 to 50000 for demo purposes
+  if (totalIncome > 50000) {
     strategies.push({
       id: 'charitable_donation',
       category: 'new_deductions',
@@ -108,16 +109,31 @@ export function getTaxStrategies(taxInfo: TaxInfo, breakdown: TaxBreakdown): Tax
     });
   }
 
-  // Income Deferred Strategies
-  if (taxInfo.businessOwner && breakdown.total > 150000) {
+  // Income Deferred Strategies - Lower threshold for demo purposes
+  if (taxInfo.businessOwner && breakdown.total > 50000) { // Lowered from 75000 to 50000
     strategies.push({
       id: 'reinsurance',
-      category: 'income_deferred',
-      name: 'Reinsurance Options',
-      description: 'Defer business income through captive insurance strategies',
+      category: 'income_shifted',
+      name: '831b Reinsurance',
+      description: 'Microcaptive insurance arrangements reduce AGI and convert ordinary income to long-term capital gains',
       estimatedSavings: 0,
       link: 'Get Started',
-      enabled: false
+      enabled: false,
+      details: {
+        reinsurance: {
+          userContribution: 0,
+          agiReduction: 0,
+          federalTaxBenefit: 0,
+          stateTaxBenefit: 0,
+          totalTaxSavings: 0,
+          netYear1Cost: 0,
+          breakevenYears: 0,
+          futureValue: 0,
+          capitalGainsTax: 0,
+          setupAdminCost: 0
+        }
+      },
+      highIncome: totalIncome >= 400000 // Minimum AGI threshold for eligibility
     });
   }
 
@@ -133,12 +149,17 @@ export function getTaxStrategies(taxInfo: TaxInfo, breakdown: TaxBreakdown): Tax
       details: {
         costSegregation: {
           propertyValue: 1000000,
-          propertyAge: 0,
-          remainingLife: 27.5,
+          propertyType: 'residential',
+          landValue: 200000,
+          improvementValue: 800000,
+          bonusDepreciationRate: 60,
+          yearAcquired: new Date().getFullYear(),
           currentYearDeduction: 0,
+          years2to5Annual: 0,
           federalSavings: 0,
           stateSavings: 0,
-          totalSavings: 0
+          totalSavings: 0,
+          totalBenefit: 0
         }
       }
     });
@@ -167,7 +188,8 @@ export function getTaxStrategies(taxInfo: TaxInfo, breakdown: TaxBreakdown): Tax
     });
   }
 
-  if (breakdown.total > 75000) {
+  // Lower threshold for Energy Tax Credits for demo purposes
+  if (breakdown.total > 50000) { // Lowered from 75000
     strategies.push({
       id: 'energy_credit',
       category: 'new_credits',
@@ -176,6 +198,29 @@ export function getTaxStrategies(taxInfo: TaxInfo, breakdown: TaxBreakdown): Tax
       estimatedSavings: 0,
       link: 'Get Started',
       enabled: false
+    });
+  }
+
+  // Convertible Tax Bonds - Available for high-income taxpayers
+  if (totalIncome > 200000) {
+    strategies.push({
+      id: 'convertible_tax_bonds',
+      category: 'income_shifted',
+      name: 'Convertible Tax Bonds',
+      description: 'Offset remaining tax burden through strategic CTB payments',
+      estimatedSavings: 0,
+      link: 'Get Started',
+      enabled: false,
+      details: {
+        convertibleTaxBonds: {
+          ctbPayment: 0,
+          ctbTaxOffset: 0,
+          netSavings: 0,
+          remainingTaxAfterCtb: 0,
+          reductionRatio: 0.75
+        }
+      },
+      highIncome: totalIncome >= 500000
     });
   }
 

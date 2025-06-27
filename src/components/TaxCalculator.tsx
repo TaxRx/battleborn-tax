@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import InfoForm from './InfoForm';
 import TaxResults from './TaxResults';
-import { TaxInfo, TaxStrategy, SavedCalculation } from '../types';
+import { TaxInfo, SavedCalculation } from '../types';
 import { useTaxProfileStore } from '../store/taxProfileStore';
 import { useUserStore } from '../store/userStore';
+import { useTaxStore } from '../store/taxStore';
 import { supabase } from '../lib/supabase';
 import { User } from '../types/user';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -11,8 +12,13 @@ import { useLocation } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
 import { taxRates } from '../data/taxRates';
 import { ChevronLeftIcon } from '@heroicons/react/24/outline';
+import ActionBar from './ActionBar';
+import { adminService } from '../modules/admin/services/adminService';
+import { v4 as uuidv4 } from 'uuid';
+import { TaxProposal, TaxStrategy } from '../modules/shared/types';
+import { calculateTaxBreakdown } from '../utils/taxCalculations';
 
-const TaxCalculator: React.FC = () => {
+const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => {
   const location = useLocation();
   const [showResults, setShowResults] = useState(false);
   const [showInfoForm, setShowInfoForm] = useState(false);
@@ -22,38 +28,40 @@ const TaxCalculator: React.FC = () => {
   const { taxProfile, loading: taxProfileLoading, error: taxProfileError, fetchTaxProfile, updateTaxProfile } = useTaxProfileStore();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const { demoMode } = useAuthStore();
-  
-  // Demo tax profile state for local storage
-  const [demoTaxProfile, setDemoTaxProfile] = useState<TaxInfo | null>(() => {
+  const [selectedStrategies, setSelectedStrategies] = useState<import('../types').TaxStrategy[]>(() => {
+    // Load saved strategies from localStorage in demo mode
     if (demoMode) {
-      const saved = localStorage.getItem('demoTaxProfile');
-      if (saved) {
-        return JSON.parse(saved);
+      try {
+        const saved = localStorage.getItem('demoSelectedStrategies');
+        if (saved) {
+          return JSON.parse(saved);
+        }
+      } catch (error) {
+        console.error("Failed to parse demo selected strategies from local storage", error);
+        localStorage.removeItem('demoSelectedStrategies'); // Clear corrupted data
       }
-      // Create a default demo profile for testing
-      return {
-        standardDeduction: true,
-        customDeduction: 0,
-        businessOwner: true,
-        fullName: 'Demo User',
-        email: 'demo@example.com',
-        filingStatus: 'married_joint',
-        dependents: 2,
-        homeAddress: '123 Demo Street, Demo City, CA 90210',
-        state: 'CA',
-        wagesIncome: 250000,
-        passiveIncome: 75000,
-        unearnedIncome: 15000,
-        capitalGains: 25000,
-        businessName: 'Demo Business LLC',
-        ordinaryK1Income: 150000,
-        guaranteedK1Income: 50000,
-        businessAddress: '456 Business Ave, Demo City, CA 90210',
-        businessType: 'Professional Services',
-        businessDescription: 'Consulting and professional services'
-      };
     }
-    return null;
+    return [];
+  });
+  const [proposalCreated, setProposalCreated] = useState(false);
+  const { addSavedCalculation } = useTaxStore();
+  
+  const [demoTaxProfile, setDemoTaxProfile] = useState<TaxInfo | null>(() => {
+    if (initialData) {
+      return initialData;
+    }
+    if (demoMode) {
+      try {
+        const saved = localStorage.getItem('demoTaxProfile');
+        if (saved) {
+          return JSON.parse(saved);
+        }
+      } catch (error) {
+        console.error("Failed to parse demo tax profile from local storage", error);
+        localStorage.removeItem('demoTaxProfile'); // Clear corrupted data
+      }
+    }
+    return null; // Return null if not in demo mode, or if nothing is saved, or if parsing failed.
   });
 
   // Reset modal state on route change
@@ -63,7 +71,11 @@ const TaxCalculator: React.FC = () => {
 
   // Open modal for onboarding if no taxInfo and user is loaded
   useEffect(() => {
-    if (demoMode) {
+    if (initialData) {
+      // If initialData is provided, show results immediately
+      setShowResults(true);
+      setShowInfoForm(false);
+    } else if (demoMode) {
       // In demo mode, check for demo tax profile
       if (!demoTaxProfile && !loading) {
         setShowInfoForm(true);
@@ -73,21 +85,40 @@ const TaxCalculator: React.FC = () => {
         setShowInfoForm(true);
       }
     }
-  }, [user, taxProfile, demoTaxProfile, loading, demoMode]);
+  }, [user, taxProfile, demoTaxProfile, loading, demoMode, initialData]);
 
   useEffect(() => {
-    if (!demoMode) {
+    if (!demoMode && !initialData) {
       fetchTaxProfile();
     }
-  }, [demoMode]);
+  }, [demoMode, initialData]);
 
   useEffect(() => {
-    if (demoMode) {
+    if (initialData) {
+      setShowResults(true);
+    } else if (demoMode) {
       setShowResults(!!demoTaxProfile);
     } else {
       setShowResults(!!taxProfile);
     }
-  }, [taxProfile, demoTaxProfile, demoMode]);
+  }, [taxProfile, demoTaxProfile, demoMode, initialData]);
+
+  // Handle URL parameters for pre-populating data from proposals
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const dataParam = urlParams.get('data');
+    
+    if (dataParam && !initialData && !demoMode) {
+      try {
+        const taxInfoData = JSON.parse(decodeURIComponent(dataParam));
+        setDemoTaxProfile(taxInfoData);
+        setShowResults(true);
+        setShowInfoForm(false);
+      } catch (error) {
+        console.error('Error parsing tax info from URL:', error);
+      }
+    }
+  }, [initialData, demoMode]);
 
   const handleInfoSubmit = async (info: TaxInfo, year: number) => {
     if (demoMode) {
@@ -155,7 +186,18 @@ const TaxCalculator: React.FC = () => {
     }
   };
 
-  const handleStrategiesSelect = (strategies: TaxStrategy[]) => {
+  const handleStrategiesSelect = (strategies: import('../types').TaxStrategy[]) => {
+    setSelectedStrategies(strategies);
+    
+    // Save strategies to localStorage in demo mode
+    if (demoMode) {
+      try {
+        localStorage.setItem('demoSelectedStrategies', JSON.stringify(strategies));
+      } catch (error) {
+        console.error("Failed to save demo selected strategies to local storage", error);
+      }
+    }
+    
     // Only log significant strategy changes
     const enabledCount = strategies.filter(s => s.enabled).length;
     if (enabledCount > 0) {
@@ -163,9 +205,21 @@ const TaxCalculator: React.FC = () => {
     }
   };
 
-  const handleSaveCalculation = (calc: SavedCalculation) => {
-    // Handle saving calculation
-    console.log('Saved calculation:', calc);
+  const handleSaveCalculation = async (calc: SavedCalculation) => {
+    try {
+      if (demoMode) {
+        // In demo mode, just log the calculation
+        console.log('Demo mode - Saved calculation:', calc);
+        return;
+      }
+      
+      // Use the tax store to save the calculation
+      await addSavedCalculation(calc);
+      console.log('Successfully saved calculation:', calc);
+    } catch (error) {
+      console.error('Failed to save calculation:', error);
+      setError('Failed to save calculation. Please try again.');
+    }
   };
 
   const handleStrategyAction = (strategyId: string, action: string) => {
@@ -195,8 +249,8 @@ const TaxCalculator: React.FC = () => {
     }
   };
 
-  // Use either real profile or demo profile
-  const effectiveTaxProfile = demoMode ? demoTaxProfile : taxProfile;
+  // Use either initialData, real profile, or demo profile
+  const effectiveTaxProfile = initialData || (demoMode ? demoTaxProfile : taxProfile);
 
   // Skip loading and auth checks in demo mode
   if (demoMode) {
@@ -205,14 +259,6 @@ const TaxCalculator: React.FC = () => {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8">
         <div className="max-w-7xl mx-auto px-4">
           <div className="bg-white rounded-xl shadow-lg p-8">
-            <div className="text-center mb-8">
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">Tax Calculator</h1>
-              <p className="text-gray-600">Calculate your tax liability and explore strategies</p>
-              <div className="mt-2 px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full inline-block">
-                Demo Mode - Using Local Data
-              </div>
-            </div>
-
             {showInfoForm && (
               <InfoForm 
                 onSubmit={handleInfoSubmit}
@@ -234,7 +280,7 @@ const TaxCalculator: React.FC = () => {
                   taxInfo={effectiveTaxProfile}
                   selectedYear={selectedYear}
                   onYearChange={setSelectedYear}
-                  onStrategiesSelect={handleStrategiesSelect}
+                  onStrategiesSelect={handleStrategiesSelect as any}
                   onSaveCalculation={handleSaveCalculation}
                   onStrategyAction={handleStrategyAction}
                 />
@@ -300,38 +346,231 @@ const TaxCalculator: React.FC = () => {
     );
   }
 
+  // Utility function to create a proposal object
+  function buildTaxProposal({ client, affiliateId, strategies, baseline, savings }: {
+    client: { id: string };
+    affiliateId: string;
+    strategies: TaxStrategy[];
+    baseline: TaxProposal['baseline_calculation'];
+    savings: TaxProposal['projected_savings'];
+  }): TaxProposal {
+    return {
+      id: uuidv4(),
+      client_id: client.id,
+      affiliate_id: affiliateId,
+      status: 'submitted',
+      baseline_calculation: baseline,
+      proposed_strategies: strategies,
+      projected_savings: savings,
+      strategy_implementations: [], // Will be populated after creation
+      admin_notes: [],
+      documents: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      submitted_at: new Date().toISOString(),
+    };
+  }
+
+  // Utility to convert local TaxStrategy to shared TaxStrategy for proposal creation
+  function toSharedTaxStrategy(local: any): import('../modules/shared/types').TaxStrategy {
+    return {
+      ...local,
+      estimated_savings: local.estimatedSavings || 0,
+      implementation_complexity: local.implementationComplexity || 'low',
+      requires_expert: local.requiresExpert || false,
+      eligibility_criteria: local.eligibilityCriteria || [],
+    };
+  }
+
+  const handleCreateProposal = async () => {
+    if (!effectiveTaxProfile) return;
+
+    try {
+      setLoading(true);
+      
+      // Get client id from userStore or fallback
+      const clientId = user?.id || 'demo-client';
+      const affiliateId = 'affiliate-001'; // TODO: Replace with real affiliate logic
+      
+      // Get real baseline calculations
+      const baselineCalculation = calculateTaxBreakdown(effectiveTaxProfile, taxRates[selectedYear]);
+      
+      // Get enabled strategies with their details
+      const enabledStrategies = selectedStrategies.filter(s => s.enabled);
+      const sharedStrategies: import('../modules/shared/types').TaxStrategy[] = enabledStrategies.map(strategy => ({
+        id: strategy.id,
+        name: strategy.name,
+        category: strategy.category,
+        description: strategy.description,
+        estimated_savings: strategy.estimatedSavings || 0,
+        implementation_complexity: 'low', // Default value
+        requires_expert: false, // Default value
+        min_income_threshold: undefined, // Default value
+        eligibility_criteria: [], // Default value
+        details: strategy.details || {},
+        enabled: strategy.enabled
+      }));
+
+      // Calculate real projected savings
+      const strategyBreakdown = calculateTaxBreakdown(effectiveTaxProfile, taxRates[selectedYear], enabledStrategies);
+      const totalSavings = baselineCalculation.total - strategyBreakdown.total;
+      const annualSavings = totalSavings;
+      const fiveYearValue = annualSavings * 5;
+      
+      const projectedSavings: TaxProposal['projected_savings'] = {
+        annual_savings: annualSavings,
+        five_year_value: fiveYearValue,
+        total_tax_reduction: totalSavings
+      };
+
+      // Create comprehensive baseline calculation
+      const baseline: TaxProposal['baseline_calculation'] = {
+        total_income: effectiveTaxProfile.householdIncome || 
+                     effectiveTaxProfile.wagesIncome + 
+                     effectiveTaxProfile.passiveIncome + 
+                     effectiveTaxProfile.unearnedIncome +
+                     (effectiveTaxProfile.businessOwner ? (effectiveTaxProfile.ordinaryK1Income || 0) + (effectiveTaxProfile.guaranteedK1Income || 0) : 0),
+        federal_tax: baselineCalculation.federal,
+        state_tax: baselineCalculation.state,
+        total_tax: baselineCalculation.total,
+        effective_rate: baselineCalculation.effectiveRate
+      };
+
+      // Create client profile for the proposal
+      const clientProfile = {
+        id: clientId,
+        affiliate_id: affiliateId,
+        personal_info: {
+          full_name: effectiveTaxProfile.fullName || 'Client',
+          email: effectiveTaxProfile.email || 'client@example.com',
+          address: {
+            street: effectiveTaxProfile.homeAddress || '',
+            city: '',
+            state: effectiveTaxProfile.state || 'CA',
+            zip: ''
+          }
+        },
+        tax_info: {
+          filing_status: (effectiveTaxProfile.filingStatus === 'married_joint' ? 'married_filing_jointly' :
+                         effectiveTaxProfile.filingStatus === 'married_separate' ? 'married_filing_separately' :
+                         effectiveTaxProfile.filingStatus === 'head_household' ? 'head_of_household' :
+                         effectiveTaxProfile.filingStatus) as 'single' | 'married_filing_jointly' | 'married_filing_separately' | 'head_of_household',
+          dependents: effectiveTaxProfile.dependents,
+          state: effectiveTaxProfile.state,
+          wages_income: effectiveTaxProfile.wagesIncome,
+          business_income: (effectiveTaxProfile.ordinaryK1Income || 0) + (effectiveTaxProfile.guaranteedK1Income || 0),
+          passive_income: effectiveTaxProfile.passiveIncome,
+          capital_gains: effectiveTaxProfile.capitalGains,
+          other_income: effectiveTaxProfile.unearnedIncome,
+          current_deductions: effectiveTaxProfile.standardDeduction ? 0 : (effectiveTaxProfile.customDeduction || 0),
+          qbi_eligible: effectiveTaxProfile.businessOwner,
+          business_owner: effectiveTaxProfile.businessOwner,
+          high_income: (effectiveTaxProfile.householdIncome || 0) > 400000
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const proposal = buildTaxProposal({ 
+        client: { id: clientId }, 
+        affiliateId, 
+        strategies: sharedStrategies, 
+        baseline, 
+        savings: projectedSavings 
+      });
+
+      // Create strategy implementations for admin workflow tracking
+      const strategyImplementations = await adminService.createStrategyImplementations(proposal.id, sharedStrategies);
+
+      // Add client profile and detailed calculations to the proposal
+      const enhancedProposal = {
+        ...proposal,
+        strategy_implementations: strategyImplementations,
+        client_profile: clientProfile,
+        detailed_calculations: {
+          baseline_breakdown: baselineCalculation,
+          strategy_breakdown: strategyBreakdown,
+          selected_year: selectedYear,
+          tax_rates_used: taxRates[selectedYear]
+        },
+        strategy_details: enabledStrategies.map(strategy => ({
+          id: strategy.id,
+          name: strategy.name,
+          category: strategy.category,
+          estimated_savings: strategy.estimatedSavings,
+          details: strategy.details,
+          implementation_steps: [], // Default empty array
+          required_documents: [] // Default empty array
+        }))
+      };
+
+      await adminService.createProposal(enhancedProposal);
+      
+      // Show success message and update state
+      setProposalCreated(true);
+      alert(`Tax proposal created successfully!\n\nAnnual Savings: $${annualSavings.toLocaleString()}\n5-Year Value: $${fiveYearValue.toLocaleString()}\n\nProposal has been sent to admin for review.`);
+      
+      // Reset the indicator after 5 seconds
+      setTimeout(() => setProposalCreated(false), 5000);
+      
+    } catch (error) {
+      console.error('Error creating proposal:', error);
+      alert('Failed to create proposal. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="container mx-auto px-4 py-8">
-      <Dialog.Root open={showInfoForm || !effectiveTaxProfile} onOpenChange={setShowInfoForm}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
-          <Dialog.Content className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl p-0 w-full max-w-2xl z-50 focus:outline-none">
-            <Dialog.Title className="text-xl font-bold px-8 pt-8">Tax Information</Dialog.Title>
-            <Dialog.Description className="px-8 pb-2 text-gray-500">Enter or update your tax profile to get started.</Dialog.Description>
-            <InfoForm initialData={effectiveTaxProfile} onSubmit={handleInfoSubmit} />
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
-      {showResults && effectiveTaxProfile && (
-        <TaxResults
-          taxInfo={effectiveTaxProfile}
+    <div className="min-h-screen bg-gray-50 pb-24">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        {showInfoForm && (
+          <InfoForm 
+            onSubmit={handleInfoSubmit}
+            initialData={effectiveTaxProfile}
+          />
+        )}
+
+        {showResults && effectiveTaxProfile && !showInfoForm && (
+          <>
+            <TaxResults 
+              taxInfo={effectiveTaxProfile}
+              selectedYear={selectedYear}
+              onYearChange={setSelectedYear}
+              onStrategiesSelect={handleStrategiesSelect as any}
+              onSaveCalculation={handleSaveCalculation}
+              onStrategyAction={handleStrategyAction}
+            />
+          </>
+        )}
+      </div>
+
+      {effectiveTaxProfile && !showInfoForm && (
+        <ActionBar
+          userName={effectiveTaxProfile.fullName || 'User'}
+          userState={effectiveTaxProfile.state || 'N/A'}
           selectedYear={selectedYear}
           onYearChange={setSelectedYear}
-          onStrategiesSelect={handleStrategiesSelect}
-          onSaveCalculation={handleSaveCalculation}
-          onStrategyAction={handleStrategyAction}
+          onUpdateInfo={() => setShowInfoForm(true)}
+          onSave={() => console.log('Save action triggered')}
+          extraActions={
+            <div className="flex items-center space-x-4">
+              {proposalCreated && (
+                <div className="flex items-center bg-green-600 text-white px-3 py-1 rounded-md text-sm">
+                  <span>✓ Proposal Created</span>
+                </div>
+              )}
+              <button 
+                className={`btn-primary-modern ${proposalCreated ? 'bg-green-600 hover:bg-green-700' : ''}`} 
+                onClick={handleCreateProposal}
+                disabled={loading}
+              >
+                {loading ? 'Creating...' : proposalCreated ? 'Proposal Created!' : 'Create Proposal'}
+              </button>
+            </div>
+          }
         />
-      )}
-      {!showResults && (
-        <div className="flex justify-center mt-8">
-          <button
-            className="px-6 py-2 bg-emerald-600 text-white rounded-lg shadow hover:bg-emerald-700 transition"
-            onClick={() => setShowInfoForm(true)}
-            disabled={loading}
-          >
-            {effectiveTaxProfile ? 'Update Info' : 'Enter Info'}
-          </button>
-        </div>
       )}
     </div>
   );

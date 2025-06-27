@@ -4,6 +4,7 @@ export interface TaxInfo {
   businessOwner: boolean;
   fullName: string;
   email: string;
+  phone?: string;
   filingStatus: 'single' | 'married_joint' | 'married_separate' | 'head_household';
   dependents: number;
   homeAddress?: string;

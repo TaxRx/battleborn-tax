@@ -1,23 +1,61 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AdminUser, AdminStats, TaxProposal } from '../../shared/types';
 import { adminService } from '../services/adminService';
 import StatsCards from '../components/StatsCards';
 import ProposalQueue from '../components/ProposalQueue';
 import ProposalDetailView from '../components/ProposalDetailView';
+import ProposalsTable from '../components/ProposalsTable';
 import ExpertManagement from '../components/ExpertManagement';
 import CommissionDashboard from '../components/CommissionDashboard';
-import { Settings, Users, FileText, BarChart3, UserCheck, DollarSign } from 'lucide-react';
+import ClientRetentionDashboard from '../components/ClientRetentionDashboard';
+import AdminTaxCalculator from '../components/AdminTaxCalculator';
+import { 
+  Settings, 
+  Users, 
+  FileText, 
+  BarChart3, 
+  UserCheck, 
+  DollarSign, 
+  Home,
+  ChevronRight,
+  Menu,
+  X,
+  LogOut,
+  User,
+  Shield,
+  Bell,
+  Search,
+  Calculator,
+  TrendingUp,
+  Clock,
+  Target,
+  AlertTriangle,
+  CheckCircle,
+  Plus,
+  ArrowRight,
+  Zap,
+  Award,
+  Briefcase,
+  PieChart
+} from 'lucide-react';
+import { supabase } from '../../../lib/supabase';
+import { fixRlsPoliciesDirect } from '../../../lib/fixRlsPolicies';
+import CreateClientModal from '../components/CreateClientModal';
+import { useUser } from '../../../context/UserContext';
 
-interface AdminDashboardProps {
-  user: AdminUser;
-}
-
-const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
+const AdminDashboard: React.FC = () => {
+  const { user } = useUser();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [proposals, setProposals] = useState<TaxProposal[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState('overview');
+  const [showCreateClientModal, setShowCreateClientModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadDashboardData();
@@ -46,9 +84,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
 
   const handleApproveProposal = async (id: string) => {
     try {
-      // In a real app, this would call the API
       console.log('Approving proposal:', id);
-      // Refresh data after action
       loadDashboardData();
     } catch (error) {
       console.error('Error approving proposal:', error);
@@ -57,95 +93,259 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
 
   const handleRejectProposal = async (id: string) => {
     try {
-      // In a real app, this would call the API
       console.log('Rejecting proposal:', id);
-      // Refresh data after action
       loadDashboardData();
     } catch (error) {
       console.error('Error rejecting proposal:', error);
     }
   };
 
+  const handleFixRlsPolicies = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const result = await fixRlsPoliciesDirect();
+      if (result.success) {
+        alert('RLS policy fix instructions have been logged to the console. Please check the browser console and execute the SQL commands in your Supabase dashboard.');
+      } else {
+        setError('Failed to generate RLS fix instructions');
+      }
+    } catch (err) {
+      setError('Error fixing RLS policies: ' + (err as Error).message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const navigationItems = [
+    { name: 'Dashboard', href: '/admin', icon: Home, current: location.pathname === '/admin' },
+    { name: 'Proposals', href: '/admin/proposals', icon: FileText, current: location.pathname.includes('/admin/proposals') },
+    { name: 'Tax Planning', href: '/admin/calculator', icon: Calculator, current: location.pathname === '/admin/calculator' },
+    { name: 'Client Retention', href: '/admin/retention', icon: Shield, current: location.pathname === '/admin/retention' },
+    { name: 'Commission', href: '/admin/commission', icon: DollarSign, current: location.pathname === '/admin/commission' },
+    { name: 'Experts', href: '/admin/experts', icon: UserCheck, current: location.pathname === '/admin/experts' },
+    { name: 'Users', href: '/admin/users', icon: Users, current: location.pathname === '/admin/users' },
+    { name: 'Reports', href: '/admin/reports', icon: BarChart3, current: location.pathname === '/admin/reports' },
+    { name: 'Settings', href: '/admin/settings', icon: Settings, current: location.pathname === '/admin/settings' },
+  ];
+
+  const getPageTitle = () => {
+    const currentItem = navigationItems.find(item => item.current);
+    return currentItem ? currentItem.name : 'Dashboard';
+  };
+
+  const getBreadcrumbs = () => {
+    const pathSegments = location.pathname.split('/').filter(Boolean);
+    const breadcrumbs = [{ name: 'Admin', href: '/admin' }];
+    
+    if (pathSegments.length > 1) {
+      const currentItem = navigationItems.find(item => item.current);
+      if (currentItem) {
+        breadcrumbs.push({ name: currentItem.name, href: currentItem.href });
+      }
+    }
+    
+    return breadcrumbs;
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                Admin Dashboard
-              </h1>
-              <p className="text-gray-600">
-                Welcome back, {user.full_name}
-              </p>
+    <div className="min-h-screen bg-slate-50">
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <div className="fixed inset-0 bg-slate-900 bg-opacity-50" onClick={() => setSidebarOpen(false)} />
+        </div>
+      )}
+
+      {/* Modern Sidebar */}
+      <div className={`sidebar-modern ${sidebarOpen ? 'open' : ''}`}>
+        {/* Sidebar Header */}
+        <div className="sidebar-header-modern">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-sm">BB</span>
+              </div>
+              <div>
+                <h1 className="text-heading-sm text-slate-900">BattleBorn</h1>
+                <p className="text-body-sm text-slate-500">Admin Panel</p>
+              </div>
             </div>
-            <div className="flex space-x-4">
-              <button 
-                onClick={() => navigate('/admin/commission')}
-                className="btn-secondary flex items-center space-x-2"
-              >
-                <DollarSign className="h-5 w-5" />
-                <span>Commission</span>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="lg:hidden p-2 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* User Profile Section */}
+        <div className="px-6 py-4 border-b border-slate-200">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
+              <User className="h-5 w-5 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-body-md font-medium text-slate-900 truncate">{user?.full_name || 'Administrator'}</p>
+              <p className="text-body-sm text-slate-500">Administrator</p>
+            </div>
+            <div className="relative">
+              <button className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+                <Bell className="h-4 w-4" />
               </button>
-              <button 
-                onClick={() => navigate('/admin/experts')}
-                className="btn-secondary flex items-center space-x-2"
-              >
-                <UserCheck className="h-5 w-5" />
-                <span>Manage Experts</span>
-              </button>
-              <button 
-                onClick={() => navigate('/admin/users')}
-                className="btn-secondary flex items-center space-x-2"
-              >
-                <Users className="h-5 w-5" />
-                <span>Manage Users</span>
-              </button>
-              <button 
-                onClick={() => navigate('/admin/reports')}
-                className="btn-secondary flex items-center space-x-2"
-              >
-                <BarChart3 className="h-5 w-5" />
-                <span>Reports</span>
-              </button>
-              <button 
-                onClick={() => navigate('/admin/settings')}
-                className="btn-secondary flex items-center space-x-2"
-              >
-                <Settings className="h-5 w-5" />
-                <span>Settings</span>
-              </button>
+              <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></div>
             </div>
           </div>
         </div>
+
+        {/* Navigation */}
+        <nav className="sidebar-nav-modern">
+          <div className="space-y-1">
+            {navigationItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.name}
+                  onClick={() => {
+                    navigate(item.href);
+                    setSidebarOpen(false);
+                  }}
+                  className={`nav-item-modern w-full text-left ${item.current ? 'active' : ''}`}
+                >
+                  <Icon className="h-5 w-5 mr-3" />
+                  <span className="text-body-md font-medium">{item.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+
+        {/* Sidebar Footer */}
+        <div className="sidebar-footer-modern">
+          <button
+            onClick={() => navigate('/')}
+            className="flex items-center w-full px-4 py-3 text-body-md font-medium text-slate-600 rounded-lg hover:bg-slate-100 hover:text-slate-700 transition-colors"
+          >
+            <LogOut className="mr-3 h-5 w-5" />
+            Back to Main App
+          </button>
+        </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Routes>
-          <Route index element={
-            <DashboardHome 
-              stats={stats}
-              proposals={proposals}
-              loading={loading}
-              onViewProposal={handleViewProposal}
-              onApproveProposal={handleApproveProposal}
-              onRejectProposal={handleRejectProposal}
-            />
-          } />
-          <Route path="proposals/:id" element={<ProposalDetailView />} />
-          <Route path="commission" element={<CommissionDashboard />} />
-          <Route path="experts" element={<ExpertManagement />} />
-          <Route path="users" element={<div>User Management (Coming Soon)</div>} />
-          <Route path="reports" element={<div>Reports (Coming Soon)</div>} />
-          <Route path="settings" element={<div>Settings (Coming Soon)</div>} />
-        </Routes>
+      {/* Main Content */}
+      <div className="lg:pl-72">
+        {/* Top Navigation Bar */}
+        <div className="sticky top-0 z-30 bg-white border-b border-slate-200">
+          <div className="flex items-center justify-between px-4 sm:px-6 lg:px-8 h-16">
+            <div className="flex items-center">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="lg:hidden p-2 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <Menu className="h-6 w-6" />
+              </button>
+              
+              <div className="ml-4 lg:ml-0">
+                <h1 className="text-heading-lg text-slate-900">{getPageTitle()}</h1>
+                <nav className="flex items-center space-x-2 text-sm text-slate-500">
+                  {getBreadcrumbs().map((crumb, index) => (
+                    <React.Fragment key={crumb.href}>
+                      {index > 0 && <ChevronRight className="h-4 w-4" />}
+                      <span className="hover:text-slate-700">{crumb.name}</span>
+                    </React.Fragment>
+                  ))}
+                </nav>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-4">
+              {/* Temporary RLS Fix Button */}
+              <button
+                onClick={handleFixRlsPolicies}
+                disabled={isLoading}
+                className="px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 text-sm font-medium"
+                title="Fix RLS Policies for tax_profiles table"
+              >
+                {isLoading ? 'Fixing...' : 'Fix RLS'}
+              </button>
+              
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search..."
+                  className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Error Display */}
+        {error && (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-red-800">Error</h3>
+                  <div className="mt-2 text-sm text-red-700">{error}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Page Content */}
+        <main className="p-4 sm:p-6 lg:p-8">
+          <Routes>
+            <Route path="/" element={
+              <DashboardHome
+                stats={stats}
+                proposals={proposals}
+                loading={loading}
+                onViewProposal={handleViewProposal}
+                onApproveProposal={handleApproveProposal}
+                onRejectProposal={handleRejectProposal}
+              />
+            } />
+            <Route path="/proposals" element={<ProposalsTable proposals={proposals} loading={loading} />} />
+            <Route path="/proposals/:id" element={<ProposalDetailView />} />
+            <Route path="/calculator" element={<AdminTaxCalculator />} />
+            <Route path="/retention" element={<ClientRetentionDashboard />} />
+            <Route path="/commission" element={<CommissionDashboard />} />
+            <Route path="/experts" element={<ExpertManagement />} />
+            <Route path="/users" element={<div className="card-modern p-6"><h2 className="text-heading-lg">Users Management</h2><p className="text-body-md text-slate-600">Coming soon...</p></div>} />
+            <Route path="/reports" element={<div className="card-modern p-6"><h2 className="text-heading-lg">Reports</h2><p className="text-body-md text-slate-600">Coming soon...</p></div>} />
+            <Route path="/settings" element={<div className="card-modern p-6"><h2 className="text-heading-lg">Settings</h2><p className="text-body-md text-slate-600">Coming soon...</p></div>} />
+            <Route path="*" element={<Navigate to="/admin" replace />} />
+          </Routes>
+        </main>
       </div>
+
+      {/* Create Client Modal */}
+      {showCreateClientModal && (
+        <CreateClientModal
+          isOpen={showCreateClientModal}
+          onClose={() => setShowCreateClientModal(false)}
+          onClientCreated={(client) => {
+            console.log('Client created:', client);
+            setShowCreateClientModal(false);
+            // Optionally refresh the dashboard data
+            loadDashboardData();
+          }}
+        />
+      )}
     </div>
   );
 };
 
-// Dashboard Home Component
 interface DashboardHomeProps {
   stats: AdminStats | null;
   proposals: TaxProposal[];
@@ -163,50 +363,247 @@ const DashboardHome: React.FC<DashboardHomeProps> = ({
   onApproveProposal,
   onRejectProposal
 }) => {
+  const navigate = useNavigate();
+
+  if (loading) {
+    return (
+      <div className="space-y-8 animate-fade-in">
+        {/* Loading skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="card-modern p-6">
+              <div className="animate-pulse">
+                <div className="h-4 bg-slate-200 rounded w-1/2 mb-3"></div>
+                <div className="h-8 bg-slate-200 rounded w-3/4 mb-2"></div>
+                <div className="h-3 bg-slate-200 rounded w-1/3"></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const pendingProposals = proposals.filter(p => p.status === 'submitted').length;
+  const approvedProposals = proposals.filter(p => p.status === 'approved').length;
+  const totalProposals = proposals.length;
+  const activeClients = stats?.totalClients || 0;
+
   return (
-    <div className="space-y-8">
-      {/* Stats Cards */}
-      {stats && <StatsCards stats={stats} loading={loading} />}
+    <div className="space-y-8 animate-fade-in">
+      {/* Welcome Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h1 className="text-display text-slate-900 mb-2">Tax Strategy Command Center 🎯</h1>
+          <p className="text-body-lg text-slate-600">
+            Manage your tax advisory platform and drive client success through strategic planning.
+          </p>
+        </div>
+        <div className="mt-4 lg:mt-0 flex items-center space-x-3">
+          <button 
+            onClick={() => navigate('/admin/calculator')}
+            className="btn-primary-modern"
+          >
+            <Calculator className="h-4 w-4 mr-2" />
+            Create Tax Plan
+          </button>
+          <button 
+            onClick={() => navigate('/admin/proposals')}
+            className="btn-secondary-modern"
+          >
+            <FileText className="h-4 w-4 mr-2" />
+            View All Proposals
+          </button>
+        </div>
+      </div>
 
-      {/* Proposal Queue */}
-      <ProposalQueue
-        proposals={proposals}
-        loading={loading}
-        onViewProposal={onViewProposal}
-        onApproveProposal={onApproveProposal}
-        onRejectProposal={onRejectProposal}
-      />
+      {/* Key Performance Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="card-modern bg-gradient-to-r from-blue-500 to-blue-600 text-white">
+          <div className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-blue-100 text-sm font-medium">Pending Reviews</p>
+                <p className="text-3xl font-bold">{pendingProposals}</p>
+                <p className="text-blue-200 text-sm mt-1">Need attention</p>
+              </div>
+              <AlertTriangle className="h-8 w-8 text-blue-200" />
+            </div>
+          </div>
+        </div>
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <QuickActionCard
-          title="Review Proposals"
-          description="Process pending affiliate submissions"
-          icon={FileText}
-          count={proposals.filter(p => p.status === 'submitted').length}
-          href="/admin/proposals"
-        />
-        <QuickActionCard
-          title="Commission Dashboard"
-          description="Track payments and commission status"
-          icon={DollarSign}
-          count={0}
-          href="/admin/commission"
-        />
-        <QuickActionCard
-          title="Manage Experts"
-          description="Assign experts and track workloads"
-          icon={UserCheck}
-          count={0}
-          href="/admin/experts"
-        />
-        <QuickActionCard
-          title="Manage Affiliates"
-          description="View affiliate performance and settings"
-          icon={Users}
-          count={0}
-          href="/admin/users"
-        />
+        <div className="card-modern bg-gradient-to-r from-emerald-500 to-emerald-600 text-white">
+          <div className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-emerald-100 text-sm font-medium">Approved Plans</p>
+                <p className="text-3xl font-bold">{approvedProposals}</p>
+                <p className="text-emerald-200 text-sm mt-1">Ready for experts</p>
+              </div>
+              <CheckCircle className="h-8 w-8 text-emerald-200" />
+            </div>
+          </div>
+        </div>
+
+        <div className="card-modern bg-gradient-to-r from-purple-500 to-purple-600 text-white">
+          <div className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-purple-100 text-sm font-medium">Active Clients</p>
+                <p className="text-3xl font-bold">{activeClients}</p>
+                <p className="text-purple-200 text-sm mt-1">In pipeline</p>
+              </div>
+              <Users className="h-8 w-8 text-purple-200" />
+            </div>
+          </div>
+        </div>
+
+        <div className="card-modern bg-gradient-to-r from-orange-500 to-orange-600 text-white">
+          <div className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-orange-100 text-sm font-medium">Total Proposals</p>
+                <p className="text-3xl font-bold">{totalProposals}</p>
+                <p className="text-orange-200 text-sm mt-1">This period</p>
+              </div>
+              <Target className="h-8 w-8 text-orange-200" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Recent Proposals */}
+        <div className="lg:col-span-2">
+          <div className="card-modern">
+            <div className="p-6 border-b border-slate-200">
+              <div className="flex items-center justify-between">
+                <h2 className="text-heading-lg text-slate-900">Recent Tax Proposals</h2>
+                <button 
+                  onClick={() => navigate('/admin/proposals')}
+                  className="text-body-sm font-medium text-blue-600 hover:text-blue-700 flex items-center"
+                >
+                  View All
+                  <ArrowRight className="h-4 w-4 ml-1" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              <ProposalQueue
+                proposals={proposals.slice(0, 5)}
+                loading={loading}
+                onViewProposal={onViewProposal}
+                onApproveProposal={onApproveProposal}
+                onRejectProposal={onRejectProposal}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Actions Sidebar */}
+        <div className="space-y-6">
+          <div className="card-modern">
+            <div className="p-6 border-b border-slate-200">
+              <h3 className="text-heading-md text-slate-900">Quick Actions</h3>
+              <p className="text-body-sm text-slate-600 mt-1">Essential tasks for today</p>
+            </div>
+            <div className="p-6 space-y-4">
+              <QuickActionCard
+                title="Create Client"
+                description="Add a new client to the system"
+                icon={Plus}
+                count={0}
+                href="#"
+                priority="high"
+                action="Create New"
+                onClick={() => setShowCreateClientModal(true)}
+              />
+              
+              <QuickActionCard
+                title="Create Tax Plan"
+                description="Start a new client tax strategy"
+                icon={Calculator}
+                count={0}
+                href="/admin/calculator"
+                priority="high"
+                action="Create New"
+              />
+              
+              <QuickActionCard
+                title="Review Queue"
+                description="Proposals awaiting review"
+                icon={FileText}
+                count={pendingProposals}
+                href="/admin/proposals"
+                priority="high"
+                action="Review Now"
+              />
+              
+              <QuickActionCard
+                title="Expert Assignment"
+                description="Ready for expert assignment"
+                icon={UserCheck}
+                count={approvedProposals}
+                href="/admin/experts"
+                priority="medium"
+                action="Assign"
+              />
+              
+              <QuickActionCard
+                title="Client Retention"
+                description="Monitor client health"
+                icon={Shield}
+                count={0}
+                href="/admin/retention"
+                priority="medium"
+                action="Monitor"
+              />
+            </div>
+          </div>
+
+          {/* Platform Insights */}
+          <div className="card-modern">
+            <div className="p-6 border-b border-slate-200">
+              <h3 className="text-heading-md text-slate-900">Platform Insights</h3>
+              <p className="text-body-sm text-slate-600 mt-1">Key performance indicators</p>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg">
+                <div className="flex items-center">
+                  <Zap className="h-5 w-5 text-blue-600 mr-3" />
+                  <div>
+                    <p className="text-body-sm font-medium text-slate-900">Tax Calculator Usage</p>
+                    <p className="text-body-xs text-slate-600">High engagement</p>
+                  </div>
+                </div>
+                <TrendingUp className="h-4 w-4 text-green-600" />
+              </div>
+
+              <div className="flex items-center justify-between p-4 bg-emerald-50 rounded-lg">
+                <div className="flex items-center">
+                  <Award className="h-5 w-5 text-emerald-600 mr-3" />
+                  <div>
+                    <p className="text-body-sm font-medium text-slate-900">Client Satisfaction</p>
+                    <p className="text-body-xs text-slate-600">Excellent ratings</p>
+                  </div>
+                </div>
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              </div>
+
+              <div className="flex items-center justify-between p-4 bg-purple-50 rounded-lg">
+                <div className="flex items-center">
+                  <Briefcase className="h-5 w-5 text-purple-600 mr-3" />
+                  <div>
+                    <p className="text-body-sm font-medium text-slate-900">Expert Utilization</p>
+                    <p className="text-body-xs text-slate-600">85% capacity</p>
+                  </div>
+                </div>
+                <PieChart className="h-4 w-4 text-purple-600" />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -218,6 +615,9 @@ interface QuickActionCardProps {
   icon: React.ComponentType<any>;
   count: number;
   href: string;
+  priority: 'high' | 'medium' | 'low';
+  action: string;
+  onClick?: () => void;
 }
 
 const QuickActionCard: React.FC<QuickActionCardProps> = ({ 
@@ -225,32 +625,69 @@ const QuickActionCard: React.FC<QuickActionCardProps> = ({
   description, 
   icon: Icon, 
   count, 
-  href 
+  href,
+  priority,
+  action,
+  onClick
 }) => {
   const navigate = useNavigate();
-  
+
+  const getPriorityStyles = () => {
+    switch (priority) {
+      case 'high':
+        return 'border-red-200 bg-red-50 hover:bg-red-100';
+      case 'medium':
+        return 'border-orange-200 bg-orange-50 hover:bg-orange-100';
+      case 'low':
+        return 'border-emerald-200 bg-emerald-50 hover:bg-emerald-100';
+      default:
+        return 'border-slate-200 bg-white hover:bg-slate-50';
+    }
+  };
+
+  const getCountColor = () => {
+    switch (priority) {
+      case 'high':
+        return 'text-red-600';
+      case 'medium':
+        return 'text-orange-600';
+      case 'low':
+        return 'text-emerald-600';
+      default:
+        return 'text-slate-600';
+    }
+  };
+
   return (
-    <div 
-      onClick={() => navigate(href)}
-      className="card-professional-hover cursor-pointer"
+    <button
+      onClick={onClick || (() => navigate(href))}
+      className={`w-full text-left p-4 rounded-lg border transition-all duration-200 ${getPriorityStyles()}`}
     >
-      <div className="flex items-start">
-        <div className="p-3 bg-blue-50 rounded-lg">
-          <Icon className="h-6 w-6 text-blue-600" />
+      <div className="flex items-start justify-between mb-3">
+        <div className={`p-2 rounded-lg ${
+          priority === 'high' ? 'bg-red-100' :
+          priority === 'medium' ? 'bg-orange-100' :
+          'bg-emerald-100'
+        }`}>
+          <Icon className={`h-5 w-5 ${getCountColor()}`} />
         </div>
-        <div className="ml-4 flex-1">
-          <div className="flex items-center justify-between">
-            <h3 className="font-medium text-gray-900">{title}</h3>
-            {count > 0 && (
-              <span className="bg-red-100 text-red-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
-                {count}
-              </span>
-            )}
-          </div>
-          <p className="text-sm text-gray-600 mt-1">{description}</p>
-        </div>
+        {count > 0 && (
+          <span className={`text-heading-sm font-bold ${getCountColor()}`}>
+            {count}
+          </span>
+        )}
       </div>
-    </div>
+      
+      <h3 className="text-body-md font-medium text-slate-900 mb-1">{title}</h3>
+      <p className="text-body-sm text-slate-600 mb-3">{description}</p>
+      
+      <div className="flex items-center justify-between">
+        <span className="text-body-sm font-medium text-slate-700">
+          {action}
+        </span>
+        <ArrowRight className="h-4 w-4 text-slate-400" />
+      </div>
+    </button>
   );
 };
 

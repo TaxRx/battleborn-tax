@@ -8,6 +8,7 @@ export interface BaseStrategy {
   name: string;
   description: string;
   estimatedSavings: number;
+  link?: string;
   enabled: boolean;
   highIncome?: boolean;
   synergy?: {
@@ -21,11 +22,9 @@ export interface IncomeShiftStrategy extends BaseStrategy {
   category: 'income_shifted';
   details: {
     shiftedAmount: number;
-    stateBenefit: number;
-    federalBenefit: number;
-    ficaBenefit: number;
+    federalSavings: number;
+    stateSavings: number;
     totalBenefit: number;
-    familyMembers?: FamilyMember[];
   };
 }
 
@@ -52,7 +51,7 @@ export interface DeferralStrategy extends BaseStrategy {
 export interface CreditStrategy extends BaseStrategy {
   category: 'new_credits';
   details: {
-    creditValue: number;
+    creditAmount: number;
     federalSavings: number;
     stateSavings: number;
     totalBenefit: number;
@@ -138,7 +137,16 @@ export interface CreditDetails {
   totalBenefit: number;
 }
 
-export type StrategyDetails = IncomeShiftDetails | DeductionDetails | DeferralDetails | CreditDetails;
+export interface ConvertibleTaxBondsDetails {
+  ctbPayment: number;
+  ctbTaxOffset: number;
+  netSavings: number;
+  remainingTaxAfterCtb: number;
+  reductionRatio: number;
+  totalBenefit: number;
+}
+
+export type StrategyDetails = IncomeShiftDetails | DeductionDetails | DeferralDetails | CreditDetails | ConvertibleTaxBondsDetails;
 
 export interface StrategyFactory {
   createStrategy(): TaxStrategy;

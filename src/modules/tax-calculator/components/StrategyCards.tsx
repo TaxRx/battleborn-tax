@@ -21,7 +21,7 @@ interface StrategyCardsProps {
 }
 
 const categoryTitles = {
-  income_shifted: 'Shift Income to a Lower Tax Bracket',
+  income_shifted: 'Income Optimization',
   income_deferred: 'Turn Ordinary Income into Long-Term Capital Gains',
   new_deductions: 'Qualify for New Deductions',
   new_credits: 'Offset Taxes with Credits'
@@ -35,7 +35,7 @@ const categoryGradients = {
 };
 
 const categoryIcons = {
-  income_shifted: '↓',
+  income_shifted: '⚡',
   income_deferred: '→',
   new_deductions: '-',
   new_credits: '+'
@@ -65,6 +65,14 @@ const hasMeaningfulData = (strategy: TaxStrategy): boolean => {
     return (strategy.details.costSegregation.totalBenefit || 0) > 0;
   }
   
+  if (strategy.id === 'convertible_tax_bonds' && strategy.details.convertibleTaxBonds) {
+    return (strategy.details.convertibleTaxBonds.ctbPayment || 0) > 0;
+  }
+  
+  if (strategy.id === 'reinsurance' && strategy.details.reinsurance) {
+    return (strategy.details.reinsurance.userContribution || 0) > 0;
+  }
+  
   return false;
 };
 
@@ -86,6 +94,8 @@ const StrategyCard = memo(function StrategyCard({
       strategy.details?.familyManagementCompany?.totalBenefit ?? 
       strategy.details?.hireChildren?.totalBenefit ?? 
       strategy.details?.costSegregation?.totalBenefit ?? 
+      strategy.details?.convertibleTaxBonds?.netSavings ?? 
+      strategy.details?.reinsurance?.totalTaxSavings ?? 
       strategy.estimatedSavings;
 
   const handleCardClick = () => {

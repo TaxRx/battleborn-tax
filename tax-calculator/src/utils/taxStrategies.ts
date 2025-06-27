@@ -54,38 +54,38 @@ export function getTaxStrategies(taxInfo: TaxInfo, breakdown: TaxBreakdown): Tax
       }
     });
 
-    if (taxInfo.dependents && taxInfo.dependents > 0) {
-      strategies.push({
-        id: 'hire_children',
-        category: 'income_shifted',
-        name: 'Hire Your Children',
-        description: "Savings through your children's lower tax bracket",
-        estimated_savings: 0,
-        link: 'Get Started',
-        enabled: false,
-        details: {
-          hire_children: {
-            children: Array(taxInfo.dependents).fill({
-              age: 'Under 18',
-              filing_status: 'Single',
-              salary: 13850
-            }),
-            total_salaries: 13850 * taxInfo.dependents,
-            state_benefit: 0,
-            federal_benefit: 0,
-            fica_benefit: 0,
-            total_benefit: 0
-          }
+    // Make Hire Your Children available for demo purposes (even with 0 dependents)
+    strategies.push({
+      id: 'hire_children',
+      category: 'income_shifted',
+      name: 'Hire Your Children',
+      description: "Savings through your children's lower tax bracket",
+      estimated_savings: 0,
+      link: 'Get Started',
+      enabled: false,
+      details: {
+        hire_children: {
+          children: Array(Math.max(1, taxInfo.dependents || 0)).fill({
+            age: 'Under 18',
+            filing_status: 'Single',
+            salary: 13850
+          }),
+          total_salaries: 13850 * Math.max(1, taxInfo.dependents || 0),
+          state_benefit: 0,
+          federal_benefit: 0,
+          fica_benefit: 0,
+          total_benefit: 0
         }
-      });
-    }
+      }
+    });
   }
 
-  // New Deductions
+  // New Deductions - Lower threshold for demo purposes
   const totalIncome = taxInfo.wages_income + taxInfo.passive_income + taxInfo.unearned_income +
     (taxInfo.business_owner ? (taxInfo.ordinary_k1_income || 0) + (taxInfo.guaranteed_k1_income || 0) : 0);
 
-  if (totalIncome > 100000) {
+  // Lower threshold from 100000 to 50000 for demo purposes
+  if (totalIncome > 50000) {
     strategies.push({
       id: 'charitable_donation',
       category: 'new_deductions',
@@ -108,8 +108,8 @@ export function getTaxStrategies(taxInfo: TaxInfo, breakdown: TaxBreakdown): Tax
     });
   }
 
-  // Income Deferred Strategies
-  if (taxInfo.business_owner && breakdown.total > 150000) {
+  // Income Deferred Strategies - Lower threshold for demo purposes
+  if (taxInfo.business_owner && breakdown.total > 50000) {
     strategies.push({
       id: 'reinsurance',
       category: 'income_deferred',
@@ -131,19 +131,19 @@ export function getTaxStrategies(taxInfo: TaxInfo, breakdown: TaxBreakdown): Tax
       link: 'Get Started',
       enabled: false,
       details: {
-        cost_segregation: {
-          property_value: 1000000,
-          property_type: 'residential',
-          land_value: 0,
-          improvement_value: 0,
-          bonus_depreciation_rate: 0,
-          year_acquired: 0,
-          current_year_deduction: 0,
-          years_2_to_5_annual: 0,
-          federal_savings: 0,
-          state_savings: 0,
-          total_savings: 0,
-          total_benefit: 0
+        costSegregation: {
+          propertyValue: 1000000,
+          propertyType: 'residential',
+          landValue: 200000,
+          improvementValue: 800000,
+          bonusDepreciationRate: 60,
+          yearAcquired: new Date().getFullYear(),
+          currentYearDeduction: 0,
+          years2to5Annual: 0,
+          federalSavings: 0,
+          stateSavings: 0,
+          totalSavings: 0,
+          totalBenefit: 0
         }
       }
     });
@@ -172,7 +172,8 @@ export function getTaxStrategies(taxInfo: TaxInfo, breakdown: TaxBreakdown): Tax
     });
   }
 
-  if (breakdown.total > 75000) {
+  // Lower threshold for Energy Tax Credits for demo purposes
+  if (breakdown.total > 50000) {
     strategies.push({
       id: 'energy_credit',
       category: 'new_credits',

@@ -1,4 +1,5 @@
-import { TaxInfo, TaxRates, TaxStrategy, TaxBreakdown } from '../types';
+import { TaxInfo, TaxRates, TaxBreakdown } from '../types';
+import { TaxStrategy } from '../lib/core/types/strategy';
 
 export interface BracketCalculation {
   rate: number;
@@ -49,6 +50,18 @@ export function calculateShiftedIncome(strategies: TaxStrategy[]): number {
       if (strategy.id === 'family_management_company' && strategy.details?.familyManagementCompany) {
         return total + strategy.details.familyManagementCompany.totalSalaries;
       }
+      if (strategy.id === 'reinsurance' && strategy.details?.reinsurance) {
+        return total + strategy.details.reinsurance.userContribution;
+      }
+      return total;
+    }, 0);
+}
+
+export function calculateDeferredIncome(strategies: TaxStrategy[]): number {
+  return strategies
+    .filter(s => s.enabled && s.category === 'income_deferred')
+    .reduce((total, strategy) => {
+      // Reinsurance is now in income_shifted category, so no longer handled here
       return total;
     }, 0);
 }
@@ -141,6 +154,9 @@ export function calculateEffectiveStrategyBenefit(
 
 export function calculateTaxBreakdown(taxInfo: TaxInfo, rates: TaxRates, strategies: TaxStrategy[] = []): TaxBreakdown {
   if (!taxInfo || !rates) {
+    console.log('=== TAX CALCULATION DEBUG ===');
+    console.log('Missing taxInfo or rates:', { taxInfo: !!taxInfo, rates: !!rates });
+    console.log('============================');
     return {
       federal: 0,
       state: 0,
@@ -160,6 +176,12 @@ export function calculateTaxBreakdown(taxInfo: TaxInfo, rates: TaxRates, strateg
     };
   }
 
+  // Debug logging
+  console.log('=== TAX CALCULATION DEBUG ===');
+  console.log('Input taxInfo:', taxInfo);
+  console.log('Input rates:', rates);
+  console.log('Input strategies:', strategies);
+
   // Calculate total income
   const totalIncome = Math.round(
     (taxInfo.wagesIncome || 0) + 
@@ -168,9 +190,26 @@ export function calculateTaxBreakdown(taxInfo: TaxInfo, rates: TaxRates, strateg
     (taxInfo.businessOwner ? (taxInfo.ordinaryK1Income || 0) + (taxInfo.guaranteedK1Income || 0) : 0)
   );
 
+  console.log('Total income calculation:', {
+    wagesIncome: taxInfo.wagesIncome || 0,
+    passiveIncome: taxInfo.passiveIncome || 0,
+    unearnedIncome: taxInfo.unearnedIncome || 0,
+    businessOwner: taxInfo.businessOwner,
+    ordinaryK1Income: taxInfo.ordinaryK1Income || 0,
+    guaranteedK1Income: taxInfo.guaranteedK1Income || 0,
+    totalIncome
+  });
+
   // Calculate deductions
   const baseDeductions = calculateBaseDeductions(taxInfo, rates);
   const strategyDeductions = calculateStrategyDeductions(strategies);
+  
+  console.log('Deductions calculation:', {
+    baseDeductions,
+    strategyDeductions,
+    standardDeduction: taxInfo.standardDeduction,
+    customDeduction: taxInfo.customDeduction
+  });
   
   // Handle deductions based on whether they're standard or itemized
   let totalDeductions;
@@ -185,25 +224,26 @@ export function calculateTaxBreakdown(taxInfo: TaxInfo, rates: TaxRates, strateg
     totalDeductions = baseDeductions;
   }
 
+  console.log('Total deductions:', totalDeductions);
+
   // Calculate shifted and deferred income
   const shiftedIncome = calculateShiftedIncome(strategies);
-  const deferredIncome = strategies
-    .filter(s => s.enabled && s.category === 'income_deferred')
-    .reduce((total, strategy) => {
-      if (strategy.details?.deferredIncome?.deferredAmount) {
-        return total + strategy.details.deferredIncome.deferredAmount;
-      }
-      return total;
-    }, 0);
+  const deferredIncome = calculateDeferredIncome(strategies);
+
+  console.log('Income adjustments:', { shiftedIncome, deferredIncome });
 
   // Calculate federal taxable income
   const federalTaxableIncome = Math.max(0, totalIncome - shiftedIncome - deferredIncome - totalDeductions);
+
+  console.log('Federal taxable income:', federalTaxableIncome);
 
   // Calculate state taxable income (some states have different rules)
   let stateTaxableIncome = totalIncome - shiftedIncome - deferredIncome;
   
   // Apply state deductions if the state has them
   const stateRates = rates.state?.[taxInfo.state];
+  console.log('State rates lookup:', { state: taxInfo.state, stateRates: !!stateRates });
+  
   if (stateRates) {
     // If state has standard deduction, apply it
     if (stateRates.standardDeduction) {
@@ -221,14 +261,21 @@ export function calculateTaxBreakdown(taxInfo: TaxInfo, rates: TaxRates, strateg
     }
   }
 
+  console.log('State taxable income:', stateTaxableIncome);
+  console.log('============================');
+
   // Calculate federal tax with bracket-by-bracket breakdown
   let federal = 0;
+  let remainingIncome = federalTaxableIncome;
   const federalBrackets: BracketCalculation[] = [];
 
-  if (rates.federal?.brackets) {
-    let remainingIncome = federalTaxableIncome;
-    let lastBracketIncome = 0;
+  console.log('=== FEDERAL TAX CALCULATION DEBUG ===');
+  console.log('Federal taxable income:', federalTaxableIncome);
+  console.log('Federal rates available:', !!rates.federal?.brackets);
+  console.log('Federal brackets:', rates.federal?.brackets);
+  console.log('Filing status:', taxInfo.filingStatus);
 
+  if (rates.federal?.brackets) {
     for (let i = 0; i < rates.federal.brackets.length; i++) {
       const currentBracket = rates.federal.brackets[i];
       const prevBracket = i > 0 ? rates.federal.brackets[i - 1] : null;
@@ -236,39 +283,44 @@ export function calculateTaxBreakdown(taxInfo: TaxInfo, rates: TaxRates, strateg
       const min = prevBracket ? prevBracket[taxInfo.filingStatus] : 0;
       const max = currentBracket[taxInfo.filingStatus];
       const bracketSize = max - min;
+      const taxableInBracket = Math.min(remainingIncome, bracketSize);
       
-      // Only process this bracket if we have income that reaches it
-      if (remainingIncome > 0) {
-        // Calculate income in this bracket
-        const incomeInBracket = Math.min(remainingIncome, bracketSize);
-        const tax = Math.round(incomeInBracket * currentBracket.rate);
-        
+      if (taxableInBracket > 0) {
+        const tax = Math.round(taxableInBracket * currentBracket.rate);
         federalBrackets.push({
           rate: currentBracket.rate,
           min,
           max,
-          taxable: Math.round(incomeInBracket),
+          taxable: Math.round(taxableInBracket),
           tax
         });
         
         federal += tax;
-        remainingIncome -= incomeInBracket;
-        lastBracketIncome += bracketSize;
+        remainingIncome -= taxableInBracket;
       }
+      
+      if (remainingIncome <= 0) break;
     }
   }
 
+  console.log('Final federal tax:', federal, 'isNaN:', isNaN(federal));
+  console.log('=====================================');
+
   // Calculate state tax with bracket-by-bracket breakdown
   let state = 0;
+  remainingIncome = stateTaxableIncome;
   const stateBrackets: BracketCalculation[] = [];
+
+  console.log('=== STATE TAX CALCULATION DEBUG ===');
+  console.log('State taxable income:', stateTaxableIncome);
+  console.log('State rates available:', !!stateRates?.brackets);
+  console.log('State brackets:', stateRates?.brackets);
 
   // For states with no income tax, return empty brackets array
   if (!stateRates?.brackets || stateRates.brackets.length === 0 || stateRates.brackets[0].rate === 0) {
     state = 0;
+    console.log('No state tax - brackets empty or first bracket rate is 0');
   } else {
-    let remainingIncome = stateTaxableIncome;
-    let lastBracketIncome = 0;
-
     for (let i = 0; i < stateRates.brackets.length; i++) {
       const currentBracket = stateRates.brackets[i];
       const prevBracket = i > 0 ? stateRates.brackets[i - 1] : null;
@@ -276,27 +328,28 @@ export function calculateTaxBreakdown(taxInfo: TaxInfo, rates: TaxRates, strateg
       const min = prevBracket ? prevBracket[taxInfo.filingStatus] : 0;
       const max = currentBracket[taxInfo.filingStatus];
       const bracketSize = max - min;
+      const taxableInBracket = Math.min(remainingIncome, bracketSize);
       
-      // Only process this bracket if we have income that reaches it
-      if (remainingIncome > 0) {
-        // Calculate income in this bracket
-        const incomeInBracket = Math.min(remainingIncome, bracketSize);
-        const tax = Math.round(incomeInBracket * currentBracket.rate);
-        
+      if (taxableInBracket > 0) {
+        const tax = Math.round(taxableInBracket * currentBracket.rate);
         stateBrackets.push({
           rate: currentBracket.rate,
           min,
           max,
-          taxable: Math.round(incomeInBracket),
+          taxable: Math.round(taxableInBracket),
           tax
         });
         
         state += tax;
-        remainingIncome -= incomeInBracket;
-        lastBracketIncome += bracketSize;
+        remainingIncome -= taxableInBracket;
       }
+      
+      if (remainingIncome <= 0) break;
     }
   }
+
+  console.log('Final state tax:', state, 'isNaN:', isNaN(state));
+  console.log('=====================================');
 
   // Calculate FICA taxes
   const wageIncome = taxInfo.wagesIncome || 0;
@@ -324,18 +377,35 @@ export function calculateTaxBreakdown(taxInfo: TaxInfo, rates: TaxRates, strateg
   // Total FICA
   const fica = socialSecurity + medicare + selfEmployment;
 
-  // Calculate effective tax rate
-  const effectiveRate = totalIncome > 0 ? 
-    Math.round(((federal + state + fica) / totalIncome) * 10000) / 100 : 0;
+  // Apply CTB (Convertible Tax Bonds) tax offsets
+  const ctbStrategies = strategies.filter(s => s.enabled && s.id === 'convertible_tax_bonds');
+  let ctbFederalOffset = 0;
+  let ctbStateOffset = 0;
 
-  return {
+  ctbStrategies.forEach(strategy => {
+    if (strategy.details?.convertibleTaxBonds) {
+      const { ctbTaxOffset } = strategy.details.convertibleTaxBonds;
+      // Assume 70% federal, 30% state allocation for CTB offsets
+      ctbFederalOffset += ctbTaxOffset * 0.7;
+      ctbStateOffset += ctbTaxOffset * 0.3;
+    }
+  });
+
+  // Apply CTB offsets (cannot reduce tax below zero)
+  federal = Math.max(0, federal - ctbFederalOffset);
+  state = Math.max(0, state - ctbStateOffset);
+
+  const total = federal + state + fica;
+  const effectiveRate = totalIncome > 0 ? (total / totalIncome) * 100 : 0;
+
+  const result = {
     federal,
     state,
     socialSecurity,
     medicare,
     selfEmployment,
     fica,
-    total: federal + state + fica,
+    total,
     effectiveRate,
     federalBrackets,
     stateBrackets,
@@ -345,4 +415,28 @@ export function calculateTaxBreakdown(taxInfo: TaxInfo, rates: TaxRates, strateg
     deferredIncome,
     taxableIncome: federalTaxableIncome
   };
+
+  // Final debug logging
+  console.log('=== FINAL TAX CALCULATION RESULTS ===');
+  console.log('Federal tax:', federal, 'type:', typeof federal);
+  console.log('State tax:', state, 'type:', typeof state);
+  console.log('Social Security:', socialSecurity, 'type:', typeof socialSecurity);
+  console.log('Medicare:', medicare, 'type:', typeof medicare);
+  console.log('Self Employment:', selfEmployment, 'type:', typeof selfEmployment);
+  console.log('FICA total:', fica, 'type:', typeof fica);
+  console.log('Total tax:', result.total, 'type:', typeof result.total);
+  console.log('Effective rate:', effectiveRate, 'type:', typeof effectiveRate);
+  console.log('Is any NaN?', {
+    federal: isNaN(federal),
+    state: isNaN(state),
+    socialSecurity: isNaN(socialSecurity),
+    medicare: isNaN(medicare),
+    selfEmployment: isNaN(selfEmployment),
+    fica: isNaN(fica),
+    total: isNaN(result.total),
+    effectiveRate: isNaN(effectiveRate)
+  });
+  console.log('=====================================');
+
+  return result;
 }

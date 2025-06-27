@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { X, Plus, Check } from 'lucide-react';
+import { X, Plus, Check, Info } from 'lucide-react';
 import { NumericFormat } from 'react-number-format';
 import { TaxInfo, TaxStrategy } from '../types';
 import { calculateTaxBreakdown, calculateMarginalRate, calculateEffectiveStrategyBenefit } from '../utils/taxCalculations';
@@ -206,22 +206,23 @@ export default function FmcModal({ isOpen, onClose }: FmcModalProps) {
     <Dialog.Root open={isOpen} onOpenChange={onClose}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[998]" />
-        <Dialog.Content className="fixed top-[50%] left-[50%] translate-x-[-50%] translate-y-[-50%] w-full max-w-4xl max-h-[85vh] overflow-y-auto bg-white rounded-xl shadow-xl z-[999] focus:outline-none">
-          <div className="sticky top-0 bg-[#f8f6f1] px-6 py-4 flex justify-between items-center border-b">
-            <Dialog.Title className="text-xl font-bold">
-              Family Management Company
+        <Dialog.Content className="fixed top-[50%] left-[50%] translate-x-[-50%] translate-y-[-50%] w-full max-w-6xl max-h-[90vh] overflow-y-auto bg-white rounded-xl shadow-xl z-[999] focus:outline-none">
+          <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 flex justify-between items-center border-b border-blue-500">
+            <Dialog.Title className="text-xl font-bold text-white flex items-center space-x-2">
+              <Info className="w-5 h-5" />
+              <span>Family Management Company</span>
             </Dialog.Title>
             <div className="flex items-center space-x-4">
               <button
                 onClick={handleSave}
-                className="px-4 py-2 bg-[#12ab61] text-white rounded-lg hover:bg-[#0f9654] inline-flex items-center space-x-2"
+                className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors duration-200 inline-flex items-center space-x-2 font-medium"
               >
-                <Plus className="w-5 h-5" />
-                <span>Add Strategy</span>
+                <Check className="w-4 h-4" />
+                <span>Enable Strategy</span>
               </button>
               <Dialog.Close asChild>
                 <button 
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-white/80 hover:text-white transition-colors duration-200"
                   onClick={onClose}
                 >
                   <X size={24} />
@@ -231,173 +232,251 @@ export default function FmcModal({ isOpen, onClose }: FmcModalProps) {
           </div>
 
           <div className="p-6">
-            <div className="max-w-3xl mx-auto">
-              <div className="mb-6">
-                <p className="text-gray-600">
-                  Create a family management company to handle business operations and maximize tax benefits through strategic income shifting. 
-                  This strategy works especially well in conjunction with the Augusta Rule to manage rental activities and other business operations.
-                </p>
+            {/* Information Header */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+              <div className="flex items-start space-x-3">
+                <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h3 className="font-semibold text-blue-900 mb-2">How Family Management Company Works</h3>
+                  <p className="text-blue-800 text-sm leading-relaxed">
+                    Create a family management company to handle business operations and maximize tax benefits through strategic income shifting. 
+                    This strategy works especially well in conjunction with the Augusta Rule to manage rental activities and other business operations.
+                    Children under 18 are exempt from FICA taxes, providing significant payroll tax savings.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Left Column - Inputs */}
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Family Member Configuration</h3>
+                  
+                  <div className="space-y-4">
+                    {members.map((member: FamilyMember, index: number) => (
+                      <div key={member.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="font-medium text-gray-900">Family Member {index + 1}</h4>
+                          {members.length > 1 && (
+                            <button
+                              onClick={() => setMembers(prev => prev.filter((_, i) => i !== index))}
+                              className="text-red-500 hover:text-red-700 text-sm"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Age Group
+                            </label>
+                            <select
+                              value={member.ageGroup}
+                              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                                const newMembers = [...members];
+                                newMembers[index] = { ...member, ageGroup: e.target.value as 'Under 18' | 'Over 18' };
+                                setMembers(newMembers);
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            >
+                              <option value="Under 18">Under 18 (No FICA)</option>
+                              <option value="Over 18">Over 18</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Filing Status
+                            </label>
+                            <select
+                              value={member.filingStatus}
+                              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                                const newMembers = [...members];
+                                newMembers[index] = { ...member, filingStatus: e.target.value as 'single' | 'married_joint' };
+                                setMembers(newMembers);
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            >
+                              <option value="single">Single</option>
+                              <option value="married_joint">Married Filing Jointly</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="mt-4">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Annual Salary
+                          </label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+                            <NumericFormat
+                              value={member.salary}
+                              onValueChange={(values: any) => {
+                                const newMembers = [...members];
+                                newMembers[index] = { ...member, salary: values.floatValue || 0 };
+                                setMembers(newMembers);
+                              }}
+                              thousandSeparator={true}
+                              className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="0"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
+                          <div className="text-center">
+                            <p className="text-xs font-medium text-gray-500 uppercase">Tax Rate</p>
+                            <p className="text-lg font-bold text-gray-900">
+                              {calculateTaxRate(member).toFixed(1)}%
+                            </p>
+                          </div>
+
+                          <div className="text-center">
+                            <p className="text-xs font-medium text-gray-500 uppercase">Taxes Due</p>
+                            <p className="text-lg font-bold text-gray-900">
+                              ${calculateTaxesDue(member).toLocaleString()}
+                            </p>
+                          </div>
+                          
+                          <div className="text-center">
+                            <p className="text-xs font-medium text-gray-500 uppercase">Payroll Tax</p>
+                            <p className="text-lg font-bold text-gray-900">
+                              ${calculatePayrollTaxes(member).toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    <button
+                      onClick={() => setMembers((prev: FamilyMember[]) => [...prev, {
+                        id: (prev.length + 1).toString(),
+                        ageGroup: 'Under 18',
+                        filingStatus: 'single',
+                        salary: selectedYear === 2024 ? 14600 : 15000
+                      }])}
+                      className="w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-gray-400 hover:text-gray-700 flex items-center justify-center space-x-2 transition-colors duration-200"
+                    >
+                      <Plus size={20} />
+                      <span>Add Family Member</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-gray-900 mb-3">Implementation Services</h4>
+                  <div className="space-y-3">
+                    <div className="flex items-start space-x-3">
+                      <Check className="w-4 h-4 text-emerald-600 mt-1 flex-shrink-0" />
+                      <div>
+                        <h5 className="font-medium text-gray-900">Complete Setup Package</h5>
+                        <p className="text-sm text-gray-600">Company formation, operating agreement, EIN registration, and bank account setup</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start space-x-3">
+                      <Check className="w-4 h-4 text-emerald-600 mt-1 flex-shrink-0" />
+                      <div>
+                        <h5 className="font-medium text-gray-900">Compliance Package</h5>
+                        <p className="text-sm text-gray-600">Employment agreements, payroll setup, tax registration, and record keeping</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start space-x-3">
+                      <Check className="w-4 h-4 text-emerald-600 mt-1 flex-shrink-0" />
+                      <div>
+                        <h5 className="font-medium text-gray-900">Ongoing Support</h5>
+                        <p className="text-sm text-gray-600">Annual compliance review, tax planning updates, and audit defense</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-[1.5fr,1fr] gap-8 items-start">
+              {/* Right Column - Results */}
+              <div className="space-y-6">
                 <div>
-                  <h3 className="text-[#12ab61] font-bold text-lg mb-6">
-                    How We Help You Implement This Strategy
-                  </h3>
-
-                  <div className="space-y-6">
-                    <div className="flex items-start space-x-3">
-                      <Check className="w-4 h-4 text-emerald-600 mt-1 flex-shrink-0" />
-                      <div>
-                        <h4 className="font-bold text-gray-900">Complete Setup Package</h4>
-                        <p className="text-base text-gray-600">
-                          We handle all the paperwork and setup:
-                        </p>
-                        <ul className="mt-2 space-y-1 text-base text-gray-600">
-                          <li>• Company Formation Documents</li>
-                          <li>• Operating Agreement</li>
-                          <li>• EIN Registration</li>
-                          <li>• Bank Account Setup</li>
-                        </ul>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Tax Benefit Summary</h3>
+                  
+                  <div className="space-y-4">
+                    <div className="bg-white border border-gray-200 rounded-lg p-4">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-medium text-gray-600">Total Salaries</span>
+                      </div>
+                      <div className="bg-blue-50 p-3 rounded-lg">
+                        <span className="text-2xl font-bold text-blue-900">
+                          ${totalSalaries.toLocaleString()}
+                        </span>
                       </div>
                     </div>
 
-                    <div className="flex items-start space-x-3">
-                      <Check className="w-4 h-4 text-emerald-600 mt-1 flex-shrink-0" />
-                      <div>
-                        <h4 className="font-bold text-gray-900">Compliance Package</h4>
-                        <p className="text-base text-gray-600">
-                          Stay compliant with all regulations:
-                        </p>
-                        <ul className="mt-2 space-y-1 text-base text-gray-600">
-                          <li>• Employment Agreements</li>
-                          <li>• Payroll Setup</li>
-                          <li>• Tax Registration</li>
-                          <li>• Record Keeping Templates</li>
-                        </ul>
+                    <div className="bg-white border border-gray-200 rounded-lg p-4">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-medium text-gray-600">State Tax Benefit</span>
+                      </div>
+                      <div className="bg-green-50 p-3 rounded-lg">
+                        <span className="text-2xl font-bold text-green-900">
+                          ${stateBenefit.toLocaleString()}
+                        </span>
                       </div>
                     </div>
 
-                    <div className="flex items-start space-x-3">
-                      <Check className="w-4 h-4 text-emerald-600 mt-1 flex-shrink-0" />
-                      <div>
-                        <h4 className="font-bold text-gray-900">Ongoing Support</h4>
-                        <p className="text-base text-gray-600">
-                          We provide continuous assistance:
-                        </p>
-                        <ul className="mt-2 space-y-1 text-base text-gray-600">
-                          <li>• Annual Compliance Review</li>
-                          <li>• Tax Planning Updates</li>
-                          <li>• Strategy Optimization</li>
-                          <li>• Audit Defense Package</li>
-                        </ul>
+                    <div className="bg-white border border-gray-200 rounded-lg p-4">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-medium text-gray-600">Federal Tax Benefit</span>
+                      </div>
+                      <div className="bg-green-50 p-3 rounded-lg">
+                        <span className="text-2xl font-bold text-green-900">
+                          ${federalBenefit.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="bg-white border border-gray-200 rounded-lg p-4">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-medium text-gray-600">FICA Tax Benefit</span>
+                      </div>
+                      <div className="bg-green-50 p-3 rounded-lg">
+                        <span className="text-2xl font-bold text-green-900">
+                          ${ficaBenefit.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 rounded-lg p-4">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-medium text-emerald-100">Total Annual Benefit</span>
+                      </div>
+                      <div className="bg-white/10 p-3 rounded-lg">
+                        <span className="text-3xl font-bold text-white">
+                          ${totalBenefit.toLocaleString()}
+                        </span>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  {members.map((member: FamilyMember, index: number) => (
-                    <div key={member.id} className="bg-gray-50 p-4 rounded space-y-4">
-                      <p className="text-sm font-medium text-gray-900">Family Member {index + 1}</p>
-                      
-                      <div>
-                        <p className="text-xs font-medium text-gray-500 uppercase mb-1">Age Group</p>
-                        <select
-                          value={member.ageGroup}
-                          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-                            const newMembers = [...members];
-                            newMembers[index] = { ...member, ageGroup: e.target.value as 'Under 18' | 'Over 18' };
-                            setMembers(newMembers);
-                          }}
-                          className="text-lg font-bold text-gray-900 w-full bg-transparent border-none p-0 focus:ring-0"
-                        >
-                          <option value="Under 18">Under 18</option>
-                          <option value="Over 18">Over 18</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <p className="text-xs font-medium text-gray-500 uppercase mb-1">Annual Salary</p>
-                        <div className="flex items-center">
-                          <span className="text-2xl font-bold text-gray-900">$</span>
-                          <NumericFormat
-                            value={member.salary}
-                            onValueChange={(values: any) => {
-                              const newMembers = [...members];
-                              newMembers[index] = { ...member, salary: values.floatValue || 0 };
-                              setMembers(newMembers);
-                            }}
-                            thousandSeparator={true}
-                            className="text-2xl font-bold text-gray-900 w-full bg-transparent border-none p-0 focus:ring-0"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-4">
-                        <div>
-                          <p className="text-xs font-medium text-gray-500 uppercase mb-1">Tax Rate</p>
-                          <div className="text-xl font-bold text-gray-900">
-                            {calculateTaxRate(member).toFixed(1)}%
-                          </div>
-                        </div>
-
-                        <div>
-                          <p className="text-xs font-medium text-gray-500 uppercase mb-1">Taxes Due</p>
-                          <div className="text-xl font-bold text-gray-900">
-                            ${calculateTaxesDue(member).toLocaleString()}
-                          </div>
-                        </div>
-                        
-                        <div>
-                          <p className="text-xs font-medium text-gray-500 uppercase mb-1">Payroll Taxes</p>
-                          <div className="text-xl font-bold text-gray-900">
-                            ${calculatePayrollTaxes(member).toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-
-                  <button
-                    onClick={() => setMembers((prev: FamilyMember[]) => [...prev, {
-                      id: (prev.length + 1).toString(),
-                      ageGroup: 'Under 18',
-                      filingStatus: 'single',
-                      salary: selectedYear === 2024 ? 14600 : 15000
-                    }])}
-                    className="w-full px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-gray-400 hover:text-gray-700 flex items-center justify-center space-x-2"
-                  >
-                    <Plus size={20} />
-                    <span>Add Family Member</span>
-                  </button>
-
-                  <div className="space-y-2 border-t border-gray-200 pt-4">
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase">TOTAL SALARIES</p>
-                      <p className="text-2xl font-bold text-gray-900">${totalSalaries.toLocaleString()}</p>
-                    </div>
-
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase">STATE BENEFIT</p>
-                      <p className="text-2xl font-bold text-emerald-600">${stateBenefit.toLocaleString()}</p>
-                    </div>
-
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase">FEDERAL BENEFIT</p>
-                      <p className="text-2xl font-bold text-emerald-600">${federalBenefit.toLocaleString()}</p>
-                    </div>
-
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase">FICA BENEFIT</p>
-                      <p className="text-2xl font-bold text-emerald-600">${ficaBenefit.toLocaleString()}</p>
-                    </div>
-
-                    <div className="border-t border-gray-200 pt-2">
-                      <p className="text-xs font-medium text-gray-500 uppercase">TOTAL BENEFIT</p>
-                      <p className="text-4xl font-bold text-emerald-600">${totalBenefit.toLocaleString()}</p>
-                    </div>
-                  </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-blue-900 mb-2">Key Benefits</h4>
+                  <ul className="space-y-2 text-sm text-blue-800">
+                    <li className="flex items-start space-x-2">
+                      <Check className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <span>Children under 18 are exempt from FICA taxes (15.3% savings)</span>
+                    </li>
+                    <li className="flex items-start space-x-2">
+                      <Check className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <span>Income shifting to lower tax brackets</span>
+                    </li>
+                    <li className="flex items-start space-x-2">
+                      <Check className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <span>Synergy with Augusta Rule for rental income management</span>
+                    </li>
+                    <li className="flex items-start space-x-2">
+                      <Check className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <span>Legitimate business structure with proper documentation</span>
+                    </li>
+                  </ul>
                 </div>
               </div>
             </div>

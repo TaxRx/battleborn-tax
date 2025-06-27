@@ -21,40 +21,67 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const { demoMode } = useAuthStore();
+  const { demoMode, login, isAuthenticated } = useAuthStore();
 
   useEffect(() => {
-    // Skip Supabase auth entirely if in demo mode
-    if (demoMode) {
-      setLoading(false);
-      setUser(null); // Demo doesn't need a Supabase user
-      setError(null);
-      return;
-    }
+    const initializeAuth = async () => {
+      try {
+        // Get the current session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          setError(sessionError);
+          setLoading(false);
+          return;
+        }
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      if (error) {
-        setError(error);
-      } else {
-        setUser(session?.user ?? null);
+        if (session?.user) {
+          setUser(session.user);
+          // Sync with auth store if user is authenticated and not in demo mode
+          if (!demoMode && !isAuthenticated) {
+            login('admin'); // Default to admin for now
+          }
+        }
+        
+        setLoading(false);
+      } catch (err) {
+        setError(err as Error);
+        setLoading(false);
       }
-      setLoading(false);
-    });
+    };
+
+    initializeAuth();
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event, session?.user);
+      
+      if (session?.user) {
+        setUser(session.user);
+        // Sync with auth store if not in demo mode
+        if (!demoMode && !isAuthenticated) {
+          login('admin'); // Default to admin for now
+        }
+      } else {
+        setUser(null);
+      }
       setLoading(false);
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, [demoMode]);
+  }, [demoMode, login, isAuthenticated]);
+
+  // Always return the user if authenticated, regardless of demo mode
+  const contextValue = {
+    user: user || (isAuthenticated ? { id: 'demo-user', email: 'demo@example.com' } as User : null),
+    loading,
+    error
+  };
 
   return (
-    <UserContext.Provider value={{ user, loading, error }}>
+    <UserContext.Provider value={contextValue}>
       {children}
     </UserContext.Provider>
   );

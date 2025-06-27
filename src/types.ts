@@ -137,8 +137,28 @@ export interface TaxStrategy {
       years2to5Annual: number;
       federalSavings: number;
       stateSavings: number;
-      totalSavings: number;
+      ficaSavings?: number;
       totalBenefit: number;
+      totalSavings: number;
+    };
+    convertibleTaxBonds?: {
+      ctbPayment: number;
+      ctbTaxOffset: number;
+      netSavings: number;
+      remainingTaxAfterCtb: number;
+      reductionRatio: number;
+    };
+    reinsurance?: {
+      userContribution: number;
+      agiReduction: number;
+      federalTaxBenefit: number;
+      stateTaxBenefit: number;
+      totalTaxSavings: number;
+      netYear1Cost: number;
+      breakevenYears: number;
+      futureValue: number;
+      capitalGainsTax: number;
+      setupAdminCost: number;
     };
     deferredIncome?: {
       deferredAmount: number;
@@ -154,6 +174,7 @@ export interface TaxInfo {
   businessOwner: boolean;
   fullName: string;
   email: string;
+  phone?: string;
   filingStatus: 'single' | 'married_joint' | 'married_separate' | 'head_household';
   dependents: number;
   homeAddress: string;

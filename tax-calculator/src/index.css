@@ -15,59 +15,142 @@ body {
 
 /* Form field styles */
 .form-field {
-  @apply mb-6;
+  margin-bottom: 1.5rem;
 }
 
 .form-label {
-  @apply block text-xs font-medium text-gray-500 uppercase mb-1;
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #6b7280;
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
 }
 
 .form-input {
-  @apply w-full bg-transparent border-0 border-b border-[#15a46f] px-0 py-2 text-lg font-medium focus:ring-0 focus:border-[#15a46f];
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #15a46f;
+  padding: 0 0 0.5rem 0;
+  font-size: 1.125rem;
+  font-weight: 500;
+}
+
+.form-input:focus {
+  outline: none;
+  border-bottom-color: #15a46f;
 }
 
 .form-select {
-  @apply w-full bg-transparent border-0 border-b border-[#15a46f] px-0 py-2 text-lg font-medium focus:ring-0 focus:border-[#15a46f];
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #15a46f;
+  padding: 0 0 0.5rem 0;
+  font-size: 1.125rem;
+  font-weight: 500;
   background-image: none;
+}
+
+.form-select:focus {
+  outline: none;
+  border-bottom-color: #15a46f;
 }
 
 /* Section styles */
 .form-section {
-  @apply mb-8;
+  margin-bottom: 2rem;
 }
 
 .section-label {
-  @apply text-xs font-medium text-gray-500 uppercase mb-4;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #6b7280;
+  text-transform: uppercase;
+  margin-bottom: 1rem;
 }
 
 /* Checkbox styles */
 .checkbox-group {
-  @apply flex items-center space-x-6 mb-8;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
 }
 
 .checkbox-label {
-  @apply flex items-center space-x-2;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .checkbox-input {
-  @apply w-5 h-5 rounded border-gray-300 text-[#15a46f] focus:ring-[#15a46f];
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 0.25rem;
+  border-color: #d1d5db;
+  color: #15a46f;
+}
+
+.checkbox-input:focus {
+  outline: none;
+  border-color: #15a46f;
 }
 
 /* Button styles */
 .btn-primary {
-  @apply px-6 py-2 bg-[#15a46f] text-white rounded-lg hover:bg-[#12965f] transition-colors;
+  padding: 0.5rem 1.5rem;
+  background-color: #15a46f;
+  color: white;
+  border-radius: 0.5rem;
+  transition: background-color 0.2s;
+}
+
+.btn-primary:hover {
+  background-color: #12965f;
 }
 
 .btn-secondary {
-  @apply px-6 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors;
+  padding: 0.5rem 1.5rem;
+  background-color: #f3f4f6;
+  color: #374151;
+  border-radius: 0.5rem;
+  transition: background-color 0.2s;
+}
+
+.btn-secondary:hover {
+  background-color: #e5e7eb;
 }
 
 /* Input underline style */
 .underline-input {
-  @apply w-full bg-transparent border-0 border-b border-[#15a46f] px-0 py-2 text-lg font-medium focus:ring-0 focus:border-[#15a46f];
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #15a46f;
+  padding: 0 0 0.5rem 0;
+  font-size: 1.125rem;
+  font-weight: 500;
+}
+
+.underline-input:focus {
+  outline: none;
+  border-bottom-color: #15a46f;
 }
 
 /* Numeric input style */
 .numeric-input {
-  @apply w-full bg-transparent border-0 border-b border-[#15a46f] px-0 py-2 text-lg font-medium focus:ring-0 focus:border-[#15a46f];
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #15a46f;
+  padding: 0 0 0.5rem 0;
+  font-size: 1.125rem;
+  font-weight: 500;
+}
+
+.numeric-input:focus {
+  outline: none;
+  border-bottom-color: #15a46f;
 }

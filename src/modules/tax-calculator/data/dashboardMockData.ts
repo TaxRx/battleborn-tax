@@ -1,58 +1,96 @@
-// Mock data for Admin Dashboard (safe to remove/replace with real API later)
+// Mock data for Admin Dashboard - Based on actual calculator entries
 
 export const mockStrategies = [
   {
-    id: 'strat-1',
-    clientName: 'Acme Dental',
-    advisor: 'Dr. Smith',
-    status: 'pending',
-    submittedAt: '2024-06-01T10:00:00Z',
-    type: 'R&D Credit',
-    value: 12000,
-    description: 'R&D tax credit for 2023 activities.',
+    id: 'strat-001',
+    clientName: 'Dr. Sarah Johnson',
+    advisor: 'Tax Solutions Pro',
+    status: 'submitted',
+    submittedAt: '2024-12-01T10:30:00Z',
+    type: 'Charitable Donation + Augusta Rule',
+    value: 27150,
+    description: 'Strategic charitable giving ($50,000) and Augusta Rule rental (14 days @ $600/day)',
     supportingDocs: [
-      { name: 'Payroll Report.pdf', url: '#' },
-      { name: 'Expense Summary.xlsx', url: '#' }
+      { name: 'Charitable Donation Receipt.pdf', url: '#' },
+      { name: 'Augusta Rule Documentation.pdf', url: '#' }
     ],
     userAnswers: {
-      'Q1': 'We developed a new dental device.',
-      'Q2': 'Total R&D spend: $50,000',
-      'Q3': '3 full-time staff involved',
+      'Charitable Donation': 'Donation amount: $50,000 to qualified charity',
+      'Augusta Rule': 'Rented home for 14 days at $600/day for business meetings',
+      'Total Income': '$485,000 business income',
+      'Tax Bracket': '37% federal, 13.3% state (CA)'
     }
   },
   {
-    id: 'strat-2',
-    clientName: 'Bright Smiles',
-    advisor: 'Dr. Lee',
+    id: 'strat-002',
+    clientName: 'Robert Martinez',
+    advisor: 'Strategic Tax Group',
+    status: 'in_review',
+    submittedAt: '2024-12-01T14:00:00Z',
+    type: 'Family Management Company + Hire Kids',
+    value: 32700,
+    description: 'FMC to shift $95,000 income + hire 2 children for $14,000 total wages',
+    supportingDocs: [
+      { name: 'FMC Business Plan.pdf', url: '#' },
+      { name: 'Employment Contracts.pdf', url: '#' }
+    ],
+    userAnswers: {
+      'Family Management Company': 'Shift $95,000 income to family members in lower brackets',
+      'Hire Your Kids': 'Employ 2 children for $7,000 each annually',
+      'Total Income': '$320,000 business income',
+      'Tax Bracket': '24% federal, 0% state (TX)'
+    }
+  },
+  {
+    id: 'strat-003',
+    clientName: 'Lisa Thompson',
+    advisor: 'Tax Solutions Pro',
     status: 'approved',
-    submittedAt: '2024-05-20T14:30:00Z',
-    type: 'Augusta Rule',
-    value: 8000,
-    description: 'Augusta Rule for annual meeting.',
+    submittedAt: '2024-11-30T09:00:00Z',
+    type: 'Cost Segregation',
+    value: 15600,
+    description: 'Cost segregation study on $520,000 commercial property',
     supportingDocs: [
-      { name: 'Meeting Invoice.pdf', url: '#' }
+      { name: 'Cost Segregation Study.pdf', url: '#' },
+      { name: 'Property Documentation.pdf', url: '#' }
     ],
     userAnswers: {
-      'Q1': 'Hosted annual meeting at principal residence.',
-      'Q2': 'Rental value: $8,000',
+      'Property Value': '$520,000 commercial restaurant property',
+      'Accelerated Depreciation': '$52,000 additional depreciation',
+      'Total Income': '$180,000 business income',
+      'Tax Bracket': '24% federal, 0% state (TN)'
     }
+  }
+];
+
+export const mockClients = [
+  {
+    id: 'client-001',
+    name: 'Dr. Sarah Johnson',
+    status: 'active',
+    joined: '2024-12-01',
+    income: 485000,
+    strategies: ['Charitable Donation', 'Augusta Rule'],
+    totalSavings: 27150
   },
   {
-    id: 'strat-3',
-    clientName: 'OrthoCare',
-    advisor: 'Dr. Patel',
-    status: 'pending',
-    submittedAt: '2024-06-03T09:15:00Z',
-    type: 'R&D Credit',
-    value: 15000,
-    description: 'R&D credit for orthodontic device improvements.',
-    supportingDocs: [],
-    userAnswers: {
-      'Q1': 'Improved orthodontic device design.',
-      'Q2': 'Spent $60,000 on R&D',
-      'Q3': '2 engineers, 1 assistant',
-    }
+    id: 'client-002',
+    name: 'Robert Martinez',
+    status: 'active',
+    joined: '2024-12-01',
+    income: 320000,
+    strategies: ['Family Management Company', 'Hire Your Kids'],
+    totalSavings: 32700
   },
+  {
+    id: 'client-003',
+    name: 'Lisa Thompson',
+    status: 'active',
+    joined: '2024-11-30',
+    income: 180000,
+    strategies: ['Cost Segregation'],
+    totalSavings: 15600
+  }
 ];
 
 export const mockPayments = [
@@ -103,27 +141,6 @@ export const mockPayouts = [
     amount: 7500,
     date: '2024-06-06',
     status: 'pending',
-  },
-];
-
-export const mockClients = [
-  {
-    id: 'client-1',
-    name: 'Acme Dental',
-    status: 'active',
-    joined: '2023-11-10',
-  },
-  {
-    id: 'client-2',
-    name: 'Bright Smiles',
-    status: 'active',
-    joined: '2024-01-15',
-  },
-  {
-    id: 'client-3',
-    name: 'OrthoCare',
-    status: 'pending',
-    joined: '2024-05-30',
   },
 ];
 

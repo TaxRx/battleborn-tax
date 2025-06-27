@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ChevronDown, ChevronRight, Save, BarChart2, Table as TableIcon, Shield, Lock, Info } from 'lucide-react';
-import { TaxInfo, TaxRates, TaxStrategy, TaxBreakdown, SavedCalculation } from '../../../types';
+import { TaxInfo, TaxRates, TaxBreakdown, SavedCalculation } from '../../../types';
+import { TaxStrategy } from '../../../lib/core/types/strategy';
 import { taxRates } from '../taxRates';
 import { calculateTaxBreakdown, calculateStrategyTaxSavings } from '../utils/taxCalculations';
 import { debugCalculations } from '../utils/debug';
@@ -32,58 +33,6 @@ interface TaxBreakdownTableProps {
   label: string;
 }
 
-// Professional Trust Header Component
-function ProfessionalHeader() {
-  return (
-    <div className="professional-header mb-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <div>
-            <h1 className="heading-primary text-professional-navy">Tax Strategy Calculator</h1>
-            <div className="flex items-center space-x-4 mt-2">
-              <div className="certification-badge">
-                Professional Tax Analysis
-              </div>
-              <div className="security-indicator">
-                <Lock className="h-4 w-4" />
-                <span>Secure & Confidential</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="trust-badge mb-2">
-            <Shield className="h-4 w-4 mr-1" />
-            Licensed Professional
-          </div>
-          <div className="text-sm text-gray-600">
-            Calculations based on current tax code
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Professional Disclaimer Component
-function ProfessionalDisclaimer() {
-  return (
-    <div className="alert-info">
-      <div className="flex items-start space-x-2">
-        <Info className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-        <div className="text-sm">
-          <p className="font-semibold mb-1">Professional Disclaimer</p>
-          <p>
-            This calculator provides estimates based on current tax laws and your inputs. 
-            Results are for informational purposes only and should not be considered as tax advice. 
-            Individual circumstances may affect actual tax liability. 
-            <strong> Consult with a qualified tax professional for personalized advice.</strong>
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function TaxBreakdownTable({ breakdown, totalIncome, label }: TaxBreakdownTableProps) {
   const getMarginalRate = (type: string) => {
@@ -459,12 +408,18 @@ export default function TaxResults({
         if (strategy.id === 'family_management_company' && strategy.details?.familyManagementCompany) {
           return total + strategy.details.familyManagementCompany.totalSalaries;
         }
+        if (strategy.id === 'reinsurance' && strategy.details?.reinsurance) {
+          return total + strategy.details.reinsurance.userContribution;
+        }
         return total;
       }, 0);
 
     const deferredIncome = strategies
       .filter(s => s.enabled && s.category === 'income_deferred')
-      .reduce((total, s) => total + s.estimatedSavings, 0);
+      .reduce((total, s) => {
+        // Reinsurance is now in income_shifted category, so no longer handled here
+        return total + s.estimatedSavings;
+      }, 0);
 
     // Get charitable donation details
     const charitableStrategy = strategies.find(s => s.enabled && s.id === 'charitable_donation');
@@ -529,11 +484,7 @@ export default function TaxResults({
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-8">
-      {/* Professional Header */}
-      <ProfessionalHeader />
-      
-      {/* Professional Disclaimer */}
-      <ProfessionalDisclaimer />
+     
       
       {/* User Info Bar */}
       <div className="flex justify-between items-center mb-6 bg-gradient-to-r from-[#1a1a3f] to-[#2d2d67] shadow-xl p-6 text-white" style={{ borderRadius: '4px' }}>

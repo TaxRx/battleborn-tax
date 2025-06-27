@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ChevronDown, ChevronRight, Save, BarChart2, Table as TableIcon, Shield, Lock, Info } from 'lucide-react';
-import { TaxInfo, TaxRates, TaxStrategy, TaxBreakdown, SavedCalculation } from '../types';
+import { TaxInfo, TaxRates, TaxBreakdown } from '../lib/core/types/tax';
+import { TaxStrategy } from '../types';
+import { SavedCalculation } from '../types';
 import { taxRates } from '../data/taxRates';
 import { calculateTaxBreakdown, calculateStrategyTaxSavings } from '../utils/taxCalculations';
 import { debugCalculations } from '../utils/debug';
@@ -24,45 +26,13 @@ interface TaxResultsProps {
   onStrategiesSelect: (strategies: TaxStrategy[]) => void;
   onSaveCalculation: (calc: SavedCalculation) => void;
   onStrategyAction?: (strategyId: string, action: string) => void;
+  initialStrategies?: TaxStrategy[]; // For demo mode strategy persistence
 }
 
 interface TaxBreakdownTableProps {
   breakdown: TaxBreakdown;
   totalIncome: number;
   label: string;
-}
-
-// Professional Trust Header Component
-function ProfessionalHeader() {
-  return (
-    <div className="professional-header mb-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <div>
-            <h1 className="heading-primary text-professional-navy">Tax Strategy Calculator</h1>
-            <div className="flex items-center space-x-4 mt-2">
-              <div className="certification-badge">
-                Professional Tax Analysis
-              </div>
-              <div className="security-indicator">
-                <Lock className="h-4 w-4" />
-                <span>Secure & Confidential</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="trust-badge mb-2">
-            <Shield className="h-4 w-4 mr-1" />
-            Licensed Professional
-          </div>
-          <div className="text-sm text-gray-600">
-            Calculations based on current tax code
-          </div>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // Professional Disclaimer Component
@@ -252,7 +222,7 @@ function CleanProgressBar({ title, data, total }: CleanProgressBarProps) {
                 {item.label}
               </span>
               <span className="text-sm font-medium text-gray-900">
-                {percentage.toFixed(1)}%
+                {percentage.toFixed(1)}
               </span>
             </div>
           );
@@ -268,7 +238,8 @@ export default function TaxResults({
   onYearChange,
   onStrategiesSelect,
   onSaveCalculation,
-  onStrategyAction
+  onStrategyAction,
+  initialStrategies
 }: TaxResultsProps) {
   const [expandedCategories, setExpandedCategories] = useState<string[]>(['income_shifted']);
   const [expandedStrategies, setExpandedStrategies] = useState<string[]>([]);
@@ -279,6 +250,12 @@ export default function TaxResults({
   const [showFmcModal, setShowFmcModal] = useState(false);
   const [currentTaxInfo, setCurrentTaxInfo] = useState<TaxInfo>(taxInfo);
   const [strategies, setStrategies] = useState<TaxStrategy[]>(() => {
+    // Use initialStrategies if provided (for demo mode), otherwise generate strategies
+    if (initialStrategies && initialStrategies.length > 0) {
+      console.log('Using initial strategies from demo mode:', initialStrategies);
+      return initialStrategies;
+    }
+    
     const generatedStrategies = getTaxStrategies(currentTaxInfo, calculateTaxBreakdown(currentTaxInfo, taxRates[selectedYear]));
     console.log('Generated strategies:', generatedStrategies);
     return generatedStrategies;
@@ -436,11 +413,16 @@ export default function TaxResults({
     shiftedIncome,
     deferredIncome,
     charitableDonationAmount,
+    ctbPaymentAmount,
+    reinsuranceContribution,
+    reinsuranceSetupCost,
+    totalStrategyCosts,
     rawSavings,
     annualSavings,
     fiveYearValue,
     beforeRate,
-    afterRate
+    afterRate,
+    rateReduction
   } = useMemo(() => {
     const totalIncome = currentTaxInfo.wagesIncome + 
                        currentTaxInfo.passiveIncome + 
@@ -459,25 +441,52 @@ export default function TaxResults({
         if (strategy.id === 'family_management_company' && strategy.details?.familyManagementCompany) {
           return total + strategy.details.familyManagementCompany.totalSalaries;
         }
+        if (strategy.id === 'reinsurance' && strategy.details?.reinsurance) {
+          return total + strategy.details.reinsurance.userContribution;
+        }
         return total;
       }, 0);
 
     const deferredIncome = strategies
       .filter(s => s.enabled && s.category === 'income_deferred')
-      .reduce((total, s) => total + s.estimatedSavings, 0);
+      .reduce((total, strategy) => {
+        // Reinsurance is now in income_shifted category, so no longer handled here
+        return total + strategy.estimatedSavings;
+      }, 0);
 
-    // Get charitable donation details
+    // Get strategy costs
     const charitableStrategy = strategies.find(s => s.enabled && s.id === 'charitable_donation');
     const charitableDonationAmount = charitableStrategy?.details?.charitableDonation?.donationAmount || 0;
+    
+    const ctbStrategy = strategies.find(s => s.enabled && s.id === 'convertible_tax_bonds');
+    const ctbPaymentAmount = ctbStrategy?.details?.convertibleTaxBonds?.ctbPayment || 0;
+
+    const reinsuranceStrategy = strategies.find(s => s.enabled && s.id === 'reinsurance');
+    const reinsuranceContribution = reinsuranceStrategy?.details?.reinsurance?.userContribution || 0;
+    const reinsuranceSetupCost = reinsuranceStrategy?.details?.reinsurance?.setupAdminCost || 0;
+
+    // Calculate total out-of-pocket costs (setup/admin costs only, not deferred income)
+    const totalStrategyCosts = charitableDonationAmount + ctbPaymentAmount + reinsuranceSetupCost;
 
     // Calculate raw savings (total tax reduction) - this is the TRUE combined benefit
     const rawSavings = Math.round(baseBreakdown.total - strategyBreakdown.total);
-
-    // For charitable donations, we need to subtract the donation cost from the tax savings
-    const charitableDonationCost = charitableStrategy?.details?.charitableDonation?.donationAmount || 0;
     
-    // Net annual savings = tax savings minus any costs (like charitable donations)
-    const annualSavings = Math.round(rawSavings - charitableDonationCost);
+    // Net annual savings = tax savings minus all strategy costs
+    const annualSavings = Math.round(rawSavings - totalStrategyCosts);
+
+    // Debug logging for reinsurance (moved after annualSavings calculation)
+    if (reinsuranceStrategy) {
+      console.log('=== REINSURANCE DEBUG ===');
+      console.log('Reinsurance strategy:', reinsuranceStrategy);
+      console.log('Base breakdown total:', baseBreakdown.total);
+      console.log('Strategy breakdown total:', strategyBreakdown.total);
+      console.log('Raw savings:', rawSavings);
+      console.log('Reinsurance contribution (deferred income):', reinsuranceContribution);
+      console.log('Reinsurance setup cost (out-of-pocket):', reinsuranceSetupCost);
+      console.log('Total strategy costs (out-of-pocket only):', totalStrategyCosts);
+      console.log('Annual savings (net benefit):', annualSavings);
+      console.log('========================');
+    }
 
     // Debug calculations (only when needed)
     if (strategies.some(s => s.enabled) && process.env.NODE_ENV === 'development') {
@@ -492,19 +501,31 @@ export default function TaxResults({
     // Calculate 5-year value with 8% growth
     const fiveYearValue = annualSavings * 5 * 1.08;
 
+    // Calculate effective tax rates consistently
+    // Before rate: (Total Tax / Total Income) * 100
     const beforeRate = ((baseBreakdown.total / totalIncome) * 100).toFixed(1);
-    const afterRate = ((strategyBreakdown.total / (totalIncome - shiftedIncome - deferredIncome)) * 100).toFixed(1);
+    
+    // After rate: (Total Tax - Net Benefit) / Total Income * 100
+    const afterRate = (((baseBreakdown.total - annualSavings) / totalIncome) * 100).toFixed(1);
+    
+    // Calculate rate reduction based on net benefit
+    const rateReduction = parseFloat(beforeRate) - parseFloat(afterRate);
 
     return {
       totalIncome,
       shiftedIncome,
       deferredIncome,
       charitableDonationAmount,
+      ctbPaymentAmount,
+      reinsuranceContribution,
+      reinsuranceSetupCost,
+      totalStrategyCosts,
       rawSavings,
       annualSavings,
       fiveYearValue,
       beforeRate,
-      afterRate
+      afterRate,
+      rateReduction
     };
   }, [currentTaxInfo, strategies, baseBreakdown, strategyBreakdown]);
 
@@ -522,21 +543,16 @@ export default function TaxResults({
 
   const handleUpdateInfo = useCallback((updatedInfo: TaxInfo) => {
     setCurrentTaxInfo(updatedInfo);
-    const newStrategies = getTaxStrategies(updatedInfo, calculateTaxBreakdown(updatedInfo, rates));
+    const newStrategies = getTaxStrategies(updatedInfo, calculateTaxBreakdown(updatedInfo, taxRates[selectedYear]));
     setStrategies(newStrategies);
     setShowInfoForm(false);
   }, [rates]);
 
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-8">
-      {/* Professional Header */}
-      <ProfessionalHeader />
-      
-      {/* Professional Disclaimer */}
+    <div className="max-w-7xl mx-auto p-4 space-y-6">
       <ProfessionalDisclaimer />
-      
       {/* User Info Bar */}
-      <div className="flex justify-between items-center mb-6 bg-gradient-to-r from-[#1a1a3f] to-[#2d2d67] shadow-xl p-6 text-white" style={{ borderRadius: '4px' }}>
+      <div className="flex justify-between items-center mb-4 bg-gradient-to-r from-[#1a1a3f] to-[#2d2d67] shadow-xl p-4 text-white" style={{ borderRadius: '4px' }}>
         <div className="flex items-center space-x-4">
           <h2 className="text-2xl font-bold">{currentTaxInfo.fullName}</h2>
           <span className="text-gray-300">|</span>
@@ -567,29 +583,204 @@ export default function TaxResults({
         </div>
       </div>
 
-      {/* Sticky Tax Savings Value */}
-      <div className="sticky top-0 z-30 bg-white shadow-xl overflow-hidden mb-8" style={{ borderRadius: '4px' }}>
-        <div className="bg-gradient-to-r from-indigo-500 to-indigo-600 px-6 py-4">
-          <h3 className="text-xl font-semibold text-white">Tax Savings Value</h3>
-        </div>
-        <div className="p-6 bg-gradient-to-b from-white to-gray-50">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="text-center p-8 bg-gradient-to-br from-blue-50 to-blue-100 relative group shadow-lg hover:shadow-xl transition-shadow" style={{ borderRadius: '4px' }}>
-              <span className="block heading-primary text-professional-navy mb-3">
-                ${Math.max(0, Math.round(rawSavings - charitableDonationAmount)).toLocaleString()}
-              </span>
-              <span className="body-regular text-gray-600 font-medium uppercase tracking-wider">Annual Savings</span>
-              {charitableDonationAmount > 0 && (
-                <div className="absolute hidden group-hover:block bg-gray-800 text-white text-sm p-3 -mt-2 z-10 shadow-xl" style={{ borderRadius: '4px' }}>
-                  Net benefit after subtracting ${Math.round(charitableDonationAmount).toLocaleString()} donation
-                </div>
-              )}
+      {/* Modern Tax Savings Value Section */}
+      <div className="sticky top-0 z-30 bg-white shadow-2xl overflow-hidden mb-6 rounded-2xl border border-gray-100">
+        {/* Header with gradient background */}
+        <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 px-4 py-4 relative overflow-hidden">
+          <div className="absolute inset-0 bg-black/10"></div>
+          <div className="relative z-10">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-2xl font-bold text-white mb-1">Tax Savings Value</h3>
+                <p className="text-blue-100 text-sm">Your personalized tax optimization results</p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+                <span className="text-blue-100 text-sm font-medium">Live Results</span>
+              </div>
             </div>
-            <div className="text-center p-8 bg-gradient-to-br from-green-50 to-green-100 shadow-lg hover:shadow-xl transition-shadow" style={{ borderRadius: '4px' }}>
-              <span className="block heading-primary text-professional-success mb-3">
-                ${Math.max(0, Math.round((rawSavings - charitableDonationAmount) * 5 * 1.08)).toLocaleString()}
-              </span>
-              <span className="body-regular text-gray-600 font-medium uppercase tracking-wider">5 Year Value at 8%</span>
+          </div>
+        </div>
+
+        {/* Main content area */}
+        <div className="p-4 bg-gradient-to-br from-gray-50 to-white">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            
+            {/* Annual Savings Card */}
+            <div className="relative group">
+              <div className="bg-gradient-to-br from-blue-50 via-blue-100 to-indigo-50 p-6 rounded-2xl border border-blue-200 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                    </svg>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-blue-600 font-medium uppercase tracking-wider">Net Benefit</div>
+                  </div>
+                </div>
+                
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-blue-900 mb-2">
+                    ${Math.max(0, annualSavings).toLocaleString()}
+                  </div>
+                  <div className="text-sm text-blue-700 font-medium">Annual Savings</div>
+                </div>
+
+                {/* Enhanced tooltip */}
+                {totalStrategyCosts > 0 && (
+                  <div className="absolute hidden group-hover:block bg-gray-900 text-white text-sm p-4 -mt-2 z-50 shadow-2xl min-w-80 max-w-96 rounded-xl border border-gray-700 transform -translate-x-1/2 left-1/2">
+                    <div className="flex items-center mb-3">
+                      <div className="w-2 h-2 bg-blue-400 rounded-full mr-2"></div>
+                      <div className="font-semibold">Net Benefit Breakdown</div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="text-gray-300 text-xs mb-2">After subtracting strategy costs:</div>
+                      {charitableDonationAmount > 0 && (
+                        <div className="flex items-center text-red-300">
+                          <div className="w-1.5 h-1.5 bg-red-400 rounded-full mr-2"></div>
+                          <span>${Math.round(charitableDonationAmount).toLocaleString()} Donation Purchase</span>
+                        </div>
+                      )}
+                      {ctbPaymentAmount > 0 && (
+                        <div className="flex items-center text-red-300">
+                          <div className="w-1.5 h-1.5 bg-red-400 rounded-full mr-2"></div>
+                          <span>${Math.round(ctbPaymentAmount).toLocaleString()} Bond Purchase</span>
+                        </div>
+                      )}
+                      {reinsuranceSetupCost > 0 && (
+                        <div className="flex items-center text-red-300">
+                          <div className="w-1.5 h-1.5 bg-red-400 rounded-full mr-2"></div>
+                          <span>${Math.round(reinsuranceSetupCost).toLocaleString()} 831b Setup Costs</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 5 Year Value Card */}
+            <div className="relative group">
+              <div className="bg-gradient-to-br from-green-50 via-green-100 to-emerald-50 p-6 rounded-2xl border border-green-200 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                    </svg>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-green-600 font-medium uppercase tracking-wider">Growth</div>
+                  </div>
+                </div>
+                
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-green-900 mb-2">
+                    ${Math.max(0, fiveYearValue).toLocaleString()}
+                  </div>
+                  <div className="text-sm text-green-700 font-medium">5 Year Value at 8%</div>
+                </div>
+
+                {/* Growth indicator */}
+                <div className="mt-4 flex items-center justify-center">
+                  <div className="flex items-center text-xs text-green-600">
+                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                    </svg>
+                    <span>+8% Annual Growth</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Tax Rate Comparison Card */}
+            <div className="relative group">
+              <div className="bg-gradient-to-br from-purple-50 via-purple-100 to-indigo-50 p-6 rounded-2xl border border-purple-200 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-12 h-12 bg-purple-500 rounded-xl flex items-center justify-center">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-purple-600 font-medium uppercase tracking-wider">Rate</div>
+                  </div>
+                </div>
+                
+                <div className="text-center">
+                  <div className="flex items-center justify-center space-x-4 mb-3">
+                    <div>
+                      <div className="text-lg font-bold text-red-600">{beforeRate}%</div>
+                      <div className="text-xs text-gray-600">Before</div>
+                    </div>
+                    <div className="text-purple-400">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-green-600">{afterRate}%</div>
+                      <div className="text-xs text-gray-600">After</div>
+                    </div>
+                  </div>
+                  <div className="text-sm text-purple-700 font-medium">Effective Tax Rate</div>
+                </div>
+
+                {/* Rate reduction indicator */}
+                <div className="mt-4 flex items-center justify-center">
+                  <div className="flex items-center text-xs text-purple-600">
+                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                    </svg>
+                    <span>-{rateReduction.toFixed(1)}% Reduction</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Additional metrics row */}
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-gray-600">Total Income</div>
+                  <div className="text-lg font-semibold text-gray-900">${totalIncome.toLocaleString()}</div>
+                </div>
+                <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
+                  <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-gray-600">Raw Tax Savings</div>
+                  <div className="text-lg font-semibold text-blue-900">${rawSavings.toLocaleString()}</div>
+                </div>
+                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-gray-600">Strategy Costs</div>
+                  <div className="text-lg font-semibold text-red-600">${totalStrategyCosts.toLocaleString()}</div>
+                </div>
+                <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
+                  <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                  </svg>
+                </div>
+              </div>
             </div>
           </div>
         </div>

@@ -130,6 +130,9 @@ export default function TaxBracketBreakdown({
         if (strategy.id === 'family_management_company' && strategy.details?.familyManagementCompany) {
           return total + strategy.details.familyManagementCompany.totalSalaries;
         }
+        if (strategy.id === 'reinsurance' && strategy.details?.reinsurance) {
+          return total + strategy.details.reinsurance.userContribution;
+        }
         return total;
       }, 0);
   }, [strategies]);
@@ -139,7 +142,7 @@ export default function TaxBracketBreakdown({
     return strategies
       .filter(s => s.enabled && s.category === 'income_deferred')
       .reduce((total, strategy) => {
-        // Add specific logic for deferred income strategies when they exist
+        // Reinsurance is now in income_shifted category, so no longer handled here
         return total;
       }, 0);
   }, [strategies]);
@@ -151,6 +154,60 @@ export default function TaxBracketBreakdown({
            taxInfo.unearnedIncome +
            (taxInfo.businessOwner ? (taxInfo.ordinaryK1Income || 0) + (taxInfo.guaranteedK1Income || 0) : 0);
   }, [taxInfo]);
+
+  // Calculate CTB AGI Bond Offset
+  const ctbAgiBondOffset = useMemo(() => {
+    const ctbStrategy = strategies.find(s => s.enabled && s.id === 'convertible_tax_bonds');
+    if (!ctbStrategy?.details?.convertibleTaxBonds?.ctbTaxOffset) {
+      return 0;
+    }
+
+    const ctbTaxOffset = ctbStrategy.details.convertibleTaxBonds.ctbTaxOffset;
+    
+    // Calculate what AGI reduction would achieve the same tax reduction
+    // We need to reverse engineer this by finding the AGI that would result in the same tax burden
+    
+    // First, calculate current tax burden without CTB
+    const strategiesWithoutCtb = strategies.filter(s => s.id !== 'convertible_tax_bonds');
+    const breakdownWithoutCtb = calculateTaxBreakdown(taxInfo, rates, strategiesWithoutCtb);
+    const currentTaxBurden = breakdownWithoutCtb.federal + breakdownWithoutCtb.state + (includeFica ? breakdownWithoutCtb.fica : 0);
+    
+    // Target tax burden after CTB
+    const targetTaxBurden = currentTaxBurden - ctbTaxOffset;
+    
+    // Binary search to find the AGI that would result in the target tax burden
+    let low = 0;
+    let high = totalIncome;
+    let result = 0;
+    
+    for (let i = 0; i < 20; i++) { // Limit iterations to prevent infinite loop
+      const mid = (low + high) / 2;
+      
+      // Create modified tax info with reduced AGI
+      const modifiedTaxInfo = {
+        ...taxInfo,
+        wagesIncome: Math.max(0, taxInfo.wagesIncome - mid),
+        passiveIncome: Math.max(0, taxInfo.passiveIncome - Math.max(0, mid - taxInfo.wagesIncome)),
+        unearnedIncome: Math.max(0, taxInfo.unearnedIncome - Math.max(0, mid - taxInfo.wagesIncome - taxInfo.passiveIncome)),
+        ordinaryK1Income: Math.max(0, (taxInfo.ordinaryK1Income || 0) - Math.max(0, mid - taxInfo.wagesIncome - taxInfo.passiveIncome - taxInfo.unearnedIncome)),
+        guaranteedK1Income: Math.max(0, (taxInfo.guaranteedK1Income || 0) - Math.max(0, mid - taxInfo.wagesIncome - taxInfo.passiveIncome - taxInfo.unearnedIncome - (taxInfo.ordinaryK1Income || 0)))
+      };
+      
+      const modifiedBreakdown = calculateTaxBreakdown(modifiedTaxInfo, rates, strategiesWithoutCtb);
+      const modifiedTaxBurden = modifiedBreakdown.federal + modifiedBreakdown.state + (includeFica ? modifiedBreakdown.fica : 0);
+      
+      if (Math.abs(modifiedTaxBurden - targetTaxBurden) < 1) {
+        result = mid;
+        break;
+      } else if (modifiedTaxBurden > targetTaxBurden) {
+        low = mid;
+      } else {
+        high = mid;
+      }
+    }
+    
+    return Math.round(result);
+  }, [strategies, taxInfo, rates, includeFica, totalIncome]);
 
   // Calculate tax breakdowns
   const baseBreakdown = useMemo(() => 
@@ -344,15 +401,28 @@ export default function TaxBracketBreakdown({
                 </>
               )}
 
+              {ctbAgiBondOffset > 0 && (
+                <>
+                  <div className="font-medium">AGI Bond Offset</div>
+                  <div className="text-right">-</div>
+                  <div className="text-right text-green-600">
+                    ${ctbAgiBondOffset.toLocaleString()}
+                  </div>
+                  <div className="text-right text-green-600">
+                    -${ctbAgiBondOffset.toLocaleString()}
+                  </div>
+                </>
+              )}
+
               <div className="font-medium border-t pt-4">Taxable Income</div>
               <div className="text-right border-t pt-4 font-semibold">
                 ${Math.max(0, totalIncome - baseDeduction).toLocaleString()}
               </div>
               <div className="text-right border-t pt-4 font-semibold text-blue-600">
-                ${Math.max(0, totalIncome - shiftedIncome - deferredIncome - strategyBreakdown.totalDeductions).toLocaleString()}
+                ${Math.max(0, totalIncome - shiftedIncome - deferredIncome - ctbAgiBondOffset - strategyBreakdown.totalDeductions).toLocaleString()}
               </div>
               <div className="text-right border-t pt-4 font-semibold text-green-600">
-                -${(Math.max(0, totalIncome - baseDeduction) - Math.max(0, totalIncome - shiftedIncome - deferredIncome - strategyBreakdown.totalDeductions)).toLocaleString()}
+                -${(Math.max(0, totalIncome - baseDeduction) - Math.max(0, totalIncome - shiftedIncome - deferredIncome - ctbAgiBondOffset - strategyBreakdown.totalDeductions)).toLocaleString()}
               </div>
 
               <div 
