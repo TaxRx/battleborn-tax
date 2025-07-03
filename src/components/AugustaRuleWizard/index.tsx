@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAugustaStore } from '../../store/augustaStore';
 import { useTaxStore } from '../../store/taxStore';
+import { TaxStrategy } from '../../types';
 import Navigation from '../Navigation';
 import PartiesInfo from './PartiesInfo';
 import RentalInfo from './RentalInfo';
@@ -46,17 +47,34 @@ export default function AugustaRuleWizard({ onClose }: AugustaRuleWizardProps) {
         augustaStore.setDatesInfo(data);
         // Calculate total rental income
         const totalRental = data.dates.reduce((sum: number, date: any) => sum + date.rate, 0);
+        const dailyRate = totalRental / data.dates.length;
+        
+        // Create complete Augusta Rule strategy object
+        const augustaStrategy: TaxStrategy = {
+          id: 'augusta_rule',
+          name: 'Augusta Rule',
+          category: 'income_shifted',
+          description: 'Rent your personal residence to your business tax-free for up to 14 days per year',
+          estimatedSavings: 0, // Will be calculated by the calculator
+          enabled: true,
+          details: {
+            augustaRule: {
+              daysRented: data.dates.length,
+              dailyRate: dailyRate,
+              totalRent: totalRental,
+              dates: data.dates,
+              partiesInfo: augustaStore.partiesInfo,
+              rentalInfo: augustaStore.rentalInfo,
+              stateBenefit: 0,
+              federalBenefit: 0,
+              ficaBenefit: 0,
+              totalBenefit: 0
+            }
+          }
+        };
         
         // Update the Augusta Rule strategy with the new details
-        await updateStrategy('augusta_rule', {
-          augustaRule: {
-            daysRented: data.dates.length,
-            dailyRate: totalRental / data.dates.length,
-            dates: data.dates,
-            partiesInfo: augustaStore.partiesInfo,
-            rentalInfo: augustaStore.rentalInfo
-          }
-        });
+        await updateStrategy('augusta_rule', augustaStrategy);
         
         onClose();
         break;

@@ -1,14 +1,14 @@
 import React from 'react';
-import { AdminStats } from '../../shared/types';
+import { AdminStats } from '../types/proposal';
 import { 
   FileText, 
-  Users, 
+  Clock, 
   CheckCircle, 
-  DollarSign,
+  XCircle, 
+  DollarSign, 
   TrendingUp,
-  TrendingDown,
-  Clock,
-  AlertTriangle
+  Users,
+  BarChart3
 } from 'lucide-react';
 
 interface StatsCardsProps {
@@ -16,195 +16,150 @@ interface StatsCardsProps {
 }
 
 const StatsCards: React.FC<StatsCardsProps> = ({ stats }) => {
-  // Mock data for demonstration
-  const mockStats = {
-    total_proposals: 127,
-    pending_review: 23,
-    total_savings_projected: 2847500,
-    active_clients: 45,
-    monthly_growth: 12.5,
-    proposals_by_status: {
-      draft: 5,
-      submitted: 23,
-      in_review: 15,
-      approved: 89,
-      rejected: 8,
-      finalized: 45,
-      implemented: 34
-    },
-    average_review_time: 2.5,
-    expert_utilization: 78
-  };
-
-  const displayStats = stats || mockStats;
-
-  const statCards = [
-    {
-      title: 'Total Proposals',
-      value: displayStats.total_proposals || 0,
-      change: '+12%',
-      changeType: 'positive' as const,
-      icon: FileText,
-      description: 'All time submissions',
-      color: 'blue'
-    },
-    {
-      title: 'Pending Review',
-      value: displayStats.pending_review || 0,
-      change: '+3',
-      changeType: 'neutral' as const,
-      icon: Clock,
-      description: 'Awaiting approval',
-      color: 'orange'
-    },
-    {
-      title: 'Approved',
-      value: displayStats.proposals_by_status?.approved || 0,
-      change: '+8%',
-      changeType: 'positive' as const,
-      icon: CheckCircle,
-      description: 'Ready for experts',
-      color: 'emerald'
-    },
-    {
-      title: 'Total Savings',
-      value: displayStats.total_savings_projected || 0,
-      change: '+15.2%',
-      changeType: 'positive' as const,
-      icon: DollarSign,
-      description: 'Client tax savings',
-      color: 'purple',
-      format: 'currency'
-    }
-  ];
-
-  const formatValue = (value: number | undefined, format?: string) => {
-    if (value === undefined || value === null) {
-      return '0';
-    }
-    
-    if (format === 'currency') {
-      return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-      }).format(value);
-    }
-    return value.toLocaleString();
-  };
-
-  const getColorClasses = (color: string) => {
-    switch (color) {
-      case 'blue':
-        return {
-          iconBg: 'bg-blue-100',
-          iconColor: 'text-blue-600',
-          accent: 'border-blue-200'
-        };
-      case 'orange':
-        return {
-          iconBg: 'bg-orange-100',
-          iconColor: 'text-orange-600',
-          accent: 'border-orange-200'
-        };
-      case 'emerald':
-        return {
-          iconBg: 'bg-emerald-100',
-          iconColor: 'text-emerald-600',
-          accent: 'border-emerald-200'
-        };
-      case 'purple':
-        return {
-          iconBg: 'bg-purple-100',
-          iconColor: 'text-purple-600',
-          accent: 'border-purple-200'
-        };
-      default:
-        return {
-          iconBg: 'bg-slate-100',
-          iconColor: 'text-slate-600',
-          accent: 'border-slate-200'
-        };
-    }
-  };
-
-  const getChangeIcon = (changeType: 'positive' | 'negative' | 'neutral') => {
-    switch (changeType) {
-      case 'positive':
-        return <TrendingUp className="h-3 w-3" />;
-      case 'negative':
-        return <TrendingDown className="h-3 w-3" />;
-      default:
-        return <AlertTriangle className="h-3 w-3" />;
-    }
-  };
-
-  const getChangeColor = (changeType: 'positive' | 'negative' | 'neutral') => {
-    switch (changeType) {
-      case 'positive':
-        return 'text-emerald-600 bg-emerald-50';
-      case 'negative':
-        return 'text-red-600 bg-red-50';
-      default:
-        return 'text-slate-600 bg-slate-50';
-    }
-  };
-
-  if (!displayStats) {
+  if (!stats) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {[...Array(4)].map((_, index) => (
-          <div key={index} className="metric-card-modern">
-            <div className="animate-pulse">
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-10 h-10 bg-slate-200 rounded-lg"></div>
-                <div className="w-8 h-4 bg-slate-200 rounded"></div>
-              </div>
-              <div className="h-8 bg-slate-200 rounded mb-2"></div>
-              <div className="h-4 bg-slate-200 rounded w-2/3"></div>
-            </div>
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 animate-pulse">
+            <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
+            <div className="h-8 bg-gray-200 rounded w-1/3"></div>
           </div>
         ))}
       </div>
     );
   }
 
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  const formatNumber = (num: number) => {
+    return new Intl.NumberFormat('en-US').format(num);
+  };
+
+  const statCards = [
+    {
+      title: 'Total Proposals',
+      value: formatNumber(stats.totalProposals),
+      icon: FileText,
+      color: 'text-blue-600',
+      bgColor: 'bg-blue-100',
+      change: null
+    },
+    {
+      title: 'Pending Review',
+      value: formatNumber(stats.pendingReview),
+      icon: Clock,
+      color: 'text-yellow-600',
+      bgColor: 'bg-yellow-100',
+      change: null
+    },
+    {
+      title: 'Approved',
+      value: formatNumber(stats.approved),
+      icon: CheckCircle,
+      color: 'text-green-600',
+      bgColor: 'bg-green-100',
+      change: null
+    },
+    {
+      title: 'Total Revenue',
+      value: formatCurrency(stats.totalRevenue),
+      icon: DollarSign,
+      color: 'text-purple-600',
+      bgColor: 'bg-purple-100',
+      change: null
+    },
+    {
+      title: 'Average Savings',
+      value: formatCurrency(stats.averageSavings),
+      icon: TrendingUp,
+      color: 'text-emerald-600',
+      bgColor: 'bg-emerald-100',
+      change: null
+    },
+    {
+      title: 'Implemented',
+      value: formatNumber(stats.implemented),
+      icon: Users,
+      color: 'text-indigo-600',
+      bgColor: 'bg-indigo-100',
+      change: null
+    }
+  ];
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-      {statCards.map((stat, index) => {
-        const Icon = stat.icon;
-        const colors = getColorClasses(stat.color);
-        
-        return (
-          <div 
-            key={index} 
-            className={`metric-card-modern border-l-4 ${colors.accent}`}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className={`p-2 rounded-lg ${colors.iconBg}`}>
-                <Icon className={`h-5 w-5 ${colors.iconColor}`} />
-              </div>
-              <div className={`metric-change-modern ${getChangeColor(stat.changeType)}`}>
-                {getChangeIcon(stat.changeType)}
-                <span>{stat.change}</span>
+    <div className="space-y-6">
+      {/* Main Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {statCards.map((stat, index) => {
+          const Icon = stat.icon;
+          return (
+            <div key={index} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-500">{stat.title}</p>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">{stat.value}</p>
+                </div>
+                <div className={`p-3 rounded-lg ${stat.bgColor}`}>
+                  <Icon className={`h-6 w-6 ${stat.color}`} />
+                </div>
               </div>
             </div>
-            
-            <div className="metric-value-modern">
-              {formatValue(stat.value, stat.format)}
-            </div>
-            
-            <div className="metric-label-modern mb-1">
-              {stat.title}
-            </div>
-            
-            <p className="text-body-sm text-slate-500">
-              {stat.description}
-            </p>
+          );
+        })}
+      </div>
+
+      {/* Top Strategies */}
+      {stats.topStrategies.length > 0 && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+            <BarChart3 className="h-5 w-5 mr-2 text-blue-600" />
+            Top Performing Strategies
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {stats.topStrategies.map((strategy, index) => (
+              <div key={index} className="border border-gray-200 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium text-gray-900">{strategy.name}</h4>
+                  <span className="text-sm text-gray-500">{strategy.count} uses</span>
+                </div>
+                <p className="text-lg font-bold text-green-600">
+                  {formatCurrency(strategy.averageSavings)}
+                </p>
+                <p className="text-xs text-gray-500">average savings</p>
+              </div>
+            ))}
           </div>
-        );
-      })}
+        </div>
+      )}
+
+      {/* Recent Activity */}
+      {stats.recentActivity.length > 0 && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Activity</h3>
+          <div className="space-y-3">
+            {stats.recentActivity.slice(0, 5).map((activity, index) => (
+              <div key={index} className="flex items-center space-x-3">
+                <div className={`w-2 h-2 rounded-full ${
+                  activity.type === 'approved' ? 'bg-green-500' : 'bg-blue-500'
+                }`}></div>
+                <div className="flex-1">
+                  <p className="text-sm text-gray-900">{activity.description}</p>
+                  <p className="text-xs text-gray-500">
+                    {new Date(activity.timestamp).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

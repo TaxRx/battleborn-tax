@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { AdminUser, AdminStats, TaxProposal } from '../../shared/types';
-import { adminService } from '../services/adminService';
+import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
+import { AdminStats, TaxProposal } from '../types/proposal';
+import { ProposalService } from '../services/proposalService';
 import StatsCards from '../components/StatsCards';
 import ProposalQueue from '../components/ProposalQueue';
 import ProposalDetailView from '../components/ProposalDetailView';
@@ -10,6 +10,10 @@ import ExpertManagement from '../components/ExpertManagement';
 import CommissionDashboard from '../components/CommissionDashboard';
 import ClientRetentionDashboard from '../components/ClientRetentionDashboard';
 import AdminTaxCalculator from '../components/AdminTaxCalculator';
+import AugustaRuleWizard from '../../../modules/tax-calculator/components/AugustaRuleWizard';
+import RDTaxWizard from '../../../modules/tax-calculator/components/RDTaxWizard/RDTaxWizard';
+import { RDTaxCreditDashboard } from '../../../modules/tax-calculator/components/RDTaxCreditDashboard';
+import UnifiedClientDashboard from '../../../components/UnifiedClientDashboard';
 import { 
   Settings, 
   Users, 
@@ -37,15 +41,21 @@ import {
   Zap,
   Award,
   Briefcase,
-  PieChart
+  PieChart,
+  Building,
+  CreditCard,
+  FileText as FileTextIcon
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
-import { fixRlsPoliciesDirect } from '../../../lib/fixRlsPolicies';
 import CreateClientModal from '../components/CreateClientModal';
 import { useUser } from '../../../context/UserContext';
+import useAuthStore from '../../../store/authStore';
+
+const proposalService = ProposalService.getInstance();
 
 const AdminDashboard: React.FC = () => {
   const { user } = useUser();
+  const { demoMode } = useAuthStore();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [proposals, setProposals] = useState<TaxProposal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,6 +67,19 @@ const AdminDashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Create a mock user for demo mode or use the actual user
+  const effectiveUser = demoMode ? {
+    id: 'demo-admin',
+    email: 'admin@taxrxgroup.com',
+    full_name: 'Demo Administrator',
+    role: 'admin'
+  } : user ? {
+    id: user.id,
+    email: user.email || 'admin@taxrxgroup.com',
+    full_name: user.user_metadata?.full_name || 'Administrator',
+    role: 'admin'
+  } : null;
+
   useEffect(() => {
     loadDashboardData();
   }, []);
@@ -65,8 +88,8 @@ const AdminDashboard: React.FC = () => {
     setLoading(true);
     try {
       const [statsData, proposalsData] = await Promise.all([
-        adminService.getAdminStats(),
-        adminService.getAllProposals()
+        proposalService.getAdminStats(),
+        proposalService.getAllProposals()
       ]);
 
       setStats(statsData);
@@ -99,28 +122,27 @@ const AdminDashboard: React.FC = () => {
       console.error('Error rejecting proposal:', error);
     }
   };
-
-  const handleFixRlsPolicies = async () => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const result = await fixRlsPoliciesDirect();
-      if (result.success) {
-        alert('RLS policy fix instructions have been logged to the console. Please check the browser console and execute the SQL commands in your Supabase dashboard.');
-      } else {
-        setError('Failed to generate RLS fix instructions');
+  const handleDeleteProposal = async (id: string) => {
+    if (window.confirm("Are you sure you want to delete this proposal? This action cannot be undone.")) {
+      try {
+        const response = await proposalService.deleteProposal(id);
+        if (response.success) {
+          console.log("Proposal deleted:", response.data);
+          loadDashboardData();
+        } else {
+          console.error("Failed to delete proposal:", response.message);
+        }
+      } catch (error) {
+        console.error("Error deleting proposal:", error);
       }
-    } catch (err) {
-      setError('Error fixing RLS policies: ' + (err as Error).message);
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const navigationItems = [
     { name: 'Dashboard', href: '/admin', icon: Home, current: location.pathname === '/admin' },
+    { name: 'Client Management', href: '/admin/clients', icon: Users, current: location.pathname === '/admin/clients' },
     { name: 'Proposals', href: '/admin/proposals', icon: FileText, current: location.pathname.includes('/admin/proposals') },
+    { name: 'Tax Tools', href: '/admin/tax-tools', icon: Calculator, current: location.pathname.includes('/admin/tax-tools') },
     { name: 'Tax Planning', href: '/admin/calculator', icon: Calculator, current: location.pathname === '/admin/calculator' },
     { name: 'Client Retention', href: '/admin/retention', icon: Shield, current: location.pathname === '/admin/retention' },
     { name: 'Commission', href: '/admin/commission', icon: DollarSign, current: location.pathname === '/admin/commission' },
@@ -148,6 +170,18 @@ const AdminDashboard: React.FC = () => {
     
     return breadcrumbs;
   };
+
+  // If no effective user, show loading or error
+  if (!effectiveUser) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading admin panel...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -188,7 +222,7 @@ const AdminDashboard: React.FC = () => {
               <User className="h-5 w-5 text-white" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-body-md font-medium text-slate-900 truncate">{user?.full_name || 'Administrator'}</p>
+              <p className="text-body-md font-medium text-slate-900 truncate">{effectiveUser.full_name}</p>
               <p className="text-body-sm text-slate-500">Administrator</p>
             </div>
             <div className="relative">
@@ -221,24 +255,13 @@ const AdminDashboard: React.FC = () => {
             })}
           </div>
         </nav>
-
-        {/* Sidebar Footer */}
-        <div className="sidebar-footer-modern">
-          <button
-            onClick={() => navigate('/')}
-            className="flex items-center w-full px-4 py-3 text-body-md font-medium text-slate-600 rounded-lg hover:bg-slate-100 hover:text-slate-700 transition-colors"
-          >
-            <LogOut className="mr-3 h-5 w-5" />
-            Back to Main App
-          </button>
-        </div>
       </div>
 
       {/* Main Content */}
-      <div className="lg:pl-72">
-        {/* Top Navigation Bar */}
+      <div className="lg:pl-64">
+        {/* Top Navigation */}
         <div className="sticky top-0 z-30 bg-white border-b border-slate-200">
-          <div className="flex items-center justify-between px-4 sm:px-6 lg:px-8 h-16">
+          <div className="flex items-center justify-between px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex items-center">
               <button
                 onClick={() => setSidebarOpen(true)}
@@ -248,82 +271,75 @@ const AdminDashboard: React.FC = () => {
               </button>
               
               <div className="ml-4 lg:ml-0">
-                <h1 className="text-heading-lg text-slate-900">{getPageTitle()}</h1>
-                <nav className="flex items-center space-x-2 text-sm text-slate-500">
-                  {getBreadcrumbs().map((crumb, index) => (
-                    <React.Fragment key={crumb.href}>
-                      {index > 0 && <ChevronRight className="h-4 w-4" />}
-                      <span className="hover:text-slate-700">{crumb.name}</span>
-                    </React.Fragment>
-                  ))}
+                <h1 className="text-2xl font-bold text-slate-900">{getPageTitle()}</h1>
+                <nav className="flex" aria-label="Breadcrumb">
+                  <ol className="flex items-center space-x-2">
+                    {getBreadcrumbs().map((breadcrumb, index) => (
+                      <li key={breadcrumb.name} className="flex items-center">
+                        {index > 0 && <ChevronRight className="h-4 w-4 text-slate-400 mx-2" />}
+                        <a
+                          href={breadcrumb.href}
+                          className={`text-sm ${
+                            index === getBreadcrumbs().length - 1
+                              ? 'text-slate-900 font-medium'
+                              : 'text-slate-500 hover:text-slate-700'
+                          }`}
+                        >
+                          {breadcrumb.name}
+                        </a>
+                      </li>
+                    ))}
+                  </ol>
                 </nav>
               </div>
             </div>
 
             <div className="flex items-center space-x-4">
-              {/* Temporary RLS Fix Button */}
-              <button
-                onClick={handleFixRlsPolicies}
-                disabled={isLoading}
-                className="px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 text-sm font-medium"
-                title="Fix RLS Policies for tax_profiles table"
-              >
-                {isLoading ? 'Fixing...' : 'Fix RLS'}
+              <button className="p-2 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+                <Search className="h-5 w-5" />
               </button>
-              
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
+              <button className="p-2 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+                <Bell className="h-5 w-5" />
+              </button>
+              <div className="h-6 w-px bg-slate-200"></div>
+              <button className="flex items-center space-x-2 p-2 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+                <LogOut className="h-5 w-5" />
+                <span className="text-sm font-medium">Logout</span>
+              </button>
             </div>
           </div>
         </div>
 
-        {/* Error Display */}
-        {error && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <div className="flex">
-                <div className="flex-shrink-0">
-                  <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div className="ml-3">
-                  <h3 className="text-sm font-medium text-red-800">Error</h3>
-                  <div className="mt-2 text-sm text-red-700">{error}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Page Content */}
         <main className="p-4 sm:p-6 lg:p-8">
           <Routes>
-            <Route path="/" element={
-              <DashboardHome
-                stats={stats}
-                proposals={proposals}
-                loading={loading}
-                onViewProposal={handleViewProposal}
-                onApproveProposal={handleApproveProposal}
-                onRejectProposal={handleRejectProposal}
-              />
-            } />
-            <Route path="/proposals" element={<ProposalsTable proposals={proposals} loading={loading} />} />
+            <Route 
+              path="/" 
+              element={
+                <DashboardHome
+                  stats={stats}
+                  proposals={proposals}
+                  loading={loading}
+                  onViewProposal={handleViewProposal}
+                  onApproveProposal={handleApproveProposal}
+                  onRejectProposal={handleRejectProposal}
+                />
+              } 
+            />
+            <Route path="/clients" element={<UnifiedClientDashboard />} />
+            <Route path="/proposals" element={<ProposalsTable proposals={proposals} onViewProposal={handleViewProposal} onApproveProposal={handleApproveProposal} onRejectProposal={handleRejectProposal} />} />
             <Route path="/proposals/:id" element={<ProposalDetailView />} />
+            <Route path="/tax-tools" element={<TaxToolsHome />} />
+            <Route path="/tax-tools/augusta-rule" element={<AugustaRuleTool />} />
+            <Route path="/tax-tools/rd-credit" element={<RDTaxCreditDashboard />} />
+            <Route path="/tax-tools/rd-credit/wizard/:businessId" element={<RDTaxCreditTool />} />
             <Route path="/calculator" element={<AdminTaxCalculator />} />
             <Route path="/retention" element={<ClientRetentionDashboard />} />
             <Route path="/commission" element={<CommissionDashboard />} />
             <Route path="/experts" element={<ExpertManagement />} />
-            <Route path="/users" element={<div className="card-modern p-6"><h2 className="text-heading-lg">Users Management</h2><p className="text-body-md text-slate-600">Coming soon...</p></div>} />
-            <Route path="/reports" element={<div className="card-modern p-6"><h2 className="text-heading-lg">Reports</h2><p className="text-body-md text-slate-600">Coming soon...</p></div>} />
-            <Route path="/settings" element={<div className="card-modern p-6"><h2 className="text-heading-lg">Settings</h2><p className="text-body-md text-slate-600">Coming soon...</p></div>} />
+            <Route path="/users" element={<div className="p-8"><h1 className="text-2xl font-bold">Users Management</h1><p>Coming soon...</p></div>} />
+            <Route path="/reports" element={<div className="p-8"><h1 className="text-2xl font-bold">Reports</h1><p>Coming soon...</p></div>} />
+            <Route path="/settings" element={<div className="p-8"><h1 className="text-2xl font-bold">Settings</h1><p>Coming soon...</p></div>} />
             <Route path="*" element={<Navigate to="/admin" replace />} />
           </Routes>
         </main>
@@ -334,11 +350,9 @@ const AdminDashboard: React.FC = () => {
         <CreateClientModal
           isOpen={showCreateClientModal}
           onClose={() => setShowCreateClientModal(false)}
-          onClientCreated={(client) => {
-            console.log('Client created:', client);
+          onSubmit={async (clientData) => {
+            console.log('Creating client:', clientData);
             setShowCreateClientModal(false);
-            // Optionally refresh the dashboard data
-            loadDashboardData();
           }}
         />
       )}
@@ -346,6 +360,7 @@ const AdminDashboard: React.FC = () => {
   );
 };
 
+// Dashboard Home Component
 interface DashboardHomeProps {
   stats: AdminStats | null;
   proposals: TaxProposal[];
@@ -367,18 +382,14 @@ const DashboardHome: React.FC<DashboardHomeProps> = ({
 
   if (loading) {
     return (
-      <div className="space-y-8 animate-fade-in">
-        {/* Loading skeleton */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="card-modern p-6">
-              <div className="animate-pulse">
-                <div className="h-4 bg-slate-200 rounded w-1/2 mb-3"></div>
-                <div className="h-8 bg-slate-200 rounded w-3/4 mb-2"></div>
-                <div className="h-3 bg-slate-200 rounded w-1/3"></div>
-              </div>
-            </div>
-          ))}
+      <div className="space-y-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 rounded w-1/4 mb-4"></div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-32 bg-gray-200 rounded-lg"></div>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -386,222 +397,181 @@ const DashboardHome: React.FC<DashboardHomeProps> = ({
 
   const pendingProposals = proposals.filter(p => p.status === 'submitted').length;
   const approvedProposals = proposals.filter(p => p.status === 'approved').length;
-  const totalProposals = proposals.length;
-  const activeClients = stats?.totalClients || 0;
+  const totalRevenue = proposals.reduce((sum, p) => sum + (p.projectedRevenue || 0), 0);
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      {/* Welcome Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-display text-slate-900 mb-2">Tax Strategy Command Center 🎯</h1>
-          <p className="text-body-lg text-slate-600">
-            Manage your tax advisory platform and drive client success through strategic planning.
-          </p>
-        </div>
-        <div className="mt-4 lg:mt-0 flex items-center space-x-3">
-          <button 
-            onClick={() => navigate('/admin/calculator')}
-            className="btn-primary-modern"
-          >
-            <Calculator className="h-4 w-4 mr-2" />
-            Create Tax Plan
-          </button>
-          <button 
-            onClick={() => navigate('/admin/proposals')}
-            className="btn-secondary-modern"
-          >
-            <FileText className="h-4 w-4 mr-2" />
-            View All Proposals
-          </button>
-        </div>
-      </div>
-
-      {/* Key Performance Metrics */}
+    <div className="space-y-8">
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="card-modern bg-gradient-to-r from-blue-500 to-blue-600 text-white">
-          <div className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-blue-100 text-sm font-medium">Pending Reviews</p>
-                <p className="text-3xl font-bold">{pendingProposals}</p>
-                <p className="text-blue-200 text-sm mt-1">Need attention</p>
-              </div>
-              <AlertTriangle className="h-8 w-8 text-blue-200" />
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center">
+            <div className="flex-shrink-0 h-12 w-12 rounded-md bg-blue-100 flex items-center justify-center">
+              <FileText className="h-6 w-6 text-blue-600" />
+            </div>
+            <div className="ml-4">
+              <h3 className="text-lg font-medium text-gray-900">{proposals.length}</h3>
+              <p className="text-sm text-gray-500">Total Proposals</p>
             </div>
           </div>
         </div>
 
-        <div className="card-modern bg-gradient-to-r from-emerald-500 to-emerald-600 text-white">
-          <div className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-emerald-100 text-sm font-medium">Approved Plans</p>
-                <p className="text-3xl font-bold">{approvedProposals}</p>
-                <p className="text-emerald-200 text-sm mt-1">Ready for experts</p>
-              </div>
-              <CheckCircle className="h-8 w-8 text-emerald-200" />
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center">
+            <div className="flex-shrink-0 h-12 w-12 rounded-md bg-yellow-100 flex items-center justify-center">
+              <Clock className="h-6 w-6 text-yellow-600" />
+            </div>
+            <div className="ml-4">
+              <h3 className="text-lg font-medium text-gray-900">{pendingProposals}</h3>
+              <p className="text-sm text-gray-500">Pending Review</p>
             </div>
           </div>
         </div>
 
-        <div className="card-modern bg-gradient-to-r from-purple-500 to-purple-600 text-white">
-          <div className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-purple-100 text-sm font-medium">Active Clients</p>
-                <p className="text-3xl font-bold">{activeClients}</p>
-                <p className="text-purple-200 text-sm mt-1">In pipeline</p>
-              </div>
-              <Users className="h-8 w-8 text-purple-200" />
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center">
+            <div className="flex-shrink-0 h-12 w-12 rounded-md bg-green-100 flex items-center justify-center">
+              <CheckCircle className="h-6 w-6 text-green-600" />
+            </div>
+            <div className="ml-4">
+              <h3 className="text-lg font-medium text-gray-900">{approvedProposals}</h3>
+              <p className="text-sm text-gray-500">Approved</p>
             </div>
           </div>
         </div>
 
-        <div className="card-modern bg-gradient-to-r from-orange-500 to-orange-600 text-white">
-          <div className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-orange-100 text-sm font-medium">Total Proposals</p>
-                <p className="text-3xl font-bold">{totalProposals}</p>
-                <p className="text-orange-200 text-sm mt-1">This period</p>
-              </div>
-              <Target className="h-8 w-8 text-orange-200" />
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center">
+            <div className="flex-shrink-0 h-12 w-12 rounded-md bg-purple-100 flex items-center justify-center">
+              <DollarSign className="h-6 w-6 text-purple-600" />
+            </div>
+            <div className="ml-4">
+              <h3 className="text-lg font-medium text-gray-900">${totalRevenue.toLocaleString()}</h3>
+              <p className="text-sm text-gray-500">Total Revenue</p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Recent Proposals */}
-        <div className="lg:col-span-2">
-          <div className="card-modern">
-            <div className="p-6 border-b border-slate-200">
-              <div className="flex items-center justify-between">
-                <h2 className="text-heading-lg text-slate-900">Recent Tax Proposals</h2>
-                <button 
-                  onClick={() => navigate('/admin/proposals')}
-                  className="text-body-sm font-medium text-blue-600 hover:text-blue-700 flex items-center"
-                >
-                  View All
-                  <ArrowRight className="h-4 w-4 ml-1" />
-                </button>
+      {/* Quick Actions */}
+      <div className="bg-white rounded-lg shadow">
+        <div className="p-6">
+          <h2 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h2>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <button
+              onClick={() => navigate('/admin/proposals')}
+              className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <FileText className="h-6 w-6 text-blue-600 mr-3" />
+              <div className="text-left">
+                <h3 className="font-medium text-gray-900">Review Proposals</h3>
+                <p className="text-sm text-gray-500">{pendingProposals} pending</p>
               </div>
-            </div>
-            <div className="p-6">
-              <ProposalQueue
-                proposals={proposals.slice(0, 5)}
-                loading={loading}
-                onViewProposal={onViewProposal}
-                onApproveProposal={onApproveProposal}
-                onRejectProposal={onRejectProposal}
-              />
-            </div>
+            </button>
+
+            <button
+              onClick={() => navigate('/admin/tax-tools')}
+              className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <Calculator className="h-6 w-6 text-green-600 mr-3" />
+              <div className="text-left">
+                <h3 className="font-medium text-gray-900">Tax Tools</h3>
+                <p className="text-sm text-gray-500">Augusta Rule & R&D Credits</p>
+              </div>
+            </button>
+
+            <button
+              onClick={() => navigate('/admin/calculator')}
+              className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <Calculator className="h-6 w-6 text-purple-600 mr-3" />
+              <div className="text-left">
+                <h3 className="font-medium text-gray-900">Tax Calculator</h3>
+                <p className="text-sm text-gray-500">Run calculations</p>
+              </div>
+            </button>
+
+            <button
+              onClick={() => navigate('/admin/experts')}
+              className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <UserCheck className="h-6 w-6 text-orange-600 mr-3" />
+              <div className="text-left">
+                <h3 className="font-medium text-gray-900">Manage Experts</h3>
+                <p className="text-sm text-gray-500">Expert assignments</p>
+              </div>
+            </button>
           </div>
         </div>
+      </div>
 
-        {/* Quick Actions Sidebar */}
-        <div className="space-y-6">
-          <div className="card-modern">
-            <div className="p-6 border-b border-slate-200">
-              <h3 className="text-heading-md text-slate-900">Quick Actions</h3>
-              <p className="text-body-sm text-slate-600 mt-1">Essential tasks for today</p>
-            </div>
-            <div className="p-6 space-y-4">
-              <QuickActionCard
-                title="Create Client"
-                description="Add a new client to the system"
-                icon={Plus}
-                count={0}
-                href="#"
-                priority="high"
-                action="Create New"
-                onClick={() => setShowCreateClientModal(true)}
-              />
-              
-              <QuickActionCard
-                title="Create Tax Plan"
-                description="Start a new client tax strategy"
-                icon={Calculator}
-                count={0}
-                href="/admin/calculator"
-                priority="high"
-                action="Create New"
-              />
-              
-              <QuickActionCard
-                title="Review Queue"
-                description="Proposals awaiting review"
-                icon={FileText}
-                count={pendingProposals}
-                href="/admin/proposals"
-                priority="high"
-                action="Review Now"
-              />
-              
-              <QuickActionCard
-                title="Expert Assignment"
-                description="Ready for expert assignment"
-                icon={UserCheck}
-                count={approvedProposals}
-                href="/admin/experts"
-                priority="medium"
-                action="Assign"
-              />
-              
-              <QuickActionCard
-                title="Client Retention"
-                description="Monitor client health"
-                icon={Shield}
-                count={0}
-                href="/admin/retention"
-                priority="medium"
-                action="Monitor"
-              />
-            </div>
+      {/* Recent Proposals */}
+      <div className="bg-white rounded-lg shadow">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-medium text-gray-900">Recent Proposals</h2>
+            <button
+              onClick={() => navigate('/admin/proposals')}
+              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+            >
+              View all
+            </button>
           </div>
-
-          {/* Platform Insights */}
-          <div className="card-modern">
-            <div className="p-6 border-b border-slate-200">
-              <h3 className="text-heading-md text-slate-900">Platform Insights</h3>
-              <p className="text-body-sm text-slate-600 mt-1">Key performance indicators</p>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg">
-                <div className="flex items-center">
-                  <Zap className="h-5 w-5 text-blue-600 mr-3" />
-                  <div>
-                    <p className="text-body-sm font-medium text-slate-900">Tax Calculator Usage</p>
-                    <p className="text-body-xs text-slate-600">High engagement</p>
-                  </div>
-                </div>
-                <TrendingUp className="h-4 w-4 text-green-600" />
-              </div>
-
-              <div className="flex items-center justify-between p-4 bg-emerald-50 rounded-lg">
-                <div className="flex items-center">
-                  <Award className="h-5 w-5 text-emerald-600 mr-3" />
-                  <div>
-                    <p className="text-body-sm font-medium text-slate-900">Client Satisfaction</p>
-                    <p className="text-body-xs text-slate-600">Excellent ratings</p>
-                  </div>
-                </div>
-                <CheckCircle className="h-4 w-4 text-green-600" />
-              </div>
-
-              <div className="flex items-center justify-between p-4 bg-purple-50 rounded-lg">
-                <div className="flex items-center">
-                  <Briefcase className="h-5 w-5 text-purple-600 mr-3" />
-                  <div>
-                    <p className="text-body-sm font-medium text-slate-900">Expert Utilization</p>
-                    <p className="text-body-xs text-slate-600">85% capacity</p>
-                  </div>
-                </div>
-                <PieChart className="h-4 w-4 text-purple-600" />
-              </div>
-            </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Client</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Revenue</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {proposals.slice(0, 5).map((proposal) => (
+                  <tr key={proposal.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{proposal.id}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{proposal.clientName}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                        proposal.status === 'approved' ? 'bg-green-100 text-green-800' :
+                        proposal.status === 'submitted' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {proposal.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      ${(proposal.projectedRevenue || 0).toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <button
+                        onClick={() => onViewProposal(proposal.id)}
+                        className="text-blue-600 hover:text-blue-900 mr-3"
+                      >
+                        View
+                      </button>
+                      {proposal.status === 'submitted' && (
+                        <>
+                          <button
+                            onClick={() => onApproveProposal(proposal.id)}
+                            className="text-green-600 hover:text-green-900 mr-3"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => onRejectProposal(proposal.id)}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -609,86 +579,224 @@ const DashboardHome: React.FC<DashboardHomeProps> = ({
   );
 };
 
-interface QuickActionCardProps {
-  title: string;
-  description: string;
-  icon: React.ComponentType<any>;
-  count: number;
-  href: string;
-  priority: 'high' | 'medium' | 'low';
-  action: string;
-  onClick?: () => void;
-}
-
-const QuickActionCard: React.FC<QuickActionCardProps> = ({ 
-  title, 
-  description, 
-  icon: Icon, 
-  count, 
-  href,
-  priority,
-  action,
-  onClick
-}) => {
+// Tax Tools Home Component
+const TaxToolsHome: React.FC = () => {
   const navigate = useNavigate();
 
-  const getPriorityStyles = () => {
-    switch (priority) {
-      case 'high':
-        return 'border-red-200 bg-red-50 hover:bg-red-100';
-      case 'medium':
-        return 'border-orange-200 bg-orange-50 hover:bg-orange-100';
-      case 'low':
-        return 'border-emerald-200 bg-emerald-50 hover:bg-emerald-100';
-      default:
-        return 'border-slate-200 bg-white hover:bg-slate-50';
+  const taxTools = [
+    {
+      id: 'augusta-rule',
+      name: 'Augusta Rule Calculator',
+      description: 'Calculate tax benefits from renting your home to your business for up to 14 days per year',
+      icon: Building,
+      href: '/admin/tax-tools/augusta-rule',
+      features: [
+        'Multi-step wizard for data collection',
+        'Real-time tax benefit calculations',
+        'State and federal tax savings',
+        'Implementation guidance'
+      ]
+    },
+    {
+      id: 'rd-credit',
+      name: 'R&D Tax Credit Management',
+      description: 'Comprehensive client and business management for R&D tax credit calculations',
+      icon: CreditCard,
+      href: '/admin/tax-tools/rd-credit',
+      features: [
+        'Client management dashboard',
+        'Business setup and tracking',
+        'R&D activity exploration',
+        'Tax credit calculations'
+      ]
     }
-  };
-
-  const getCountColor = () => {
-    switch (priority) {
-      case 'high':
-        return 'text-red-600';
-      case 'medium':
-        return 'text-orange-600';
-      case 'low':
-        return 'text-emerald-600';
-      default:
-        return 'text-slate-600';
-    }
-  };
+  ];
 
   return (
-    <button
-      onClick={onClick || (() => navigate(href))}
-      className={`w-full text-left p-4 rounded-lg border transition-all duration-200 ${getPriorityStyles()}`}
-    >
-      <div className="flex items-start justify-between mb-3">
-        <div className={`p-2 rounded-lg ${
-          priority === 'high' ? 'bg-red-100' :
-          priority === 'medium' ? 'bg-orange-100' :
-          'bg-emerald-100'
-        }`}>
-          <Icon className={`h-5 w-5 ${getCountColor()}`} />
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Tax Tools</h1>
+          <p className="mt-2 text-lg text-gray-600">
+            Professional tax planning and calculation tools for your clients
+          </p>
         </div>
-        {count > 0 && (
-          <span className={`text-heading-sm font-bold ${getCountColor()}`}>
-            {count}
-          </span>
-        )}
       </div>
-      
-      <h3 className="text-body-md font-medium text-slate-900 mb-1">{title}</h3>
-      <p className="text-body-sm text-slate-600 mb-3">{description}</p>
-      
-      <div className="flex items-center justify-between">
-        <span className="text-body-sm font-medium text-slate-700">
-          {action}
-        </span>
-        <ArrowRight className="h-4 w-4 text-slate-400" />
+
+      {/* Tools Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {taxTools.map((tool) => {
+          const Icon = tool.icon;
+          return (
+            <div key={tool.id} className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden hover:shadow-xl transition-shadow duration-300">
+              <div className="p-8">
+                <div className="flex items-center mb-6">
+                  <div className="flex-shrink-0">
+                    <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <Icon className="h-6 w-6 text-blue-600" />
+                    </div>
+                  </div>
+                  <div className="ml-4">
+                    <h3 className="text-xl font-bold text-gray-900">{tool.name}</h3>
+                    <p className="text-gray-600">{tool.description}</p>
+                  </div>
+                </div>
+
+                <div className="mb-6">
+                  <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Key Features</h4>
+                  <ul className="space-y-2">
+                    {tool.features.map((feature, index) => (
+                      <li key={index} className="flex items-center text-sm text-gray-600">
+                        <CheckCircle className="h-4 w-4 text-green-500 mr-2 flex-shrink-0" />
+                        {feature}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <button
+                  onClick={() => navigate(tool.href)}
+                  className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center justify-center"
+                >
+                  <span>Launch Tool</span>
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          );
+        })}
       </div>
-    </button>
+
+      {/* Additional Information */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+        <h3 className="text-lg font-semibold text-blue-900 mb-3">About Our Tax Tools</h3>
+        <p className="text-blue-800 mb-4">
+          These professional-grade tax tools help you provide accurate calculations and strategic tax planning for your clients. 
+          Each tool is designed to handle complex tax scenarios and provide detailed breakdowns of potential savings.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-blue-700">
+          <div className="flex items-center">
+            <Shield className="h-4 w-4 mr-2" />
+            <span>IRS Compliant Calculations</span>
+          </div>
+          <div className="flex items-center">
+            <FileTextIcon className="h-4 w-4 mr-2" />
+            <span>Detailed Documentation</span>
+          </div>
+          <div className="flex items-center">
+            <Calculator className="h-4 w-4 mr-2" />
+            <span>Real-time Results</span>
+          </div>
+        </div>
+      </div>
+    </div>
   );
+};
+
+// Augusta Rule Tool Component
+const AugustaRuleTool: React.FC = () => {
+  const navigate = useNavigate();
+  const [showWizard, setShowWizard] = useState(false);
+
+  if (showWizard) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="flex items-center justify-between p-6 bg-white border-b">
+          <h1 className="text-2xl font-bold">Augusta Rule Wizard</h1>
+          <button
+            onClick={() => setShowWizard(false)}
+            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+          >
+            Close Wizard
+          </button>
+        </div>
+        <div className="p-0">
+          <AugustaRuleWizard onClose={() => setShowWizard(false)} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Augusta Rule Calculator</h1>
+          <p className="text-gray-600">Direct access to the full Augusta Rule wizard</p>
+        </div>
+        <button
+          onClick={() => navigate('/admin/tax-tools')}
+          className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+        >
+          Back to Tax Tools
+        </button>
+      </div>
+
+      <div className="bg-white rounded-lg shadow p-8">
+        <div className="text-center py-12">
+          <Building className="mx-auto h-16 w-16 text-blue-600 mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Augusta Rule Setup Wizard</h2>
+          <p className="text-gray-600 mb-6">
+            Launch the complete Augusta Rule wizard directly in the admin panel:
+          </p>
+          
+          <div className="space-y-4 mb-8">
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <h3 className="font-semibold text-blue-900 mb-2">Full Wizard Features</h3>
+              <ul className="text-sm text-blue-800 space-y-1">
+                <li>• Step 1: Parties Information (Homeowner & Business details)</li>
+                <li>• Step 2: Rental Rate Analysis (Market comparables)</li>
+                <li>• Step 3: Rental Dates & Activities (Day-by-day planning)</li>
+                <li>• Google Maps integration for address verification</li>
+                <li>• Market rate analysis with comparable properties</li>
+                <li>• Comprehensive documentation for IRS compliance</li>
+              </ul>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setShowWizard(true)}
+            className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center mx-auto space-x-2"
+          >
+            <ArrowRight className="w-5 h-5" />
+            <span>Launch Full Wizard</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// R&D Tax Credit Tool Component
+const RDTaxCreditTool: React.FC = () => {
+  const navigate = useNavigate();
+  const { businessId } = useParams<{ businessId: string }>();
+  const [showWizard, setShowWizard] = useState(true);
+
+  if (showWizard) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="flex items-center justify-between p-6 bg-white border-b">
+          <h1 className="text-2xl font-bold">R&D Tax Credit Wizard</h1>
+          <button
+            onClick={() => navigate('/admin/tax-tools/rd-credit')}
+            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+          >
+            Back to Dashboard
+          </button>
+        </div>
+        <div className="p-0">
+          <RDTaxWizard 
+            onClose={() => navigate('/admin/tax-tools/rd-credit')} 
+            businessId={businessId}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 };
 
 export default AdminDashboard; 

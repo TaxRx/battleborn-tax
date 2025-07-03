@@ -64,7 +64,9 @@ export default function ConvertibleTaxBondsCalculator({
 
   // Calculate actual CTB payment needed for constrained offset
   const actualCtbPayment = useMemo(() => {
-    return Math.round(constrainedCtbTaxOffset * 0.75);
+    const calculatedPayment = Math.round(constrainedCtbTaxOffset * 0.75);
+    // Enforce minimum purchase of $75,000
+    return Math.max(calculatedPayment, 75000);
   }, [constrainedCtbTaxOffset]);
 
   // Calculate net savings

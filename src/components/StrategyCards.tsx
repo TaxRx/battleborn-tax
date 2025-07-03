@@ -97,15 +97,16 @@ const StrategyCard = memo(function StrategyCard({
   onClick: () => void;
 }) {
   // Calculate display value - for charitable donations, show net benefit (total - donation amount)
-  const displayValue = strategy.details?.charitableDonation 
-    ? Math.max(0, (strategy.details.charitableDonation.totalBenefit || 0) - (strategy.details.charitableDonation.donationAmount || 0))
-    : strategy.details?.augustaRule?.totalBenefit ?? 
-      strategy.details?.familyManagementCompany?.totalBenefit ?? 
-      strategy.details?.hireChildren?.totalBenefit ?? 
-      strategy.details?.costSegregation?.totalBenefit ?? 
-      strategy.details?.convertibleTaxBonds?.netSavings ?? 
-      strategy.details?.reinsurance?.totalTaxSavings ?? 
-      strategy.estimatedSavings;
+  const displayValue = strategy.id === 'convertible_tax_bonds' && strategy.details?.convertibleTaxBonds
+    ? Math.max(0, strategy.details.convertibleTaxBonds.netSavings || 0)
+    : strategy.details?.charitableDonation 
+      ? Math.max(0, (strategy.details.charitableDonation.totalBenefit || 0) - (strategy.details.charitableDonation.donationAmount || 0))
+      : strategy.details?.augustaRule?.totalBenefit ?? 
+        strategy.details?.familyManagementCompany?.totalBenefit ?? 
+        strategy.details?.hireChildren?.totalBenefit ?? 
+        strategy.details?.costSegregation?.totalBenefit ?? 
+        strategy.details?.reinsurance?.totalTaxSavings ?? 
+        strategy.estimatedSavings;
 
   const handleCardClick = () => {
     // If strategy has data but isn't enabled, enable it

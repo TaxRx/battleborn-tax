@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, CheckCircle, XCircle, User, DollarSign, Calendar, AlertCircle, FileText, UserCheck, Plus } from 'lucide-react';
+import { Eye, CheckCircle, XCircle, User, DollarSign, Calendar, AlertCircle, FileText, UserCheck, Plus, Clock } from 'lucide-react';
 import { TaxProposal, ProposalStatus } from '../../shared/types';
 
 interface ProposalQueueProps {
@@ -56,6 +56,33 @@ const ProposalQueue: React.FC<ProposalQueueProps> = ({
     return proposal.status === filter;
   });
 
+  const pendingProposals = proposals.filter(p => 
+    p.status === 'submitted' || p.status === 'in_review'
+  );
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  const getStatusBadge = (status: string) => {
+    const statusConfig = {
+      submitted: { color: 'bg-blue-100 text-blue-800', label: 'Submitted' },
+      in_review: { color: 'bg-yellow-100 text-yellow-800', label: 'In Review' },
+    };
+
+    const config = statusConfig[status as keyof typeof statusConfig];
+    return (
+      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${config.color}`}>
+        {config.label}
+      </span>
+    );
+  };
+
   if (loading) {
     return (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -66,6 +93,21 @@ const ProposalQueue: React.FC<ProposalQueueProps> = ({
               <div key={i} className="h-20 bg-gray-200 rounded"></div>
             ))}
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (pendingProposals.length === 0) {
+    return (
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+          <Clock className="h-5 w-5 mr-2 text-blue-600" />
+          Proposal Queue
+        </h3>
+        <div className="text-center py-8">
+          <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          <p className="text-gray-500">No pending proposals</p>
         </div>
       </div>
     );
@@ -174,14 +216,7 @@ const ProposalCard: React.FC<ProposalCardProps> = ({
               </div>
             </div>
             <div className="flex items-center space-x-2">
-              <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                proposal.status === 'submitted' ? 'bg-yellow-100 text-yellow-800' :
-                proposal.status === 'in_review' ? 'bg-blue-100 text-blue-800' :
-                proposal.status === 'approved' ? 'bg-green-100 text-green-800' :
-                'bg-gray-100 text-gray-800'
-              }`}>
-                {proposal.status.replace('_', ' ')}
-              </span>
+              {getStatusBadge(proposal.status)}
             </div>
           </div>
           

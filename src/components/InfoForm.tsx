@@ -8,49 +8,68 @@ import { useTaxStore } from '../store/taxStore';
 import { useUserStore } from '../store/userStore';
 import useAuthStore from '../store/authStore';
 import { supabase } from '../lib/supabase';
+import { formatCurrency, parseCurrency } from '../utils/formatting';
 
 interface InfoFormProps {
   onSubmit: (data: TaxInfo, year: number) => void;
   initialData?: TaxInfo | null;
+  onTaxInfoUpdate?: (taxInfo: TaxInfo) => Promise<void>;
 }
 
-export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
+export default function InfoForm({ onSubmit, initialData, onTaxInfoUpdate }: InfoFormProps) {
   const { saveInitialState, setTaxInfo } = useTaxStore();
   const { user, fetchUserProfile } = useUserStore();
   const { demoMode } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState('profile');
   const [selectedYear] = useState(new Date().getFullYear());
-  const [formData, setFormData] = useState<TaxInfo>(initialData || {
+  const [ownBusiness, setOwnBusiness] = useState(false);
+  
+  // Create a clean default state with all income fields set to 0
+  const getDefaultFormData = (): TaxInfo => ({
     standardDeduction: true,
     customDeduction: 0,
-    businessOwner: true,
+    businessOwner: false,
     fullName: '',
     email: user?.email || '',
     phone: '',
     filingStatus: 'single',
-    dependents: 1,
+    dependents: 0,
     homeAddress: '',
     state: 'CA',
-    wagesIncome: 200000,
-    passiveIncome: 50000,
-    unearnedIncome: 25000,
-    capitalGains: 10000,
-    businessName: 'Demo Business LLC',
+    wagesIncome: 0,
+    passiveIncome: 0,
+    unearnedIncome: 0,
+    capitalGains: 0,
+    businessName: '',
     entityType: 'LLC',
     businessAddress: '',
-    ordinaryK1Income: 150000,
-    guaranteedK1Income: 50000,
-    householdIncome: 500000,
+    ordinaryK1Income: 0,
+    guaranteedK1Income: 0,
+    householdIncome: 0,
+    businessAnnualRevenue: 0,
     deductionLimitReached: false
+  });
+
+  const [formData, setFormData] = useState<TaxInfo>(() => {
+    // If initialData is provided, use it; otherwise use clean defaults
+    if (initialData) {
+      return initialData;
+    }
+    return getDefaultFormData();
   });
 
   // Update form data when initialData changes
   useEffect(() => {
     if (initialData) {
-      setFormData(initialData);
+      // If initialData is provided, use it but preserve any existing data that might not be in initialData
+      setFormData(prevData => ({
+        ...prevData,
+        ...initialData
+      }));
     }
-  }, [initialData]);
+    // Don't reset to defaults when initialData is null/undefined - keep existing data
+  }, [initialData, user?.email]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,7 +93,7 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
 
     if (!hasIncome) {
       console.error('Validation error: No income sources provided');
-      alert('Please enter at least one source of income');
+      alert('Please enter at least one source of income to calculate your tax strategy. You can enter $0 for income sources that don\'t apply to you.');
       return;
     }
 
@@ -83,6 +102,20 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
       console.log('Demo mode: Skipping Supabase operations');
       setTaxInfo(formData);
       onSubmit(formData, selectedYear);
+      return;
+    }
+
+    if (onTaxInfoUpdate) {
+      // If onTaxInfoUpdate callback is provided (admin context), use it
+      try {
+        console.log('Using onTaxInfoUpdate callback for admin context');
+        await onTaxInfoUpdate(formData);
+        setTaxInfo(formData);
+        onSubmit(formData, selectedYear);
+      } catch (error) {
+        console.error('Error updating tax info via callback:', error);
+        alert(`Failed to update tax information: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
       return;
     }
 
@@ -153,6 +186,7 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
             ordinary_k1_income: formData.ordinaryK1Income,
             guaranteed_k1_income: formData.guaranteedK1Income,
             household_income: formData.householdIncome,
+            business_annual_revenue: formData.businessAnnualRevenue,
             deduction_limit_reached: formData.deductionLimitReached,
             updated_at: new Date().toISOString()
           }
@@ -204,10 +238,46 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
     return null;
   };
 
+  // Function to clear all income fields
+  const clearAllIncome = () => {
+    setFormData(prev => ({
+      ...prev,
+      wagesIncome: 0,
+      passiveIncome: 0,
+      unearnedIncome: 0,
+      capitalGains: 0,
+      ordinaryK1Income: 0,
+      guaranteedK1Income: 0,
+      householdIncome: 0
+    }));
+  };
+
+  // Function to reset entire form to clean defaults
+  const resetForm = () => {
+    setFormData(getDefaultFormData());
+  };
+
+  // Function to calculate total income
+  const getTotalIncome = () => {
+    return (formData.wagesIncome || 0) + 
+           (formData.passiveIncome || 0) + 
+           (formData.unearnedIncome || 0) + 
+           (formData.capitalGains || 0) + 
+           (formData.ordinaryK1Income || 0) + 
+           (formData.guaranteedK1Income || 0);
+  };
+
   return (
     <div className="max-w-6xl mx-auto p-8">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-2xl font-bold">{selectedYear} Tax Year Information</h1>
+        <button
+          type="button"
+          onClick={resetForm}
+          className="text-sm text-gray-600 hover:text-gray-800 underline"
+        >
+          Reset Form
+        </button>
       </div>
 
       <Tabs.Root value={activeTab} onValueChange={setActiveTab}>
@@ -342,18 +412,34 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
               </div>
 
               <div className="mt-8">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Income Information</h3>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-medium text-gray-900">Income Information</h3>
+                  <div className="flex items-center space-x-4">
+                    <div className="text-sm text-gray-600">
+                      Total Income: <span className="font-semibold">${getTotalIncome().toLocaleString()}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={clearAllIncome}
+                      className="text-sm text-red-600 hover:text-red-800 underline"
+                    >
+                      Clear All Income
+                    </button>
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">
                       Wages/Salary Income
                     </label>
                     <NumericFormat
-                      value={formData.wagesIncome}
+                      value={formData.wagesIncome || ''}
                       onValueChange={(values) => setFormData(prev => ({ ...prev, wagesIncome: values.floatValue || 0 }))}
                       thousandSeparator={true}
                       prefix="$"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
+                      allowNegative={false}
+                      placeholder="0"
+                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61] ${!formData.wagesIncome ? 'bg-gray-50' : ''}`}
                     />
                   </div>
 
@@ -362,11 +448,13 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
                       Passive Income
                     </label>
                     <NumericFormat
-                      value={formData.passiveIncome}
+                      value={formData.passiveIncome || ''}
                       onValueChange={(values) => setFormData(prev => ({ ...prev, passiveIncome: values.floatValue || 0 }))}
                       thousandSeparator={true}
                       prefix="$"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
+                      allowNegative={false}
+                      placeholder="0"
+                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61] ${!formData.passiveIncome ? 'bg-gray-50' : ''}`}
                     />
                   </div>
 
@@ -375,11 +463,13 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
                       Unearned Income
                     </label>
                     <NumericFormat
-                      value={formData.unearnedIncome}
+                      value={formData.unearnedIncome || ''}
                       onValueChange={(values) => setFormData(prev => ({ ...prev, unearnedIncome: values.floatValue || 0 }))}
                       thousandSeparator={true}
                       prefix="$"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
+                      allowNegative={false}
+                      placeholder="0"
+                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61] ${!formData.unearnedIncome ? 'bg-gray-50' : ''}`}
                     />
                   </div>
 
@@ -388,11 +478,28 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
                       Capital Gains
                     </label>
                     <NumericFormat
-                      value={formData.capitalGains}
+                      value={formData.capitalGains || ''}
                       onValueChange={(values) => setFormData(prev => ({ ...prev, capitalGains: values.floatValue || 0 }))}
                       thousandSeparator={true}
                       prefix="$"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
+                      allowNegative={false}
+                      placeholder="0"
+                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61] ${!formData.capitalGains ? 'bg-gray-50' : ''}`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Household Income
+                    </label>
+                    <NumericFormat
+                      value={formData.householdIncome || ''}
+                      onValueChange={(values) => setFormData(prev => ({ ...prev, householdIncome: values.floatValue || 0 }))}
+                      thousandSeparator={true}
+                      prefix="$"
+                      allowNegative={false}
+                      placeholder="0"
+                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61] ${!formData.householdIncome ? 'bg-gray-50' : ''}`}
                     />
                   </div>
                 </div>
@@ -439,14 +546,31 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700">
+                      Business Annual Revenue
+                    </label>
+                    <NumericFormat
+                      value={formData.businessAnnualRevenue || ''}
+                      onValueChange={(values) => setFormData(prev => ({ ...prev, businessAnnualRevenue: values.floatValue || 0 }))}
+                      thousandSeparator={true}
+                      prefix="$"
+                      allowNegative={false}
+                      placeholder="0"
+                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61] ${!formData.businessAnnualRevenue ? 'bg-gray-50' : ''}`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
                       Ordinary K-1 Income
                     </label>
                     <NumericFormat
-                      value={formData.ordinaryK1Income}
+                      value={formData.ordinaryK1Income || ''}
                       onValueChange={(values) => setFormData(prev => ({ ...prev, ordinaryK1Income: values.floatValue || 0 }))}
                       thousandSeparator={true}
                       prefix="$"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
+                      allowNegative={false}
+                      placeholder="0"
+                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61] ${!formData.ordinaryK1Income ? 'bg-gray-50' : ''}`}
                     />
                   </div>
 
@@ -455,11 +579,13 @@ export default function InfoForm({ onSubmit, initialData }: InfoFormProps) {
                       Guaranteed K-1 Income
                     </label>
                     <NumericFormat
-                      value={formData.guaranteedK1Income}
+                      value={formData.guaranteedK1Income || ''}
                       onValueChange={(values) => setFormData(prev => ({ ...prev, guaranteedK1Income: values.floatValue || 0 }))}
                       thousandSeparator={true}
                       prefix="$"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61]"
+                      allowNegative={false}
+                      placeholder="0"
+                      className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#12ab61] focus:ring-[#12ab61] ${!formData.guaranteedK1Income ? 'bg-gray-50' : ''}`}
                     />
                   </div>
                 </div>

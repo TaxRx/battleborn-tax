@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import InfoForm from './InfoForm';
 import TaxResults from './TaxResults';
-import { TaxInfo, SavedCalculation } from '../types';
+import { TaxInfo, SavedCalculation, TaxStrategy } from '../types';
 import { useTaxProfileStore } from '../store/taxProfileStore';
 import { useUserStore } from '../store/userStore';
 import { useTaxStore } from '../store/taxStore';
@@ -13,12 +13,51 @@ import useAuthStore from '../store/authStore';
 import { taxRates } from '../data/taxRates';
 import { ChevronLeftIcon } from '@heroicons/react/24/outline';
 import ActionBar from './ActionBar';
-import { adminService } from '../modules/admin/services/adminService';
+import { proposalService } from '../modules/admin/services/proposalService';
 import { v4 as uuidv4 } from 'uuid';
-import { TaxProposal, TaxStrategy } from '../modules/shared/types';
+import { TaxProposal } from '../modules/shared/types';
 import { calculateTaxBreakdown } from '../utils/taxCalculations';
+import ProposalView from './ProposalView';
+import { toast } from 'react-hot-toast';
+import { FileText } from 'lucide-react';
+import StrategyApplicationSelector, { StrategyApplication } from './StrategyApplicationSelector';
+import { CentralizedClientService } from '../services/centralizedClientService';
 
-const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => {
+// Utility function to convert between TaxStrategy types
+const convertToSharedTaxStrategy = (localStrategy: TaxStrategy): import('../modules/shared/types').TaxStrategy => {
+  return {
+    id: localStrategy.id,
+    name: localStrategy.name,
+    category: localStrategy.category,
+    description: localStrategy.description || '',
+    estimated_savings: localStrategy.estimatedSavings,
+    implementation_complexity: 'medium',
+    requires_expert: false,
+    eligibility_criteria: [],
+    details: localStrategy.details || {},
+    enabled: localStrategy.enabled
+  };
+};
+
+const convertToLocalTaxStrategy = (sharedStrategy: import('../modules/shared/types').TaxStrategy): TaxStrategy => {
+  return {
+    id: sharedStrategy.id,
+    name: sharedStrategy.name,
+    category: sharedStrategy.category,
+    description: sharedStrategy.description,
+    estimatedSavings: sharedStrategy.estimated_savings,
+    enabled: sharedStrategy.enabled,
+    details: sharedStrategy.details || {}
+  } as TaxStrategy;
+};
+
+const TaxCalculator: React.FC<{ 
+  initialData?: TaxInfo;
+  onTaxInfoUpdate?: (taxInfo: TaxInfo) => Promise<void>;
+  onStrategiesSelect?: (strategies: TaxStrategy[]) => Promise<void>;
+  onStrategyAction?: (strategyId: string, action: string) => Promise<void>;
+  clientId?: string; // For admin context
+}> = ({ initialData, onTaxInfoUpdate, onStrategiesSelect, onStrategyAction, clientId }) => {
   const location = useLocation();
   const [showResults, setShowResults] = useState(false);
   const [showInfoForm, setShowInfoForm] = useState(false);
@@ -64,6 +103,15 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
     return null; // Return null if not in demo mode, or if nothing is saved, or if parsing failed.
   });
 
+  const [showProposalView, setShowProposalView] = useState(false);
+  const [currentProposal, setCurrentProposal] = useState<any>(null);
+
+  // Strategy Application Selector state
+  const [clientData, setClientData] = useState<any>(null);
+  const [strategyApplications, setStrategyApplications] = useState<StrategyApplication[]>([]);
+  const [showStrategySelector, setShowStrategySelector] = useState(false);
+  const [loadingClient, setLoadingClient] = useState(false);
+
   // Reset modal state on route change
   useEffect(() => {
     setShowInfoForm(false);
@@ -72,9 +120,10 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
   // Open modal for onboarding if no taxInfo and user is loaded
   useEffect(() => {
     if (initialData) {
-      // If initialData is provided, show results immediately
+      // If initialData is provided, show results but don't automatically hide the form
+      // The user can still access the form via the ActionBar
       setShowResults(true);
-      setShowInfoForm(false);
+      // Don't set showInfoForm to false here - let the user control it
     } else if (demoMode) {
       // In demo mode, check for demo tax profile
       if (!demoTaxProfile && !loading) {
@@ -96,6 +145,7 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
   useEffect(() => {
     if (initialData) {
       setShowResults(true);
+      // Don't automatically hide the form - let user control it
     } else if (demoMode) {
       setShowResults(!!demoTaxProfile);
     } else {
@@ -120,6 +170,34 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
     }
   }, [initialData, demoMode]);
 
+  // Handle when initialData changes (e.g., when parent component updates the data)
+  useEffect(() => {
+    if (initialData) {
+      // Don't automatically show results when initialData changes
+      // Let the user control when to show the form vs results
+    }
+  }, [initialData]);
+
+  // Fetch client data when clientId is provided
+  useEffect(() => {
+    const fetchClientData = async () => {
+      if (clientId && !clientData) {
+        try {
+          setLoadingClient(true);
+          const client = await CentralizedClientService.getClient(clientId);
+          setClientData(client);
+        } catch (error) {
+          console.error('Error fetching client data:', error);
+          toast.error('Failed to load client data');
+        } finally {
+          setLoadingClient(false);
+        }
+      }
+    };
+
+    fetchClientData();
+  }, [clientId, clientData]);
+
   const handleInfoSubmit = async (info: TaxInfo, year: number) => {
     if (demoMode) {
       // For demo mode, save to local storage instead of Supabase
@@ -131,8 +209,46 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
       setDemoTaxProfile(demoInfo);
       localStorage.setItem('demoTaxProfile', JSON.stringify(demoInfo));
       setSelectedYear(year);
-      setShowResults(true);
-      setShowInfoForm(false);
+      
+      // Show strategy selector if clientId is provided
+      if (clientId && clientData) {
+        setShowStrategySelector(true);
+        setShowInfoForm(false);
+      } else {
+        setShowResults(true);
+        setShowInfoForm(false);
+      }
+    } else if (onTaxInfoUpdate) {
+      // If onTaxInfoUpdate callback is provided (admin context), use it
+      try {
+        setLoading(true);
+        setError(null);
+        
+        await onTaxInfoUpdate(info);
+        
+        // Update local state to reflect the changes immediately
+        if (initialData) {
+          // In admin context, update the initialData by calling the callback
+          // The parent component (AdminTaxCalculator) will handle updating its state
+          console.log('Tax info updated via callback:', info);
+        }
+        
+        setSelectedYear(year);
+        
+        // Show strategy selector if clientId is provided
+        if (clientId && clientData) {
+          setShowStrategySelector(true);
+          setShowInfoForm(false);
+        } else {
+          setShowResults(true);
+          setShowInfoForm(false);
+        }
+      } catch (err) {
+        console.error('Error updating tax info:', err);
+        setError('Failed to update tax information. Please try again.');
+      } finally {
+        setLoading(false);
+      }
     } else {
       // Original Supabase logic for real users
       try {
@@ -175,8 +291,15 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
 
         await fetchTaxProfile();
         setSelectedYear(year);
-        setShowResults(true);
-        setShowInfoForm(false);
+        
+        // Show strategy selector if clientId is provided
+        if (clientId && clientData) {
+          setShowStrategySelector(true);
+          setShowInfoForm(false);
+        } else {
+          setShowResults(true);
+          setShowInfoForm(false);
+        }
       } catch (err) {
         console.error('Error saving tax profile:', err);
         setError('Failed to save tax profile. Please try again.');
@@ -186,7 +309,7 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
     }
   };
 
-  const handleStrategiesSelect = (strategies: import('../types').TaxStrategy[]) => {
+  const handleStrategiesSelect = async (strategies: TaxStrategy[]) => {
     setSelectedStrategies(strategies);
     
     // Save strategies to localStorage in demo mode
@@ -203,6 +326,10 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
     if (enabledCount > 0) {
       console.log(`${enabledCount} strategies enabled`);
     }
+
+    if (onStrategiesSelect) {
+      await onStrategiesSelect(strategies);
+    }
   };
 
   const handleSaveCalculation = async (calc: SavedCalculation) => {
@@ -210,21 +337,54 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
       if (demoMode) {
         // In demo mode, just log the calculation
         console.log('Demo mode - Saved calculation:', calc);
+        toast.success('Demo mode: Calculation saved to console');
         return;
       }
       
       // Use the tax store to save the calculation
       await addSavedCalculation(calc);
       console.log('Successfully saved calculation:', calc);
+      toast.success('Calculation saved successfully!');
     } catch (error) {
       console.error('Failed to save calculation:', error);
+      toast.error('Failed to save calculation. Please try again.');
       setError('Failed to save calculation. Please try again.');
     }
   };
 
-  const handleStrategyAction = (strategyId: string, action: string) => {
-    // Handle strategy action
+  const handleStrategyAction = async (strategyId: string, action: string) => {
     console.log('Strategy action:', strategyId, action);
+
+    if (onStrategyAction) {
+      await onStrategyAction(strategyId, action);
+    }
+  };
+
+  const handleStrategyApplicationsChange = async (applications: StrategyApplication[]) => {
+    setStrategyApplications(applications);
+    
+    // Save strategy applications to client data
+    if (clientId && clientData) {
+      try {
+        // Here you would save the strategy applications to the database
+        // For now, we'll just log them
+        console.log('Strategy applications selected:', applications);
+        
+        // Save to localStorage in demo mode
+        if (demoMode) {
+          localStorage.setItem('demoStrategyApplications', JSON.stringify(applications));
+        }
+        
+        toast.success('Strategy applications saved');
+      } catch (error) {
+        console.error('Error saving strategy applications:', error);
+        toast.error('Failed to save strategy applications');
+      }
+    }
+    
+    // Proceed to tax results
+    setShowStrategySelector(false);
+    setShowResults(true);
   };
 
   const updateUserProfile = async (data: Partial<User>) => {
@@ -262,7 +422,8 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
             {showInfoForm && (
               <InfoForm 
                 onSubmit={handleInfoSubmit}
-                initialData={effectiveTaxProfile}
+                initialData={initialData || effectiveTaxProfile}
+                onTaxInfoUpdate={onTaxInfoUpdate}
               />
             )}
 
@@ -350,7 +511,7 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
   function buildTaxProposal({ client, affiliateId, strategies, baseline, savings }: {
     client: { id: string };
     affiliateId: string;
-    strategies: TaxStrategy[];
+    strategies: import('../modules/shared/types').TaxStrategy[];
     baseline: TaxProposal['baseline_calculation'];
     savings: TaxProposal['projected_savings'];
   }): TaxProposal {
@@ -397,19 +558,6 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
       
       // Get enabled strategies with their details
       const enabledStrategies = selectedStrategies.filter(s => s.enabled);
-      const sharedStrategies: import('../modules/shared/types').TaxStrategy[] = enabledStrategies.map(strategy => ({
-        id: strategy.id,
-        name: strategy.name,
-        category: strategy.category,
-        description: strategy.description,
-        estimated_savings: strategy.estimatedSavings || 0,
-        implementation_complexity: 'low', // Default value
-        requires_expert: false, // Default value
-        min_income_threshold: undefined, // Default value
-        eligibility_criteria: [], // Default value
-        details: strategy.details || {},
-        enabled: strategy.enabled
-      }));
 
       // Calculate real projected savings
       const strategyBreakdown = calculateTaxBreakdown(effectiveTaxProfile, taxRates[selectedYear], enabledStrategies);
@@ -436,57 +584,56 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
         effective_rate: baselineCalculation.effectiveRate
       };
 
-      // Create client profile for the proposal
-      const clientProfile = {
-        id: clientId,
-        affiliate_id: affiliateId,
-        personal_info: {
-          full_name: effectiveTaxProfile.fullName || 'Client',
-          email: effectiveTaxProfile.email || 'client@example.com',
-          address: {
-            street: effectiveTaxProfile.homeAddress || '',
-            city: '',
-            state: effectiveTaxProfile.state || 'CA',
-            zip: ''
-          }
-        },
-        tax_info: {
-          filing_status: (effectiveTaxProfile.filingStatus === 'married_joint' ? 'married_filing_jointly' :
-                         effectiveTaxProfile.filingStatus === 'married_separate' ? 'married_filing_separately' :
-                         effectiveTaxProfile.filingStatus === 'head_household' ? 'head_of_household' :
-                         effectiveTaxProfile.filingStatus) as 'single' | 'married_filing_jointly' | 'married_filing_separately' | 'head_of_household',
-          dependents: effectiveTaxProfile.dependents,
-          state: effectiveTaxProfile.state,
-          wages_income: effectiveTaxProfile.wagesIncome,
-          business_income: (effectiveTaxProfile.ordinaryK1Income || 0) + (effectiveTaxProfile.guaranteedK1Income || 0),
-          passive_income: effectiveTaxProfile.passiveIncome,
-          capital_gains: effectiveTaxProfile.capitalGains,
-          other_income: effectiveTaxProfile.unearnedIncome,
-          current_deductions: effectiveTaxProfile.standardDeduction ? 0 : (effectiveTaxProfile.customDeduction || 0),
-          qbi_eligible: effectiveTaxProfile.businessOwner,
-          business_owner: effectiveTaxProfile.businessOwner,
-          high_income: (effectiveTaxProfile.householdIncome || 0) > 400000
-        },
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-
+      // Create proposal object
       const proposal = buildTaxProposal({ 
         client: { id: clientId }, 
         affiliateId, 
-        strategies: sharedStrategies, 
+        strategies: enabledStrategies.map(convertToSharedTaxStrategy), 
         baseline, 
         savings: projectedSavings 
       });
 
       // Create strategy implementations for admin workflow tracking
-      const strategyImplementations = await adminService.createStrategyImplementations(proposal.id, sharedStrategies);
+      const sharedStrategies = enabledStrategies.map(convertToSharedTaxStrategy);
+      const strategyImplementations = await proposalService.createStrategyImplementations(proposal.id, sharedStrategies);
 
       // Add client profile and detailed calculations to the proposal
       const enhancedProposal = {
         ...proposal,
         strategy_implementations: strategyImplementations,
-        client_profile: clientProfile,
+        client_profile: {
+          id: clientId,
+          affiliate_id: affiliateId,
+          personal_info: {
+            full_name: effectiveTaxProfile.fullName || 'Client',
+            email: effectiveTaxProfile.email || 'client@example.com',
+            address: {
+              street: effectiveTaxProfile.homeAddress || '',
+              city: '',
+              state: effectiveTaxProfile.state || 'CA',
+              zip: ''
+            }
+          },
+          tax_info: {
+            filing_status: (effectiveTaxProfile.filingStatus === 'married_joint' ? 'married_filing_jointly' :
+                           effectiveTaxProfile.filingStatus === 'married_separate' ? 'married_filing_separately' :
+                           effectiveTaxProfile.filingStatus === 'head_household' ? 'head_of_household' :
+                           effectiveTaxProfile.filingStatus) as 'single' | 'married_filing_jointly' | 'married_filing_separately' | 'head_of_household',
+            dependents: effectiveTaxProfile.dependents,
+            state: effectiveTaxProfile.state,
+            wages_income: effectiveTaxProfile.wagesIncome,
+            business_income: (effectiveTaxProfile.ordinaryK1Income || 0) + (effectiveTaxProfile.guaranteedK1Income || 0),
+            passive_income: effectiveTaxProfile.passiveIncome,
+            capital_gains: effectiveTaxProfile.capitalGains,
+            other_income: effectiveTaxProfile.unearnedIncome,
+            current_deductions: effectiveTaxProfile.standardDeduction ? 0 : (effectiveTaxProfile.customDeduction || 0),
+            qbi_eligible: effectiveTaxProfile.businessOwner,
+            business_owner: effectiveTaxProfile.businessOwner,
+            high_income: (effectiveTaxProfile.householdIncome || 0) > 400000
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
         detailed_calculations: {
           baseline_breakdown: baselineCalculation,
           strategy_breakdown: strategyBreakdown,
@@ -504,11 +651,29 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
         }))
       };
 
-      await adminService.createProposal(enhancedProposal);
+      await proposalService.createProposalLegacy(enhancedProposal);
+      
+      // Create proposal object for viewing
+      const proposalForView = {
+        id: enhancedProposal.id,
+        taxInfo: effectiveTaxProfile,
+        strategies: enabledStrategies,
+        year: selectedYear,
+        date: new Date().toISOString(),
+        totalSavings: totalSavings,
+        annualSavings: annualSavings,
+        fiveYearValue: fiveYearValue
+      };
+      
+      // Show the proposal view
+      setCurrentProposal(proposalForView);
+      setShowProposalView(true);
+      
+      // Show success toast
+      toast.success('Proposal created successfully!');
       
       // Show success message and update state
       setProposalCreated(true);
-      alert(`Tax proposal created successfully!\n\nAnnual Savings: $${annualSavings.toLocaleString()}\n5-Year Value: $${fiveYearValue.toLocaleString()}\n\nProposal has been sent to admin for review.`);
       
       // Reset the indicator after 5 seconds
       setTimeout(() => setProposalCreated(false), 5000);
@@ -521,6 +686,31 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
     }
   };
 
+  const handleViewProposal = () => {
+    if (!effectiveTaxProfile) return;
+    
+    const enabledStrategies = selectedStrategies.filter(s => s.enabled);
+    const baselineCalculation = calculateTaxBreakdown(effectiveTaxProfile, taxRates[selectedYear]);
+    const strategyBreakdown = calculateTaxBreakdown(effectiveTaxProfile, taxRates[selectedYear], enabledStrategies);
+    const totalSavings = baselineCalculation.total - strategyBreakdown.total;
+    const annualSavings = totalSavings;
+    const fiveYearValue = annualSavings * 5;
+    
+    const proposalForView = {
+      id: 'current-proposal',
+      taxInfo: effectiveTaxProfile,
+      strategies: selectedStrategies,
+      year: selectedYear,
+      date: new Date().toISOString(),
+      totalSavings: totalSavings,
+      annualSavings: annualSavings,
+      fiveYearValue: fiveYearValue
+    };
+    
+    setCurrentProposal(proposalForView);
+    setShowProposalView(true);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -528,11 +718,48 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
         {showInfoForm && (
           <InfoForm 
             onSubmit={handleInfoSubmit}
-            initialData={effectiveTaxProfile}
+            initialData={initialData || effectiveTaxProfile}
+            onTaxInfoUpdate={onTaxInfoUpdate}
           />
         )}
 
-        {showResults && effectiveTaxProfile && !showInfoForm && (
+        {showStrategySelector && clientData && (
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <div className="mb-6">
+              <button
+                onClick={() => {
+                  setShowStrategySelector(false);
+                  setShowInfoForm(true);
+                }}
+                className="flex items-center text-blue-600 hover:text-blue-800 mb-4"
+              >
+                <ChevronLeftIcon className="h-5 w-5 mr-1" />
+                Back to Tax Information
+              </button>
+              <h2 className="text-2xl font-bold text-gray-900">
+                Strategy Application
+              </h2>
+              <p className="text-gray-600 mt-2">
+                Select which entity each tax strategy should be applied to for {clientData.full_name}.
+              </p>
+            </div>
+            
+            {loadingClient ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-600">Loading client data...</p>
+              </div>
+            ) : (
+              <StrategyApplicationSelector
+                client={clientData}
+                selectedApplications={strategyApplications}
+                onApplicationsChange={handleStrategyApplicationsChange}
+              />
+            )}
+          </div>
+        )}
+
+        {showResults && effectiveTaxProfile && !showInfoForm && !showStrategySelector && (
           <>
             <TaxResults 
               taxInfo={effectiveTaxProfile}
@@ -541,6 +768,7 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
               onStrategiesSelect={handleStrategiesSelect as any}
               onSaveCalculation={handleSaveCalculation}
               onStrategyAction={handleStrategyAction}
+              clientId={clientId}
             />
           </>
         )}
@@ -562,6 +790,13 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
                 </div>
               )}
               <button 
+                onClick={handleViewProposal}
+                className="btn-secondary-modern flex items-center space-x-2"
+              >
+                <FileText className="h-4 w-4" />
+                <span>View Proposal</span>
+              </button>
+              <button 
                 className={`btn-primary-modern ${proposalCreated ? 'bg-green-600 hover:bg-green-700' : ''}`} 
                 onClick={handleCreateProposal}
                 disabled={loading}
@@ -570,6 +805,13 @@ const TaxCalculator: React.FC<{ initialData?: TaxInfo }> = ({ initialData }) => 
               </button>
             </div>
           }
+        />
+      )}
+
+      {showProposalView && currentProposal && (
+        <ProposalView
+          proposal={currentProposal}
+          onBack={() => setShowProposalView(false)}
         />
       )}
     </div>

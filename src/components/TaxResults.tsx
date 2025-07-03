@@ -7,6 +7,7 @@ import { taxRates } from '../data/taxRates';
 import { calculateTaxBreakdown, calculateStrategyTaxSavings } from '../utils/taxCalculations';
 import { debugCalculations } from '../utils/debug';
 import { getTaxStrategies } from '../utils/taxStrategies';
+import { strategyPersistenceService } from '../services/strategyPersistenceService';
 import TaxBracketBreakdown from './TaxBracketBreakdown';
 import AugustaRuleCalculator from './AugustaRuleCalculator';
 import HireChildrenCalculator from './HireChildrenCalculator';
@@ -27,6 +28,7 @@ interface TaxResultsProps {
   onSaveCalculation: (calc: SavedCalculation) => void;
   onStrategyAction?: (strategyId: string, action: string) => void;
   initialStrategies?: TaxStrategy[]; // For demo mode strategy persistence
+  clientId?: string; // For admin context - if provided, use admin-specific methods
 }
 
 interface TaxBreakdownTableProps {
@@ -239,7 +241,8 @@ export default function TaxResults({
   onStrategiesSelect,
   onSaveCalculation,
   onStrategyAction,
-  initialStrategies
+  initialStrategies,
+  clientId
 }: TaxResultsProps) {
   const [expandedCategories, setExpandedCategories] = useState<string[]>(['income_shifted']);
   const [expandedStrategies, setExpandedStrategies] = useState<string[]>([]);
@@ -298,6 +301,75 @@ export default function TaxResults({
     setStrategies(mergedStrategies);
   }, [currentTaxInfo, selectedYear, selectedStrategies]);
 
+  // Load persisted strategies from Supabase
+  useEffect(() => {
+    const loadPersistedStrategies = async () => {
+      try {
+        console.log('🔄 Starting to load persisted strategies...');
+        // Load strategies that have been persisted - include ALL strategies
+        const strategyIds = [
+          'augusta_rule', 
+          'convertible_tax_bonds', 
+          'family_management_company', 
+          'reinsurance',
+          'charitable_donation',
+          'hire_children',
+          'cost_segregation'
+        ];
+        
+        for (const strategyId of strategyIds) {
+          console.log(`🔍 Loading strategy: ${strategyId}`);
+          
+          let persistedStrategy;
+          if (clientId) {
+            // Use admin-specific method for admin context
+            console.log(`🔍 Loading admin strategy: ${strategyId} for client ${clientId}`);
+            persistedStrategy = await strategyPersistenceService.loadStrategyDetailsForAdminClient(
+              strategyId, 
+              clientId, 
+              selectedYear
+            );
+          } else {
+            // Use regular method for user context
+            persistedStrategy = await strategyPersistenceService.loadStrategyDetails(
+              strategyId, 
+              currentTaxInfo, 
+              selectedYear
+            );
+          }
+          
+          if (persistedStrategy) {
+            console.log(`✅ Loaded persisted strategy ${strategyId}:`, persistedStrategy);
+            setStrategies(prevStrategies => {
+              const updatedStrategies = prevStrategies.map(s => {
+                if (s.id === strategyId) {
+                  return {
+                    ...s,
+                    ...persistedStrategy,
+                    enabled: persistedStrategy.enabled,
+                    details: persistedStrategy.details || s.details // Preserve existing details if not in persisted data
+                  };
+                }
+                return s;
+              });
+              return updatedStrategies;
+            });
+          } else {
+            console.log(`⚠️ No persisted data found for strategy ${strategyId}`);
+          }
+        }
+        console.log('✅ Finished loading persisted strategies');
+      } catch (error) {
+        console.error('❌ Failed to load persisted strategies:', error);
+      }
+    };
+
+    // Only load if we have tax info
+    if (currentTaxInfo) {
+      loadPersistedStrategies();
+    }
+  }, [currentTaxInfo, selectedYear, clientId]);
+
   useEffect(() => {
     const enabledStrategies = strategies.filter(s => s.enabled);
     const prevEnabledStrategies = previousStrategiesRef.current.filter(s => s.enabled);
@@ -334,25 +406,57 @@ export default function TaxResults({
       const updatedStrategies = prevStrategies.map(strategy => {
         if (strategy.id === strategyId) {
           const enabled = !strategy.enabled;
-          if (!enabled) return { ...strategy, enabled };
+          if (!enabled) {
+            const disabledStrategy = { ...strategy, enabled };
+            
+            // Persist disabled strategy to Supabase
+            if (clientId) {
+              strategyPersistenceService.saveStrategyDetailsForAdminClient(disabledStrategy, clientId, selectedYear)
+                .catch(error => {
+                  console.error('Failed to persist disabled strategy:', error);
+                });
+            } else {
+              strategyPersistenceService.saveStrategyDetails(disabledStrategy, currentTaxInfo, selectedYear)
+                .catch(error => {
+                  console.error('Failed to persist disabled strategy:', error);
+                });
+            }
+            
+            return disabledStrategy;
+          }
 
           const { federal, state } = calculateStrategyTaxSavings(currentTaxInfo, rates, strategy);
           const totalSavings = federal + state;
 
-          return {
+          const enabledStrategy = {
             ...strategy,
             enabled,
             estimatedSavings: totalSavings
           };
+
+          // Persist enabled strategy to Supabase
+          if (clientId) {
+            strategyPersistenceService.saveStrategyDetailsForAdminClient(enabledStrategy, clientId, selectedYear)
+              .catch(error => {
+                console.error('Failed to persist enabled strategy:', error);
+              });
+          } else {
+            strategyPersistenceService.saveStrategyDetails(enabledStrategy, currentTaxInfo, selectedYear)
+              .catch(error => {
+                console.error('Failed to persist enabled strategy:', error);
+              });
+          }
+
+          return enabledStrategy;
         }
         return strategy;
       });
 
       return updatedStrategies;
     });
-  }, [currentTaxInfo, rates, strategies, removeStrategy]);
+  }, [currentTaxInfo, rates, strategies, removeStrategy, selectedYear]);
 
-  const handleStrategySavingsChange = useCallback((strategyId: string, details: any) => {
+  const handleStrategySavingsChange = useCallback(async (strategyId: string, details: any) => {
     console.log(`TaxResults: handleStrategySavingsChange for ${strategyId}:`, details);
     
     setStrategies(prevStrategies => {
@@ -379,17 +483,32 @@ export default function TaxResults({
             displayValue = federal + state;
           }
 
-          return {
+          const finalStrategy = {
             ...updatedStrategy,
             estimatedSavings: displayValue
           };
+
+          // Persist strategy details to Supabase
+          if (clientId) {
+            strategyPersistenceService.saveStrategyDetailsForAdminClient(finalStrategy, clientId, selectedYear)
+              .catch(error => {
+                console.error('Failed to persist strategy details:', error);
+              });
+          } else {
+            strategyPersistenceService.saveStrategyDetails(finalStrategy, currentTaxInfo, selectedYear)
+              .catch(error => {
+                console.error('Failed to persist strategy details:', error);
+              });
+          }
+
+          return finalStrategy;
         }
         return s;
       });
 
       return updatedStrategies;
     });
-  }, [currentTaxInfo, rates]);
+  }, [currentTaxInfo, rates, selectedYear]);
 
   const handleStrategyAction = useCallback((strategyId: string, action: string) => {
     if (action === 'get_started') {
@@ -557,28 +676,15 @@ export default function TaxResults({
           <h2 className="text-2xl font-bold">{currentTaxInfo.fullName}</h2>
           <span className="text-gray-300">|</span>
           <span className="text-gray-300">{currentTaxInfo.state}</span>
+          <span className="text-gray-300">|</span>
+          <span className="text-gray-300">{selectedYear}</span>
         </div>
         <div className="flex items-center space-x-4">
-          <select
-            value={selectedYear}
-            onChange={(e) => onYearChange(parseInt(e.target.value))}
-            className="rounded-md border-none bg-white/10 text-white shadow-sm focus:ring-2 focus:ring-blue-400"
-          >
-            <option value={2024}>2024</option>
-            <option value={2025}>2025</option>
-          </select>
-          <button
-            onClick={() => setShowInfoForm(true)}
-            className="px-4 py-2 text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-colors"
-          >
-            Update Info
-          </button>
           <button
             onClick={saveCalculation}
-            className="flex items-center space-x-2 px-4 py-2 rounded-md transition-colors bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg"
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium"
           >
-            <Save size={16} />
-            <span>Save</span>
+            Save Calculation
           </button>
         </div>
       </div>

@@ -1,0 +1,1068 @@
+import { supabase } from '../lib/supabase';
+import { TaxInfo, PersonalYear, BusinessYear } from '../types/taxInfo';
+
+export interface CentralizedClient {
+  id: string;
+  full_name: string;
+  email: string;
+  phone?: string;
+  filing_status: string;
+  home_address?: string;
+  city?: string;
+  state?: string;
+  zip_code?: string;
+  dependents: number;
+  standard_deduction: boolean;
+  custom_deduction: number;
+  created_at: string;
+  updated_at: string;
+  archived: boolean;
+  archived_at?: string;
+}
+
+export interface CentralizedBusiness {
+  id: string;
+  client_id: string;
+  business_name: string;
+  entity_type: 'LLC' | 'S-Corp' | 'C-Corp' | 'Partnership' | 'Sole-Proprietor' | 'Other';
+  ein?: string;
+  business_address?: string;
+  business_city?: string;
+  business_state?: string;
+  business_zip?: string;
+  business_phone?: string;
+  business_email?: string;
+  industry?: string;
+  year_established?: number;
+  annual_revenue: number;
+  employee_count: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CentralizedPersonalYear {
+  id: string;
+  client_id: string;
+  year: number;
+  wages_income: number;
+  passive_income: number;
+  unearned_income: number;
+  capital_gains: number;
+  long_term_capital_gains: number;
+  household_income: number;
+  ordinary_income: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CentralizedBusinessYear {
+  id: string;
+  business_id: string;
+  year: number;
+  is_active: boolean;
+  ordinary_k1_income: number;
+  guaranteed_k1_income: number;
+  annual_revenue: number;
+  employee_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ToolEnrollment {
+  id: string;
+  client_id: string;
+  business_id?: string;
+  tool_slug: 'rd' | 'augusta' | 'hire_children' | 'cost_segregation' | 'convertible_bonds' | 'tax_planning';
+  enrolled_by: string;
+  enrolled_at: string;
+  status: 'active' | 'inactive' | 'completed';
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClientTool {
+  tool_slug: ToolEnrollment['tool_slug'];
+  tool_name: string;
+  status: string;
+  enrolled_at: string;
+}
+
+export interface CreateClientData {
+  full_name: string;
+  email: string;
+  phone?: string;
+  filing_status: string;
+  home_address?: string;
+  city?: string;
+  state?: string;
+  zip_code?: string;
+  dependents: number;
+  standard_deduction: boolean;
+  custom_deduction: number;
+  personal_years?: Array<{
+    year: number;
+    wages_income: number;
+    passive_income: number;
+    unearned_income: number;
+    capital_gains: number;
+    long_term_capital_gains: number;
+    is_active: boolean;
+  }>;
+  businesses?: Array<{
+    business_name: string;
+    entity_type: string;
+    ein?: string;
+    business_address?: string;
+    business_city?: string;
+    business_state?: string;
+    business_zip?: string;
+    business_phone?: string;
+    business_email?: string;
+    industry?: string;
+    year_established?: number;
+    annual_revenue: number;
+    employee_count: number;
+    is_active: boolean;
+    business_years?: Array<{
+      year: number;
+      is_active: boolean;
+      ordinary_k1_income: number;
+      guaranteed_k1_income: number;
+      annual_revenue: number;
+      employee_count: number;
+    }>;
+  }>;
+}
+
+export class CentralizedClientService {
+  /**
+   * Create a new client with all related data
+   */
+  static async createClient(clientData: CreateClientData): Promise<{ success: boolean; clientId?: string; error?: string }> {
+    try {
+      // Get current user ID
+      const { data: { user } } = await supabase.auth.getUser();
+      const userId = user?.id;
+
+      // First, create the client
+      const { data: clientDataResult, error: clientError } = await supabase
+        .from('clients')
+        .insert({
+          full_name: clientData.full_name,
+          email: clientData.email,
+          phone: clientData.phone || null,
+          filing_status: clientData.filing_status,
+          home_address: clientData.home_address || null,
+          city: clientData.city || null,
+          state: clientData.state || null,
+          zip_code: clientData.zip_code || null,
+          dependents: clientData.dependents,
+          standard_deduction: clientData.standard_deduction,
+          custom_deduction: clientData.custom_deduction,
+          created_by: userId
+        })
+        .select('id')
+        .single();
+
+      if (clientError) {
+        console.error('Error creating client:', clientError);
+        
+        // Handle duplicate email error specifically
+        if (clientError.code === '23505' && clientError.message.includes('clients_email_key')) {
+          return { success: false, error: 'A client with this email address already exists. Please use a different email or edit the existing client.' };
+        }
+        
+        return { success: false, error: clientError.message };
+      }
+
+      const clientId = clientDataResult.id;
+
+      // Create personal years if provided
+      if (clientData.personal_years && clientData.personal_years.length > 0) {
+        const personalYearsData = clientData.personal_years.map(year => ({
+          client_id: clientId,
+          year: year.year,
+          wages_income: year.wages_income,
+          passive_income: year.passive_income,
+          unearned_income: year.unearned_income,
+          capital_gains: year.capital_gains,
+          long_term_capital_gains: year.long_term_capital_gains,
+          household_income: year.wages_income + year.passive_income + year.unearned_income + year.capital_gains,
+          ordinary_income: year.wages_income + year.passive_income + year.unearned_income,
+          is_active: year.is_active
+        }));
+
+        const { error: personalYearsError } = await supabase
+          .from('personal_years')
+          .insert(personalYearsData);
+
+        if (personalYearsError) {
+          console.error('Error creating personal years:', personalYearsError);
+          // Continue anyway, don't fail the whole operation
+        }
+      }
+
+      // Create businesses if provided
+      if (clientData.businesses && clientData.businesses.length > 0) {
+        for (const business of clientData.businesses) {
+          // Create the business
+          const { data: businessDataResult, error: businessError } = await supabase
+            .from('businesses')
+            .insert({
+              client_id: clientId,
+              business_name: business.business_name,
+              entity_type: business.entity_type,
+              ein: business.ein || null,
+              business_address: business.business_address || null,
+              business_city: business.business_city || null,
+              business_state: business.business_state || null,
+              business_zip: business.business_zip || null,
+              business_phone: business.business_phone || null,
+              business_email: business.business_email || null,
+              industry: business.industry || null,
+              year_established: business.year_established || null,
+              annual_revenue: business.annual_revenue,
+              employee_count: business.employee_count,
+              is_active: business.is_active
+            })
+            .select('id')
+            .single();
+
+          if (businessError) {
+            console.error('Error creating business:', businessError);
+            continue; // Skip this business but continue with others
+          }
+
+          const businessId = businessDataResult.id;
+
+          // Create business years if provided
+          if (business.business_years && business.business_years.length > 0) {
+            const businessYearsData = business.business_years.map(year => ({
+              business_id: businessId,
+              year: year.year,
+              is_active: year.is_active,
+              ordinary_k1_income: year.ordinary_k1_income,
+              guaranteed_k1_income: year.guaranteed_k1_income,
+              annual_revenue: year.annual_revenue,
+              employee_count: year.employee_count
+            }));
+
+            const { error: businessYearsError } = await supabase
+              .from('business_years')
+              .insert(businessYearsData);
+
+            if (businessYearsError) {
+              console.error('Error creating business years:', businessYearsError);
+              // Continue anyway
+            }
+          }
+        }
+      }
+
+      return { success: true, clientId };
+    } catch (error) {
+      console.error('Error in createClient:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
+   * Get all clients for the current user
+   */
+  static async getClients(): Promise<CentralizedClient[]> {
+    try {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('archived', false)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error getting clients:', error);
+        throw new Error(`Failed to get clients: ${error.message}`);
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Error in getClients:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get a single client with all related data
+   */
+  static async getClient(clientId: string): Promise<any> {
+    try {
+      const { data, error } = await supabase.rpc('get_client_with_data', {
+        client_uuid: clientId
+      });
+
+      if (error) {
+        console.error('Error getting client:', error);
+        throw new Error(`Failed to get client: ${error.message}`);
+      }
+      
+      return data;
+    } catch (error) {
+      console.error('Error in getClient:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update a client
+   */
+  static async updateClient(clientId: string, updates: Partial<CentralizedClient>): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('clients')
+        .update(updates)
+        .eq('id', clientId);
+
+      if (error) {
+        console.error('Error updating client:', error);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error in updateClient:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Archive or unarchive a client
+   */
+  static async archiveClient(clientId: string, archive: boolean = true): Promise<boolean> {
+    try {
+      const { error } = await supabase.rpc('archive_client', {
+        p_client_file_id: clientId,
+        p_archive: archive
+      });
+
+      if (error) {
+        console.error('Error archiving client:', error);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error in archiveClient:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Delete a client (permanently)
+   */
+  static async deleteClient(clientId: string): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('clients')
+        .delete()
+        .eq('id', clientId);
+
+      if (error) {
+        console.error('Error deleting client:', error);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error in deleteClient:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get all tools a client is enrolled in
+   */
+  static async getClientTools(clientId: string, businessId?: string): Promise<ClientTool[]> {
+    try {
+      const { data, error } = await supabase.rpc('get_client_tools', {
+        p_client_file_id: clientId,
+        p_business_id: businessId || null
+      });
+
+      if (error) {
+        console.error('Error getting client tools:', error);
+        return [];
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Error in getClientTools:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Enroll a client in a tax tool
+   */
+  static async enrollClientInTool(
+    clientId: string,
+    businessId: string,
+    toolSlug: ToolEnrollment['tool_slug'],
+    notes?: string
+  ): Promise<string> {
+    try {
+      const { data, error } = await supabase.rpc('enroll_client_in_tool', {
+        p_client_file_id: clientId,
+        p_business_id: businessId,
+        p_tool_slug: toolSlug,
+        p_notes: notes || null
+      });
+
+      if (error) {
+        console.error('Error enrolling client in tool:', error);
+        throw new Error(`Failed to enroll client in tool: ${error.message}`);
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error in enrollClientInTool:', error);
+      throw new Error(`Failed to enroll client in tool: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Get businesses for a client
+   */
+  static async getClientBusinesses(clientId: string): Promise<CentralizedBusiness[]> {
+    try {
+      const { data, error } = await supabase
+        .from('businesses')
+        .select('*')
+        .eq('client_id', clientId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error getting client businesses:', error);
+        throw new Error(`Failed to get client businesses: ${error.message}`);
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Error in getClientBusinesses:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Create a new business
+   */
+  static async createBusiness(businessData: Omit<CentralizedBusiness, 'id' | 'created_at' | 'updated_at'>): Promise<{ success: boolean; businessId?: string; error?: string }> {
+    try {
+      const { data, error } = await supabase
+        .from('businesses')
+        .insert(businessData)
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('Error creating business:', error);
+        return { success: false, error: error.message };
+      }
+
+      return { success: true, businessId: data.id };
+    } catch (error) {
+      console.error('Error in createBusiness:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
+   * Update a business
+   */
+  static async updateBusiness(businessId: string, updates: Partial<CentralizedBusiness>): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('businesses')
+        .update(updates)
+        .eq('id', businessId);
+
+      if (error) {
+        console.error('Error updating business:', error);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error in updateBusiness:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Delete a business
+   */
+  static async deleteBusiness(businessId: string): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('businesses')
+        .delete()
+        .eq('id', businessId);
+
+      if (error) {
+        console.error('Error deleting business:', error);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error in deleteBusiness:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Create a business year
+   */
+  static async createBusinessYear(businessId: string, yearData: Omit<CentralizedBusinessYear, 'id' | 'created_at' | 'updated_at'>): Promise<{ success: boolean; yearId?: string; error?: string }> {
+    try {
+      const { data, error } = await supabase
+        .from('business_years')
+        .insert({
+          business_id: businessId,
+          year: yearData.year,
+          is_active: yearData.is_active,
+          ordinary_k1_income: yearData.ordinary_k1_income,
+          guaranteed_k1_income: yearData.guaranteed_k1_income,
+          annual_revenue: yearData.annual_revenue,
+          employee_count: yearData.employee_count
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('Error creating business year:', error);
+        return { success: false, error: error.message };
+      }
+
+      return { success: true, yearId: data.id };
+    } catch (error) {
+      console.error('Error in createBusinessYear:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
+   * Update a business year
+   */
+  static async updateBusinessYear(yearId: string, yearData: Partial<CentralizedBusinessYear>): Promise<{ success: boolean; error?: string }> {
+    try {
+      const updateData: any = {};
+      if (yearData.ordinary_k1_income !== undefined) updateData.ordinary_k1_income = yearData.ordinary_k1_income;
+      if (yearData.guaranteed_k1_income !== undefined) updateData.guaranteed_k1_income = yearData.guaranteed_k1_income;
+      if (yearData.annual_revenue !== undefined) updateData.annual_revenue = yearData.annual_revenue;
+      if (yearData.is_active !== undefined) updateData.is_active = yearData.is_active;
+
+      const { error } = await supabase
+        .from('business_years')
+        .update(updateData)
+        .eq('id', yearId);
+
+      if (error) {
+        console.error('Error updating business year:', error);
+        return { success: false, error: error.message };
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error in updateBusinessYear:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
+   * Create a personal year
+   */
+  static async createPersonalYear(clientId: string, yearData: Omit<CentralizedPersonalYear, 'id' | 'client_id' | 'created_at' | 'updated_at'>): Promise<{ success: boolean; yearId?: string; error?: string }> {
+    try {
+      const { data, error } = await supabase
+        .from('personal_years')
+        .insert({
+          client_id: clientId,
+          year: yearData.year,
+          wages_income: yearData.wages_income,
+          passive_income: yearData.passive_income,
+          unearned_income: yearData.unearned_income,
+          capital_gains: yearData.capital_gains,
+          long_term_capital_gains: yearData.long_term_capital_gains,
+          household_income: yearData.household_income,
+          ordinary_income: yearData.ordinary_income,
+          is_active: yearData.is_active
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('Error creating personal year:', error);
+        return { success: false, error: error.message };
+      }
+
+      return { success: true, yearId: data.id };
+    } catch (error) {
+      console.error('Error in createPersonalYear:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
+   * Update a personal year
+   */
+  static async updatePersonalYear(yearId: string, yearData: Partial<CentralizedPersonalYear>): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { error } = await supabase
+        .from('personal_years')
+        .update(yearData)
+        .eq('id', yearId);
+
+      if (error) {
+        console.error('Error updating personal year:', error);
+        return { success: false, error: error.message };
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error in updatePersonalYear:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
+   * Check if client is enrolled in a specific tool
+   */
+  static async isClientEnrolledInTool(
+    clientId: string,
+    businessId: string,
+    toolSlug: ToolEnrollment['tool_slug']
+  ): Promise<boolean> {
+    try {
+      const { data, error } = await supabase
+        .from('tool_enrollments')
+        .select('id')
+        .eq('client_id', clientId)
+        .eq('business_id', businessId)
+        .eq('tool_slug', toolSlug)
+        .eq('status', 'active')
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error checking tool enrollment:', error);
+        return false;
+      }
+
+      return !!data;
+    } catch (error) {
+      console.error('Error in isClientEnrolledInTool:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get tool launch URL
+   */
+  static getToolLaunchUrl(
+    toolSlug: ToolEnrollment['tool_slug'],
+    clientId: string,
+    businessId: string
+  ): string {
+    const baseUrl = window.location.origin;
+    
+    switch (toolSlug) {
+      case 'rd':
+        return `${baseUrl}/rd-calculator?clientId=${clientId}&businessId=${businessId}`;
+      case 'augusta':
+        return `${baseUrl}/augusta-calculator?clientId=${clientId}&businessId=${businessId}`;
+      case 'hire_children':
+        return `${baseUrl}/hire-children?clientId=${clientId}&businessId=${businessId}`;
+      case 'cost_segregation':
+        return `${baseUrl}/cost-segregation?clientId=${clientId}&businessId=${businessId}`;
+      case 'convertible_bonds':
+        return `${baseUrl}/convertible-bonds?clientId=${clientId}&businessId=${businessId}`;
+      case 'tax_planning':
+        return `${baseUrl}/tax-planning?clientId=${clientId}&businessId=${businessId}`;
+      default:
+        return `${baseUrl}/dashboard`;
+    }
+  }
+
+  /**
+   * Transform TaxInfo to CreateClientData format
+   */
+  static transformTaxInfoToCreateData(taxInfo: TaxInfo): CreateClientData {
+    return {
+      full_name: taxInfo.fullName,
+      email: taxInfo.email,
+      phone: taxInfo.phone,
+      filing_status: taxInfo.filingStatus,
+      home_address: taxInfo.homeAddress,
+      city: taxInfo.city,
+      state: taxInfo.state,
+      zip_code: taxInfo.zipCode,
+      dependents: taxInfo.dependents || 0,
+      standard_deduction: taxInfo.standardDeduction || true,
+      custom_deduction: taxInfo.customDeduction || 0,
+      personal_years: taxInfo.years?.map(year => ({
+        year: year.year,
+        wages_income: year.wagesIncome,
+        passive_income: year.passiveIncome,
+        unearned_income: year.unearnedIncome,
+        capital_gains: year.capitalGains,
+        long_term_capital_gains: year.longTermCapitalGains || 0,
+        is_active: year.isActive
+      })),
+      businesses: taxInfo.businesses?.map(business => ({
+        business_name: business.businessName,
+        entity_type: business.entityType,
+        ein: business.ein,
+        business_address: business.businessAddress,
+        business_city: business.businessCity,
+        business_state: business.businessState,
+        business_zip: business.businessZip,
+        business_phone: business.businessPhone,
+        business_email: business.businessEmail,
+        industry: business.industry,
+        year_established: business.startYear,
+        annual_revenue: business.annualRevenue || 0,
+        employee_count: business.employeeCount || 0,
+        is_active: business.isActive,
+        business_years: business.years?.map(year => ({
+          year: year.year,
+          is_active: year.isActive,
+          ordinary_k1_income: year.ordinaryK1Income || 0,
+          guaranteed_k1_income: year.guaranteedK1Income || 0,
+          annual_revenue: year.annualRevenue || 0,
+          employee_count: year.employeeCount || 0
+        }))
+      }))
+    };
+  }
+
+  /**
+   * Get unified client list with business and tool information
+   */
+  static async getUnifiedClientList(params: {
+    toolFilter?: ToolEnrollment['tool_slug'];
+    adminId?: string;
+    affiliateId?: string;
+  }): Promise<any[]> {
+    try {
+      // First, get clients from the new clients table
+      let clientsQuery = supabase
+        .from('clients')
+        .select(`
+          id,
+          full_name,
+          email,
+          phone,
+          filing_status,
+          home_address,
+          city,
+          state,
+          zip_code,
+          dependents,
+          standard_deduction,
+          custom_deduction,
+          created_at,
+          updated_at,
+          archived,
+          archived_at,
+          businesses (
+            id,
+            business_name,
+            entity_type,
+            business_address,
+            business_city,
+            business_state,
+            business_zip,
+            business_phone,
+            business_email,
+            industry,
+            ein,
+            year_established,
+            annual_revenue,
+            employee_count,
+            is_active,
+            created_at,
+            business_years (
+              id,
+              year,
+              is_active,
+              ordinary_k1_income,
+              guaranteed_k1_income,
+              annual_revenue,
+              employee_count
+            )
+          ),
+          personal_years (
+            id,
+            year,
+            wages_income,
+            passive_income,
+            unearned_income,
+            capital_gains,
+            long_term_capital_gains,
+            household_income,
+            is_active
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      // Apply filters
+      if (params.adminId) {
+        clientsQuery = clientsQuery.eq('created_by', params.adminId);
+      }
+
+      const { data: clients, error: clientsError } = await clientsQuery;
+
+      if (clientsError) {
+        console.error('Error fetching clients:', clientsError);
+        throw clientsError;
+      }
+
+      // Get tool enrollments from the existing tool_enrollments table
+      // Note: This table references admin_client_files, not the new clients table
+      const { data: toolEnrollments, error: toolError } = await supabase
+        .from('tool_enrollments')
+        .select(`
+          id,
+          client_file_id,
+          business_id,
+          tool_slug,
+          enrolled_by,
+          enrolled_at,
+          status,
+          notes
+        `);
+
+      if (toolError) {
+        console.error('Error fetching tool enrollments:', toolError);
+        // Don't throw error, just continue without tool data
+      }
+
+      // Transform the data to match expected format
+      const unifiedClients = clients?.map(client => {
+        // Find tool enrollments for this client (if any exist in admin_client_files)
+        // For now, we'll set default values since the tables aren't connected yet
+        const clientToolEnrollments = toolEnrollments?.filter(te => 
+          te.client_file_id === client.id
+        ) || [];
+
+        // Get business tool enrollments
+        const businessToolEnrollments = client.businesses?.map(business => {
+          const businessTools = toolEnrollments?.filter(te => 
+            te.business_id === business.id
+          ) || [];
+
+          return {
+            ...business,
+            tool_enrollments: businessTools.map(te => ({
+              id: te.id,
+              tool_slug: te.tool_slug,
+              tool_name: this.getToolDisplayName(te.tool_slug),
+              status: te.status,
+              enrolled_at: te.enrolled_at,
+              notes: te.notes
+            }))
+          };
+        }) || [];
+
+        // Calculate total income from personal tax years
+        const latestPersonalYear = client.personal_years?.[0];
+        const totalIncome = latestPersonalYear ? 
+          (latestPersonalYear.wages_income || 0) + 
+          (latestPersonalYear.passive_income || 0) + 
+          (latestPersonalYear.unearned_income || 0) + 
+          (latestPersonalYear.capital_gains || 0) 
+          : 0;
+
+        return {
+          client_file_id: client.id,
+          business_id: client.businesses?.[0]?.id || null,
+          admin_id: client.created_by,
+          affiliate_id: null, // Not implemented yet
+          archived: client.archived || false,
+          created_at: client.created_at,
+          full_name: client.full_name,
+          email: client.email,
+          business_name: client.businesses?.[0]?.business_name || '',
+          entity_type: client.businesses?.[0]?.entity_type || '',
+          tool_slug: clientToolEnrollments[0]?.tool_slug || '',
+          tool_status: clientToolEnrollments[0]?.status || 'inactive',
+          total_income: totalIncome,
+          filing_status: client.filing_status,
+          // Additional fields for compatibility
+          id: client.id,
+          phone: client.phone,
+          home_address: client.home_address,
+          city: client.city,
+          state: client.state,
+          zip_code: client.zip_code,
+          dependents: client.dependents,
+          standard_deduction: client.standard_deduction,
+          custom_deduction: client.custom_deduction,
+          updated_at: client.updated_at,
+          archived_at: client.archived_at,
+          businesses: businessToolEnrollments,
+          personal_years: client.personal_years || [],
+          tool_enrollments: clientToolEnrollments.map(te => ({
+            id: te.id,
+            tool_slug: te.tool_slug,
+            tool_name: this.getToolDisplayName(te.tool_slug),
+            status: te.status,
+            enrolled_at: te.enrolled_at,
+            notes: te.notes
+          }))
+        };
+      }) || [];
+
+      // Apply tool filter if specified
+      if (params.toolFilter) {
+        return unifiedClients.filter(client => 
+          client.tool_enrollments?.some(te => te.tool_slug === params.toolFilter) ||
+          client.businesses?.some(business => 
+            business.tool_enrollments?.some(te => te.tool_slug === params.toolFilter)
+          )
+        );
+      }
+
+      return unifiedClients;
+    } catch (error) {
+      console.error('Error in getUnifiedClientList:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get tool display name
+   */
+  static getToolDisplayName(toolSlug: ToolEnrollment['tool_slug']): string {
+    const toolNames = {
+      rd: 'R&D Tax Credit',
+      augusta: 'Augusta Rule',
+      hire_children: 'Hire Children',
+      cost_segregation: 'Cost Segregation',
+      convertible_bonds: 'Convertible Tax Bonds',
+      tax_planning: 'Tax Planning'
+    };
+    return toolNames[toolSlug] || toolSlug;
+  }
+
+  /**
+   * Transform client data from get_client_with_data to TaxInfo format
+   */
+  static transformClientDataToTaxInfo(clientData: any): TaxInfo {
+    console.log('[transformClientDataToTaxInfo] Input clientData:', JSON.stringify(clientData, null, 2));
+    
+    const client = clientData.client;
+    const personalYears = clientData.personal_years || [];
+    const businesses = clientData.businesses || [];
+
+    console.log('[transformClientDataToTaxInfo] Client:', client);
+    console.log('[transformClientDataToTaxInfo] Personal years:', personalYears);
+    console.log('[transformClientDataToTaxInfo] Businesses:', businesses);
+    
+    // Log each business in detail
+    businesses.forEach((business: any, index: number) => {
+      console.log(`[transformClientDataToTaxInfo] Business ${index} raw:`, JSON.stringify(business, null, 2));
+      console.log(`[transformClientDataToTaxInfo] Business ${index} all keys:`, Object.keys(business));
+      console.log(`[transformClientDataToTaxInfo] Business ${index} fields:`, {
+        id: business.id,
+        business_name: business.business_name,
+        entity_type: business.entity_type,
+        ein: business.ein,
+        business_address: business.business_address,
+        business_city: business.business_city,
+        business_state: business.business_state,
+        business_zip: business.business_zip,
+        business_phone: business.business_phone,
+        business_email: business.business_email,
+        industry: business.industry,
+        year_established: business.year_established,
+        annual_revenue: business.annual_revenue,
+        employee_count: business.employee_count,
+        is_active: business.is_active,
+        business_years: business.business_years
+      });
+    });
+
+    const result = {
+      id: client.id,
+      fullName: client.full_name,
+      email: client.email,
+      phone: client.phone,
+      homeAddress: client.home_address,
+      city: client.city,
+      state: client.state,
+      zipCode: client.zip_code,
+      filingStatus: client.filing_status,
+      dependents: client.dependents,
+      standardDeduction: client.standard_deduction,
+      customDeduction: client.custom_deduction,
+      businessOwner: businesses.length > 0,
+      wagesIncome: personalYears[0]?.wages_income || 0,
+      passiveIncome: personalYears[0]?.passive_income || 0,
+      unearnedIncome: personalYears[0]?.unearned_income || 0,
+      capitalGains: personalYears[0]?.capital_gains || 0,
+      years: personalYears.map((py: any) => ({
+        year: py.year,
+        wagesIncome: py.wages_income,
+        passiveIncome: py.passive_income,
+        unearnedIncome: py.unearned_income,
+        capitalGains: py.capital_gains,
+        longTermCapitalGains: py.long_term_capital_gains,
+        householdIncome: py.household_income,
+        ordinaryIncome: py.ordinary_income,
+        isActive: py.is_active
+      })),
+      businesses: businesses.map((business: any) => {
+        // The business data is nested under a 'business' property
+        const businessData = business.business || business;
+        const businessYears = business.business_years || [];
+        const latestYear = businessYears.sort((a: any, b: any) => b.year - a.year)[0];
+        
+        return {
+          id: businessData.id || '',
+          businessName: businessData.business_name || '',
+          entityType: businessData.entity_type || '',
+          ein: businessData.ein || '',
+          businessAddress: businessData.business_address || '',
+          businessCity: businessData.business_city || '',
+          businessState: businessData.business_state || '',
+          businessZip: businessData.business_zip || '',
+          businessPhone: businessData.business_phone || '',
+          businessEmail: businessData.business_email || '',
+          industry: businessData.industry || '',
+          startYear: businessData.year_established || 0,
+          annualRevenue: businessData.annual_revenue || 0,
+          employeeCount: businessData.employee_count || 0,
+          isActive: businessData.is_active || false,
+          ordinaryK1Income: latestYear?.ordinary_k1_income || 0,
+          guaranteedK1Income: latestYear?.guaranteed_k1_income || 0,
+          years: businessYears.map((year: any) => ({
+            id: year.id || '',
+            year: year.year || 0,
+            isActive: year.is_active || false,
+            ordinaryK1Income: year.ordinary_k1_income || 0,
+            guaranteedK1Income: year.guaranteed_k1_income || 0,
+            annualRevenue: year.annual_revenue || 0,
+            employeeCount: year.employee_count || 0
+          }))
+        };
+      }),
+      createdAt: client.created_at,
+      updatedAt: client.updated_at
+    };
+
+    console.log('[transformClientDataToTaxInfo] Result:', result);
+    return result;
+  }
+} 

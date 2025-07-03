@@ -1,4 +1,5 @@
 export interface TaxInfo {
+  id?: string; // Optional ID for edit mode
   standardDeduction: boolean;
   customDeduction: number;
   businessOwner: boolean;
@@ -24,6 +25,7 @@ export interface TaxInfo {
   guaranteedK1Income?: number;
   totalIncome?: number;
   householdIncome?: number;
+  businessAnnualRevenue?: number;
   deductionLimitReached?: boolean;
 }
 

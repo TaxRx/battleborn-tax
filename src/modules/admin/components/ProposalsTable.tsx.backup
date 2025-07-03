@@ -1,0 +1,383 @@
+import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { 
+  Search, 
+  Filter, 
+  Eye, 
+  CheckCircle, 
+  XCircle, 
+  User, 
+  DollarSign, 
+  Calendar, 
+  FileText, 
+  UserCheck,
+  ChevronDown,
+  ArrowUpDown,
+  Plus,
+  Download,
+  ChevronUp
+} from 'lucide-react';
+import { TaxProposal, ProposalStatus } from '../../shared/types';
+
+interface ProposalsTableProps {
+  proposals: TaxProposal[];
+  loading?: boolean;
+  onViewProposal: (id: string) => void;
+  onApproveProposal: (id: string) => void;
+  onRejectProposal: (id: string) => void;
+}
+
+const ProposalsTable: React.FC<ProposalsTableProps> = ({ 
+  proposals, 
+  loading = false, 
+  onViewProposal, 
+  onApproveProposal, 
+  onRejectProposal 
+}) => {
+  const navigate = useNavigate();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<ProposalStatus | 'all'>('all');
+  const [sortField, setSortField] = useState<'submitted_at' | 'projected_savings' | 'affiliate_name'>('submitted_at');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Mock affiliate data - in real app this would come from API
+  const getAffiliateInfo = (affiliateId: string) => {
+    const affiliates = {
+      'affiliate-001': { name: 'Tax Solutions Pro', email: 'contact@taxsolutionspro.com' },
+      'affiliate-002': { name: 'Strategic Tax Group', email: 'info@strategictax.com' },
+      'affiliate-003': { name: 'Elite Tax Partners', email: 'partners@elitetax.com' },
+    };
+    return affiliates[affiliateId as keyof typeof affiliates] || { name: 'Unknown Affiliate', email: '' };
+  };
+
+  const filteredAndSortedProposals = useMemo(() => {
+    let filtered = proposals;
+
+    // Apply search filter
+    if (searchTerm) {
+      filtered = filtered.filter(proposal => 
+        (proposal.id || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        getAffiliateInfo(proposal.affiliate_id).name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (proposal.client_id || "").toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(proposal => proposal.status === statusFilter);
+    }
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      let aValue: any, bValue: any;
+      
+      switch (sortField) {
+        case 'submitted_at':
+          aValue = new Date(a.submitted_at || a.created_at).getTime();
+          bValue = new Date(b.submitted_at || b.created_at).getTime();
+          break;
+        case 'projected_savings':
+          aValue = (a.projected_savings || { annual_savings: 0 }).annual_savings;
+          bValue = (b.projected_savings || { annual_savings: 0 }).annual_savings;
+          break;
+        case 'affiliate_name':
+          aValue = getAffiliateInfo(a.affiliate_id).name;
+          bValue = getAffiliateInfo(b.affiliate_id).name;
+          break;
+        default:
+          return 0;
+      }
+
+      if (sortDirection === 'asc') {
+        return aValue > bValue ? 1 : -1;
+      } else {
+        return aValue < bValue ? 1 : -1;
+      }
+    });
+
+    return filtered;
+  }, [proposals, searchTerm, statusFilter, sortField, sortDirection]);
+
+  const handleSort = (field: typeof sortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('desc');
+    }
+  };
+
+  const getStatusBadge = (status: ProposalStatus) => {
+    const statusConfig = {
+      submitted: { bg: 'bg-blue-100', text: 'text-blue-800', label: 'Submitted' },
+      in_review: { bg: 'bg-yellow-100', text: 'text-yellow-800', label: 'In Review' },
+      approved: { bg: 'bg-green-100', text: 'text-green-800', label: 'Approved' },
+      rejected: { bg: 'bg-red-100', text: 'text-red-800', label: 'Rejected' },
+      completed: { bg: 'bg-purple-100', text: 'text-purple-800', label: 'Completed' }
+    };
+
+    const config = statusConfig[status] || statusConfig.submitted;
+    return (
+      <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${config.bg} ${config.text}`}>
+        {config.label}
+      </span>
+    );
+  };
+
+  const SortIcon = ({ field }: { field: typeof sortField }) => {
+    if (sortField !== field) {
+      return <ChevronDown className="h-4 w-4 text-gray-400" />;
+    }
+    return sortDirection === 'asc' 
+      ? <ChevronUp className="h-4 w-4 text-gray-600" />
+      : <ChevronDown className="h-4 w-4 text-gray-600" />;
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="card-financial animate-pulse p-6">
+          <div className="h-6 bg-primary-200 rounded w-1/4 mb-4"></div>
+          <div className="space-y-4">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-16 bg-primary-200 rounded"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-primary-900">All Proposals</h1>
+          <p className="text-sm text-primary-600">
+            Manage and track all affiliate submissions ({filteredAndSortedProposals.length} of {proposals.length})
+          </p>
+        </div>
+        <div className="flex items-center space-x-3">
+          <button className="btn-secondary">
+            <Download className="h-4 w-4 mr-2" />
+            Export
+          </button>
+          <button 
+            onClick={() => setShowFilters(!showFilters)}
+            className="btn-secondary"
+          >
+            <Filter className="h-4 w-4 mr-2" />
+            Filters
+          </button>
+        </div>
+      </div>
+
+      {/* Search and Filters */}
+      <div className="card-professional">
+        <div className="p-6">
+          <div className="flex flex-col lg:flex-row gap-4">
+            {/* Search */}
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-primary-400" />
+              <input
+                type="text"
+                placeholder="Search by proposal ID, affiliate name, or client..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="form-input pl-10"
+              />
+            </div>
+
+            {/* Status Filter */}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as ProposalStatus | 'all')}
+              className="form-input w-auto min-w-[150px]"
+            >
+              <option value="all">All Status</option>
+              <option value="submitted">Submitted</option>
+              <option value="in_review">In Review</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+
+          {/* Advanced Filters */}
+          {showFilters && (
+            <div className="mt-4 pt-4 border-t border-primary-200">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="form-label">Date Range</label>
+                  <input type="date" className="form-input" />
+                </div>
+                <div>
+                  <label className="form-label">Min Savings</label>
+                  <input type="number" placeholder="$0" className="form-input" />
+                </div>
+                <div>
+                  <label className="form-label">Max Savings</label>
+                  <input type="number" placeholder="$1,000,000" className="form-input" />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Proposals Table */}
+      <div className="card-professional overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full">
+            <thead className="table-header">
+              <tr>
+                <th className="px-6 py-4 text-left">
+                  <button 
+                    onClick={() => handleSort('submitted_at')}
+                    className="flex items-center space-x-1 font-semibold text-primary-800 hover:text-primary-900"
+                  >
+                    <span>Proposal</span>
+                    <SortIcon field="submitted_at" />
+                  </button>
+                </th>
+                <th className="px-6 py-4 text-left">
+                  <button 
+                    onClick={() => handleSort('affiliate_name')}
+                    className="flex items-center space-x-1 font-semibold text-primary-800 hover:text-primary-900"
+                  >
+                    <span>Affiliate</span>
+                    <SortIcon field="affiliate_name" />
+                  </button>
+                </th>
+                <th className="px-6 py-4 text-left">Status</th>
+                <th className="px-6 py-4 text-left">
+                  <button 
+                    onClick={() => handleSort('projected_savings')}
+                    className="flex items-center space-x-1 font-semibold text-primary-800 hover:text-primary-900"
+                  >
+                    <span>Projected Savings</span>
+                    <SortIcon field="projected_savings" />
+                  </button>
+                </th>
+                <th className="px-6 py-4 text-left">Timeline</th>
+                <th className="px-6 py-4 text-left">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-primary-100">
+              {filteredAndSortedProposals.map((proposal) => {
+                const affiliateInfo = getAffiliateInfo(proposal.affiliate_id);
+                const submittedDate = new Date(proposal.submitted_at || proposal.created_at);
+                const approvedDate = proposal.approved_at ? new Date(proposal.approved_at) : null;
+                
+                return (
+                  <tr key={proposal.id} className="table-row">
+                    <td className="px-6 py-4">
+                      <div>
+                        <div className="font-semibold text-primary-900">
+                          #{proposal.id || "unknown").slice(-6).toUpperCase()}
+                        </div>
+                        <div className="text-sm text-primary-600">
+                          Client: {proposal.client_id || "unknown").slice(-4).toUpperCase()}
+                        </div>
+                        <div className="text-xs text-primary-500 mt-1">
+                          {proposal.proposed_strategies || []).length} strateg{proposal.proposed_strategies || []).length === 1 ? 'y' : 'ies'}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div>
+                        <div className="font-medium text-primary-900">{affiliateInfo.name}</div>
+                        <div className="text-sm text-primary-600">{affiliateInfo.email}</div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      {getStatusBadge(proposal.status)}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="font-semibold text-profit-green">
+                        ${proposal.projected_savings || { annual_savings: 0 }).annual_savings.toLocaleString()}
+                      </div>
+                      <div className="text-sm text-primary-600">
+                        annually
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="space-y-1">
+                        <div className="text-sm">
+                          <span className="text-primary-500">Submitted:</span>
+                          <span className="ml-1 font-medium text-primary-900">
+                            {submittedDate.toLocaleDateString()}
+                          </span>
+                        </div>
+                        {approvedDate && (
+                          <div className="text-sm">
+                            <span className="text-primary-500">Approved:</span>
+                            <span className="ml-1 font-medium text-primary-900">
+                              {approvedDate.toLocaleDateString()}
+                            </span>
+                          </div>
+                        )}
+                        {!approvedDate && proposal.status === 'submitted' && (
+                          <div className="text-xs text-amber-600 font-medium">
+                            Pending Review
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => onViewProposal(proposal.id)}
+                          className="p-2 text-primary-400 hover:text-brand-blue hover:bg-blue-50 rounded-lg transition-colors"
+                          title="View Details"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                        
+                        {(proposal.status === 'submitted' || proposal.status === 'in_review') && (
+                          <>
+                            <button
+                              onClick={() => onApproveProposal(proposal.id)}
+                              className="p-2 text-primary-400 hover:text-brand-green hover:bg-green-50 rounded-lg transition-colors"
+                              title="Approve"
+                            >
+                              <CheckCircle className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => onRejectProposal(proposal.id)}
+                              className="p-2 text-primary-400 hover:text-loss-red hover:bg-red-50 rounded-lg transition-colors"
+                              title="Reject"
+                            >
+                              <XCircle className="h-4 w-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {filteredAndSortedProposals.length === 0 && (
+            <div className="text-center py-12 text-primary-500">
+              <FileText className="h-16 w-16 mx-auto mb-4 text-primary-300" />
+              <p className="text-lg font-medium">No proposals found</p>
+              <p className="text-sm">
+                {searchTerm || statusFilter !== 'all' 
+                  ? 'Try adjusting your search or filters' 
+                  : 'Proposals will appear here once affiliates submit them'
+                }
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ProposalsTable; 

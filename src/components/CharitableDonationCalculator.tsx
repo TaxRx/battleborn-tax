@@ -40,13 +40,14 @@ export default function CharitableDonationCalculator({
     (taxInfo.businessOwner ? (taxInfo.ordinaryK1Income || 0) + (taxInfo.guaranteedK1Income || 0) : 0);
 
   // Calculate maximum allowed donation based on AGI limit
-  const maxDonation = Math.floor(totalIncome * agiLimit);
+  // Formula: AGI * deduction_limit / fair_market_multiplier
+  const maxDonation = Math.floor((totalIncome * agiLimit) / fmvMultiplier);
 
   // Calculate deduction value (capped at AGI limit)
   const deductionValue = (donationAmount || 0) * fmvMultiplier;
 
   // Only calculate if we have a valid donation amount
-  const shouldCalculate = donationAmount && donationAmount > 0;
+  const shouldCalculate = donationAmount && donationAmount >= 25000;
 
   // Calculate benefits and update state
   useEffect(() => {
@@ -210,7 +211,15 @@ export default function CharitableDonationCalculator({
                   <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
                   <NumericFormat
                     value={donationAmount || ''}
-                    onValueChange={(values) => setDonationAmount(values.floatValue || null)}
+                    onValueChange={(values) => {
+                      const newValue = values.floatValue || null;
+                      // Enforce minimum purchase of $25,000
+                      if (newValue !== null && newValue < 25000) {
+                        setDonationAmount(25000);
+                      } else {
+                        setDonationAmount(newValue);
+                      }
+                    }}
                     thousandSeparator={true}
                     className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     placeholder="0"
@@ -218,6 +227,9 @@ export default function CharitableDonationCalculator({
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
                   Maximum allowed: ${maxDonation.toLocaleString()}
+                </p>
+                <p className="text-xs text-red-600 mt-1 font-medium">
+                  Minimum purchase: $25,000
                 </p>
               </div>
             </div>

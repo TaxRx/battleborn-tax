@@ -75,7 +75,10 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Always return the user if authenticated, regardless of demo mode
   const contextValue = {
-    user: user || (isAuthenticated ? { id: 'demo-user', email: 'demo@example.com' } as User : null),
+    user: user || (isAuthenticated ? { 
+      id: demoMode ? 'demo-user' : 'authenticated-user', 
+      email: demoMode ? 'demo@example.com' : 'user@example.com'
+    } as User : null),
     loading,
     error
   };

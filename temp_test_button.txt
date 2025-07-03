@@ -1,0 +1,19 @@
+              <QuickActionCard
+                title="Test Proposal"
+                description="Create a test proposal for debugging"
+                icon={Plus}
+                count={0}
+                href="#"
+                priority="low"
+                action="Create Test"
+                onClick={() => {
+                  proposalService.createTestProposal().then(result => {
+                    if (result.success) {
+                      alert("Test proposal created successfully!");
+                      window.location.reload();
+                    } else {
+                      alert("Failed to create test proposal: " + result.message);
+                    }
+                  });
+                }}
+              />

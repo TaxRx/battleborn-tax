@@ -5,6 +5,7 @@ import { TaxInfo, TaxStrategy, SavedCalculation } from '../types';
 import { getTaxStrategies } from '../utils/taxStrategies';
 import { calculateTaxBreakdown } from '../utils/taxCalculations';
 import { taxRates } from '../data/taxRates';
+import { strategyPersistenceService } from '../services/strategyPersistenceService';
 
 interface TaxStore {
   taxInfo: TaxInfo | null;
@@ -116,6 +117,14 @@ export const useTaxStore = create<TaxStore>()(
         const filteredStrategies = selectedStrategies.filter(s => s.id !== strategyId);
         const updatedStrategies = [...filteredStrategies, updatedStrategy];
         const breakdown = calculateTaxBreakdown(taxInfo, taxRates[selectedYear], updatedStrategies);
+
+        // Save strategy details to Supabase for persistence
+        try {
+          await strategyPersistenceService.saveStrategyDetails(updatedStrategy, taxInfo, selectedYear);
+        } catch (error) {
+          console.error('Failed to persist strategy details:', error);
+          // Continue with local state update even if persistence fails
+        }
 
         const calculation: SavedCalculation = {
           id: Date.now().toString(),

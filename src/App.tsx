@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useNavigate, BrowserRouter as Router } from 'react-router-dom';
 import { supabase } from './lib/supabase';
 import { useProfileStore } from './store/profileStore';
 import { useUIStore } from './store/uiStore';
@@ -19,16 +19,15 @@ import HireChildrenCalculator from './components/HireChildrenCalculator';
 import CostSegregationCalculator from './components/CostSegregationCalculator';
 import { useTaxStore } from './store/taxStore';
 import Solutions from './pages/Solutions';
-import RDTCreditWizard from './components/RDTCreditWizard';
 import { UserProvider, useUser } from './context/UserContext';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import AdminDashboard from './components/AdminDashboard';
+import AdminDashboard from './modules/admin/pages/AdminDashboard';
 import AdvisorDashboard from './components/AdvisorDashboard';
 import ClientDashboard from './components/ClientDashboard';
 import HomePage from './components/HomePage';
 import { useUserStore } from './store/userStore';
-import DashboardHome from './components/DashboardHome';
+
 import ClientList from './components/AdvisorDashboard/ClientList';
 import GroupList from './components/AdvisorDashboard/GroupList';
 import StrategiesAdminPage from './components/StrategiesAdminPage';
@@ -36,6 +35,9 @@ import DemoModeIndicator from './components/DemoModeIndicator';
 import useAuthStore from './store/authStore';
 import RnDAdminDashboard from './features/rd-wizard/src/pages/admin/Dashboard';
 import RnDClientManagement from './features/rd-wizard/src/pages/admin/ClientManagement';
+import { Toaster } from 'react-hot-toast';
+import RDTaxWizard from './modules/tax-calculator/components/RDTaxWizard/RDTaxWizard';
+import UnifiedClientDashboard from './components/UnifiedClientDashboard';
 
 const defaultTaxInfo = {
   standardDeduction: true,
@@ -94,8 +96,7 @@ const AppRoutes = ({ profile }: { profile: any }) => {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>}>
-        <Route index element={<DashboardHome />} />
-        <Route path="clients" element={<ProtectedRoute><UserProvider><RnDClientManagement /></UserProvider></ProtectedRoute>} />
+        <Route path="clients" element={<ProtectedRoute><UserProvider><UnifiedClientDashboard /></UserProvider></ProtectedRoute>} />
         <Route path="advisors" element={<div>Advisor Management (coming soon)</div>} />
         <Route path="groups" element={<GroupList />} />
         <Route path="documents" element={<div>Document Management (coming soon)</div>} />
@@ -104,7 +105,7 @@ const AppRoutes = ({ profile }: { profile: any }) => {
         <Route path="charitable-donations" element={<div>Charitable Donations (coming soon)</div>} />
         <Route path="settings" element={<div>Settings (coming soon)</div>} />
         <Route path="strategies" element={<ProtectedRoute><StrategiesAdminPage /></ProtectedRoute>} />
-        <Route path="strategies/rd-wizard" element={<ProtectedRoute><UserProvider><RDTCreditWizard onClose={() => { window.history.back(); }} /></UserProvider></ProtectedRoute>} />
+        <Route path="strategies/rd-wizard" element={<ProtectedRoute><UserProvider><RDTaxWizard onClose={() => { window.history.back(); }} /></UserProvider></ProtectedRoute>} />
         <Route path="rd-tax-credit" element={<ProtectedRoute><UserProvider><RnDAdminDashboard /></UserProvider></ProtectedRoute>} />
       </Route>
       <Route
@@ -134,8 +135,9 @@ const AppRoutes = ({ profile }: { profile: any }) => {
       />
       <Route path="/tax-calculator" element={<ProtectedRoute><TaxCalculator /></ProtectedRoute>} />
       <Route path="/solutions" element={<ProtectedRoute><Solutions /></ProtectedRoute>} />
-      <Route path="/solutions/rd-credit" element={<ProtectedRoute><RDTCreditWizard onClose={() => {}} /></ProtectedRoute>} />
+      <Route path="/solutions/rd-credit" element={<ProtectedRoute><RDTaxWizard onClose={() => {}} /></ProtectedRoute>} />
       <Route path="/solutions/augusta-rule" element={<ProtectedRoute><AugustaRuleWizard onClose={() => {}} /></ProtectedRoute>} />
+      <Route path="/test-research-design" element={<ProtectedRoute><UserProvider><RDTaxWizard onClose={() => {}} startStep={2} /></UserProvider></ProtectedRoute>} />
       <Route path="/documents" element={<ProtectedRoute><DocumentsPage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
@@ -335,38 +337,41 @@ const App = () => {
   } : profile;
 
   return (
-    <UserProvider>
-      <div className="min-h-screen bg-gray-50">
-        {/* Only show Navigation on non-public routes and not on Admin routes */}
-        {isUserAuthenticated && !isPublicRoute && !isAdminRoute && (
-          <Navigation 
-            currentView={location.pathname.substring(1) || 'dashboard'}
-            onViewChange={(view) => navigate(`/${view}`)}
-            isAuthenticated={isUserAuthenticated}
-            onLoginClick={() => navigate('/login')}
-            onLogoutClick={() => {
-              if (demoMode) {
-                const { disableDemoMode } = useAuthStore.getState();
-                disableDemoMode();
-                navigate('/');
-              } else {
-                supabase.auth.signOut();
-              }
-            }}
-            userType={(() => {
-              if (demoMode) return userType || 'client';
-              if (effectiveProfile?.email === 'admin@taxrxgroup.com') return 'admin';
-              return effectiveProfile?.role || 'client';
-            })()}
-          />
-        )}
-        <main className={isUserAuthenticated && !isPublicRoute ? 'ml-64' : ''}>
-          <AppRoutes profile={effectiveProfile} />
-        </main>
-      </div>
-      <ToastContainer position="top-right" autoClose={5000} />
-      <DemoModeIndicator />
-    </UserProvider>
+    <Router>
+      <Toaster position="top-right" />
+      <UserProvider>
+        <div className="min-h-screen bg-gray-50">
+          {/* Only show Navigation on non-public routes and not on Admin routes */}
+          {isUserAuthenticated && !isPublicRoute && !isAdminRoute && (
+            <Navigation 
+              currentView={location.pathname.substring(1) || 'dashboard'}
+              onViewChange={(view) => navigate(`/${view}`)}
+              isAuthenticated={isUserAuthenticated}
+              onLoginClick={() => navigate('/login')}
+              onLogoutClick={() => {
+                if (demoMode) {
+                  const { disableDemoMode } = useAuthStore.getState();
+                  disableDemoMode();
+                  navigate('/');
+                } else {
+                  supabase.auth.signOut();
+                }
+              }}
+              userType={(() => {
+                if (demoMode) return userType || 'client';
+                if (effectiveProfile?.email === 'admin@taxrxgroup.com') return 'admin';
+                return effectiveProfile?.role || 'client';
+              })()}
+            />
+          )}
+          <main className={isUserAuthenticated && !isPublicRoute ? 'ml-64' : ''}>
+            <AppRoutes profile={effectiveProfile} />
+          </main>
+        </div>
+        <ToastContainer position="top-right" autoClose={5000} />
+        <DemoModeIndicator />
+      </UserProvider>
+    </Router>
   );
 };
 

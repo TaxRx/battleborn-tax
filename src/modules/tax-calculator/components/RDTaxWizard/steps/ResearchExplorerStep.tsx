@@ -1,0 +1,2197 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { supabase } from '../../../../../lib/supabase';
+import { Plus, ChevronDown, ChevronRight, Edit, Trash2, MoveUp, MoveDown, UserPlus } from 'lucide-react';
+
+interface ResearchExplorerStepProps {
+  selectedActivities: any[];
+  onUpdate: (updates: any) => void;
+  onNext: () => void;
+  onPrevious: () => void;
+}
+
+interface ResearchCategory {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+interface ResearchArea {
+  id: string;
+  name: string;
+  category_id: string;
+  description?: string;
+}
+
+interface ResearchFocus {
+  id: string;
+  name: string;
+  area_id: string;
+  description?: string;
+}
+
+interface ResearchActivity {
+  id: string;
+  title: string;
+  focus_id: string;
+  general_description?: string;
+  examples?: string;
+}
+
+interface ResearchSubcomponent {
+  id: string;
+  title: string;
+  activity_id: string;
+  phase: string;
+  goal?: string;
+  hypothesis?: string;
+  cpt?: string;
+  narrative?: string;
+}
+
+interface ResearchRole {
+  id: string;
+  name: string;
+  description?: string;
+  parent_id?: string;
+  business_id?: string;
+  is_default?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface SelectedActivity {
+  id: string;
+  activity_id: string;
+  title?: string; // Keep for backward compatibility
+  activity_name?: string; // New field from joined data
+  activity_category?: string;
+  activity_area?: string;
+  activity_focus?: string;
+  practice_percent: number;
+  selected_roles: string[];
+  config: any;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface PracticePercentageConfig {
+  nonRndTime: number;
+  activities: { [activityId: string]: number };
+}
+
+// RoleCard Component
+interface RoleCardProps {
+  role: ResearchRole;
+  allRoles: ResearchRole[];
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  level: number;
+  renderChildRole?: (role: ResearchRole, allRoles: ResearchRole[], level: number) => React.ReactNode;
+}
+
+const RoleCard: React.FC<RoleCardProps> = ({
+  role,
+  allRoles,
+  onMoveUp,
+  onMoveDown,
+  onEdit,
+  onDelete,
+  canMoveUp,
+  canMoveDown,
+  level,
+  renderChildRole
+}) => {
+  const [isExpanded, setIsExpanded] = useState(true);
+  const childRoles = allRoles.filter(r => r.parent_id === role.id);
+
+  return (
+    <div className={`${level > 0 ? 'ml-8' : ''}`}>
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-all duration-200">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            {childRoles.length > 0 && (
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="text-blue-600 hover:text-blue-800 transition-colors"
+              >
+                {isExpanded ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" />
+                )}
+              </button>
+            )}
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center">
+                <span className="text-white text-sm font-semibold">
+                  {role.name.charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div>
+                <h6 className="font-semibold text-gray-900">{role.name}</h6>
+                {role.is_default && (
+                  <span className="inline-block px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                    Default
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={onEdit}
+              className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              title="Edit role"
+            >
+              <Edit className="h-4 w-4" />
+            </button>
+            <button
+              onClick={onDelete}
+              className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              title="Delete role"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+            <div className="flex items-center space-x-1">
+              <button
+                onClick={onMoveUp}
+                disabled={!canMoveUp}
+                className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Move up"
+              >
+                <MoveUp className="h-4 w-4" />
+              </button>
+              <button
+                onClick={onMoveDown}
+                disabled={!canMoveDown}
+                className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Move down"
+              >
+                <MoveDown className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        {childRoles.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-blue-200">
+            <div className="flex items-center space-x-2 text-sm text-blue-600">
+              <UserPlus className="h-4 w-4" />
+              <span>{childRoles.length} subordinate{childRoles.length !== 1 ? 's' : ''}</span>
+            </div>
+          </div>
+        )}
+      </div>
+      
+      {/* Child Roles */}
+      {isExpanded && childRoles.length > 0 && (
+        <div className="mt-3 space-y-3">
+          {childRoles.map((childRole) => (
+            renderChildRole ? renderChildRole(childRole, allRoles, level + 1) : (
+              <div key={`child-${childRole.id}`} className="ml-8">
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-gray-700">{childRole.name}</span>
+                    <span className="text-sm text-gray-500">Child role</span>
+                  </div>
+                </div>
+              </div>
+            )
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// AddRoleModal Component
+interface AddRoleModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (role: Omit<ResearchRole, 'id'>) => void;
+  existingRoles: ResearchRole[];
+}
+
+const AddRoleModal: React.FC<AddRoleModalProps> = ({
+  isOpen,
+  onClose,
+  onSave,
+  existingRoles
+}) => {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [parentId, setParentId] = useState<string>('');
+
+  const handleSave = () => {
+    if (!name.trim()) {
+      alert('Please enter a role name');
+      return;
+    }
+
+    onSave({
+      name: name.trim(),
+      description: description.trim() || undefined,
+      parent_id: parentId || undefined
+    });
+
+    // Reset form
+    setName('');
+    setDescription('');
+    setParentId('');
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+        <h3 className="text-lg font-semibold mb-4">Add New Role</h3>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Role Name *
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="e.g., Research Scientist"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Description
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Brief description of responsibilities"
+              rows={3}
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Reports To
+            </label>
+            <select
+              value={parentId}
+              onChange={(e) => setParentId(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">No supervisor (top level)</option>
+              {existingRoles.map(role => (
+                <option key={role.id} value={role.id}>
+                  {role.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        
+        <div className="flex justify-end space-x-3 mt-6">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Add Role
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// EditRoleModal Component
+interface EditRoleModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (roleId: string, updates: Partial<ResearchRole>) => void;
+  role: ResearchRole | null;
+  existingRoles: ResearchRole[];
+}
+
+const EditRoleModal: React.FC<EditRoleModalProps> = ({
+  isOpen,
+  onClose,
+  onSave,
+  role,
+  existingRoles
+}) => {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [parentId, setParentId] = useState<string>('');
+
+  // Update form when role changes
+  useEffect(() => {
+    if (role) {
+      setName(role.name || '');
+      setDescription(role.description || '');
+      setParentId(role.parent_id || '');
+    }
+  }, [role]);
+
+  const handleSave = () => {
+    if (!role || !name.trim()) {
+      alert('Please enter a role name');
+      return;
+    }
+
+    onSave(role.id, {
+      name: name.trim(),
+      description: description.trim() || undefined,
+      parent_id: parentId || undefined
+    });
+
+    onClose();
+  };
+
+  if (!isOpen || !role) return null;
+
+  // Filter out the current role and its descendants from parent options
+  const getAvailableParents = (currentRoleId: string, allRoles: ResearchRole[]): ResearchRole[] => {
+    const descendants = new Set<string>();
+    
+    const addDescendants = (roleId: string) => {
+      descendants.add(roleId);
+      allRoles.forEach(r => {
+        if (r.parent_id === roleId) {
+          addDescendants(r.id);
+        }
+      });
+    };
+    
+    addDescendants(currentRoleId);
+    
+    return allRoles.filter(r => !descendants.has(r.id));
+  };
+
+  const availableParents = getAvailableParents(role.id, existingRoles);
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+        <h3 className="text-lg font-semibold mb-4">Edit Role</h3>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Role Name *
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="e.g., Research Scientist"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Description
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Brief description of responsibilities"
+              rows={3}
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Reports To
+            </label>
+            <select
+              value={parentId}
+              onChange={(e) => setParentId(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">No supervisor (top level)</option>
+              {availableParents.map(availableRole => (
+                <option key={availableRole.id} value={availableRole.id}>
+                  {availableRole.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        
+        <div className="flex justify-end space-x-3 mt-6">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Non-R&D Time Modal Component
+interface NonRndModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  nonRndTime: number;
+  onUpdate: (percentage: number) => void;
+}
+
+const NonRndModal: React.FC<NonRndModalProps> = ({
+  isOpen,
+  onClose,
+  nonRndTime,
+  onUpdate
+}) => {
+  const [tempValue, setTempValue] = useState(nonRndTime);
+
+  const handleSave = () => {
+    onUpdate(tempValue);
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">Configure Non-R&D Time</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+          >
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        
+        <div className="mb-6">
+          <p className="text-sm text-gray-600 mb-4">
+            Set the percentage of time that is not dedicated to research and development activities. 
+            This includes administrative tasks, meetings, and other non-research work.
+          </p>
+          
+          <div className="flex items-center space-x-4">
+            <input
+              type="range"
+              min="0"
+              max="50"
+              value={tempValue}
+              onChange={(e) => setTempValue(parseInt(e.target.value))}
+              className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+            />
+            <span className="text-lg font-semibold text-blue-600 min-w-[3rem]">
+              {tempValue}%
+            </span>
+          </div>
+          
+          <div className="mt-2 text-xs text-gray-500">
+            Available for R&D: {100 - tempValue}%
+          </div>
+        </div>
+        
+        <div className="flex space-x-3">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Selectable Chip Component
+interface SelectableChipProps {
+  label: string;
+  selected: boolean;
+  onToggle: () => void;
+  color?: string;
+}
+
+const SelectableChip: React.FC<SelectableChipProps> = ({
+  label,
+  selected,
+  onToggle,
+  color = "blue"
+}) => {
+  const colorClasses = {
+    blue: selected ? "bg-blue-100 border-blue-300 text-blue-800" : "bg-white border-gray-300 text-gray-700 hover:border-blue-300",
+    green: selected ? "bg-green-100 border-green-300 text-green-800" : "bg-white border-gray-300 text-gray-700 hover:border-green-300",
+    purple: selected ? "bg-purple-100 border-purple-300 text-purple-800" : "bg-white border-gray-300 text-gray-700 hover:border-purple-300",
+    orange: selected ? "bg-orange-100 border-orange-300 text-orange-800" : "bg-white border-gray-300 text-gray-700 hover:border-orange-300",
+    pink: selected ? "bg-pink-100 border-pink-300 text-pink-800" : "bg-white border-gray-300 text-gray-700 hover:border-pink-300"
+  };
+
+  return (
+    <button
+      onClick={onToggle}
+      className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium border transition-all duration-200 ${
+        colorClasses[color as keyof typeof colorClasses]
+      } ${selected ? 'ring-2 ring-offset-2 ring-blue-500' : ''}`}
+    >
+      {selected && (
+        <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+        </svg>
+      )}
+      {label}
+    </button>
+  );
+};
+
+// Activity Card Component
+interface ActivityCardProps {
+  activity: SelectedActivity;
+  allRoles: ResearchRole[];
+  onUpdatePercentage: (percentage: number) => void;
+  onUpdateRoles: (roles: string[]) => void;
+  onRemove: () => void;
+  color: string;
+}
+
+const ActivityCard: React.FC<ActivityCardProps> = ({
+  activity,
+  allRoles,
+  onUpdatePercentage,
+  onUpdateRoles,
+  onRemove,
+  color
+}) => {
+  const colorClasses = {
+    blue: "border-l-blue-500 bg-blue-50",
+    green: "border-l-green-500 bg-green-50", 
+    purple: "border-l-purple-500 bg-purple-50",
+    orange: "border-l-orange-500 bg-orange-50",
+    pink: "border-l-pink-500 bg-pink-50"
+  };
+
+  const handleRoleToggle = (roleId: string) => {
+    const newRoles = activity.selected_roles.includes(roleId)
+      ? activity.selected_roles.filter(id => id !== roleId)
+      : [...activity.selected_roles, roleId];
+    onUpdateRoles(newRoles);
+  };
+
+  return (
+    <div className={`border border-gray-200 rounded-lg p-6 ${colorClasses[color as keyof typeof colorClasses]} border-l-4`}>
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex-1">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            {activity.activity_name || activity.title || 'Unknown Activity'}
+          </h3>
+          
+          {/* Activity Details */}
+          {(activity.activity_category || activity.activity_area || activity.activity_focus) && (
+            <div className="text-sm text-gray-600 mb-3">
+              {activity.activity_category && <span className="mr-2">Category: {activity.activity_category}</span>}
+              {activity.activity_area && <span className="mr-2">Area: {activity.activity_area}</span>}
+              {activity.activity_focus && <span>Focus: {activity.activity_focus}</span>}
+            </div>
+          )}
+          
+          {/* Practice Percentage Slider */}
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-gray-700">Practice Percentage</label>
+              <span className="text-sm font-semibold text-blue-600">{activity.practice_percent.toFixed(1)}%</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="90"
+              step="0.1"
+              value={activity.practice_percent}
+              onChange={(e) => onUpdatePercentage(parseFloat(e.target.value))}
+              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+            />
+          </div>
+        </div>
+        
+        <button
+          onClick={onRemove}
+          className="ml-4 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      </div>
+      
+      {/* Role Selection */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-3">Assigned Roles</label>
+        <div className="flex flex-wrap gap-2">
+          {allRoles.map(role => (
+            <SelectableChip
+              key={role.id}
+              label={role.name}
+              selected={activity.selected_roles.includes(role.id)}
+              onToggle={() => handleRoleToggle(role.id)}
+              color="blue"
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
+  selectedActivities: selectedActivitiesProp,
+  onUpdate,
+  onNext,
+  onPrevious
+}) => {
+  const [activeTab, setActiveTab] = useState<'roles' | 'activities' | 'design'>('roles');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Data from Supabase
+  const [categories, setCategories] = useState<ResearchCategory[]>([]);
+  const [areas, setAreas] = useState<ResearchArea[]>([]);
+  const [focuses, setFocuses] = useState<ResearchFocus[]>([]);
+  const [activities, setActivities] = useState<ResearchActivity[]>([]);
+  const [subcomponents, setSubcomponents] = useState<ResearchSubcomponent[]>([]);
+  
+  // Roles states
+  const [roles, setRoles] = useState<ResearchRole[]>([]);
+  const [selectedRole, setSelectedRole] = useState<string>('');
+  
+  // Selected filters
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [selectedArea, setSelectedArea] = useState<string>('');
+  const [selectedFocus, setSelectedFocus] = useState<string>('');
+  const [selectedActivity, setSelectedActivity] = useState<string>('');
+  
+  // UI state
+  const [showSubcomponents, setShowSubcomponents] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedYear, setSelectedYear] = useState(2025);
+  const [showAddRoleModal, setShowAddRoleModal] = useState(false);
+  const [showEditRoleModal, setShowEditRoleModal] = useState(false);
+  const [editingRole, setEditingRole] = useState<ResearchRole | null>(null);
+  
+  // New state for redesigned Activities tab
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
+  const [selectedFocuses, setSelectedFocuses] = useState<string[]>([]);
+  const [selectedActivitiesState, setSelectedActivitiesState] = useState<SelectedActivity[]>([]);
+  const [practicePercentageConfig, setPracticePercentageConfig] = useState<PracticePercentageConfig>({
+    nonRndTime: 10,
+    activities: {}
+  });
+  const [showNonRndModal, setShowNonRndModal] = useState(false);
+
+  useEffect(() => {
+    loadResearchData();
+    loadRoles();
+  }, []);
+
+  // Load selected activities when year changes
+  useEffect(() => {
+    if (selectedYear) {
+      loadSelectedActivities();
+      loadFilterSelections();
+    }
+  }, [selectedYear]);
+
+  // Reload selected activities when research data is loaded (to get proper activity names)
+  useEffect(() => {
+    if (selectedYear && categories.length > 0 && areas.length > 0 && focuses.length > 0) {
+      loadSelectedActivities();
+    }
+  }, [selectedYear, categories, areas, focuses]);
+
+  // Save filter selections whenever they change
+  useEffect(() => {
+    if (selectedYear) {
+      saveFilterSelections();
+    }
+  }, [selectedCategories, selectedAreas, selectedFocuses, selectedYear]);
+
+  const loadResearchData = async () => {
+    setLoading(true);
+    try {
+      // Load all research data from Supabase
+      const [categoriesResult, areasResult, focusesResult, activitiesResult, subcomponentsResult] = await Promise.all([
+        supabase.from('rd_research_categories').select('*'),
+        supabase.from('rd_areas').select('*'),
+        supabase.from('rd_focuses').select('*'),
+        supabase.from('rd_research_activities').select('*'),
+        supabase.from('rd_subcomponents').select('*')
+      ]);
+
+      if (categoriesResult.error) throw categoriesResult.error;
+      if (areasResult.error) throw areasResult.error;
+      if (focusesResult.error) throw focusesResult.error;
+      if (activitiesResult.error) throw activitiesResult.error;
+      if (subcomponentsResult.error) throw subcomponentsResult.error;
+
+      // Set data with fallbacks for empty tables
+      setCategories(categoriesResult.data || getDefaultCategories());
+      setAreas(areasResult.data || []);
+      setFocuses(focusesResult.data || []);
+      setActivities(activitiesResult.data || getDefaultActivities());
+      setSubcomponents(subcomponentsResult.data || []);
+    } catch (err) {
+      console.error('Error loading research data:', err);
+      setError('Failed to load research data. Please try again.');
+      // Set default data on error
+      setCategories(getDefaultCategories());
+      setActivities(getDefaultActivities());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadRoles = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('rd_roles')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      
+      if (data && data.length > 0) {
+        setRoles(data);
+      } else {
+        // If no roles exist, create the default Research Leader role
+        try {
+          const defaultRole = await saveRole({
+            name: 'Research Leader',
+            is_default: true
+          });
+          setRoles([defaultRole]);
+        } catch (saveError) {
+          console.error('Error creating default role:', saveError);
+          // If saving fails, show empty state
+          setRoles([]);
+        }
+      }
+    } catch (err) {
+      console.error('Error loading roles:', err);
+      // Show empty state on error
+      setRoles([]);
+    }
+  };
+
+  // Default categories if database is empty
+  const getDefaultCategories = (): ResearchCategory[] => [
+    {
+      id: 'software-dev',
+      name: 'Software Development',
+      description: 'Research activities related to software development and programming'
+    },
+    {
+      id: 'product-design',
+      name: 'Product Design',
+      description: 'Research activities related to product design and development'
+    },
+    {
+      id: 'manufacturing',
+      name: 'Manufacturing',
+      description: 'Research activities related to manufacturing processes'
+    }
+  ];
+
+  // Default activities if database is empty
+  const getDefaultActivities = (): ResearchActivity[] => [
+    {
+      id: 'software-architecture',
+      title: 'Software Architecture Design',
+      focus_id: 'software-dev',
+      general_description: 'Designing and developing new software architectures',
+      examples: 'Creating new database schemas, API designs, system architectures'
+    },
+    {
+      id: 'algorithm-development',
+      title: 'Algorithm Development',
+      focus_id: 'software-dev',
+      general_description: 'Developing new algorithms and computational methods',
+      examples: 'Machine learning algorithms, optimization algorithms, data processing algorithms'
+    },
+    {
+      id: 'product-prototyping',
+      title: 'Product Prototyping',
+      focus_id: 'product-design',
+      general_description: 'Creating prototypes and testing new product concepts',
+      examples: '3D printing prototypes, user interface mockups, functional prototypes'
+    }
+  ];
+
+  // Save role to database
+  const saveRole = async (role: Omit<ResearchRole, 'id'>) => {
+    try {
+      // Ensure we have a business year (create default if needed)
+      const businessYearId = await ensureBusinessExists();
+      
+      if (!businessYearId) {
+        throw new Error('Failed to create or find a business year. Please try again.');
+      }
+      
+      // Get the business ID from the business year
+      const { data: businessYear, error: yearError } = await supabase
+        .from('rd_business_years')
+        .select('business_id')
+        .eq('id', businessYearId)
+        .single();
+      
+      if (yearError || !businessYear) {
+        throw new Error('Failed to get business information. Please try again.');
+      }
+      
+      // Validate parent_id if provided
+      let validatedParentId: string | null = null;
+      if (role.parent_id) {
+        // Check if the parent role exists in the database
+        const { data: parentRole, error: parentError } = await supabase
+          .from('rd_roles')
+          .select('id')
+          .eq('id', role.parent_id)
+          .single();
+        
+        if (parentError || !parentRole) {
+          console.warn('Parent role not found in database, setting parent_id to null:', role.parent_id);
+          validatedParentId = null;
+        } else {
+          validatedParentId = role.parent_id;
+        }
+      }
+      
+      // Prepare the role data
+      const roleData: any = {
+        name: role.name,
+        parent_id: validatedParentId,
+        is_default: role.is_default || false,
+        business_id: businessYear.business_id // Use the business ID from the business year
+      };
+      
+      const { data, error } = await supabase
+        .from('rd_roles')
+        .insert(roleData)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Database error saving role:', error);
+        throw error;
+      }
+      
+      // Add the new role to local state instead of reloading all roles
+      setRoles(prev => [...prev, data]);
+      setShowAddRoleModal(false);
+      
+      return data;
+    } catch (err) {
+      console.error('Error saving role:', err);
+      throw err;
+    }
+  };
+
+  // Filtered data based on selections
+  const filteredAreas = areas.filter(area => 
+    !selectedCategory || area.category_id === selectedCategory
+  );
+
+  const filteredFocuses = focuses.filter(focus => 
+    !selectedArea || focus.area_id === selectedArea
+  );
+
+  const filteredActivities = activities.filter(activity => 
+    !selectedFocus || activity.focus_id === selectedFocus
+  );
+
+  const filteredSubcomponents = subcomponents.filter(subcomponent => 
+    !selectedActivity || subcomponent.activity_id === selectedActivity
+  );
+
+  // Search filtered activities
+  const searchFilteredActivities = filteredActivities.filter(activity =>
+    (activity.title?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+    (activity.general_description?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+    (activity.examples?.toLowerCase() || '').includes(searchTerm.toLowerCase())
+  );
+
+  const handleCategoryChange = (categoryId: string) => {
+    setSelectedCategory(categoryId);
+    setSelectedArea('');
+    setSelectedFocus('');
+    setSelectedActivity('');
+    setShowSubcomponents(false);
+  };
+
+  const handleAreaChange = (areaId: string) => {
+    setSelectedArea(areaId);
+    setSelectedFocus('');
+    setSelectedActivity('');
+    setShowSubcomponents(false);
+  };
+
+  const handleFocusChange = (focusId: string) => {
+    setSelectedFocus(focusId);
+    setSelectedActivity('');
+    setShowSubcomponents(false);
+  };
+
+  const handleActivitySelect = (activity: ResearchActivity) => {
+    setSelectedActivity(activity.id);
+    setShowSubcomponents(true);
+  };
+
+  const handleAddActivity = (activity: ResearchActivity, subcomponents: ResearchSubcomponent[]) => {
+    const activityWithSubcomponents = {
+      ...activity,
+      subcomponents,
+      selectedSubcomponents: subcomponents.map(sc => sc.id)
+    };
+
+    const updatedActivities = [...selectedActivitiesState, activityWithSubcomponents];
+    onUpdate({ selectedActivities: updatedActivities });
+  };
+
+  const handleRemoveActivity = (activityId: string) => {
+    const updatedActivities = selectedActivitiesState.filter(a => a.activity_id !== activityId);
+    onUpdate({ selectedActivities: updatedActivities });
+  };
+
+  const getCategoryName = (categoryId: string) => {
+    return categories.find(c => c.id === categoryId)?.name || 'Unknown Category';
+  };
+
+  const getAreaName = (areaId: string) => {
+    return areas.find(a => a.id === areaId)?.name || 'Unknown Area';
+  };
+
+  const getFocusName = (focusId: string) => {
+    return focuses.find(f => f.id === focusId)?.name || 'Unknown Focus';
+  };
+
+  // New functions for redesigned Activities tab
+  const handleCategoryToggle = (categoryId: string) => {
+    setSelectedCategories(prev => 
+      prev.includes(categoryId) 
+        ? prev.filter(id => id !== categoryId)
+        : [...prev, categoryId]
+    );
+    // Clear dependent selections
+    setSelectedAreas([]);
+    setSelectedFocuses([]);
+  };
+
+  const handleAreaToggle = (areaId: string) => {
+    setSelectedAreas(prev => 
+      prev.includes(areaId) 
+        ? prev.filter(id => id !== areaId)
+        : [...prev, areaId]
+    );
+    // Clear dependent selections
+    setSelectedFocuses([]);
+  };
+
+  const handleFocusToggle = (focusId: string) => {
+    setSelectedFocuses(prev => 
+      prev.includes(focusId) 
+        ? prev.filter(id => id !== focusId)
+        : [...prev, focusId]
+    );
+  };
+
+  const getAvailableAreas = () => {
+    if (selectedCategories.length === 0) return areas;
+    return areas.filter(area => selectedCategories.includes(area.category_id));
+  };
+
+  const getAvailableFocuses = () => {
+    const availableAreas = getAvailableAreas();
+    if (selectedAreas.length === 0) {
+      return focuses.filter(focus => availableAreas.some(area => area.id === focus.area_id));
+    }
+    return focuses.filter(focus => selectedAreas.includes(focus.area_id));
+  };
+
+  const getFilteredActivities = () => {
+    if (selectedFocuses.length === 0) return [];
+    
+    return activities.filter(activity => selectedFocuses.includes(activity.focus_id));
+  };
+
+  const calculateAvailablePercentage = () => {
+    const usedPercentage = Object.values(practicePercentageConfig.activities).reduce((sum, percent) => sum + percent, 0);
+    return 100 - practicePercentageConfig.nonRndTime - usedPercentage;
+  };
+
+  const addActivity = async (activity: ResearchActivity) => {
+    const availablePercentage = 100 - practicePercentageConfig.nonRndTime;
+    const existingActivities = selectedActivitiesState.length;
+    
+    // Calculate new percentage distribution
+    let newPercentage: number;
+    let updatedActivities = { ...practicePercentageConfig.activities };
+    
+    if (existingActivities === 0) {
+      // First activity gets all available percentage
+      newPercentage = availablePercentage;
+    } else if (existingActivities === 1) {
+      // Second activity: reduce first to 1/2, new activity gets the other 1/2
+      const firstActivity = selectedActivitiesState[0];
+      const firstActivityPercentage = practicePercentageConfig.activities[firstActivity.activity_id] || 0;
+      const newFirstPercentage = availablePercentage / 2;
+      newPercentage = availablePercentage / 2;
+      
+      // Update first activity percentage
+      updatedActivities[firstActivity.activity_id] = newFirstPercentage;
+    } else {
+      // Third+ activities: pro-rata distribution - scale down all existing activities
+      const existingTotal = Object.values(practicePercentageConfig.activities).reduce((sum, percent) => sum + percent, 0);
+      const scaleFactor = (availablePercentage - (availablePercentage / (existingActivities + 1))) / existingTotal;
+      
+      // Scale down all existing activities
+      Object.keys(updatedActivities).forEach(activityId => {
+        updatedActivities[activityId] = updatedActivities[activityId] * scaleFactor;
+      });
+      
+      // New activity gets the remaining percentage
+      newPercentage = availablePercentage / (existingActivities + 1);
+    }
+    
+    // Add the new activity percentage
+    updatedActivities[activity.activity_id] = newPercentage;
+    
+    // Update practice percentage config
+    setPracticePercentageConfig(prev => ({
+      ...prev,
+      activities: updatedActivities
+    }));
+    
+    // Create the new selected activity
+    const newSelectedActivity: Omit<SelectedActivity, 'id'> = {
+      activity_id: activity.id,
+      activity_name: activity.title,
+      practice_percent: newPercentage,
+      selected_roles: [],
+      config: {}
+    };
+    
+    // Save to database first
+    const savedActivity = await saveSelectedActivity(newSelectedActivity);
+    if (!savedActivity) {
+      console.error('Failed to save activity');
+      return;
+    }
+    
+    // Update local state
+    setSelectedActivitiesState(prev => [...prev, savedActivity]);
+    
+    // Update parent component
+    onUpdate({
+      selectedActivities: [...selectedActivitiesState, savedActivity],
+      practicePercentageConfig: {
+        ...practicePercentageConfig,
+        activities: updatedActivities
+      }
+    });
+  };
+
+  const removeActivity = async (activityId: string) => {
+    // Find the activity to be removed
+    const activityToRemove = selectedActivitiesState.find(a => a.activity_id === activityId);
+    if (!activityToRemove) return;
+    
+    // Remove from selected activities state
+    const remainingActivities = selectedActivitiesState.filter(a => a.activity_id !== activityId);
+    const remainingCount = remainingActivities.length;
+    
+    if (remainingCount > 0) {
+      // Redistribute the removed percentage proportionally to fill entire available space
+      const availablePercentage = 100 - practicePercentageConfig.nonRndTime;
+      const removedPercentage = activityToRemove.practice_percent;
+      
+      // Calculate how much each remaining activity should get
+      const totalRemainingPercentage = remainingActivities.reduce((sum, act) => sum + act.practice_percent, 0);
+      const scaleFactor = availablePercentage / totalRemainingPercentage;
+      
+      // Update all remaining activities proportionally
+      const updatedActivities = { ...practicePercentageConfig.activities };
+      delete updatedActivities[activityId];
+      
+      // Scale up remaining activities to fill the space
+      Object.keys(updatedActivities).forEach(id => {
+        updatedActivities[id] = updatedActivities[id] * scaleFactor;
+      });
+      
+      // Update practice percentage config
+      setPracticePercentageConfig(prev => ({
+        ...prev,
+        activities: updatedActivities
+      }));
+      
+      // Update all remaining activities in database
+      for (const activity of remainingActivities) {
+        const newPercentage = updatedActivities[activity.activity_id] || 0;
+        await updateSelectedActivity(activity.id, { practice_percent: newPercentage });
+      }
+      
+      // Update local state
+      const updatedActivitiesList = remainingActivities.map(activity => ({
+        ...activity,
+        practice_percent: updatedActivities[activity.activity_id] || 0
+      }));
+      
+      setSelectedActivitiesState(updatedActivitiesList);
+      
+      // Update parent component
+      onUpdate({
+        selectedActivities: updatedActivitiesList,
+        practicePercentageConfig: {
+          ...practicePercentageConfig,
+          activities: updatedActivities
+        }
+      });
+    } else {
+      // No activities left, clear the practice percentage config
+      setPracticePercentageConfig(prev => ({
+        ...prev,
+        activities: {}
+      }));
+      
+      setSelectedActivitiesState([]);
+      
+      // Update parent component
+      onUpdate({
+        selectedActivities: [],
+        practicePercentageConfig: {
+          ...practicePercentageConfig,
+          activities: {}
+        }
+      });
+    }
+    
+    // Delete from database
+    await deleteSelectedActivity(activityId);
+  };
+
+  const deleteSelectedActivity = async (activityId: string) => {
+    try {
+      const { error } = await supabase
+        .from('rd_selected_activities')
+        .delete()
+        .eq('id', activityId);
+
+      if (error) throw error;
+    } catch (err) {
+      console.error('Error deleting selected activity:', err);
+    }
+  };
+
+  const updateActivityPercentage = async (activityId: string, newPercentage: number) => {
+    const availablePercentage = 100 - practicePercentageConfig.nonRndTime;
+    const currentTotal = selectedActivitiesState.reduce((sum, act) => sum + act.practice_percent, 0);
+    const currentActivity = selectedActivitiesState.find(a => a.activity_id === activityId);
+    
+    if (!currentActivity) return;
+    
+    const currentPercentage = currentActivity.practice_percent;
+    const difference = newPercentage - currentPercentage;
+    
+    // If the new total would exceed available space, redistribute proportionally
+    if (currentTotal + difference > availablePercentage) {
+      const excess = (currentTotal + difference) - availablePercentage;
+      const otherActivities = selectedActivitiesState.filter(a => a.activity_id !== activityId);
+      
+      if (otherActivities.length > 0) {
+        // Reduce other activities proportionally to make room
+        const totalOtherPercentage = otherActivities.reduce((sum, act) => sum + act.practice_percent, 0);
+        const scalingFactor = (totalOtherPercentage - excess) / totalOtherPercentage;
+        
+        const updatedActivities = selectedActivitiesState.map(activity => {
+          if (activity.activity_id === activityId) {
+            return { ...activity, practice_percent: newPercentage };
+          } else {
+            const newPercentage = activity.practice_percent * scalingFactor;
+            return { ...activity, practice_percent: newPercentage };
+          }
+        });
+        
+        // Update all activities in database
+        for (const updatedActivity of updatedActivities) {
+          await updateSelectedActivity(updatedActivity.id, { practice_percent: updatedActivity.practice_percent });
+        }
+        
+        setSelectedActivitiesState(updatedActivities);
+        
+        // Update practice percentage config
+        const activitiesConfig: { [activityId: string]: number } = {};
+        updatedActivities.forEach(activity => {
+          activitiesConfig[activity.activity_id] = activity.practice_percent;
+        });
+        
+        setPracticePercentageConfig(prev => ({
+          ...prev,
+          activities: activitiesConfig
+        }));
+        
+        return;
+      }
+    }
+    
+    // Simple update if no redistribution needed
+    setPracticePercentageConfig(prev => ({
+      ...prev,
+      activities: {
+        ...prev.activities,
+        [activityId]: newPercentage
+      }
+    }));
+
+    setSelectedActivitiesState(prev => 
+      prev.map(activity => 
+        activity.activity_id === activityId 
+          ? { ...activity, practice_percent: newPercentage }
+          : activity
+      )
+    );
+
+    // Update in database
+    await updateSelectedActivity(currentActivity.id, { practice_percent: newPercentage });
+  };
+
+  const updateActivityRoles = async (activityId: string, selectedRoles: string[]) => {
+    setSelectedActivitiesState(prev => 
+      prev.map(activity => 
+        activity.activity_id === activityId 
+          ? { ...activity, selected_roles: selectedRoles }
+          : activity
+      )
+    );
+
+    // Update in database
+    const activity = selectedActivitiesState.find(a => a.activity_id === activityId);
+    if (activity) {
+      await updateSelectedActivity(activity.id, { selected_roles: selectedRoles });
+    }
+  };
+
+  const saveSelectedActivity = async (activity: Omit<SelectedActivity, 'id'>) => {
+    try {
+      const businessYearId = await ensureBusinessExists();
+      if (!businessYearId) throw new Error('No business year found');
+
+      const { data, error } = await supabase
+        .from('rd_selected_activities')
+        .insert({
+          business_year_id: businessYearId,
+          activity_id: activity.activity_id,
+          practice_percent: activity.practice_percent,
+          selected_roles: activity.selected_roles,
+          config: activity.config
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Return the saved activity with all fields
+      return {
+        id: data.id,
+        activity_id: data.activity_id,
+        title: activity.title,
+        activity_name: activity.activity_name,
+        activity_category: activity.activity_category,
+        activity_area: activity.activity_area,
+        activity_focus: activity.activity_focus,
+        practice_percent: data.practice_percent,
+        selected_roles: data.selected_roles,
+        config: data.config,
+        created_at: data.created_at,
+        updated_at: data.updated_at
+      };
+    } catch (err) {
+      console.error('Error saving selected activity:', err);
+      return null;
+    }
+  };
+
+  const updateSelectedActivity = async (activityId: string, updates: Partial<SelectedActivity>) => {
+    try {
+      const { error } = await supabase
+        .from('rd_selected_activities')
+        .update(updates)
+        .eq('id', activityId);
+
+      if (error) throw error;
+    } catch (err) {
+      console.error('Error updating selected activity:', err);
+    }
+  };
+
+  const loadSelectedActivities = async () => {
+    try {
+      const businessYearId = await ensureBusinessExists();
+      if (!businessYearId) return;
+
+      const { data, error } = await supabase
+        .from('rd_selected_activities')
+        .select(`
+          id,
+          activity_id,
+          practice_percent,
+          selected_roles,
+          rd_research_activities (
+            id,
+            title,
+            focus_id
+          )
+        `)
+        .eq('business_year_id', businessYearId);
+
+      if (error) {
+        console.error('Error loading selected activities:', error);
+        return;
+      }
+
+      if (data) {
+        const mappedActivities = data.map(activity => {
+          // Get the related focus, area, and category names
+          const focus = focuses.find(f => f.id === activity.rd_research_activities?.focus_id);
+          const area = focus ? areas.find(a => a.id === focus.area_id) : null;
+          const category = area ? categories.find(c => c.id === area.category_id) : null;
+
+          return {
+            id: activity.id,
+            activity_id: activity.activity_id,
+            practice_percent: activity.practice_percent,
+            selected_roles: activity.selected_roles,
+            activity_name: activity.rd_research_activities?.title || 'Unknown Activity',
+            activity_category: category?.name || '',
+            activity_area: area?.name || '',
+            activity_focus: focus?.name || ''
+          };
+        });
+
+        setSelectedActivitiesState(mappedActivities);
+        
+        // Rebuild practice percentage config from loaded activities
+        const activitiesConfig: { [activityId: string]: number } = {};
+        mappedActivities.forEach(activity => {
+          activitiesConfig[activity.activity_id] = activity.practice_percent;
+        });
+        
+        setPracticePercentageConfig(prev => ({
+          ...prev,
+          activities: activitiesConfig
+        }));
+        
+        // Only update parent component if we have activities from database
+        // This prevents overwriting wizard state when no activities exist
+        if (mappedActivities.length > 0) {
+          onUpdate({ selectedActivities: mappedActivities });
+        }
+      }
+    } catch (error) {
+      console.error('Error loading selected activities:', error);
+    }
+  };
+
+  // Load filter selections from database
+  const loadFilterSelections = async () => {
+    try {
+      const businessYearId = await ensureBusinessExists();
+      if (!businessYearId) return;
+
+      const { data, error } = await supabase
+        .from('rd_selected_filter')
+        .select('*')
+        .eq('business_year_id', businessYearId)
+        .single();
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 is "not found"
+        console.error('Error loading filter selections:', error);
+        return;
+      }
+
+      if (data) {
+        setSelectedCategories(data.selected_categories || []);
+        setSelectedAreas(data.selected_areas || []);
+        setSelectedFocuses(data.selected_focuses || []);
+      }
+    } catch (error) {
+      console.error('Error loading filter selections:', error);
+    }
+  };
+
+  // Save filter selections to database
+  const saveFilterSelections = async () => {
+    try {
+      const businessYearId = await ensureBusinessExists();
+      if (!businessYearId) return;
+
+      const { error } = await supabase
+        .from('rd_selected_filter')
+        .upsert({
+          business_year_id: businessYearId,
+          selected_categories: selectedCategories,
+          selected_areas: selectedAreas,
+          selected_focuses: selectedFocuses,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'business_year_id' });
+
+      if (error) {
+        console.error('Error saving filter selections:', error);
+      }
+    } catch (error) {
+      console.error('Error saving filter selections:', error);
+    }
+  };
+
+  const moveRoleUp = useCallback((roleId: string) => {
+    const role = roles.find(r => r.id === roleId);
+    if (!role) return;
+    
+    // Find siblings (roles with same parent)
+    const siblings = roles.filter(r => r.parent_id === role.parent_id);
+    const currentIndex = siblings.findIndex(r => r.id === roleId);
+    
+    if (currentIndex > 0) {
+      const newRoles = [...roles];
+      const currentRoleIndex = newRoles.findIndex(r => r.id === roleId);
+      const prevRoleIndex = newRoles.findIndex(r => r.id === siblings[currentIndex - 1].id);
+      
+      // Swap the roles
+      [newRoles[currentRoleIndex], newRoles[prevRoleIndex]] = [newRoles[prevRoleIndex], newRoles[currentRoleIndex]];
+      setRoles(newRoles);
+    }
+  }, [roles]);
+
+  const moveRoleDown = useCallback((roleId: string) => {
+    const role = roles.find(r => r.id === roleId);
+    if (!role) return;
+    
+    // Find siblings (roles with same parent)
+    const siblings = roles.filter(r => r.parent_id === role.parent_id);
+    const currentIndex = siblings.findIndex(r => r.id === roleId);
+    
+    if (currentIndex < siblings.length - 1) {
+      const newRoles = [...roles];
+      const currentRoleIndex = newRoles.findIndex(r => r.id === roleId);
+      const nextRoleIndex = newRoles.findIndex(r => r.id === siblings[currentIndex + 1].id);
+      
+      // Swap the roles
+      [newRoles[currentRoleIndex], newRoles[nextRoleIndex]] = [newRoles[nextRoleIndex], newRoles[currentRoleIndex]];
+      setRoles(newRoles);
+    }
+  }, [roles]);
+
+  const editRole = useCallback(async (role: ResearchRole) => {
+    setEditingRole(role);
+    setShowEditRoleModal(true);
+  }, []);
+
+  const updateRole = useCallback(async (roleId: string, updates: Partial<ResearchRole>) => {
+    try {
+      // Update in database
+      const { error } = await supabase
+        .from('rd_roles')
+        .update(updates)
+        .eq('id', roleId);
+      
+      if (error) throw error;
+      
+      // Update local state
+      setRoles(prev => prev.map(role => 
+        role.id === roleId 
+          ? { ...role, ...updates, updated_at: new Date().toISOString() }
+          : role
+      ));
+      
+      setShowEditRoleModal(false);
+      setEditingRole(null);
+    } catch (err) {
+      console.error('Error updating role:', err);
+      alert('Failed to update role. Please try again.');
+    }
+  }, []);
+
+  const deleteRole = useCallback(async (roleId: string) => {
+    const role = roles.find(r => r.id === roleId);
+    if (!role) return;
+    
+    // Check if role has children
+    const hasChildren = roles.some(r => r.parent_id === roleId);
+    if (hasChildren) {
+      alert(`Cannot delete "${role.name}" because it has subordinate roles. Please reassign or delete the subordinate roles first.`);
+      return;
+    }
+    
+    if (confirm(`Are you sure you want to delete the role "${role.name}"?`)) {
+      try {
+        // Always try to delete from database, regardless of created_at status
+        const { error } = await supabase
+          .from('rd_roles')
+          .delete()
+          .eq('id', roleId);
+        
+        if (error) {
+          console.error('Database error deleting role:', error);
+          throw error;
+        }
+        
+        // Remove from local state only after successful database deletion
+        setRoles(prev => prev.filter(r => r.id !== roleId));
+        console.log(`Successfully deleted role: ${role.name}`);
+      } catch (err) {
+        console.error('Error deleting role:', err);
+        alert('Failed to delete role. Please try again.');
+      }
+    }
+  }, [roles]);
+
+  // Helper function to ensure we have a business
+  const ensureBusinessExists = async (): Promise<string | null> => {
+    try {
+      // Check if we already have a business
+      const { data: existingBusinesses, error: businessError } = await supabase
+        .from('rd_businesses')
+        .select('id')
+        .limit(1);
+      
+      let businessId: string;
+      
+      if (!businessError && existingBusinesses && existingBusinesses.length > 0) {
+        businessId = existingBusinesses[0].id;
+      } else {
+        // Create a default business if none exists
+        const { data: newBusiness, error: createError } = await supabase
+          .from('rd_businesses')
+          .insert({
+            name: 'Default Business',
+            entity_type: 'LLC',
+            start_year: 2025,
+            domicile_state: 'CA',
+            contact_info: {
+              name: 'Default Contact',
+              email: 'default@example.com',
+              phone: '555-0000'
+            }
+          })
+          .select('id')
+          .single();
+        
+        if (createError) {
+          console.error('Error creating default business:', createError);
+          return null;
+        }
+        
+        businessId = newBusiness.id;
+      }
+      
+      // Now ensure we have a business year for the selected year
+      const { data: existingBusinessYears, error: yearError } = await supabase
+        .from('rd_business_years')
+        .select('id')
+        .eq('business_id', businessId)
+        .eq('year', selectedYear)
+        .limit(1);
+      
+      if (!yearError && existingBusinessYears && existingBusinessYears.length > 0) {
+        return existingBusinessYears[0].id;
+      }
+      
+      // Create a business year if it doesn't exist
+      const { data: newBusinessYear, error: createYearError } = await supabase
+        .from('rd_business_years')
+        .insert({
+          business_id: businessId,
+          year: selectedYear,
+          gross_receipts: 1000000 // Default value, can be updated later
+        })
+        .select('id')
+        .single();
+      
+      if (createYearError) {
+        console.error('Error creating business year:', createYearError);
+        return null;
+      }
+      
+      return newBusinessYear.id;
+    } catch (err) {
+      console.error('Error ensuring business exists:', err);
+      return null;
+    }
+  };
+
+  // Helper function to render RoleCard with proper function bindings
+  const renderRoleCard = useCallback((role: ResearchRole, allRoles: ResearchRole[], level: number = 0) => {
+    const siblings = allRoles.filter(r => r.parent_id === role.parent_id);
+    const currentIndex = siblings.findIndex(r => r.id === role.id);
+    
+    return (
+      <RoleCard
+        key={`role-${role.id}`}
+        role={role}
+        allRoles={allRoles}
+        onMoveUp={() => moveRoleUp(role.id)}
+        onMoveDown={() => moveRoleDown(role.id)}
+        onEdit={() => editRole(role)}
+        onDelete={() => deleteRole(role.id)}
+        canMoveUp={currentIndex > 0}
+        canMoveDown={currentIndex < siblings.length - 1}
+        level={level}
+      />
+    );
+  }, [moveRoleUp, moveRoleDown, editRole, deleteRole]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading research data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-8">
+        <div className="text-red-600 text-6xl mb-4">⚠️</div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">Error Loading Data</h3>
+        <p className="text-gray-600 mb-4">{error}</p>
+        <button
+          onClick={loadResearchData}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="text-center mb-8">
+        <h3 className="text-3xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mb-4">
+          Research Explorer
+        </h3>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
+        <button
+          onClick={() => setActiveTab('roles')}
+          className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
+            activeTab === 'roles'
+              ? 'bg-white text-blue-600 shadow-sm'
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          Roles
+        </button>
+        <button
+          onClick={() => setActiveTab('activities')}
+          className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
+            activeTab === 'activities'
+              ? 'bg-white text-blue-600 shadow-sm'
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          Activities
+        </button>
+        <button
+          onClick={() => setActiveTab('design')}
+          className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
+            activeTab === 'design'
+              ? 'bg-white text-blue-600 shadow-sm'
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          Research Design
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      <div className="bg-white rounded-lg shadow-sm p-6">
+        {activeTab === 'roles' && (
+          <div className="space-y-6">
+            {/* Header with Year Selector */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">
+                  Research Roles
+                </h4>
+                <p className="text-gray-600 mt-1">Define your research team hierarchy and responsibilities</p>
+              </div>
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <label className="text-sm font-medium text-gray-700">Year:</label>
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  >
+                    <option value={2025}>2025</option>
+                    <option value={2024}>2024</option>
+                    <option value={2023}>2023</option>
+                    <option value={2022}>2022</option>
+                    <option value={2021}>2021</option>
+                  </select>
+                </div>
+                <button
+                  onClick={() => setShowAddRoleModal(true)}
+                  className="btn-primary-modern flex items-center"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Role
+                </button>
+              </div>
+            </div>
+
+            {/* Year Baseline Notice */}
+            {selectedYear !== 2025 && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-blue-800">
+                      <strong>Year-specific modifications:</strong> Changes made for {selectedYear} will override the baseline configuration.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Org Chart Visualization */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <h5 className="text-lg font-semibold text-gray-900 mb-4">Organization Chart</h5>
+              
+              {roles.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="mx-auto h-12 w-12 text-gray-400">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                  </div>
+                  <h3 className="mt-2 text-sm font-medium text-gray-900">No roles defined</h3>
+                  <p className="mt-1 text-sm text-gray-500">Get started by creating your first research role.</p>
+                  <div className="mt-6">
+                    <button
+                      onClick={() => setShowAddRoleModal(true)}
+                      className="btn-primary-modern"
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add First Role
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Top Level Roles */}
+                  {roles.filter(role => !role.parent_id).map((role, index) => (
+                    <RoleCard
+                      key={`role-${role.id}`}
+                      role={role}
+                      allRoles={roles}
+                      onMoveUp={() => moveRoleUp(role.id)}
+                      onMoveDown={() => moveRoleDown(role.id)}
+                      onEdit={() => editRole(role)}
+                      onDelete={() => deleteRole(role.id)}
+                      canMoveUp={index > 0}
+                      canMoveDown={index < roles.filter(r => !r.parent_id).length - 1}
+                      level={0}
+                      renderChildRole={renderRoleCard}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'activities' && (
+          <div className="space-y-6">
+            {/* Practice Percentage Bar */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-2">
+                  <h4 className="text-lg font-semibold text-gray-900">Practice Percentage</h4>
+                  <button
+                    onClick={() => setShowNonRndModal(true)}
+                    className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="text-sm text-gray-600">
+                  Total: 100% (Non-R&D: {practicePercentageConfig.nonRndTime}% | Research: {100 - practicePercentageConfig.nonRndTime}%)
+                </div>
+              </div>
+              
+              <div className="relative h-8 bg-gray-100 rounded-lg overflow-hidden">
+                {/* Non-R&D Time */}
+                <div 
+                  className="absolute left-0 top-0 h-full bg-gray-400 flex items-center justify-center"
+                  style={{ width: `${practicePercentageConfig.nonRndTime}%` }}
+                >
+                  <span className="text-xs font-medium text-white px-2">
+                    Non-R&D ({practicePercentageConfig.nonRndTime}%)
+                  </span>
+                </div>
+                
+                {/* Research Activities - Always fill remaining space */}
+                {selectedActivitiesState.map((activity, index) => {
+                  const colors = ['bg-blue-400', 'bg-green-400', 'bg-purple-400', 'bg-orange-400', 'bg-pink-400'];
+                  const color = colors[index % colors.length];
+                  const leftPosition = practicePercentageConfig.nonRndTime + 
+                    selectedActivitiesState.slice(0, index).reduce((sum, a) => sum + (practicePercentageConfig.activities[a.activity_id] || 0), 0);
+                  const activityPercentage = practicePercentageConfig.activities[activity.activity_id] || 0;
+                  
+                  return (
+                    <div
+                      key={activity.id}
+                      className={`absolute top-0 h-full ${color} flex items-center justify-center transition-all duration-300`}
+                      style={{ 
+                        left: `${leftPosition}%`,
+                        width: `${activityPercentage}%`
+                      }}
+                    >
+                      <span className="text-xs font-medium text-white px-1 truncate">
+                        {activity.activity_name || activity.title || 'Unknown Activity'} ({activityPercentage.toFixed(1)}%)
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              
+              {/* Legend */}
+              {selectedActivitiesState.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <h5 className="text-sm font-medium text-gray-700">Activity Breakdown:</h5>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {selectedActivitiesState.map((activity, index) => {
+                      const colors = ['bg-blue-400', 'bg-green-400', 'bg-purple-400', 'bg-orange-400', 'bg-pink-400'];
+                      const color = colors[index % colors.length];
+                      const activityPercentage = practicePercentageConfig.activities[activity.activity_id] || 0;
+                      
+                      return (
+                        <div key={activity.id} className="flex items-center space-x-2 text-sm">
+                          <div className={`w-3 h-3 ${color} rounded`}></div>
+                          <span className="text-gray-700">
+                            {activity.activity_name || activity.title || 'Unknown Activity'}
+                          </span>
+                          <span className="text-gray-500 font-medium">
+                            {activityPercentage.toFixed(1)}%
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Multi-Select Filters */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <h4 className="text-lg font-semibold text-gray-900 mb-4">Filter Research Activities</h4>
+              
+              <div className="space-y-6">
+                {/* Categories */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">Categories</label>
+                  <div className="flex flex-wrap gap-2">
+                    {categories.map(category => (
+                      <SelectableChip
+                        key={category.id}
+                        label={category.name}
+                        selected={selectedCategories.includes(category.id)}
+                        onToggle={() => handleCategoryToggle(category.id)}
+                        color="blue"
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Areas - Only show when categories are selected */}
+                {selectedCategories.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-3">Areas</label>
+                    <div className="flex flex-wrap gap-2">
+                      {getAvailableAreas().map(area => (
+                        <SelectableChip
+                          key={area.id}
+                          label={area.name}
+                          selected={selectedAreas.includes(area.id)}
+                          onToggle={() => handleAreaToggle(area.id)}
+                          color="green"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Focuses - Only show when areas are selected */}
+                {selectedAreas.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-3">Focuses</label>
+                    <div className="flex flex-wrap gap-2">
+                      {getAvailableFocuses().map(focus => (
+                        <SelectableChip
+                          key={focus.id}
+                          label={focus.name}
+                          selected={selectedFocuses.includes(focus.id)}
+                          onToggle={() => handleFocusToggle(focus.id)}
+                          color="purple"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Instruction message when no categories selected */}
+                {selectedCategories.length === 0 && (
+                  <div className="text-center py-8">
+                    <div className="mx-auto h-12 w-12 text-gray-400 mb-4">
+                      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Start by selecting categories</h3>
+                    <p className="text-gray-600">Choose one or more categories above to see available research areas.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Research Activities */}
+            {selectedFocuses.length > 0 && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h4 className="text-lg font-semibold text-gray-900">Available Research Activities</h4>
+                  <div className="text-sm text-gray-600">
+                    {getFilteredActivities().length} activities available
+                  </div>
+                </div>
+                
+                <div className="grid gap-4">
+                  {getFilteredActivities().map(activity => {
+                    const isSelected = selectedActivitiesState.some(a => a.activity_id === activity.id);
+                    const colors = ['blue', 'green', 'purple', 'orange', 'pink'];
+                    const color = colors[selectedActivitiesState.length % colors.length];
+                    
+                    return (
+                      <div key={activity.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <h5 className="font-semibold text-gray-900 mb-2">{activity.title}</h5>
+                            
+                            {activity.general_description && (
+                              <p className="text-sm text-gray-600 mb-2">{activity.general_description}</p>
+                            )}
+                            
+                            {activity.examples && (
+                              <div className="text-sm text-gray-500">
+                                <strong>Examples:</strong> {activity.examples}
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div className="ml-4">
+                            {!isSelected ? (
+                              <button
+                                onClick={() => addActivity(activity)}
+                                disabled={calculateAvailablePercentage() <= 0}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                  calculateAvailablePercentage() > 0
+                                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                }`}
+                              >
+                                Add Activity
+                              </button>
+                            ) : (
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-green-100 text-green-800">
+                                <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                                Added
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Selected Activities */}
+            {selectedActivitiesState.length > 0 && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <h4 className="text-lg font-semibold text-gray-900 mb-6">Selected Research Activities</h4>
+                
+                <div className="space-y-6">
+                  {selectedActivitiesState.map((activity, index) => {
+                    const colors = ['blue', 'green', 'purple', 'orange', 'pink'];
+                    const color = colors[index % colors.length];
+                    
+                    return (
+                      <ActivityCard
+                        key={activity.id}
+                        activity={activity}
+                        allRoles={roles}
+                        onUpdatePercentage={(percentage) => updateActivityPercentage(activity.activity_id, percentage)}
+                        onUpdateRoles={(roles) => updateActivityRoles(activity.activity_id, roles)}
+                        onRemove={() => removeActivity(activity.activity_id)}
+                        color={color}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Empty State */}
+            {selectedFocuses.length === 0 && selectedCategories.length > 0 && (
+              <div className="text-center py-12">
+                <div className="mx-auto h-12 w-12 text-gray-400 mb-4">
+                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Select Focus Areas</h3>
+                <p className="text-gray-600">Choose areas and focuses above to see available research activities.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'design' && (
+          <div className="space-y-6">
+            <h4 className="text-xl font-semibold text-gray-900">Research Design</h4>
+            
+            {selectedActivitiesState.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="text-gray-400 text-6xl mb-4">📋</div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">No Activities Selected</h3>
+                <p className="text-gray-600 mb-4">
+                  Please select research activities from the Activities tab first.
+                </p>
+                <button
+                  onClick={() => setActiveTab('activities')}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Go to Activities
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {selectedActivitiesState.map(activity => (
+                  <ActivityCard
+                    key={activity.id}
+                    activity={activity}
+                    allRoles={roles}
+                    onUpdatePercentage={(percentage) => updateActivityPercentage(activity.activity_id, percentage)}
+                    onUpdateRoles={(roles) => updateActivityRoles(activity.activity_id, roles)}
+                    onRemove={() => removeActivity(activity.activity_id)}
+                    color="blue"
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Navigation */}
+      <div className="flex justify-between">
+        <button
+          onClick={onPrevious}
+          className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+        >
+          Previous
+        </button>
+        <button
+          onClick={onNext}
+          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          Next
+        </button>
+      </div>
+
+      {/* Add Role Modal */}
+      <AddRoleModal
+        isOpen={showAddRoleModal}
+        onClose={() => setShowAddRoleModal(false)}
+        onSave={saveRole}
+        existingRoles={roles.filter(role => role.created_at)}
+      />
+
+      {/* Edit Role Modal */}
+      <EditRoleModal
+        isOpen={showEditRoleModal}
+        onClose={() => setShowEditRoleModal(false)}
+        onSave={updateRole}
+        role={editingRole}
+        existingRoles={roles.filter(role => role.created_at)}
+      />
+
+      {/* Non-R&D Time Modal */}
+      <NonRndModal
+        isOpen={showNonRndModal}
+        onClose={() => setShowNonRndModal(false)}
+        nonRndTime={practicePercentageConfig.nonRndTime}
+        onUpdate={(percentage) => {
+          setPracticePercentageConfig(prev => ({
+            ...prev,
+            nonRndTime: percentage
+          }));
+        }}
+      />
+    </div>
+  );
+};
+
+export default ResearchExplorerStep; 

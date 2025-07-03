@@ -1,0 +1,13 @@
+  if (!proposals || proposals.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="card-financial p-6">
+          <div className="text-center py-12 text-primary-500">
+            <FileText className="h-16 w-16 mx-auto mb-4 text-primary-300" />
+            <p className="text-lg font-medium">No proposals found</p>
+            <p className="text-sm">Proposals will appear here once they are created</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
