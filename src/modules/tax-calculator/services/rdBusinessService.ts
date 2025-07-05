@@ -130,7 +130,7 @@ export class RDBusinessService {
 
       // Check if client already exists
       const { data: existingClient } = await supabase
-        .from('rd_clients')
+        .from('clients')
         .select('id')
         .eq('user_id', userId)
         .single();
@@ -141,7 +141,7 @@ export class RDBusinessService {
 
       // Create new client (only user_id is required)
       const { data: newClient, error } = await supabase
-        .from('rd_clients')
+        .from('clients')
         .insert({
           user_id: userId
         })
@@ -211,7 +211,10 @@ export class RDBusinessService {
     try {
       const { data, error } = await supabase
         .from('rd_businesses')
-        .select('*')
+        .select(`
+          *,
+          rd_business_years (*)
+        `)
         .eq('id', businessId)
         .single();
 
@@ -234,7 +237,7 @@ export class RDBusinessService {
 
       // First get the client ID for this user
       const { data: client } = await supabase
-        .from('rd_clients')
+        .from('clients')
         .select('id')
         .eq('user_id', userId)
         .single();
@@ -453,6 +456,346 @@ export class RDBusinessService {
     } catch (error) {
       console.error('Error getting base period years:', error);
       return [];
+    }
+  }
+
+  /**
+   * Enroll a business from the main businesses table into rd_businesses for R&D workflow.
+   * Prevents duplicate enrollments for the same EIN and client.
+   * @param businessId - The ID of the business in the businesses table
+   * @param clientId - The ID of the client in the clients table
+   * @returns The new or existing RDBusiness row
+   */
+  static async enrollBusinessFromExisting(businessId: string, clientId: string): Promise<RDBusiness> {
+    console.log('[RDBusinessService] enrollBusinessFromExisting called', { businessId, clientId });
+    
+    // Validate inputs
+    if (!businessId || !clientId) {
+      console.error('[RDBusinessService] Missing required parameters', { businessId, clientId });
+      throw new Error('Missing required parameters: businessId and clientId are required');
+    }
+    
+    // 1. Check if business is already enrolled in rd_businesses
+    const { data: existingRdBusiness, error: existError } = await supabase
+      .from('rd_businesses')
+      .select('*')
+      .eq('id', businessId)
+      .maybeSingle();
+    if (existError) {
+      throw new Error(`Failed to check for existing enrollment: ${existError.message}`);
+    }
+    if (existingRdBusiness) {
+      return existingRdBusiness;
+    }
+    // 2. If not found in rd_businesses, copy from businesses table (initial enrollment only)
+    const { data: businesses, error: fetchError } = await supabase
+      .from('businesses')
+      .select('*')
+      .eq('id', businessId);
+    if (fetchError) {
+      throw new Error(`Failed to fetch business: ${fetchError.message}`);
+    }
+    if (!businesses || businesses.length === 0) {
+      throw new Error('Business not found in businesses table');
+    }
+    const business = businesses[0];
+    const rdBusinessRecord = {
+      id: businessId,
+      client_id: clientId,
+      name: business.business_name,
+      ein: business.ein,
+      entity_type: business.entity_type,
+      start_year: business.year_established || new Date().getFullYear(),
+      domicile_state: business.business_state,
+      contact_info: {
+        address: business.business_address,
+        city: business.business_city,
+        state: business.business_state,
+        zip: business.business_zip
+      },
+      is_controlled_grp: false,
+      historical_data: []
+    };
+    const { data: newRdBusiness, error: insertError } = await supabase
+      .from('rd_businesses')
+      .insert(rdBusinessRecord)
+      .select()
+      .single();
+    if (insertError) {
+      throw new Error(`Failed to insert into rd_businesses: ${insertError.message}`);
+    }
+    // 3. Create business year entries for the previous 8 years (or up to start year)
+    const currentYear = new Date().getFullYear();
+    const startYear = newRdBusiness.start_year || currentYear;
+    const yearsToCreate = [];
+    for (let year = currentYear; year >= Math.max(startYear, currentYear - 7); year--) {
+      yearsToCreate.push(year);
+    }
+    try {
+      await RDBusinessService.createOrUpdateBusinessYears(
+        newRdBusiness.id,
+        yearsToCreate
+      );
+    } catch (yearError) {
+      // Don't throw error here - the business was created successfully
+    }
+    return newRdBusiness;
+  }
+
+  /**
+   * Test method to verify enrollment process
+   */
+  static async testEnrollment(businessId: string, clientId: string): Promise<{ success: boolean; message: string; data?: any }> {
+    try {
+      console.log('[RDBusinessService] Testing enrollment process', { businessId, clientId });
+      
+      // Test 1: Check if business exists in businesses table
+      const { data: business, error: fetchError } = await supabase
+        .from('businesses')
+        .select('*')
+        .eq('id', businessId)
+        .single();
+        
+      if (fetchError || !business) {
+        return { 
+          success: false, 
+          message: `Business not found in businesses table: ${fetchError?.message || 'Business not found'}` 
+        };
+      }
+      
+      console.log('[RDBusinessService] Test 1 PASSED: Business found in businesses table', { businessName: business.business_name });
+      
+      // Test 2: Check if client exists in clients table
+      const { data: client, error: clientError } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('id', clientId)
+        .single();
+        
+      if (clientError || !client) {
+        return { 
+          success: false, 
+          message: `Client not found in clients table: ${clientError?.message || 'Client not found'}` 
+        };
+      }
+      
+      console.log('[RDBusinessService] Test 2 PASSED: Client found in clients table', { clientName: client.full_name });
+      
+      // Test 3: Check rd_businesses table structure
+      const { data: rdBusinesses, error: rdError } = await supabase
+        .from('rd_businesses')
+        .select('*')
+        .limit(1);
+        
+      if (rdError) {
+        return { 
+          success: false, 
+          message: `Error accessing rd_businesses table: ${rdError.message}` 
+        };
+      }
+      
+      console.log('[RDBusinessService] Test 3 PASSED: rd_businesses table accessible');
+      
+      // Test 4: Try to insert a test record (will be rolled back)
+      const testRecord = {
+        client_id: clientId,
+        name: 'TEST_BUSINESS_DELETE_ME',
+        ein: '00-0000000',
+        entity_type: 'LLC',
+        start_year: 2024,
+        domicile_state: 'CA',
+        contact_info: { address: 'TEST', city: 'TEST', state: 'CA', zip: '00000' },
+        is_controlled_grp: false
+      };
+      
+      const { data: testInsert, error: insertError } = await supabase
+        .from('rd_businesses')
+        .insert(testRecord)
+        .select()
+        .single();
+        
+      if (insertError) {
+        return { 
+          success: false, 
+          message: `Error inserting test record into rd_businesses: ${insertError.message}`,
+          data: { insertError, testRecord }
+        };
+      }
+      
+      console.log('[RDBusinessService] Test 4 PASSED: Can insert into rd_businesses table');
+      
+      // Test 5: Check rd_business_years table structure
+      const { data: rdBusinessYears, error: rdYearsError } = await supabase
+        .from('rd_business_years')
+        .select('*')
+        .limit(1);
+        
+      if (rdYearsError) {
+        return { 
+          success: false, 
+          message: `Error accessing rd_business_years table: ${rdYearsError.message}` 
+        };
+      }
+      
+      console.log('[RDBusinessService] Test 5 PASSED: rd_business_years table accessible');
+      
+      // Test 6: Try to insert a test business year record (will be rolled back)
+      const testYearRecord = {
+        business_id: testInsert.id,
+        year: 2024,
+        gross_receipts: 100000,
+        total_qre: 0
+      };
+      
+      const { data: testYearInsert, error: yearInsertError } = await supabase
+        .from('rd_business_years')
+        .insert(testYearRecord)
+        .select()
+        .single();
+        
+      if (yearInsertError) {
+        return { 
+          success: false, 
+          message: `Error inserting test record into rd_business_years: ${yearInsertError.message}`,
+          data: { yearInsertError, testYearRecord }
+        };
+      }
+      
+      console.log('[RDBusinessService] Test 6 PASSED: Can insert into rd_business_years table');
+      
+      // Clean up test year record
+      await supabase
+        .from('rd_business_years')
+        .delete()
+        .eq('id', testYearInsert.id);
+        
+      console.log('[RDBusinessService] Test cleanup: Removed test year record');
+      
+      // Clean up test record
+      await supabase
+        .from('rd_businesses')
+        .delete()
+        .eq('id', testInsert.id);
+        
+      console.log('[RDBusinessService] Test cleanup: Removed test record');
+      
+      return { 
+        success: true, 
+        message: 'All enrollment tests passed successfully',
+        data: { business, client }
+      };
+      
+    } catch (error) {
+      console.error('[RDBusinessService] Test enrollment error:', error);
+      return { 
+        success: false, 
+        message: `Test enrollment failed: ${error instanceof Error ? error.message : 'Unknown error'}` 
+      };
+    }
+  }
+
+  /**
+   * Create or update rd_business_years entries for the specified years
+   * @param businessId - The ID of the business in rd_businesses table
+   * @param years - Array of years to create/update
+   * @param removeUnusedYears - Whether to remove years not in the specified array (default: false)
+   * @returns Array of created/updated business year records
+   */
+  static async createOrUpdateBusinessYears(businessId: string, years: number[], removeUnusedYears: boolean = false): Promise<any[]> {
+    console.log('[RDBusinessService] createOrUpdateBusinessYears called', { businessId, years, removeUnusedYears });
+    
+    if (!businessId || !years || years.length === 0) {
+      console.error('[RDBusinessService] Missing required parameters', { businessId, years });
+      throw new Error('Missing required parameters: businessId and years array');
+    }
+
+    try {
+      // First, get existing business years for this business
+      const { data: existingYears, error: fetchError } = await supabase
+        .from('rd_business_years')
+        .select('*')
+        .eq('business_id', businessId);
+
+      if (fetchError) {
+        console.error('[RDBusinessService] Error fetching existing business years:', fetchError);
+        throw new Error(`Failed to fetch existing business years: ${fetchError.message}`);
+      }
+
+      console.log('[RDBusinessService] Existing business years:', existingYears);
+
+      const existingYearSet = new Set(existingYears?.map(y => y.year) || []);
+      const yearsToCreate = years.filter(year => !existingYearSet.has(year));
+      const yearsToUpdate = years.filter(year => existingYearSet.has(year));
+
+      console.log('[RDBusinessService] Years to create:', yearsToCreate);
+      console.log('[RDBusinessService] Years to update:', yearsToUpdate);
+
+      const results = [];
+
+      // Remove unused years if requested
+      if (removeUnusedYears && existingYears) {
+        const yearsToRemove = existingYears.filter(year => !years.includes(year.year));
+        if (yearsToRemove.length > 0) {
+          console.log('[RDBusinessService] Removing unused years:', yearsToRemove.map(y => y.year));
+          
+          const { error: deleteError } = await supabase
+            .from('rd_business_years')
+            .delete()
+            .in('id', yearsToRemove.map(y => y.id));
+
+          if (deleteError) {
+            console.error('[RDBusinessService] Error removing unused years:', deleteError);
+            // Don't throw error, just log it
+          } else {
+            console.log('[RDBusinessService] Successfully removed unused years');
+          }
+        }
+      }
+
+      // Create new business year entries
+      if (yearsToCreate.length > 0) {
+        const newYearRecords = yearsToCreate.map(year => ({
+          business_id: businessId,
+          year: year,
+          gross_receipts: 0,
+          total_qre: 0
+        }));
+
+        console.log('[RDBusinessService] Creating new business year records:', newYearRecords);
+
+        const { data: createdYears, error: createError } = await supabase
+          .from('rd_business_years')
+          .insert(newYearRecords)
+          .select();
+
+        if (createError) {
+          console.error('[RDBusinessService] Error creating business years:', createError);
+          throw new Error(`Failed to create business years: ${createError.message}`);
+        }
+
+        console.log('[RDBusinessService] Successfully created business years:', createdYears);
+        results.push(...(createdYears || []));
+      }
+
+      // Update existing business year entries (if needed)
+      if (yearsToUpdate.length > 0) {
+        console.log('[RDBusinessService] Years already exist, no update needed:', yearsToUpdate);
+        // For now, we don't update existing records, just return them
+        const existingRecords = existingYears?.filter(y => yearsToUpdate.includes(y.year)) || [];
+        results.push(...existingRecords);
+      }
+
+      console.log('[RDBusinessService] createOrUpdateBusinessYears completed successfully', {
+        totalResults: results.length,
+        createdCount: yearsToCreate.length,
+        existingCount: yearsToUpdate.length
+      });
+
+      return results;
+
+    } catch (error) {
+      console.error('[RDBusinessService] Error in createOrUpdateBusinessYears:', error);
+      throw error;
     }
   }
 } 

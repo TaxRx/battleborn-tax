@@ -8,7 +8,7 @@ import {
   SUBCOMPONENT_COLORS
 } from "../../../../../types/researchDesign";
 import SubcomponentCard from './SubcomponentCard';
-import { supabase } from "../../../lib/supabase";
+import { supabase } from "../../../../../lib/supabase";
 
 interface ResearchDesignStepProps {
   selectedActivities: Array<{ 

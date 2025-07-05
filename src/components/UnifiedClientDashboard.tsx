@@ -10,6 +10,7 @@ import useAuthStore from '../store/authStore';
 import { toast } from 'react-hot-toast';
 import NewClientModal from './NewClientModal';
 import TaxCalculator from './TaxCalculator';
+import BusinessAccordion from './BusinessAccordion';
 import { TaxInfo } from '../types';
 import { supabase } from '../lib/supabase';
 import { 
@@ -54,6 +55,7 @@ interface ClientCardProps {
   onDelete: (clientId: string) => void;
   onExpand: (clientId: string) => void;
   onAddTaxYear: (client: any, year?: number) => void;
+  onRefresh: () => void;
   isExpanded: boolean;
   menuOpenId: string | null;
   setMenuOpenId: (id: string | null) => void;
@@ -66,6 +68,7 @@ const ClientCard: React.FC<ClientCardProps> = ({
   onDelete,
   onExpand,
   onAddTaxYear,
+  onRefresh,
   isExpanded,
   menuOpenId,
   setMenuOpenId
@@ -146,7 +149,7 @@ const ClientCard: React.FC<ClientCardProps> = ({
       {/* Client Card Header */}
       <div 
         className="p-6 cursor-pointer"
-        onClick={() => onExpand(client.client_file_id)}
+        onClick={() => onExpand(client.id)}
       >
         <div className="flex items-center justify-between">
           <div className="flex-1">
@@ -195,7 +198,7 @@ const ClientCard: React.FC<ClientCardProps> = ({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                setMenuOpenId(menuOpenId === client.client_file_id ? null : client.client_file_id);
+                setMenuOpenId(menuOpenId === client.id ? null : client.id);
               }}
               className="p-2 rounded-full hover:bg-gray-100 focus:outline-none transition-colors"
             >
@@ -205,7 +208,7 @@ const ClientCard: React.FC<ClientCardProps> = ({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onExpand(client.client_file_id);
+                onExpand(client.id);
               }}
               className="p-2 rounded-full hover:bg-gray-100 focus:outline-none transition-colors"
             >
@@ -219,7 +222,7 @@ const ClientCard: React.FC<ClientCardProps> = ({
         </div>
 
         {/* Dropdown Menu */}
-        {menuOpenId === client.client_file_id && (
+        {menuOpenId === client.id && (
           <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-20 border border-gray-200">
             <button
               onClick={(e) => {
@@ -276,30 +279,11 @@ const ClientCard: React.FC<ClientCardProps> = ({
                     <Building className="w-4 h-4 mr-2" />
                     Businesses
                   </h4>
-                  <div className="grid gap-3">
-                    {client.businesses.map((business: any) => (
-                      <div key={business.id} className="bg-white rounded-lg border border-gray-200 p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-3">
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                              {business.entity_type || 'LLC'}
-                            </span>
-                            <span className="text-sm font-medium text-gray-900">
-                              {business.business_name}
-                            </span>
-                            {business.ein && (
-                              <span className="text-xs text-gray-500">
-                                EIN: {business.ein}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {business.business_years?.length || 0} year{business.business_years?.length !== 1 ? 's' : ''}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <BusinessAccordion
+                    businesses={client.businesses}
+                    clientId={client.id}
+                    onRefresh={onRefresh}
+                  />
                 </div>
               )}
 
@@ -390,7 +374,7 @@ const ClientCard: React.FC<ClientCardProps> = ({
               </button>
               <button
                 onClick={() => {
-                  onArchive(client.client_file_id, !client.archived);
+                  onArchive(client.id, !client.archived);
                   setShowArchiveConfirm(false);
                 }}
                 className="flex-1 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
@@ -421,7 +405,7 @@ const ClientCard: React.FC<ClientCardProps> = ({
               </button>
               <button
                 onClick={() => {
-                  onDelete(client.client_file_id);
+                  onDelete(client.id);
                   setShowDeleteConfirm(false);
                 }}
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
@@ -492,7 +476,7 @@ export default function UnifiedClientDashboard({
     
     try {
       const tools = await CentralizedClientService.getClientTools(
-        client.client_file_id,
+        client.id,
         client.business_id
       );
       setClientTools(tools);
@@ -505,27 +489,37 @@ export default function UnifiedClientDashboard({
   };
 
   const handleToolLaunch = (toolSlug: ToolEnrollment['tool_slug']) => {
-    if (!selectedClient) return;
+    console.log('🚀 handleToolLaunch called with toolSlug:', toolSlug);
+    console.log('🚀 selectedClient:', selectedClient);
+    
+    if (!selectedClient) {
+      console.log('❌ No selected client, returning');
+      return;
+    }
 
     const launchUrl = CentralizedClientService.getToolLaunchUrl(
       toolSlug,
-      selectedClient.client_file_id,
+      selectedClient.id,
       selectedClient.business_id
     );
 
+    console.log('🚀 Launch URL:', launchUrl);
+
     // For demo mode, just show a toast
     if (demoMode) {
+      console.log('🚀 Demo mode, showing toast');
       toast.success(`Would launch ${CentralizedClientService.getToolDisplayName(toolSlug)}`);
       return;
     }
 
     // Open in new tab
+    console.log('🚀 Opening in new tab:', launchUrl);
     window.open(launchUrl, '_blank');
   };
 
-  const handleArchiveClient = async (clientFileId: string, archive: boolean) => {
+  const handleArchiveClient = async (clientId: string, archive: boolean) => {
     try {
-      await CentralizedClientService.archiveClient(clientFileId, archive);
+      await CentralizedClientService.archiveClient(clientId, archive);
       await loadClients();
       toast.success(`Client ${archive ? 'archived' : 'unarchived'} successfully`);
     } catch (error) {
@@ -538,16 +532,17 @@ export default function UnifiedClientDashboard({
     if (!selectedClient) return;
 
     try {
+      console.log('[UnifiedClientDashboard] Enrolling client in tool:', toolSlug, selectedClient.id, selectedClient.business_id);
       await CentralizedClientService.enrollClientInTool(
-        selectedClient.client_file_id,
+        selectedClient.id,
         selectedClient.business_id,
         toolSlug
       );
+      console.log('[UnifiedClientDashboard] enrollClientInTool returned for tool:', toolSlug);
       toast.success(`Enrolled in ${CentralizedClientService.getToolDisplayName(toolSlug)}`);
-      
       // Reload client tools
       const tools = await CentralizedClientService.getClientTools(
-        selectedClient.client_file_id,
+        selectedClient.id,
         selectedClient.business_id
       );
       setClientTools(tools);
@@ -572,9 +567,9 @@ export default function UnifiedClientDashboard({
     }
   };
 
-  const handleDeleteClient = async (clientFileId: string) => {
+  const handleDeleteClient = async (clientId: string) => {
     try {
-      await CentralizedClientService.deleteClient(clientFileId);
+      await CentralizedClientService.deleteClient(clientId);
       await loadClients();
       toast.success('Client deleted successfully');
     } catch (error) {
@@ -590,7 +585,7 @@ export default function UnifiedClientDashboard({
     
     // Transform client data to TaxInfo format for NewClientModal
     const transformedClient: TaxInfo = {
-      id: client.client_file_id,
+      id: client.id,
       fullName: client.full_name || '',
       email: client.email || '',
       phone: client.phone || '',
@@ -657,7 +652,7 @@ export default function UnifiedClientDashboard({
     console.log('[handleEditClient] Transformed years:', transformedClient.years);
     console.log('[handleEditClient] Transformed businesses:', transformedClient.businesses);
     setEditingClientData(transformedClient);
-    setEditClientId(client.client_file_id);
+    setEditClientId(client.id);
     setEditModalOpen(true);
   };
 
@@ -738,7 +733,7 @@ export default function UnifiedClientDashboard({
 
       // Update client basic info
       const clientUpdateSuccess = await CentralizedClientService.updateClient(
-        taxCalculatorClient.client_file_id, 
+        taxCalculatorClient.id, 
         clientUpdates
       );
 
@@ -772,7 +767,7 @@ export default function UnifiedClientDashboard({
       } else {
         // Create new personal year
         const result = await CentralizedClientService.createPersonalYear(
-          taxCalculatorClient.client_file_id,
+          taxCalculatorClient.id,
           yearData
         );
         yearUpdateSuccess = result.success;
@@ -889,14 +884,18 @@ export default function UnifiedClientDashboard({
         <div className="grid gap-6">
           {filteredClients.map((client) => (
             <ClientCard
-              key={client.client_file_id}
+              key={client.id}
               client={client}
               onEdit={handleEditClient}
               onArchive={handleArchiveClient}
               onDelete={handleDeleteClient}
               onExpand={handleExpandClient}
               onAddTaxYear={handleAddTaxYear}
-              isExpanded={expandedClientId === client.client_file_id}
+              onRefresh={() => {
+                // Refresh the client data when tools are enrolled
+                loadClients();
+              }}
+              isExpanded={expandedClientId === client.id}
               menuOpenId={menuOpenId}
               setMenuOpenId={setMenuOpenId}
             />
@@ -1021,7 +1020,7 @@ export default function UnifiedClientDashboard({
               <TaxCalculator
                 initialData={convertClientToTaxInfo(taxCalculatorClient)}
                 onTaxInfoUpdate={handleTaxInfoUpdate}
-                clientId={taxCalculatorClient.client_file_id}
+                clientId={taxCalculatorClient.id}
               />
             </div>
           </div>

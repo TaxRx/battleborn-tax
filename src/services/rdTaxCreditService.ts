@@ -87,7 +87,7 @@ export class RDTaxCreditService {
       .from('rd_businesses')
       .select(`
         *,
-        client:rd_clients (
+        client:users (
           *,
           user:users (*)
         ),
@@ -205,11 +205,11 @@ export class RDTaxCreditService {
   }
 
   // Role Management
-  static async createRole(name: string, businessId: string, parentId?: string): Promise<any> {
+  static async createRole(name: string, businessYearId: string, parentId?: string): Promise<any> {
     const { data, error } = await supabase
       .from('rd_roles')
       .insert({
-        business_id: businessId,
+        business_year_id: businessYearId,
         name,
         parent_id: parentId
       })
@@ -220,11 +220,11 @@ export class RDTaxCreditService {
     return data;
   }
 
-  static async getRoles(businessId: string): Promise<any[]> {
+  static async getRoles(businessYearId: string): Promise<any[]> {
     const { data, error } = await supabase
       .from('rd_roles')
       .select('*')
-      .eq('business_id', businessId)
+      .eq('business_year_id', businessYearId)
       .order('name');
 
     if (error) throw error;

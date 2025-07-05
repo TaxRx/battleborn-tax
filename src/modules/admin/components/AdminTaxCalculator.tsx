@@ -442,7 +442,6 @@ const ClientCard: React.FC<ClientCardProps> = ({
 
 const AdminTaxCalculator: React.FC<AdminTaxCalculatorProps> = () => {
   const [clients, setClients] = useState<ClientProfile[]>([]);
-  const [clientsLoading, setClientsLoading] = useState(true);
   const [selectedClient, setSelectedClient] = useState<ClientProfile | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -452,17 +451,17 @@ const AdminTaxCalculator: React.FC<AdminTaxCalculatorProps> = () => {
     { id: '1', full_name: 'John Partner', email: 'john@partner.com' },
     { id: '2', full_name: 'Sarah Partner', email: 'sarah@partner.com' }
   ]);
+  const [loading, setLoading] = useState(false);
 
   const { user } = useUser();
   const { demoMode } = useAuthStore();
 
   useEffect(() => {
     const loadClients = async () => {
-      setClientsLoading(true);
       try {
-        // Load clients from admin_client_files
+        // Load clients from unified clients table
         let query = supabase
-          .from('admin_client_files')
+          .from('clients')
           .select('*')
           .eq('archived', false); // Only show non-archived clients
 
@@ -474,11 +473,11 @@ const AdminTaxCalculator: React.FC<AdminTaxCalculatorProps> = () => {
         const { data, error } = await query.order('created_at', { ascending: false });
 
         if (error) {
-          console.error('Error loading admin client files:', error);
+          console.error('Error loading unified clients:', error);
           return;
         }
 
-        // Map admin_client_files data to ClientProfile interface
+        // Map unified clients data to ClientProfile interface
         const mappedClients: ClientProfile[] = data.map(file => {
           const taxData = file.tax_profile_data || {};
           return {
@@ -528,8 +527,6 @@ const AdminTaxCalculator: React.FC<AdminTaxCalculatorProps> = () => {
         setClients(mappedClients);
       } catch (error) {
         console.error('Error in loadClients:', error);
-      } finally {
-        setClientsLoading(false);
       }
     };
 
@@ -618,32 +615,9 @@ const AdminTaxCalculator: React.FC<AdminTaxCalculatorProps> = () => {
 
   const handleCreateClient = async (clientData: TaxInfo) => {
     try {
-      setClientsLoading(true);
-      
-      const snakeCaseData = toSnakeCaseTaxInfo(clientData);
-      
-      // Create admin client file
-      const { data: newClientFile, error: clientError } = await supabase
-        .from('admin_client_files')
-        .insert({
-          admin_id: user?.id || 'demo-admin',
-          tax_profile_data: snakeCaseData,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          archived: false
-        })
-        .select()
-        .single();
-
-      if (clientError) {
-        console.error('Error creating admin client file:', clientError);
-        toast.error('Failed to create client');
-        return;
-      }
-
       // Create client profile
       const newClientProfile: ClientProfile = {
-        id: newClientFile.id,
+        id: '',
         full_name: clientData.fullName,
         email: clientData.email,
         phone: clientData.phone,
@@ -657,8 +631,8 @@ const AdminTaxCalculator: React.FC<AdminTaxCalculatorProps> = () => {
         assigned_expert_id: undefined,
         at_risk_of_loss: false,
         engagement_score: 0,
-        created_at: newClientFile.created_at,
-        updated_at: newClientFile.updated_at,
+        created_at: '',
+        updated_at: '',
         wages_income: clientData.wagesIncome,
         passive_income: clientData.passiveIncome,
         unearned_income: clientData.unearnedIncome,
@@ -685,8 +659,6 @@ const AdminTaxCalculator: React.FC<AdminTaxCalculatorProps> = () => {
     } catch (error) {
       console.error('Error in handleCreateClient:', error);
       toast.error('Failed to create client');
-    } finally {
-      setClientsLoading(false);
     }
   };
 
@@ -698,25 +670,6 @@ const AdminTaxCalculator: React.FC<AdminTaxCalculatorProps> = () => {
     if (!selectedClient) return;
 
     try {
-      setClientsLoading(true);
-      
-      const snakeCaseData = toSnakeCaseTaxInfo(updatedTaxInfo);
-      
-      // Update admin client file
-      const { error: updateError } = await supabase
-        .from('admin_client_files')
-        .update({
-          tax_profile_data: snakeCaseData,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', selectedClient.id);
-
-      if (updateError) {
-        console.error('Error updating admin client file:', updateError);
-        toast.error('Failed to update client');
-        return;
-      }
-
       // Update local state
       const updatedClient: ClientProfile = {
         ...selectedClient,
@@ -743,7 +696,9 @@ const AdminTaxCalculator: React.FC<AdminTaxCalculatorProps> = () => {
         business_address: updatedTaxInfo.businessAddress,
         deduction_limit_reached: updatedTaxInfo.deductionLimitReached,
         household_income: updatedTaxInfo.householdIncome,
-        updated_at: new Date().toISOString()
+        updated_at: '',
+        years: [],
+        businesses: []
       };
 
       setClients(prev => prev.map(c => c.id === selectedClient.id ? updatedClient : c));
@@ -753,15 +708,13 @@ const AdminTaxCalculator: React.FC<AdminTaxCalculatorProps> = () => {
     } catch (error) {
       console.error('Error in handleTaxInfoUpdate:', error);
       toast.error('Failed to update client');
-    } finally {
-      setClientsLoading(false);
     }
   };
 
   const handleArchiveClient = async (clientId: string) => {
     try {
       const { error } = await supabase
-        .from('admin_client_files')
+        .from('clients')
         .update({ archived: true })
         .eq('id', clientId);
 
@@ -782,7 +735,7 @@ const AdminTaxCalculator: React.FC<AdminTaxCalculatorProps> = () => {
   const handleDeleteClient = async (clientId: string) => {
     try {
       const { error } = await supabase
-        .from('admin_client_files')
+        .from('clients')
         .delete()
         .eq('id', clientId);
 
@@ -887,11 +840,7 @@ const AdminTaxCalculator: React.FC<AdminTaxCalculatorProps> = () => {
         </div>
 
         {/* Client Cards */}
-        {clientsLoading ? (
-          <div className="flex justify-center items-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-          </div>
-        ) : filteredClients.length === 0 ? (
+        {filteredClients.length === 0 ? (
           <div className="text-center py-12">
             <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">No clients found</h3>

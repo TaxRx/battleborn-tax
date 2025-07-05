@@ -7,11 +7,23 @@ import EmployeeSetupStep from './steps/EmployeeSetupStep';
 import ExpenseEntryStep from './steps/ExpenseEntryStep';
 import CalculationStep from './steps/CalculationStep';
 import ReportStep from './steps/ReportStep';
+import { toast } from 'react-hot-toast';
+import { RDBusinessService } from '../../services/rdBusinessService';
+
+// Helper function to get URL parameters
+const getUrlParams = () => {
+  const urlParams = new URLSearchParams(window.location.search);
+  return {
+    clientId: urlParams.get('clientId'),
+    businessId: urlParams.get('businessId')
+  };
+};
 
 interface RDTaxWizardProps {
   onClose: () => void;
   businessId?: string;
   startStep?: number;
+  isModal?: boolean;
 }
 
 interface WizardState {
@@ -26,7 +38,40 @@ interface WizardState {
   isComplete: boolean;
 }
 
-const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startStep = 0 }) => {
+const steps = [
+  {
+    title: 'Business Setup',
+    description: 'Configure your business information and historical data'
+  },
+  {
+    title: 'Research Activities',
+    description: 'Select the research activities your business performs'
+  },
+  {
+    title: 'Research Design',
+    description: 'Define the research components and their percentages'
+  },
+  {
+    title: 'Employees',
+    description: 'Add employees and their time allocation'
+  },
+  {
+    title: 'Expenses',
+    description: 'Enter supplies and contractor expenses'
+  },
+  {
+    title: 'Calculations',
+    description: 'Review and calculate your R&D tax credit'
+  },
+  {
+    title: 'Report',
+    description: 'Generate your final R&D tax credit report'
+  }
+];
+
+const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startStep = 0, isModal }) => {
+  console.log('🎯 RDTaxWizard component loaded with props:', { businessId, startStep });
+  
   const [wizardState, setWizardState] = useState<WizardState>({
     currentStep: startStep,
     business: null,
@@ -59,51 +104,146 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
     getCurrentUser();
   }, []);
 
-  // Load existing business data if businessId is provided
+  // Load business data from URL parameters or props
   useEffect(() => {
     const loadBusinessData = async () => {
-      if (!businessId) return;
+      console.log('🔄 loadBusinessData called');
+      
+      // Get URL parameters
+      const urlParams = getUrlParams();
+      const urlBusinessId = urlParams.businessId;
+      const urlClientId = urlParams.clientId;
+      
+      console.log('📋 URL parameters:', { urlBusinessId, urlClientId });
+      
+      // Use businessId from props or URL parameters
+      const targetBusinessId = businessId || urlBusinessId;
+      
+      console.log('🎯 Target business ID:', targetBusinessId);
+      
+      if (!targetBusinessId) {
+        console.log('No business ID provided, starting fresh wizard');
+        return;
+      }
 
-      setLoading(true);
       try {
-        const { data: business, error } = await supabase
+        // First, try to find the business in the R&D system
+        const { data: rdBusiness, error: rdError } = await supabase
           .from('rd_businesses')
-          .select(`
-            *,
-            rd_business_years (*)
-          `)
-          .eq('id', businessId)
-          .single();
+          .select('*, rd_business_years(*)')
+          .eq('id', targetBusinessId)
+          .maybeSingle();
 
-        if (error) throw error;
+        if (rdError) {
+          console.error('Error loading R&D business:', rdError);
+          throw rdError;
+        }
 
-        if (business) {
+        if (rdBusiness) {
+          console.log('✅ Found existing R&D business:', rdBusiness);
           setWizardState(prev => ({
             ...prev,
-            business: business,
-            selectedYear: business.rd_business_years?.[0] || null
+            business: rdBusiness,
+            selectedYear: rdBusiness.rd_business_years?.[0] || null
           }));
+          return;
         }
+
+        // If not found in R&D system, check if it's a business from the unified system
+        console.log('🔍 Business not found in R&D system, checking unified system...');
+        
+        const { data: unifiedBusiness, error: unifiedError } = await supabase
+          .from('businesses')
+          .select(`
+            *,
+            clients (
+              id,
+              full_name,
+              email
+            )
+          `)
+          .eq('id', targetBusinessId)
+          .maybeSingle();
+
+        if (unifiedError) {
+          console.error('Error loading unified business:', unifiedError);
+          throw unifiedError;
+        }
+
+        if (unifiedBusiness) {
+          console.log('✅ Found business in unified system:', unifiedBusiness);
+          // Use clientId from unifiedBusiness.clients.id
+          const clientId = unifiedBusiness.clients?.id;
+          if (!clientId) {
+            throw new Error('Unified business is missing clientId');
+          }
+          // Enroll business in rd_businesses
+          try {
+            console.log('[RDTaxWizard] Calling enrollBusinessFromExisting', { businessId: unifiedBusiness.id, clientId });
+            const newRdBusiness = await RDBusinessService.enrollBusinessFromExisting(unifiedBusiness.id, clientId);
+            console.log('[RDTaxWizard] enrollBusinessFromExisting result', newRdBusiness);
+            // Create a default business year
+            const { data: businessYear, error: yearError } = await supabase
+              .from('rd_business_years')
+              .insert({
+                business_id: newRdBusiness.id,
+                year: new Date().getFullYear(),
+                gross_receipts: unifiedBusiness.annual_revenue || 0,
+                total_qre: 0
+              })
+              .select()
+              .single();
+
+            if (yearError) {
+              console.error('Error creating R&D business year:', yearError);
+              throw yearError;
+            }
+
+            console.log('✅ Created R&D business year:', businessYear);
+
+            // Set the wizard state with the new business
+            setWizardState(prev => ({
+              ...prev,
+              business: {
+                ...newRdBusiness,
+                rd_business_years: [businessYear]
+              },
+              selectedYear: businessYear
+            }));
+          } catch (error) {
+            console.error('Error enrolling business in rd_businesses:', error, { businessId: unifiedBusiness.id, clientId });
+            throw error;
+          }
+        } else {
+          // If not found in either system, create a new R&D business
+          console.log('Creating new R&D business for business ID:', targetBusinessId);
+          
+          // Get current user ID
+          const { data: { user } } = await supabase.auth.getUser();
+          const userId = user?.id;
+          
+          if (!userId) {
+            throw new Error('User not authenticated');
+          }
+
+          // Create a new R&D business
+          try {
+            console.log('[RDTaxWizard] Cannot create new business without existing business ID', { businessId, clientId });
+            throw new Error('Cannot create new R&D business without existing business ID');
+          } catch (error) {
+            console.error('[RDTaxWizard] Error enrolling business', error);
+            throw error;
+          }
+        }
+
       } catch (error) {
         console.error('Error loading business data:', error);
-        setError('Failed to load business data');
-      } finally {
-        setLoading(false);
+        toast.error('Error loading business data. Please try again.');
       }
     };
 
     loadBusinessData();
   }, [businessId]);
-
-  const steps = [
-    { title: 'Business Setup', description: 'Enter business information and tax year' },
-    { title: 'Research Explorer', description: 'Explore and select research activities' },
-    { title: 'Research Design', description: 'Configure detailed research activity breakdown' },
-    { title: 'Employee Setup', description: 'Add employees and their roles' },
-    { title: 'Expense Entry', description: 'Enter supplies and contractor costs' },
-    { title: 'Calculation', description: 'Review QRE calculations and credits' },
-    { title: 'Report', description: 'Generate and download your report' }
-  ];
 
   const handleNext = () => {
     if (wizardState.currentStep < steps.length - 1) {
@@ -209,10 +349,16 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-7xl w-full max-h-[95vh] overflow-hidden">
+    <div
+      className={isModal ? "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-0 m-0" : "h-full flex flex-col"}
+      style={isModal ? { minHeight: '100vh', minWidth: '100vw' } : {}}
+    >
+      <div
+        className={isModal ? "bg-white rounded-lg shadow-xl w-[95vw] h-[98vh] flex flex-col overflow-hidden" : "bg-white h-full flex flex-col overflow-hidden"}
+        style={isModal ? { minHeight: '90vh', minWidth: '90vw' } : {}}
+      >
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6">
+        <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 flex-shrink-0">
           <div className="flex justify-between items-center">
             <div>
               <h2 className="text-2xl font-bold">R&D Tax Credit Wizard</h2>
@@ -254,7 +400,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[calc(95vh-200px)]">
+        <div className="flex-1 p-6 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center h-64">
               <div className="text-center">
@@ -280,7 +426,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
         </div>
 
         {/* Footer Navigation */}
-        <div className="border-t bg-gray-50 px-6 py-4">
+        <div className="border-t bg-gray-50 px-6 py-4 flex-shrink-0">
           <div className="flex justify-between items-center">
             <div className="text-sm text-gray-600">
               {steps[wizardState.currentStep].description}

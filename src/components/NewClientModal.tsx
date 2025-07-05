@@ -131,27 +131,27 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
       }
       
       const newFormData = {
-        id: initialData.id || initialData.client_file_id || '',
-        fullName: initialData.fullName || initialData.full_name || '',
+        id: initialData.id || '',
+        fullName: initialData.fullName || '',
         email: initialData.email || '',
         phone: initialData.phone || '',
-        homeAddress: initialData.homeAddress || initialData.home_address || '',
+        homeAddress: initialData.homeAddress || '',
         city: initialData.city || '',
         state: initialData.state || '',
-        zipCode: initialData.zipCode || initialData.zip_code || '',
-        filingStatus: initialData.filingStatus || initialData.filing_status || 'single',
+        zipCode: initialData.zipCode || '',
+        filingStatus: initialData.filingStatus || 'single',
         dependents: initialData.dependents || 0,
-        standardDeduction: initialData.standardDeduction ?? initialData.standard_deduction ?? true,
+        standardDeduction: initialData.standardDeduction ?? true,
         businessOwner: initialData.businessOwner ?? (initialData.businesses && initialData.businesses.length > 0) ?? false,
-        wagesIncome: initialData.wagesIncome || initialData.wages_income || 0,
-        passiveIncome: initialData.passiveIncome || initialData.passive_income || 0,
-        unearnedIncome: initialData.unearnedIncome || initialData.unearned_income || 0,
-        capitalGains: initialData.capitalGains || initialData.capital_gains || 0,
-        customDeduction: initialData.customDeduction || initialData.custom_deduction || 0,
+        wagesIncome: initialData.wagesIncome || 0,
+        passiveIncome: initialData.passiveIncome || 0,
+        unearnedIncome: initialData.unearnedIncome || 0,
+        capitalGains: initialData.capitalGains || 0,
+        customDeduction: initialData.customDeduction || 0,
         years: yearsData,
         businesses: initialData.businesses || [],
-        createdAt: initialData.createdAt || initialData.created_at || new Date().toISOString(),
-        updatedAt: initialData.updatedAt || initialData.updated_at || new Date().toISOString()
+        createdAt: initialData.createdAt || new Date().toISOString(),
+        updatedAt: initialData.updatedAt || new Date().toISOString()
       };
       
       console.log(`[NewClientModal] Setting formData:`, newFormData);

@@ -38,6 +38,7 @@ import RnDClientManagement from './features/rd-wizard/src/pages/admin/ClientMana
 import { Toaster } from 'react-hot-toast';
 import RDTaxWizard from './modules/tax-calculator/components/RDTaxWizard/RDTaxWizard';
 import UnifiedClientDashboard from './components/UnifiedClientDashboard';
+import RDClientManagement from './components/RDClientManagement';
 
 const defaultTaxInfo = {
   standardDeduction: true,
@@ -97,6 +98,7 @@ const AppRoutes = ({ profile }: { profile: any }) => {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>}>
         <Route path="clients" element={<ProtectedRoute><UserProvider><UnifiedClientDashboard /></UserProvider></ProtectedRoute>} />
+        <Route path="rd-clients" element={<ProtectedRoute><UserProvider><RDClientManagement /></UserProvider></ProtectedRoute>} />
         <Route path="advisors" element={<div>Advisor Management (coming soon)</div>} />
         <Route path="groups" element={<GroupList />} />
         <Route path="documents" element={<div>Document Management (coming soon)</div>} />

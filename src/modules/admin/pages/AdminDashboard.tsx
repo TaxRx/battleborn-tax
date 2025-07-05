@@ -50,6 +50,7 @@ import { supabase } from '../../../lib/supabase';
 import CreateClientModal from '../components/CreateClientModal';
 import { useUser } from '../../../context/UserContext';
 import useAuthStore from '../../../store/authStore';
+import RDClientManagement from '../../../components/RDClientManagement';
 
 const proposalService = ProposalService.getInstance();
 
@@ -141,6 +142,7 @@ const AdminDashboard: React.FC = () => {
   const navigationItems = [
     { name: 'Dashboard', href: '/admin', icon: Home, current: location.pathname === '/admin' },
     { name: 'Client Management', href: '/admin/clients', icon: Users, current: location.pathname === '/admin/clients' },
+    { name: 'R&D Clients', href: '/admin/rd-clients', icon: Zap, current: location.pathname === '/admin/rd-clients' },
     { name: 'Proposals', href: '/admin/proposals', icon: FileText, current: location.pathname.includes('/admin/proposals') },
     { name: 'Tax Tools', href: '/admin/tax-tools', icon: Calculator, current: location.pathname.includes('/admin/tax-tools') },
     { name: 'Tax Planning', href: '/admin/calculator', icon: Calculator, current: location.pathname === '/admin/calculator' },
@@ -327,6 +329,7 @@ const AdminDashboard: React.FC = () => {
               } 
             />
             <Route path="/clients" element={<UnifiedClientDashboard />} />
+            <Route path="/rd-clients" element={<RDClientManagement />} />
             <Route path="/proposals" element={<ProposalsTable proposals={proposals} onViewProposal={handleViewProposal} onApproveProposal={handleApproveProposal} onRejectProposal={handleRejectProposal} />} />
             <Route path="/proposals/:id" element={<ProposalDetailView />} />
             <Route path="/tax-tools" element={<TaxToolsHome />} />

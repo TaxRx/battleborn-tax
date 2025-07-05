@@ -747,22 +747,6 @@ class StrategyPersistenceServiceImpl implements StrategyPersistenceService {
     try {
       console.log(`💾 Saving strategy details for admin client ${clientId}:`, strategy);
       
-      // Get the admin client file
-      const { data: clientFile, error: clientError } = await supabase
-        .from('admin_client_files')
-        .select('id, tax_profile_data')
-        .eq('id', clientId)
-        .single();
-
-      if (clientError) {
-        console.error('Error finding admin client file:', clientError);
-        throw clientError;
-      }
-
-      if (!clientFile) {
-        throw new Error(`Admin client file not found for ID: ${clientId}`);
-      }
-
       // Check if strategy details already exist for this client and strategy
       const { data: existingStrategy, error: checkError } = await supabase
         .from('admin_strategy_details')

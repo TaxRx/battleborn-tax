@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { TaxInfo, PersonalYear, BusinessYear } from '../types/taxInfo';
+import { RDBusinessService } from '../modules/tax-calculator/services/rdBusinessService';
 
 export interface CentralizedClient {
   id: string;
@@ -402,7 +403,7 @@ export class CentralizedClientService {
   }
 
   /**
-   * Enroll a client in a tax tool
+   * Enroll a client in a specific tool
    */
   static async enrollClientInTool(
     clientId: string,
@@ -410,7 +411,25 @@ export class CentralizedClientService {
     toolSlug: ToolEnrollment['tool_slug'],
     notes?: string
   ): Promise<string> {
+    console.log('[CentralizedClientService] enrollClientInTool called', { clientId, businessId, toolSlug, notes });
+    
     try {
+      // If enrolling in R&D, copy business to rd_businesses
+      if (toolSlug === 'rd') {
+        try {
+          console.log('[CentralizedClientService] Enrolling in R&D: copying business to rd_businesses', { businessId, clientId });
+          const rdBusiness = await RDBusinessService.enrollBusinessFromExisting(businessId, clientId);
+          console.log('[CentralizedClientService] R&D business copy result:', rdBusiness);
+        } catch (copyError) {
+          console.error('[CentralizedClientService] Error copying business to rd_businesses:', copyError);
+          throw new Error('Failed to copy business to rd_businesses: ' + (copyError instanceof Error ? copyError.message : copyError));
+        }
+      }
+      
+      console.log('[CentralizedClientService] Calling enroll_client_in_tool RPC', { clientId, businessId, toolSlug, notes });
+      
+      // Remove legacy check for admin_client_files
+      // Directly enroll the client in the tool using the unified structure
       const { data, error } = await supabase.rpc('enroll_client_in_tool', {
         p_client_file_id: clientId,
         p_business_id: businessId,
@@ -419,13 +438,14 @@ export class CentralizedClientService {
       });
 
       if (error) {
-        console.error('Error enrolling client in tool:', error);
+        console.error('[CentralizedClientService] Error enrolling client in tool:', error);
         throw new Error(`Failed to enroll client in tool: ${error.message}`);
       }
 
+      console.log('[CentralizedClientService] enroll_client_in_tool RPC result:', data);
       return data;
     } catch (error) {
-      console.error('Error in enrollClientInTool:', error);
+      console.error('[CentralizedClientService] Error in enrollClientInTool:', error);
       throw new Error(`Failed to enroll client in tool: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
@@ -678,19 +698,17 @@ export class CentralizedClientService {
     
     switch (toolSlug) {
       case 'rd':
-        return `${baseUrl}/rd-calculator?clientId=${clientId}&businessId=${businessId}`;
+        return `${baseUrl}/admin/rd-clients?clientId=${clientId}&businessId=${businessId}`;
       case 'augusta':
-        return `${baseUrl}/augusta-calculator?clientId=${clientId}&businessId=${businessId}`;
+        return `${baseUrl}/solutions/augusta-rule?clientId=${clientId}&businessId=${businessId}`;
       case 'hire_children':
-        return `${baseUrl}/hire-children?clientId=${clientId}&businessId=${businessId}`;
+        return `${baseUrl}/tax-calculator?clientId=${clientId}&businessId=${businessId}`;
       case 'cost_segregation':
-        return `${baseUrl}/cost-segregation?clientId=${clientId}&businessId=${businessId}`;
+        return `${baseUrl}/tax-calculator?clientId=${clientId}&businessId=${businessId}`;
       case 'convertible_bonds':
-        return `${baseUrl}/convertible-bonds?clientId=${clientId}&businessId=${businessId}`;
-      case 'tax_planning':
-        return `${baseUrl}/tax-planning?clientId=${clientId}&businessId=${businessId}`;
+        return `${baseUrl}/tax-calculator?clientId=${clientId}&businessId=${businessId}`;
       default:
-        return `${baseUrl}/dashboard`;
+        return `${baseUrl}/admin`;
     }
   }
 

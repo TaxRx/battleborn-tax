@@ -79,7 +79,7 @@ const ClientEditModal: React.FC<ClientEditModalProps> = ({
     try {
       setLoading(true);
       const { data, error } = await supabase
-        .from('admin_client_files')
+        .from('clients')
         .select('*')
         .eq('id', clientId)
         .single();
@@ -302,7 +302,7 @@ const ClientEditModal: React.FC<ClientEditModalProps> = ({
       };
 
       const { error } = await supabase
-        .from('admin_client_files')
+        .from('clients')
         .update(updateData)
         .eq('id', clientId);
 

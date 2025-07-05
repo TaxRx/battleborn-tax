@@ -37,6 +37,7 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
   const [historicalErrors, setHistoricalErrors] = useState<Record<string, Record<string, string>>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [debounceTimers, setDebounceTimers] = useState<Record<string, NodeJS.Timeout>>({});
 
   const entityTypes = [
     { value: 'LLC', label: 'Limited Liability Company (LLC)' },
@@ -121,7 +122,8 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
     // Start from 8 years ago or business start year, whichever is later
     const startFromYear = Math.max(startYear, currentYear - 8);
     
-    for (let year = startFromYear; year < currentYear; year++) {
+    // Include the current year in the list
+    for (let year = startFromYear; year <= currentYear; year++) {
       years.push(year);
     }
     
@@ -140,90 +142,74 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
     }
   }, [formData.startYear, formData.taxYear]);
 
-  // Load existing business data on component mount
+  // Load latest business and years from Supabase on mount and whenever business changes
   useEffect(() => {
-    const loadExistingBusiness = async () => {
-      // Always try to load from database first if we have a userId
-      if (userId) {
-        setIsLoading(true);
-        try {
-          const existingBusiness = await RDBusinessService.getBusinessByUser(userId);
-          if (existingBusiness) {
-            console.log('BusinessSetupStep: Loaded business from database:', existingBusiness);
-            setFormData(prev => ({
-              ...prev,
-              businessName: existingBusiness.name || '',
-              ein: existingBusiness.ein || '',
-              entityType: existingBusiness.entity_type || 'LLC',
-              startYear: existingBusiness.start_year?.toString() || '',
-              address: existingBusiness.contact_info?.address || '',
-              city: existingBusiness.contact_info?.city || '',
-              state: existingBusiness.contact_info?.state || '',
-              zip: existingBusiness.contact_info?.zip || ''
-            }));
-
-            // Load historical data from business_years table
-            if (existingBusiness.id && existingBusiness.start_year) {
-              // Use historical data from the loaded business object
-              if (existingBusiness.rd_business_years && existingBusiness.rd_business_years.length > 0) {
-                console.log('BusinessSetupStep: Loading historical data from business object:', existingBusiness.rd_business_years);
-                const transformedHistoricalData = existingBusiness.rd_business_years.map((yearData: any) => ({
-                  year: yearData.year,
-                  grossReceipts: yearData.gross_receipts || 0,
-                  qre: yearData.total_qre || 0
-                }));
-                setHistoricalData(transformedHistoricalData);
-              } else {
-                // If no historical data exists, generate empty data for the required years
-                const currentTaxYear = parseInt(formData.taxYear) || new Date().getFullYear();
-                const historicalYears = generateHistoricalYearsForYear(existingBusiness.start_year, currentTaxYear);
-                const emptyHistoricalData = historicalYears.map(year => ({
-                  year,
-                  grossReceipts: 0,
-                  qre: 0
-                }));
-                console.log('BusinessSetupStep: Generated empty historical data:', emptyHistoricalData);
-                setHistoricalData(emptyHistoricalData);
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Error loading existing business:', error);
-        } finally {
-          setIsLoading(false);
+    const fetchBusinessAndYears = async () => {
+      console.log('[BusinessSetupStep] Starting to fetch business and years data', { 
+        businessId: business?.id, 
+        userId 
+      });
+      setIsLoading(true);
+      try {
+        let latestBusiness = null;
+        if (business?.id) {
+          // Always fetch the latest business and years from Supabase by business.id
+          console.log('[BusinessSetupStep] Fetching business by ID:', business.id);
+          latestBusiness = await RDBusinessService.getBusiness(business.id);
+        } else if (userId) {
+          // Fallback: fetch by userId
+          console.log('[BusinessSetupStep] Fetching business by userId:', userId);
+          latestBusiness = await RDBusinessService.getBusinessByUser(userId);
         }
-      }
-
-      // If we have business data passed in and no data was loaded from database, use the prop data
-      if (business && !userId) {
-        console.log('BusinessSetupStep: Using business prop data (no userId):', business);
-        setFormData(prev => ({
-          ...prev,
-          businessName: business.name || '',
-          ein: business.ein || '',
-          entityType: business.entity_type || 'LLC',
-          startYear: business.start_year?.toString() || '',
-          address: business.contact_info?.address || '',
-          city: business.contact_info?.city || '',
-          state: business.contact_info?.state || '',
-          zip: business.contact_info?.zip || ''
-        }));
-
-        // Load historical data from business_years table if available
-        if (business.rd_business_years && business.rd_business_years.length > 0) {
-          console.log('BusinessSetupStep: Loading historical data from business prop:', business.rd_business_years);
-          const transformedHistoricalData = business.rd_business_years.map((yearData: any) => ({
-            year: yearData.year,
-            grossReceipts: yearData.gross_receipts || 0,
-            qre: yearData.total_qre || 0
+        
+        console.log('[BusinessSetupStep] Fetched business data:', latestBusiness);
+        
+        if (latestBusiness) {
+          setFormData(prev => ({
+            ...prev,
+            businessName: latestBusiness.name || '',
+            ein: latestBusiness.ein || '',
+            entityType: latestBusiness.entity_type || 'LLC',
+            startYear: latestBusiness.start_year?.toString() || '',
+            address: latestBusiness.contact_info?.address || '',
+            city: latestBusiness.contact_info?.city || '',
+            state: latestBusiness.contact_info?.state || '',
+            zip: latestBusiness.contact_info?.zip || ''
           }));
-          setHistoricalData(transformedHistoricalData);
+          
+          if (latestBusiness.rd_business_years && latestBusiness.rd_business_years.length > 0) {
+            console.log('[BusinessSetupStep] Found business years data:', latestBusiness.rd_business_years);
+            const transformedHistoricalData = latestBusiness.rd_business_years.map((yearData: any) => ({
+              year: yearData.year,
+              grossReceipts: yearData.gross_receipts || 0,
+              qre: yearData.total_qre || 0
+            }));
+            console.log('[BusinessSetupStep] Transformed historical data:', transformedHistoricalData);
+            setHistoricalData(transformedHistoricalData);
+          } else {
+            console.log('[BusinessSetupStep] No business years data found');
+          }
+        } else {
+          console.log('[BusinessSetupStep] No business data found');
         }
+      } catch (error) {
+        console.error('[BusinessSetupStep] Error fetching latest business and years:', error);
+      } finally {
+        setIsLoading(false);
       }
     };
+    fetchBusinessAndYears();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [business?.id, userId]);
 
-    loadExistingBusiness();
-  }, [business, userId]);
+  // Cleanup debounce timers on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(debounceTimers).forEach(timer => {
+        if (timer) clearTimeout(timer);
+      });
+    };
+  }, [debounceTimers]);
 
   // Helper function to generate historical years without depending on formData
   const generateHistoricalYearsForYear = (startYear: number, taxYear: number) => {
@@ -308,78 +294,44 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
 
   const handleSubmit = async () => {
     if (!validateForm() || !validateHistoricalData()) return;
-    if (!userId) {
-      setErrors(prev => ({ ...prev, general: 'User ID is required to save data' }));
+    if (!business?.id || !business?.client_id) {
+      console.error('BusinessSetupStep: Missing business.id or business.client_id', { business });
+      setErrors(prev => ({
+        ...prev,
+        general: 'Missing business or client information. Please select a business.'
+      }));
+      setIsSaving(false);
       return;
     }
 
     setIsSaving(true);
     try {
-      const businessData: BusinessSetupData = {
-        business: {
-          name: formData.businessName,
-          ein: formData.ein,
-          entityType: formData.entityType,
-          startYear: parseInt(formData.startYear),
-          address: formData.address,
-          city: formData.city,
-          state: formData.state,
-          zip: formData.zip,
-          historicalData: historicalData
-        },
-        selectedYear: {
-          year: parseInt(formData.taxYear),
-          grossReceipts: 0, // Will be entered in a later step
-          qre: 0 // Will be calculated in a later step
-        }
-      };
+      console.log('[BusinessSetupStep] Starting business setup save process', { 
+        businessId: business.id, 
+        clientId: business.client_id,
+        historicalData: historicalData
+      });
 
-      // Save to database
-      const savedBusiness = await RDBusinessService.saveBusiness(businessData, userId);
+      // First, ensure the business is enrolled
+      const savedBusiness = await RDBusinessService.enrollBusinessFromExisting(business.id, business.client_id);
+      console.log('[BusinessSetupStep] Business enrolled successfully', savedBusiness);
 
-      console.log('BusinessSetupStep: Saved business data:', savedBusiness);
-
-      // Get the business year ID for the selected tax year
-      const businessYear = await RDBusinessService.getBusinessYear(savedBusiness.id, parseInt(formData.taxYear));
-      
-      if (!businessYear) {
-        throw new Error('Failed to retrieve business year data after saving');
+      // Save historical data to the database
+      for (const historicalItem of historicalData) {
+        console.log('[BusinessSetupStep] Saving historical data for year', historicalItem.year, historicalItem);
+        await RDBusinessService.saveBusinessYear(savedBusiness.id, {
+          year: historicalItem.year,
+          grossReceipts: historicalItem.grossReceipts,
+          qre: historicalItem.qre
+        });
       }
 
-      // Update local state with properly formatted data
-      const updatedBusinessData = {
-        business: {
-          id: savedBusiness.id,
-          name: savedBusiness.name,
-          ein: savedBusiness.ein,
-          entityType: savedBusiness.entity_type,
-          startYear: savedBusiness.start_year,
-          address: savedBusiness.contact_info?.address || '',
-          city: savedBusiness.contact_info?.city || '',
-          state: savedBusiness.contact_info?.state || '',
-          zip: savedBusiness.contact_info?.zip || '',
-          // Include the historical data that was just saved
-          historicalData: historicalData
-        },
-        selectedYear: {
-          id: businessYear.id,
-          year: businessYear.year,
-          grossReceipts: businessYear.gross_receipts || 0,
-          qre: businessYear.total_qre || 0
-        }
-      };
-
-      console.log('BusinessSetupStep: Calling onUpdate with:', updatedBusinessData);
-      onUpdate(updatedBusinessData);
-
+      console.log('[BusinessSetupStep] All historical data saved successfully');
+      setIsSaving(false);
       onNext();
     } catch (error) {
-      console.error('Error saving business data:', error);
-      setErrors(prev => ({ 
-        ...prev, 
-        general: 'Failed to save business data. Please try again.' 
-      }));
-    } finally {
+      console.error('[BusinessSetupStep] Error saving business data', error);
+      setErrors(prev => ({ ...prev, general: 'Failed to save business data. Please try again.' }));
       setIsSaving(false);
     }
   };
@@ -393,6 +345,61 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
     if (errors.general) {
       setErrors(prev => ({ ...prev, general: '' }));
     }
+
+    // If start year changed, update rd_business_years entries
+    if (field === 'startYear' && value && business?.id) {
+      handleStartYearChange(value);
+    }
+  };
+
+  // Function to handle start year changes and update rd_business_years
+  const handleStartYearChange = async (newStartYear: string) => {
+    if (!business?.id) return;
+
+    const startYear = parseInt(newStartYear);
+    const currentYear = new Date().getFullYear();
+    
+    if (isNaN(startYear)) return;
+
+    console.log('[BusinessSetupStep] Start year changed, updating rd_business_years', {
+      businessId: business.id,
+      newStartYear: startYear,
+      currentYear: currentYear
+    });
+
+    try {
+      // Calculate the years we need to create
+      const yearsToCreate = [];
+      const earliestYear = Math.max(startYear, currentYear - 8);
+      
+      for (let year = earliestYear; year <= currentYear; year++) {
+        yearsToCreate.push(year);
+      }
+
+      console.log('[BusinessSetupStep] Years to create/update:', yearsToCreate);
+
+      // Create/update rd_business_years entries
+      const result = await RDBusinessService.createOrUpdateBusinessYears(
+        business.id,
+        yearsToCreate,
+        true // Remove unused years when start year changes
+      );
+
+      console.log('[BusinessSetupStep] Successfully updated rd_business_years:', result);
+
+      // Update the historical data state to reflect the new years
+      const newHistoricalData: HistoricalData[] = yearsToCreate
+        .map(year => {
+          const existing = historicalData.find(h => h.year === year);
+          return existing || { year, grossReceipts: 0, qre: 0 };
+        });
+
+      setHistoricalData(newHistoricalData);
+
+    } catch (error) {
+      console.error('[BusinessSetupStep] Error updating rd_business_years:', error);
+      // Don't show error to user as this is a background operation
+    }
   };
 
   const handleEINChange = (value: string) => {
@@ -400,7 +407,7 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
     handleInputChange('ein', formattedEIN);
   };
 
-  const handleHistoricalDataChange = (year: number, field: 'grossReceipts' | 'qre', value: string) => {
+  const handleHistoricalDataChange = async (year: number, field: 'grossReceipts' | 'qre', value: string) => {
     const numValue = parseCurrencyToNumber(value);
     setHistoricalData(prev => 
       prev.map(data => 
@@ -416,6 +423,39 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
           ...prev[year.toString()],
           [field]: ''
         }
+      }));
+    }
+
+    // Save to database in real-time if business is enrolled (with debounce)
+    if (business?.id) {
+      const timerKey = `${year}-${field}`;
+      
+      // Clear existing timer
+      if (debounceTimers[timerKey]) {
+        clearTimeout(debounceTimers[timerKey]);
+      }
+
+      // Set new timer
+      const newTimer = setTimeout(async () => {
+        try {
+          const currentHistoricalData = historicalData.find(h => h.year === year);
+          const updatedData = {
+            year: year,
+            grossReceipts: field === 'grossReceipts' ? numValue : (currentHistoricalData?.grossReceipts || 0),
+            qre: field === 'qre' ? numValue : (currentHistoricalData?.qre || 0)
+          };
+          
+          console.log('[BusinessSetupStep] Saving historical data in real-time (debounced):', updatedData);
+          await RDBusinessService.saveBusinessYear(business.id, updatedData);
+        } catch (error) {
+          console.error('[BusinessSetupStep] Error saving historical data in real-time:', error);
+          // Don't show error to user as this is a background operation
+        }
+      }, 1000); // 1 second debounce
+
+      setDebounceTimers(prev => ({
+        ...prev,
+        [timerKey]: newTimer
       }));
     }
   };

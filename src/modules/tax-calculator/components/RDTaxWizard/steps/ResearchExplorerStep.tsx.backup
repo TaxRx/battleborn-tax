@@ -716,16 +716,11 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
   // Business years state
   const [availableBusinessYears, setAvailableBusinessYears] = useState<Array<{id: string, year: number}>>([]);
   const [selectedBusinessYearId, setSelectedBusinessYearId] = useState<string>('');
-  const [currentBusinessId, setCurrentBusinessId] = useState<string>('');
   const [showNonRndModal, setShowNonRndModal] = useState(false);
-
-  // State for copy confirmation modal
-  const [showCopyModal, setShowCopyModal] = useState(false);
-  const [copyType, setCopyType] = useState<'roles' | 'activities' | null>(null);
 
   // Practice percentage configuration
   const [practicePercentageConfig, setPracticePercentageConfig] = useState<PracticePercentageConfig>({
-    nonRndTime: 10, // Start at 10% instead of 0
+    nonRndTime: 0,
     activities: {}
   });
 
@@ -759,8 +754,6 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
     if (selectedBusinessYearId) {
       console.log('Business year changed, loading roles for:', selectedBusinessYearId);
       loadRoles();
-      // Also load selected activities when business year changes
-      loadSelectedActivities();
     }
   }, [selectedBusinessYearId]);
 
@@ -855,7 +848,6 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
       const businessId = businesses[0].id;
       console.log('Found business ID:', businessId);
-      setCurrentBusinessId(businessId); // Add this line to store the business ID
 
       // First, let's see ALL business years in the database to debug
       const { data: allBusinessYears, error: allYearsError } = await supabase
@@ -926,185 +918,39 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
   const loadRoles = async () => {
     try {
       if (!selectedBusinessYearId) {
-        console.warn('No business year selected, skipping roles load');
+        console.warn('No business year selected, showing empty roles');
+        setRoles([]);
         return;
       }
 
-      console.log('Loading roles for business year:', selectedBusinessYearId);
-
-      const { data: roles, error } = await supabase
+      const { data, error } = await supabase
         .from('rd_roles')
         .select('*')
         .eq('business_year_id', selectedBusinessYearId)
         .order('name');
 
-      if (error) {
-        console.error('Error loading roles:', error);
-        setRoles([]);
-        return;
-      }
-
-      console.log('Loaded roles:', roles);
-
-      if (roles && roles.length > 0) {
-        setRoles(roles);
+      if (error) throw error;
+      
+      if (data && data.length > 0) {
+        setRoles(data);
       } else {
-        // No roles found for this business year, ask user if they want to copy
-        console.log('No roles found for this business year, asking user if they want to copy');
-        setCopyType('roles');
-        setShowCopyModal(true);
-        setRoles([]);
+        // If no roles exist for this business year, create the default Research Leader role
+        try {
+          const defaultRole = await saveRole({
+            name: 'Research Leader',
+            is_default: true
+          });
+          setRoles([defaultRole]);
+        } catch (saveError) {
+          console.error('Error creating default role:', saveError);
+          // If saving fails, show empty state
+          setRoles([]);
+        }
       }
     } catch (err) {
       console.error('Error loading roles:', err);
+      // Show empty state on error
       setRoles([]);
-    }
-  };
-
-  // Copy roles from current year to target year
-  const copyRolesFromYear = async (sourceBusinessYearId: string) => {
-    try {
-      console.log('🔄 Starting role copy process...');
-      console.log('📅 Available business years:', availableBusinessYears);
-      console.log('🎯 Source business year ID:', sourceBusinessYearId);
-      console.log('🎯 Current business year ID:', selectedBusinessYearId);
-      
-      if (!selectedBusinessYearId) {
-        console.warn('No current business year selected for copying');
-        return;
-      }
-
-      if (selectedBusinessYearId === sourceBusinessYearId) {
-        console.log('Source year is current year, no copying needed');
-        return;
-      }
-
-      console.log(`🔄 Copying roles from year ${sourceBusinessYearId} to current year ${selectedBusinessYearId}`);
-
-      // Get all roles from source year
-      const { data: sourceRoles, error: sourceError } = await supabase
-        .from('rd_roles')
-        .select('*')
-        .eq('business_year_id', sourceBusinessYearId)
-        .order('name');
-
-      if (sourceError) {
-        console.error('Error loading source year roles:', sourceError);
-        return;
-      }
-
-      console.log(`📋 Found ${sourceRoles?.length || 0} roles in source year:`, sourceRoles);
-
-      if (!sourceRoles || sourceRoles.length === 0) {
-        console.log('No roles to copy from source year');
-        return;
-      }
-
-      // Create a mapping from old role IDs to new role IDs
-      const roleIdMapping = new Map<string, string>();
-
-      // Create a temporary save function for copying that uses the current year ID
-      const saveRoleForCopy = async (role: Omit<ResearchRole, 'id'>, targetYearId: string) => {
-        try {
-          console.log(`💾 Saving role "${role.name}" to target year ${targetYearId}`);
-          
-          // Guard against empty business_id
-          if (!currentBusinessId) {
-            throw new Error('No business ID available. Please ensure business is loaded first.');
-          }
-          
-          // Prepare the role data for the target year
-          const roleData: any = {
-            name: role.name,
-            description: role.description,
-            parent_id: undefined, // Will be updated after all roles are copied
-            is_default: role.is_default || false,
-            business_year_id: targetYearId,
-            business_id: currentBusinessId
-          };
-          
-          console.log('📝 Role data to insert:', roleData);
-          
-          const { data, error } = await supabase
-            .from('rd_roles')
-            .insert(roleData)
-            .select()
-            .single();
-
-          if (error) {
-            console.error('Database error saving copied role:', error);
-            throw error;
-          }
-          
-          console.log(`✅ Successfully saved role "${role.name}" with ID:`, data.id);
-          return data;
-        } catch (error) {
-          console.error('Error saving copied role:', error);
-          throw error;
-        }
-      };
-
-      // First pass: Copy all roles without parent relationships
-      const copiedRoles = [];
-      for (const role of sourceRoles) {
-        try {
-          console.log(`🔄 Copying role: ${role.name} (ID: ${role.id})`);
-          const newRole = await saveRoleForCopy({
-            name: role.name,
-            description: role.description,
-            parent_id: undefined, // Set to undefined initially
-            is_default: role.is_default
-          }, selectedBusinessYearId);
-          
-          // Store the mapping from old ID to new ID
-          roleIdMapping.set(role.id, newRole.id);
-          copiedRoles.push(newRole);
-          console.log(`✅ Successfully copied role "${role.name}" (${role.id} -> ${newRole.id})`);
-        } catch (copyError) {
-          console.error(`❌ Error copying role ${role.name}:`, copyError);
-        }
-      }
-
-      // Second pass: Update parent relationships using the new role IDs
-      for (const role of sourceRoles) {
-        if (role.parent_id && roleIdMapping.has(role.parent_id)) {
-          const newRoleId = roleIdMapping.get(role.id);
-          const newParentId = roleIdMapping.get(role.parent_id);
-          
-          if (newRoleId && newParentId) {
-            try {
-              console.log(`🔄 Updating parent relationship for role ${role.name}: ${newRoleId} -> ${newParentId}`);
-              
-              const { error: updateError } = await supabase
-                .from('rd_roles')
-                .update({ parent_id: newParentId })
-                .eq('id', newRoleId);
-              
-              if (updateError) {
-                console.error(`❌ Error updating parent relationship for ${role.name}:`, updateError);
-              } else {
-                console.log(`✅ Successfully updated parent relationship for ${role.name}`);
-                // Update the copied role in our array
-                const roleIndex = copiedRoles.findIndex(r => r.id === newRoleId);
-                if (roleIndex !== -1) {
-                  copiedRoles[roleIndex] = { ...copiedRoles[roleIndex], parent_id: newParentId };
-                }
-              }
-            } catch (updateError) {
-              console.error(`❌ Error updating parent relationship for ${role.name}:`, updateError);
-            }
-          }
-        }
-      }
-
-      console.log(`🎉 Successfully copied ${copiedRoles.length} roles to current year`);
-      console.log('📋 Copied roles:', copiedRoles);
-      console.log('🔄 Role ID mapping:', Object.fromEntries(roleIdMapping));
-      
-      // Update the roles state with the copied roles
-      setRoles(copiedRoles);
-    } catch (error) {
-      console.error('❌ Error copying roles:', error);
     }
   };
 
@@ -1159,15 +1005,6 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         throw new Error('No business year selected. Please select a year first.');
       }
       
-      // Add debugging for business_id
-      console.log('saveRole - currentBusinessId:', currentBusinessId);
-      console.log('saveRole - selectedBusinessYearId:', selectedBusinessYearId);
-      
-      // Guard against empty business_id
-      if (!currentBusinessId) {
-        throw new Error('No business ID available. Please ensure business is loaded first.');
-      }
-      
       // Validate parent_id if provided
       let validatedParentId: string | null = null;
       if (role.parent_id) {
@@ -1192,8 +1029,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         name: role.name,
         parent_id: validatedParentId,
         is_default: role.is_default || false,
-        business_year_id: selectedBusinessYearId,
-        business_id: currentBusinessId
+        business_year_id: selectedBusinessYearId
       };
       
       const { data, error } = await supabase
@@ -1360,67 +1196,65 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
     if (existingActivities === 0) {
       // First activity gets all available percentage
       newPercentage = availablePercentage;
+    } else if (existingActivities === 1) {
+      // Second activity: reduce first to 1/2, new activity gets the other 1/2
+      const firstActivity = selectedActivitiesState[0];
+      const firstActivityPercentage = practicePercentageConfig.activities[firstActivity.activity_id] || 0;
+      const newFirstPercentage = availablePercentage / 2;
+      newPercentage = availablePercentage / 2;
+      
+      // Update first activity percentage
+      updatedActivities[firstActivity.activity_id] = newFirstPercentage;
     } else {
-      // For any additional activity, redistribute percentages proportionally
-      const totalExistingPercentage = Object.values(updatedActivities).reduce((sum, percent) => sum + percent, 0);
+      // Third+ activities: pro-rata distribution - scale down all existing activities
+      const existingTotal = Object.values(practicePercentageConfig.activities).reduce((sum, percent) => sum + percent, 0);
+      const scaleFactor = (availablePercentage - (availablePercentage / (existingActivities + 1))) / existingTotal;
       
-      if (totalExistingPercentage > 0) {
-        // Scale down existing activities proportionally
-        const scalingFactor = (totalExistingPercentage - availablePercentage / (existingActivities + 1)) / totalExistingPercentage;
-        
-        Object.keys(updatedActivities).forEach(activityId => {
-          updatedActivities[activityId] = Math.round(updatedActivities[activityId] * scalingFactor * 100) / 100;
-        });
-      }
+      // Scale down all existing activities
+      Object.keys(updatedActivities).forEach(activityId => {
+        updatedActivities[activityId] = updatedActivities[activityId] * scaleFactor;
+      });
       
-      // New activity gets equal share
+      // New activity gets the remaining percentage
       newPercentage = availablePercentage / (existingActivities + 1);
     }
     
-    // Pre-select all available roles for the new activity
-    const allRoleIds = roles.map(role => role.id);
+    // Add the new activity percentage
+    updatedActivities[activity.activity_id] = newPercentage;
     
-    // Create the new activity with all roles pre-selected
-    const newActivity: Omit<SelectedActivity, 'id'> = {
+    // Update practice percentage config
+    setPracticePercentageConfig(prev => ({
+      ...prev,
+      activities: updatedActivities
+    }));
+    
+    // Create the new selected activity
+    const newSelectedActivity: Omit<SelectedActivity, 'id'> = {
       activity_id: activity.id,
-      title: activity.title,
       activity_name: activity.title,
-      activity_category: getCategoryName(activity.focus_id),
-      activity_area: getAreaName(activity.focus_id),
-      activity_focus: getFocusName(activity.focus_id),
       practice_percent: newPercentage,
-      selected_roles: allRoleIds, // Pre-select all roles
+      selected_roles: [],
       config: {}
     };
-
-    // Save to database
-    const savedActivity = await saveSelectedActivity(newActivity);
     
-    if (savedActivity) {
-      // Update local state
-      setSelectedActivitiesState(prev => [...prev, savedActivity]);
-      
-      // Update practice percentage config
-      setPracticePercentageConfig(prev => ({
-        ...prev,
-        activities: {
-          ...prev.activities,
-          [activity.id]: newPercentage
-        }
-      }));
-      
-      // Update parent component
-      onUpdate({
-        selectedActivities: [...selectedActivitiesState, savedActivity],
-        practicePercentageConfig: {
-          ...practicePercentageConfig,
-          activities: {
-            ...practicePercentageConfig.activities,
-            [activity.id]: newPercentage
-          }
-        }
-      });
+    // Save to database first
+    const savedActivity = await saveSelectedActivity(newSelectedActivity);
+    if (!savedActivity) {
+      console.error('Failed to save activity');
+      return;
     }
+    
+    // Update local state
+    setSelectedActivitiesState(prev => [...prev, savedActivity]);
+    
+    // Update parent component
+    onUpdate({
+      selectedActivities: [...selectedActivitiesState, savedActivity],
+      practicePercentageConfig: {
+        ...practicePercentageConfig,
+        activities: updatedActivities
+      }
+    });
   };
 
   const removeActivity = async (activityId: string) => {
@@ -1538,21 +1372,10 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
           if (activity.activity_id === activityId) {
             return { ...activity, practice_percent: newPercentage };
           } else {
-            const newPercentage = Math.round(activity.practice_percent * scalingFactor * 100) / 100;
+            const newPercentage = activity.practice_percent * scalingFactor;
             return { ...activity, practice_percent: newPercentage };
           }
         });
-        
-        // Final check: ensure total equals exactly availablePercentage
-        const finalTotal = updatedActivities.reduce((sum, act) => sum + act.practice_percent, 0);
-        if (Math.abs(finalTotal - availablePercentage) > 0.01) {
-          // Adjust the modified activity to make total exactly equal to availablePercentage
-          const adjustment = availablePercentage - finalTotal;
-          const targetActivity = updatedActivities.find(a => a.activity_id === activityId);
-          if (targetActivity) {
-            targetActivity.practice_percent = Math.round((targetActivity.practice_percent + adjustment) * 100) / 100;
-          }
-        }
         
         // Update all activities in database
         for (const updatedActivity of updatedActivities) {
@@ -1667,91 +1490,6 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
     }
   };
 
-  // Copy activities from source year to current year
-  const copyActivitiesFromYear = async (sourceBusinessYearId: string) => {
-    try {
-      console.log('🔄 Starting activity copy process...');
-      console.log('📅 Available business years:', availableBusinessYears);
-      console.log('🎯 Source business year ID:', sourceBusinessYearId);
-      console.log('🎯 Current business year ID:', selectedBusinessYearId);
-      
-      if (!selectedBusinessYearId) {
-        console.warn('No current business year selected for copying');
-        return;
-      }
-
-      if (selectedBusinessYearId === sourceBusinessYearId) {
-        console.log('Source year is current year, no copying needed');
-        return;
-      }
-
-      console.log(`Copying activities from source year ${sourceBusinessYearId} to current year ${selectedBusinessYearId}`);
-
-      // Get all activities from source year
-      const { data: sourceYearActivities, error: fetchError } = await supabase
-        .from('rd_selected_activities')
-        .select('*')
-        .eq('business_year_id', sourceBusinessYearId);
-
-      if (fetchError) {
-        console.error('Error fetching source year activities:', fetchError);
-        return;
-      }
-
-      if (!sourceYearActivities || sourceYearActivities.length === 0) {
-        console.log('No activities found in source year to copy');
-        return;
-      }
-
-      console.log(`Found ${sourceYearActivities.length} activities to copy`);
-
-      // Get all available roles for the current year to pre-select them
-      const { data: currentYearRoles, error: rolesError } = await supabase
-        .from('rd_roles')
-        .select('id')
-        .eq('business_year_id', selectedBusinessYearId);
-
-      if (rolesError) {
-        console.error('Error fetching current year roles:', rolesError);
-        return;
-      }
-
-      const allRoleIds = currentYearRoles?.map(role => role.id) || [];
-
-      // Copy each activity to the current year with all roles pre-selected
-      for (const activity of sourceYearActivities) {
-        try {
-          const { data: newActivity, error: insertError } = await supabase
-            .from('rd_selected_activities')
-            .insert({
-              business_year_id: selectedBusinessYearId,
-              activity_id: activity.activity_id,
-              practice_percent: activity.practice_percent,
-              selected_roles: allRoleIds, // Pre-select all roles instead of copying original selection
-              config: activity.config
-            })
-            .select()
-            .single();
-
-          if (insertError) {
-            console.error(`Error copying activity ${activity.id}:`, insertError);
-          } else {
-            console.log(`✅ Successfully copied activity ${activity.activity_id} to current year with all roles pre-selected`);
-          }
-        } catch (copyError) {
-          console.error(`Error copying activity ${activity.id}:`, copyError);
-        }
-      }
-
-      console.log('🔄 Activity copy process completed');
-      
-      // Reload the activities for the current year
-      await loadSelectedActivities();
-    } catch (error) {
-      console.error('Error in copyActivitiesFromYear:', error);
-    }
-  };
-
   const loadSelectedActivities = async () => {
     try {
       if (!selectedBusinessYearId) {
@@ -1766,7 +1504,6 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
           activity_id,
           practice_percent,
           selected_roles,
-          config,
           rd_research_activities (
             id,
             title,
@@ -1780,7 +1517,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         return;
       }
 
-      if (data && data.length > 0) {
+      if (data) {
         const mappedActivities = data.map(activity => {
           // Get the related focus, area, and category names
           const focus = focuses.find(f => f.id === activity.rd_research_activities?.focus_id);
@@ -1792,7 +1529,6 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
             activity_id: activity.activity_id,
             practice_percent: activity.practice_percent,
             selected_roles: activity.selected_roles,
-            config: activity.config,
             activity_name: activity.rd_research_activities?.title || 'Unknown Activity',
             activity_category: category?.name || '',
             activity_area: area?.name || '',
@@ -1818,26 +1554,6 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         if (mappedActivities.length > 0) {
           onUpdate({ selectedActivities: mappedActivities });
         }
-      } else {
-        // No activities found for this business year, ask user if they want to copy
-        console.log('No activities found for this business year, asking user if they want to copy');
-        setCopyType('activities');
-        setShowCopyModal(true);
-        
-        // Set empty state
-        setSelectedActivitiesState([]);
-        setPracticePercentageConfig(prev => ({
-          nonRndTime: 10, // Ensure Non-R&D starts at 10%
-          activities: {}
-        }));
-        
-        onUpdate({
-          selectedActivities: [],
-          practicePercentageConfig: {
-            nonRndTime: 10, // Ensure Non-R&D starts at 10%
-            activities: {}
-          }
-        });
       }
     } catch (error) {
       console.error('Error loading selected activities:', error);
@@ -2023,73 +1739,6 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       />
     );
   }, [moveRoleUp, moveRoleDown, editRole, deleteRole]);
-
-  // Modal handlers for copy confirmation
-  const handleCopyConfirm = async (sourceYearId: string) => {
-    if (copyType === 'roles') {
-      await copyRolesFromYear(sourceYearId);
-    } else if (copyType === 'activities') {
-      await copyActivitiesFromYear(sourceYearId);
-    }
-  };
-
-  const handleCopyModalClose = () => {
-    setShowCopyModal(false);
-    setCopyType(null);
-    setCopyTargetYear(null);
-  };
-
-  // Update Non-R&D percentage and redistribute activities to maintain 100% total
-  const updateNonRndPercentage = async (newPercentage: number) => {
-    const availablePercentage = 100 - newPercentage;
-    const currentActivities = selectedActivitiesState;
-    
-    if (currentActivities.length === 0) {
-      // No activities to redistribute
-      setPracticePercentageConfig(prev => ({
-        ...prev,
-        nonRndTime: newPercentage
-      }));
-      return;
-    }
-    
-    // Redistribute activities proportionally to maintain 100% total
-    const totalActivityPercentage = currentActivities.reduce((sum, act) => sum + act.practice_percent, 0);
-    const scalingFactor = availablePercentage / totalActivityPercentage;
-    
-    const updatedActivities = currentActivities.map(activity => ({
-      ...activity,
-      practice_percent: Math.round(activity.practice_percent * scalingFactor * 100) / 100
-    }));
-    
-    // Final check: ensure total equals exactly 100%
-    const finalTotal = updatedActivities.reduce((sum, act) => sum + act.practice_percent, 0) + newPercentage;
-    if (Math.abs(finalTotal - 100) > 0.01) {
-      // Adjust the first activity to make total exactly equal to 100%
-      const adjustment = 100 - finalTotal;
-      if (updatedActivities.length > 0) {
-        updatedActivities[0].practice_percent = Math.round((updatedActivities[0].practice_percent + adjustment) * 100) / 100;
-      }
-    }
-    
-    // Update all activities in database
-    for (const updatedActivity of updatedActivities) {
-      await updateSelectedActivity(updatedActivity.id, { practice_percent: updatedActivity.practice_percent });
-    }
-    
-    setSelectedActivitiesState(updatedActivities);
-    
-    // Update practice percentage config
-    const activitiesConfig: { [activityId: string]: number } = {};
-    updatedActivities.forEach(activity => {
-      activitiesConfig[activity.activity_id] = activity.practice_percent;
-    });
-    
-    setPracticePercentageConfig(prev => ({
-      nonRndTime: newPercentage,
-      activities: activitiesConfig
-    }));
-  };
 
   if (loading) {
     return (
@@ -2358,62 +2007,6 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
               )}
             </div>
 
-            {/* Header with Year Selector for Activities */}
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">
-                  Research Activities
-                </h4>
-                <p className="text-gray-600 mt-1">Select and configure your research activities for {selectedYear}</p>
-              </div>
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
-                  <label className="text-sm font-medium text-gray-700">Year:</label>
-                  <select
-                    value={selectedYear}
-                    onChange={(e) => {
-                      const year = parseInt(e.target.value);
-                      setSelectedYear(year);
-                      // Find the corresponding business year ID
-                      const businessYear = availableBusinessYears.find(by => by.year === year);
-                      if (businessYear) {
-                        setSelectedBusinessYearId(businessYear.id);
-                      }
-                    }}
-                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                  >
-                    {availableBusinessYears.length > 0 ? (
-                      availableBusinessYears.map(businessYear => (
-                        <option key={businessYear.id} value={businessYear.year}>
-                          {businessYear.year}
-                        </option>
-                      ))
-                    ) : (
-                      <option value="">No years available</option>
-                    )}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Year Baseline Notice for Activities */}
-            {selectedYear !== 2025 && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <p className="text-sm text-blue-800">
-                      <strong>Year-specific modifications:</strong> Changes made for {selectedYear} will override the baseline configuration.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Multi-Select Filters */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <h4 className="text-lg font-semibold text-gray-900 mb-4">Filter Research Activities</h4>
@@ -2523,7 +2116,12 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
                             {!isSelected ? (
                               <button
                                 onClick={() => addActivity(activity)}
-                                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                                disabled={calculateAvailablePercentage() <= 0}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                  calculateAvailablePercentage() > 0
+                                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                }`}
                               >
                                 Add Activity
                               </button>
@@ -2643,7 +2241,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         isOpen={showAddRoleModal}
         onClose={() => setShowAddRoleModal(false)}
         onSave={saveRole}
-        existingRoles={roles}
+        existingRoles={roles.filter(role => role.created_at)}
       />
 
       {/* Edit Role Modal */}
@@ -2652,7 +2250,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         onClose={() => setShowEditRoleModal(false)}
         onSave={updateRole}
         role={editingRole}
-        existingRoles={roles}
+        existingRoles={roles.filter(role => role.created_at)}
       />
 
       {/* Non-R&D Time Modal */}
@@ -2660,17 +2258,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         isOpen={showNonRndModal}
         onClose={() => setShowNonRndModal(false)}
         nonRndTime={practicePercentageConfig.nonRndTime}
-        onUpdate={updateNonRndPercentage}
-      />
-
-      {/* Copy Confirmation Modal */}
-      <CopyConfirmationModal
-        isOpen={showCopyModal}
-        onClose={handleCopyModalClose}
-        onConfirm={handleCopyConfirm}
-        copyType={copyType}
-        availableYears={availableBusinessYears}
-        currentYear={availableBusinessYears.find(year => year.id === selectedBusinessYearId)}
+        onUpdate={(percentage) => setPracticePercentageConfig(prev => ({ ...prev, nonRndTime: percentage }))}
       />
     </div>
   );
@@ -2680,142 +2268,29 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 const createBusinessYearsForBusiness = async (businessId: string) => {
   try {
     console.log('Creating business years for business:', businessId);
+    
     // Create business years for 2024 and 2025 with required fields
     const businessYearsToCreate = [
       { business_id: businessId, year: 2024, gross_receipts: 0 },
       { business_id: businessId, year: 2025, gross_receipts: 0 }
     ];
-    const { data: businessYears, error } = await supabase
+    
+    const { data, error } = await supabase
       .from('rd_business_years')
       .insert(businessYearsToCreate)
       .select();
+    
     if (error) {
       console.error('Error creating business years:', error);
       throw error;
     }
-    console.log('Successfully created business years:', businessYears);
-
-    // Create default Research Leader role for each business year
-    if (businessYears && businessYears.length > 0) {
-      const defaultRoles = businessYears.map(businessYear => ({
-        name: 'Research Leader',
-        description: 'Default research leadership role',
-        business_id: businessId,
-        business_year_id: businessYear.id,
-        is_default: true
-      }));
-      const { data: roles, error: roleError } = await supabase
-        .from('rd_roles')
-        .insert(defaultRoles)
-        .select();
-      if (roleError) {
-        console.error('Error creating default roles:', roleError);
-        // Don't throw here - business years were created successfully
-      } else {
-        console.log('Successfully created default Research Leader roles:', roles);
-      }
-    }
-    return businessYears;
+    
+    console.log('Successfully created business years:', data);
+    return data;
   } catch (error) {
     console.error('Error in createBusinessYearsForBusiness:', error);
     throw error;
   }
-};
-
-// Copy Confirmation Modal
-interface CopyConfirmationModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: (sourceYearId: string) => void;
-  copyType: 'roles' | 'activities' | null;
-  availableYears: any[];
-  currentYear: any;
-}
-
-const CopyConfirmationModal: React.FC<CopyConfirmationModalProps> = ({
-  isOpen,
-  onClose,
-  onConfirm,
-  copyType,
-  availableYears,
-  currentYear
-}) => {
-  const [selectedYearId, setSelectedYearId] = useState<string>('');
-
-  // Add debugging
-  console.log('🔍 CopyConfirmationModal Debug:');
-  console.log('📅 Available years:', availableYears);
-  console.log('🎯 Current year:', currentYear);
-  console.log('🎯 Current year ID:', currentYear?.id);
-  
-  const filteredYears = availableYears.filter(year => year.id !== currentYear?.id);
-  console.log('🔍 Filtered years (excluding current):', filteredYears);
-
-  const handleConfirm = () => {
-    if (selectedYearId) {
-      console.log('✅ User selected year ID for copy:', selectedYearId);
-      onConfirm(selectedYearId);
-      onClose();
-      setSelectedYearId('');
-    }
-  };
-
-  const handleClose = () => {
-    onClose();
-    setSelectedYearId('');
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          Copy {copyType === 'roles' ? 'Roles' : 'Activities'} from Another Year
-        </h3>
-        
-        <p className="text-sm text-gray-600 mb-4">
-          Select which year you'd like to copy the {copyType === 'roles' ? 'roles' : 'activities'} from to {currentYear?.year}:
-        </p>
-        
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Source Year
-          </label>
-          <select
-            value={selectedYearId}
-            onChange={(e) => setSelectedYearId(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Select a year...</option>
-            {availableYears
-              .filter(year => year.id !== currentYear?.id)
-              .map(year => (
-                <option key={year.id} value={year.id}>
-                  {year.year}
-                </option>
-              ))}
-          </select>
-        </div>
-        
-        <div className="flex justify-end space-x-3">
-          <button
-            onClick={handleClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleConfirm}
-            disabled={!selectedYearId}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-          >
-            Copy
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 };
 
 export default ResearchExplorerStep; 

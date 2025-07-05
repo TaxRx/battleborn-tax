@@ -108,37 +108,12 @@ const RDTaxCreditDashboard: React.FC = () => {
         return;
       }
 
-      // Load R&D clients and businesses
-      const { data: rdClients, error: rdError } = await supabase
-        .from('rd_clients')
-        .select(`
-          *,
-          rd_businesses (*)
-        `);
-
-      if (rdError) {
-        console.error('Error loading R&D clients:', rdError);
-        // If we can't load R&D clients, just show tax clients
-        setClients(taxClients.map(client => ({
-          ...client,
-          rd_client_id: null,
-          rd_businesses: []
-        })));
-        setLoading(false);
-        return;
-      }
-
       // Map tax clients to R&D clients
-      const mappedClients = taxClients.map(taxClient => {
-        // Find matching R&D client by user_id (which references tax profile ID)
-        const rdClient = rdClients.find(rd => rd.user_id === taxClient.id);
-        
-        return {
-          ...taxClient,
-          rd_client_id: rdClient?.id || null,
-          rd_businesses: rdClient?.rd_businesses || []
-        };
-      });
+      const mappedClients = taxClients.map(taxClient => ({
+        ...taxClient,
+        rd_client_id: null,
+        rd_businesses: []
+      }));
 
       setClients(mappedClients);
     } catch (error) {
@@ -150,58 +125,19 @@ const RDTaxCreditDashboard: React.FC = () => {
 
   const handleCreateBusiness = async (businessData: any) => {
     try {
-      // Always create persistent records in Supabase, even in demo mode
-      // Use a consistent demo user ID that exists in the database
-      const userId = user?.id || 'demo-user-id';
-      
-      // First, ensure we have an R&D client record
-      let rdClientId = selectedClient?.rd_client_id;
-      
-      if (!rdClientId) {
-        // Create R&D client if it doesn't exist
-        const { data: newRdClient, error: rdError } = await supabase
-          .from('rd_clients')
-          .insert({
-            user_id: selectedClient?.id || userId // Use tax profile ID as user_id
-          })
-          .select()
-          .single();
-
-        if (rdError) {
-          console.error('Error creating R&D client:', rdError);
-          // If foreign key constraint fails, try with demo user ID
-          if (rdError.code === '23503') {
-            const { data: demoRdClient, error: demoRdError } = await supabase
-              .from('rd_clients')
-              .insert({
-                user_id: 'demo-user-id'
-              })
-              .select()
-              .single();
-            
-            if (demoRdError) {
-              console.error('Error creating demo R&D client:', demoRdError);
-              return;
-            }
-            rdClientId = demoRdClient.id;
-          } else {
-            return;
-          }
-        } else {
-          rdClientId = newRdClient.id;
-        }
-
-        // Update selectedClient with new rd_client_id
-        if (selectedClient) {
-          setSelectedClient(prev => prev ? { ...prev, rd_client_id: rdClientId } : null);
-        }
+      // First, ensure we have a client record (from clients table)
+      let clientId = selectedClient?.id;
+      if (!clientId) {
+        console.error('RDTaxCreditDashboard: Missing clientId for selected client', { selectedClient });
+        setShowCreateBusinessModal(false);
+        setSelectedClient(null);
+        return;
       }
-
       // Create the business record
       const { data: newBusiness, error: businessError } = await supabase
         .from('rd_businesses')
         .insert({
-          client_id: rdClientId,
+          client_id: clientId,
           name: businessData.name,
           ein: businessData.ein,
           entity_type: businessData.entityType,
@@ -218,7 +154,6 @@ const RDTaxCreditDashboard: React.FC = () => {
         })
         .select()
         .single();
-
       if (businessError) {
         console.error('Error creating business:', businessError);
         return;
@@ -230,7 +165,6 @@ const RDTaxCreditDashboard: React.FC = () => {
           if (client.id === selectedClient?.id) {
             return {
               ...client,
-              rd_client_id: rdClientId,
               rd_businesses: [...(client.rd_businesses || []), newBusiness]
             };
           }
