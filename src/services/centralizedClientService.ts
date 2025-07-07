@@ -657,6 +657,34 @@ export class CentralizedClientService {
   }
 
   /**
+   * Get a specific personal year for a client
+   */
+  static async getPersonalYear(clientId: string, year: number): Promise<CentralizedPersonalYear | null> {
+    try {
+      const { data, error } = await supabase
+        .from('personal_years')
+        .select('*')
+        .eq('client_id', clientId)
+        .eq('year', year)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // No record found
+          return null;
+        }
+        console.error('Error getting personal year:', error);
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error in getPersonalYear:', error);
+      return null;
+    }
+  }
+
+  /**
    * Check if client is enrolled in a specific tool
    */
   static async isClientEnrolledInTool(
@@ -716,15 +744,27 @@ export class CentralizedClientService {
    * Transform TaxInfo to CreateClientData format
    */
   static transformTaxInfoToCreateData(taxInfo: TaxInfo): CreateClientData {
-    return {
-      full_name: taxInfo.fullName,
-      email: taxInfo.email,
-      phone: taxInfo.phone,
+    console.log('[CentralizedClientService] transformTaxInfoToCreateData input:', taxInfo);
+    console.log('[CentralizedClientService] taxInfo.fullName:', taxInfo.fullName);
+    console.log('[CentralizedClientService] taxInfo.email:', taxInfo.email);
+    
+    // Validate required fields
+    if (!taxInfo.fullName || taxInfo.fullName.trim() === '') {
+      throw new Error('Full name is required');
+    }
+    if (!taxInfo.email || taxInfo.email.trim() === '') {
+      throw new Error('Email is required');
+    }
+    
+    const result = {
+      full_name: taxInfo.fullName.trim(),
+      email: taxInfo.email.trim(),
+      phone: taxInfo.phone || null,
       filing_status: taxInfo.filingStatus,
-      home_address: taxInfo.homeAddress,
-      city: taxInfo.city,
-      state: taxInfo.state,
-      zip_code: taxInfo.zipCode,
+      home_address: taxInfo.homeAddress || null,
+      city: taxInfo.city || null,
+      state: taxInfo.state || null,
+      zip_code: taxInfo.zipCode || null,
       dependents: taxInfo.dependents || 0,
       standard_deduction: taxInfo.standardDeduction || true,
       custom_deduction: taxInfo.customDeduction || 0,
@@ -762,6 +802,9 @@ export class CentralizedClientService {
         }))
       }))
     };
+    
+    console.log('[CentralizedClientService] transformTaxInfoToCreateData result:', result);
+    return result;
   }
 
   /**

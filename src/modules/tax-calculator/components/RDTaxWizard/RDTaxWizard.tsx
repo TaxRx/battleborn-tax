@@ -141,10 +141,20 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
 
         if (rdBusiness) {
           console.log('✅ Found existing R&D business:', rdBusiness);
+          
+          // Find the current year (2025) or the most recent year
+          const currentYear = new Date().getFullYear();
+          const businessYears = rdBusiness.rd_business_years || [];
+          const currentYearData = businessYears.find(by => by.year === currentYear) || 
+                                 businessYears.sort((a, b) => b.year - a.year)[0] || 
+                                 null;
+          
+          console.log('📅 Setting selected year to:', currentYearData?.year || 'none');
+          
           setWizardState(prev => ({
             ...prev,
             business: rdBusiness,
-            selectedYear: rdBusiness.rd_business_years?.[0] || null
+            selectedYear: currentYearData
           }));
           return;
         }

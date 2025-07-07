@@ -31,7 +31,6 @@ import { useUserStore } from './store/userStore';
 import ClientList from './components/AdvisorDashboard/ClientList';
 import GroupList from './components/AdvisorDashboard/GroupList';
 import StrategiesAdminPage from './components/StrategiesAdminPage';
-import DemoModeIndicator from './components/DemoModeIndicator';
 import useAuthStore from './store/authStore';
 import RnDAdminDashboard from './features/rd-wizard/src/pages/admin/Dashboard';
 import RnDClientManagement from './features/rd-wizard/src/pages/admin/ClientManagement';
@@ -371,7 +370,6 @@ const App = () => {
           </main>
         </div>
         <ToastContainer position="top-right" autoClose={5000} />
-        <DemoModeIndicator />
       </UserProvider>
     </Router>
   );
