@@ -4,6 +4,33 @@ import { TaxInfo } from '../../../types';
 import { calculateTaxBreakdown } from '../utils/taxCalculations';
 import { NumericFormat } from 'react-number-format';
 
+// Helper function to get marginal tax rate
+const getMarginalTaxRate = (taxInfo: TaxInfo, rates: any): number => {
+  const totalIncome = taxInfo.wagesIncome + 
+    taxInfo.passiveIncome + 
+    taxInfo.unearnedIncome +
+    (taxInfo.businessOwner ? (taxInfo.ordinaryK1Income || 0) + (taxInfo.guaranteedK1Income || 0) : 0);
+  
+  const brackets = rates.federal.brackets[taxInfo.filingStatus] || [];
+  
+  for (let i = brackets.length - 1; i >= 0; i--) {
+    if (totalIncome > brackets[i].threshold) {
+      return brackets[i].rate / 100;
+    }
+  }
+  
+  return 0.22; // Default to 22% if no bracket found
+};
+
+// Helper function to get state tax rate
+const getStateTaxRate = (state: string, rates: any): number => {
+  const stateRates = rates.state?.[state]?.brackets || [];
+  if (stateRates.length === 0) return 0.05; // Default to 5% if no state data
+  
+  // Use the highest bracket rate as a simple approximation
+  return Math.max(...stateRates.map((bracket: any) => bracket.rate)) / 100;
+};
+
 interface CharitableDonationCalculatorProps {
   taxInfo: TaxInfo;
   rates: any;
@@ -22,7 +49,7 @@ export default function CharitableDonationCalculator({
   const existingDetails = existingStrategy?.details?.charitableDonation;
 
   // Initialize state with existing details if they exist
-  const [donationAmount, setDonationAmount] = useState(existingDetails?.donationAmount || 34444);
+  const [donationAmount, setDonationAmount] = useState(existingDetails?.donationAmount || 10000);
   const [fmvMultiplier, setFmvMultiplier] = useState(existingDetails?.fmvMultiplier || 5);
   const [agiLimit, setAgiLimit] = useState(existingDetails?.agiLimit || 0.6);
   
@@ -43,7 +70,12 @@ export default function CharitableDonationCalculator({
   const maxDonation = Math.floor(totalIncome * agiLimit);
 
   // Calculate deduction value (capped at AGI limit)
-  const deductionValue = (donationAmount || 0) * fmvMultiplier;
+  const deductionValue = Math.min((donationAmount || 0) * fmvMultiplier, totalIncome * agiLimit);
+
+  // Calculate standard deduction and itemized totals for comparison
+  const standardDeduction = rates.federal.standardDeduction[taxInfo.filingStatus] || 0;
+  const currentItemizedDeductions = taxInfo.standardDeduction ? 0 : (taxInfo.customDeduction || 0);
+  const newItemizedTotal = currentItemizedDeductions + deductionValue;
 
   // Only calculate if we have a valid donation amount
   const shouldCalculate = donationAmount && donationAmount > 0;
@@ -51,24 +83,28 @@ export default function CharitableDonationCalculator({
   // Calculate benefits and update state
   useEffect(() => {
     if (shouldCalculate) {
-      // SIMPLE APPROACH: Use before/after comparison just like Tax Savings Value card
       // Calculate baseline tax (no charitable deduction)
       const baselineBreakdown = calculateTaxBreakdown(taxInfo, rates);
       
       // Calculate tax WITH charitable deduction
-      // Use the same logic as the working system - modify customDeduction and disable standardDeduction
-      const standardDeduction = rates.federal.standardDeduction[taxInfo.filingStatus] || 0;
-      const currentItemizedDeductions = taxInfo.standardDeduction ? 0 : (taxInfo.customDeduction || 0);
-      const newItemizedTotal = currentItemizedDeductions + deductionValue;
       
-      let modifiedTaxInfo = taxInfo;
       let federalSavings = 0;
       let stateSavings = 0;
       let totalBenefit = 0;
       
-      // Only itemize if the new total exceeds standard deduction
+      // Calculate the potential benefit using the deduction value (after FMV multiplier)
+      // This shows what the charitable deduction would be worth if they itemize
+      const marginalTaxRate = getMarginalTaxRate(taxInfo, rates);
+      const stateTaxRate = getStateTaxRate(taxInfo.state, rates);
+      
+      // Calculate potential savings using the deduction value (after FMV multiplier)
+      federalSavings = Math.round(deductionValue * marginalTaxRate);
+      stateSavings = Math.round(deductionValue * stateTaxRate);
+      totalBenefit = federalSavings + stateSavings;
+      
+      // If itemizing would actually be beneficial, use the more accurate calculation
       if (newItemizedTotal > standardDeduction) {
-        modifiedTaxInfo = {
+        const modifiedTaxInfo = {
           ...taxInfo,
           standardDeduction: false,
           customDeduction: newItemizedTotal
@@ -76,7 +112,7 @@ export default function CharitableDonationCalculator({
         
         const withCharityBreakdown = calculateTaxBreakdown(modifiedTaxInfo, rates);
         
-        // Tax savings = difference in total tax
+        // Use the more accurate calculation
         federalSavings = Math.round(baselineBreakdown.federal - withCharityBreakdown.federal);
         stateSavings = Math.round(baselineBreakdown.state - withCharityBreakdown.state);
         totalBenefit = federalSavings + stateSavings;
@@ -100,7 +136,13 @@ export default function CharitableDonationCalculator({
         standardDeduction,
         currentItemizedDeductions,
         newItemizedTotal,
-        willItemize: newItemizedTotal > standardDeduction
+        willItemize: newItemizedTotal > standardDeduction,
+        totalIncome,
+        agiLimit,
+        maxDonation: Math.floor(totalIncome * agiLimit),
+        marginalTaxRate: getMarginalTaxRate(taxInfo, rates),
+        stateTaxRate: getStateTaxRate(taxInfo.state, rates),
+        calculationMethod: newItemizedTotal > standardDeduction ? 'itemized_comparison' : 'marginal_rate'
       });
 
       const savingsData = {
@@ -140,6 +182,7 @@ export default function CharitableDonationCalculator({
   }, [shouldCalculate, donationAmount, fmvMultiplier, agiLimit, deductionValue, totalIncome, taxInfo, rates, onSavingsChange]);
 
   // Use calculated values instead of hardcoded rates
+  // Net benefit = total tax savings - raw donation amount (not deduction value)
   const netSavings = shouldCalculate ? Math.max(0, calculatedBenefits.totalBenefit - (donationAmount || 0)) : 0;
 
   return (
@@ -270,6 +313,16 @@ export default function CharitableDonationCalculator({
               <p className="form-label">Net Benefit</p>
               <p className="heading-primary text-professional-navy">${netSavings.toLocaleString()}</p>
             </div>
+            
+            {shouldCalculate && newItemizedTotal <= standardDeduction && (
+              <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> This benefit applies when you itemize deductions. 
+                  Currently, your standard deduction (${standardDeduction.toLocaleString()}) exceeds your itemized deductions. 
+                  Consider combining with other deductions to maximize your tax savings.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>

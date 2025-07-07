@@ -219,7 +219,12 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
   // }, [businesses]);
 
   const handlePersonalInfoChange = (field: keyof TaxInfo, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    console.log(`[handlePersonalInfoChange] field: ${field}, value: ${value}`);
+    setFormData(prev => {
+      const newData = { ...prev, [field]: value };
+      console.log(`[handlePersonalInfoChange] Updated formData:`, newData);
+      return newData;
+    });
   };
 
   const handlePersonalYearChange = (year: number, field: keyof PersonalYear, value: any) => {
@@ -531,12 +536,29 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log(`[handleSubmit] Form submitted`);
+    console.log(`[handleSubmit] Current formData:`, formData);
+    console.log(`[handleSubmit] formData.fullName:`, formData.fullName);
+    console.log(`[handleSubmit] formData.email:`, formData.email);
+    
     setIsSubmitting(true);
     setError(null);
 
     console.log(`[handleSubmit] Starting form submission`);
     console.log(`[handleSubmit] Current businesses state:`, businesses);
     console.log(`[handleSubmit] Current formData state:`, formData);
+
+    // Validate required fields
+    if (!formData.fullName || formData.fullName.trim() === '') {
+      setError('Full name is required');
+      toast.error('Please enter a full name');
+      return;
+    }
+    if (!formData.email || formData.email.trim() === '') {
+      setError('Email is required');
+      toast.error('Please enter an email address');
+      return;
+    }
 
     try {
       // Transform businesses to match TaxInfo structure
@@ -575,6 +597,8 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
       };
 
       console.log(`[handleSubmit] Complete TaxInfo object:`, completeTaxInfo);
+      console.log(`[handleSubmit] formData.fullName:`, formData.fullName);
+      console.log(`[handleSubmit] completeTaxInfo.fullName:`, completeTaxInfo.fullName);
 
       if (initialData?.id) {
         console.log(`[handleSubmit] Updating existing client with ID: ${initialData.id}`);
@@ -728,20 +752,27 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
             onClientCreated(completeTaxInfo);
             onClose();
           }
+        }
+      } else {
+        // Create new client
+        console.log(`[handleSubmit] Creating new client`);
+        const createClientData = CentralizedClientService.transformTaxInfoToCreateData(completeTaxInfo);
+        
+        console.log(`[handleSubmit] Create client data:`, createClientData);
+        
+        const result = await CentralizedClientService.createClient(createClientData);
+        
+        console.log(`[handleSubmit] Create client result:`, result);
+        
+        if (result.success && result.clientId) {
+          console.log(`[handleSubmit] Client created successfully with ID: ${result.clientId}`);
+          toast.success('Client created successfully!');
+          onClientCreated(completeTaxInfo);
+          onClose();
         } else {
-          // Create new client
-          const createClientData = CentralizedClientService.transformTaxInfoToCreateData(completeTaxInfo);
-          
-          const result = await CentralizedClientService.createClient(createClientData);
-          
-          if (result.success && result.clientId) {
-            toast.success('Client created successfully!');
-            onClientCreated(completeTaxInfo);
-            onClose();
-          } else {
-            setError(result.error || 'Failed to create client');
-            toast.error(result.error || 'Failed to create client');
-          }
+          console.error(`[handleSubmit] Failed to create client:`, result.error);
+          setError(result.error || 'Failed to create client');
+          toast.error(result.error || 'Failed to create client');
         }
       }
     } catch (error) {

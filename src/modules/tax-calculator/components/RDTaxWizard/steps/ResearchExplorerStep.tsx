@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../../../../lib/supabase';
-import { Plus, ChevronDown, ChevronRight, Edit, Trash2, MoveUp, MoveDown, UserPlus } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Edit, Trash2, MoveUp, MoveDown, UserPlus, Sparkles, RotateCcw } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { AIService, AIGenerationContext } from '../../../../../services/aiService';
 
 interface ResearchExplorerStepProps {
   selectedActivities: any[];
@@ -71,8 +72,22 @@ interface SelectedActivity {
   practice_percent: number;
   selected_roles: string[];
   config: any;
+  research_guidelines?: ResearchGuidelines;
   created_at?: string;
   updated_at?: string;
+}
+
+interface ResearchGuidelines {
+  outcome_uncertain: boolean;
+  considered_alternatives: boolean;
+  us_based: boolean;
+  science_based: boolean;
+  primary_goal: string;
+  uncertainty_type: string;
+  success_measurement: string;
+  hypothesis: string;
+  development_steps: string;
+  data_feedback: string;
 }
 
 interface PracticePercentageConfig {
@@ -490,7 +505,7 @@ const EditRoleModal: React.FC<EditRoleModalProps> = ({
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2-2V6a2 2 0 002-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
               </div>
               <div>
@@ -920,6 +935,17 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
     nonRndTime: 10, // Start at 10% instead of 0
     activities: {}
   });
+
+  // State for expanded activities (fixes React Hooks error)
+  const [expandedActivities, setExpandedActivities] = useState<{ [key: string]: boolean }>({});
+
+  // Helper function to toggle expanded state
+  const toggleExpanded = (activityId: string) => {
+    setExpandedActivities(prev => ({
+      ...prev,
+      [activityId]: !prev[activityId]
+    }));
+  };
 
   useEffect(() => {
     const initializeData = async () => {
@@ -1546,20 +1572,19 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
     const newTotalActivities = selectedActivitiesState.length + 1;
     const equalShare = Math.round((availablePercentage / newTotalActivities) * 100) / 100;
 
-    // Get default roles from the research activity
+    // Get all roles and set them as selected by default
     let defaultRoles: string[] = [];
     try {
-      const { data: activityData, error } = await supabase
-        .from('rd_research_activities')
-        .select('default_roles')
-        .eq('id', activity.id)
-        .single();
+      const { data: rolesData, error } = await supabase
+        .from('rd_roles')
+        .select('id')
+        .eq('business_year_id', selectedBusinessYearId);
       
-      if (!error && activityData?.default_roles) {
-        defaultRoles = Array.isArray(activityData.default_roles) ? activityData.default_roles : [];
+      if (!error && rolesData) {
+        defaultRoles = rolesData.map(role => role.id);
       }
     } catch (error) {
-      console.error('Error loading default roles:', error);
+      console.error('Error loading roles for default selection:', error);
     }
 
     // Build new activities config with equal shares
@@ -1601,6 +1626,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       practice_percent: equalShare,
       selected_roles: defaultRoles,
       config: {},
+      research_guidelines: undefined,
       created_at: undefined,
       updated_at: undefined
     };
@@ -1778,17 +1804,23 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
   const updateActivityRoles = async (activityId: string, selectedRoles: string[]) => {
     setSelectedActivitiesState(prev => 
-      prev.map(activity => 
-        activity.activity_id === activityId 
-          ? { ...activity, selected_roles: selectedRoles }
-          : activity
+      prev.map(act => 
+        act.activity_id === activityId 
+          ? { ...act, selected_roles: selectedRoles }
+          : act
       )
     );
 
-    // Update in database
-    const activity = selectedActivitiesState.find(a => a.activity_id === activityId);
-    if (activity) {
-      await updateSelectedActivity(activity.id, { selected_roles: selectedRoles });
+    try {
+      const { error } = await supabase
+        .from('rd_selected_activities')
+        .update({ selected_roles: selectedRoles })
+        .eq('business_year_id', selectedBusinessYearId)
+        .eq('activity_id', activityId);
+      
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error updating activity roles:', error);
     }
   };
 
@@ -1824,6 +1856,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         practice_percent: data.practice_percent,
         selected_roles: data.selected_roles,
         config: data.config,
+        research_guidelines: activity.research_guidelines,
         created_at: data.created_at,
         updated_at: data.updated_at
       };
@@ -1946,6 +1979,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
           practice_percent,
           selected_roles,
           config,
+          research_guidelines,
           rd_research_activities (
             id,
             title,
@@ -1972,6 +2006,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
             practice_percent: activity.practice_percent,
             selected_roles: Array.isArray(activity.selected_roles) ? activity.selected_roles : [],
             config: activity.config,
+            research_guidelines: activity.research_guidelines,
             activity_name: activity.rd_research_activities?.title || 'Unknown Activity',
             activity_category: category?.name || '',
             activity_area: area?.name || '',
@@ -2270,6 +2305,120 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
     }));
   };
 
+  // Helper function to get filter summary with counts
+  const getFilterSummary = () => {
+    const summary: Array<{
+      type: 'category' | 'area' | 'focus';
+      id: string;
+      name: string;
+      count: number;
+    }> = [];
+    
+    // Add categories with counts
+    selectedCategories.forEach(categoryId => {
+      const category = categories.find(c => c.id === categoryId);
+      if (category) {
+        const categoryAreas = areas.filter(a => a.category_id === categoryId);
+        const categoryFocuses = focuses.filter(f => categoryAreas.some(a => a.id === f.area_id));
+        const categoryActivities = activities.filter(a => categoryFocuses.some(f => f.id === a.focus_id));
+        
+        summary.push({
+          type: 'category',
+          id: categoryId,
+          name: category.name,
+          count: categoryActivities.length
+        });
+      }
+    });
+    
+    // Add areas with counts
+    selectedAreas.forEach(areaId => {
+      const area = areas.find(a => a.id === areaId);
+      if (area) {
+        const areaFocuses = focuses.filter(f => f.area_id === areaId);
+        const areaActivities = activities.filter(a => areaFocuses.some(f => f.id === a.focus_id));
+        
+        summary.push({
+          type: 'area',
+          id: areaId,
+          name: area.name,
+          count: areaActivities.length
+        });
+      }
+    });
+    
+    // Add focuses with counts
+    selectedFocuses.forEach(focusId => {
+      const focus = focuses.find(f => f.id === focusId);
+      if (focus) {
+        const focusActivities = activities.filter(a => a.focus_id === focusId);
+        
+        summary.push({
+          type: 'focus',
+          id: focusId,
+          name: focus.name,
+          count: focusActivities.length
+        });
+      }
+    });
+    
+    return summary;
+  };
+
+  // Helper function to get hierarchical filter path
+  const getFilterPath = (focusId: string) => {
+    const focus = focuses.find(f => f.id === focusId);
+    if (!focus) return '';
+    
+    const area = areas.find(a => a.id === focus.area_id);
+    if (!area) return focus.name;
+    
+    const category = categories.find(c => c.id === area.category_id);
+    if (!category) return `${area.name}-${focus.name}`;
+    
+    return `${category.name}-${area.name}-${focus.name}`;
+  };
+
+  // Helper function to get activity count for a focus
+  const getActivityCountForFocus = (focusId: string) => {
+    return activities.filter(a => a.focus_id === focusId).length;
+  };
+
+  // Helper function to get activity count for an area
+  const getActivityCountForArea = (areaId: string) => {
+    const areaFocuses = focuses.filter(f => f.area_id === areaId);
+    return activities.filter(a => areaFocuses.some(f => f.id === a.focus_id)).length;
+  };
+
+  // Helper function to get activity count for a category
+  const getActivityCountForCategory = (categoryId: string) => {
+    const categoryAreas = areas.filter(a => a.category_id === categoryId);
+    const categoryFocuses = focuses.filter(f => categoryAreas.some(a => a.id === f.area_id));
+    return activities.filter(a => categoryFocuses.some(f => f.id === a.focus_id)).length;
+  };
+
+  const updateResearchGuidelines = async (activityId: string, guidelines: ResearchGuidelines) => {
+    setSelectedActivitiesState(prev => 
+      prev.map(act => 
+        act.activity_id === activityId 
+          ? { ...act, research_guidelines: guidelines }
+          : act
+      )
+    );
+
+    try {
+      const { error } = await supabase
+        .from('rd_selected_activities')
+        .update({ research_guidelines: guidelines })
+        .eq('business_year_id', selectedBusinessYearId)
+        .eq('activity_id', activityId);
+      
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error updating research guidelines:', error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -2549,154 +2698,240 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
         {activeTab === 'activities' && (
           <div className="space-y-6">
-            {/* Practice Percentage Bar */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-2">
-                  <h4 className="text-lg font-semibold text-gray-900">Practice Percentage</h4>
-                  <button
-                    onClick={() => setShowNonRndModal(true)}
-                    className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                  >
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </div>
-                <div className="text-sm text-gray-600">
-                  Total: 100% (Non-R&D: {practicePercentageConfig.nonRndTime}% | Research: {100 - practicePercentageConfig.nonRndTime}%)
-                </div>
-              </div>
-              
-              <div className="relative h-8 bg-gray-100 rounded-lg overflow-hidden">
-                {/* Non-R&D Time */}
-                <div 
-                  className="absolute left-0 top-0 h-full bg-gray-400 flex items-center justify-center transition-all duration-500"
-                  style={{ width: `${practicePercentageConfig.nonRndTime}%` }}
-                  title={`Non-R&D (${practicePercentageConfig.nonRndTime}%)`}
-                >
-                  <span className="text-xs font-medium text-white px-2">
-                    Non-R&D ({practicePercentageConfig.nonRndTime}%)
-                  </span>
-                </div>
-                
-                {/* Research Activities - Animated, with tooltips */}
-                {selectedActivitiesState.map((activity, index) => {
-                  const colors = ['bg-blue-400', 'bg-green-400', 'bg-purple-400', 'bg-orange-400', 'bg-pink-400'];
-                  const color = colors[index % colors.length];
-                  const leftPosition = practicePercentageConfig.nonRndTime + 
-                    selectedActivitiesState.slice(0, index).reduce((sum, a) => sum + (practicePercentageConfig.activities[a.activity_id] || 0), 0);
-                  const activityPercentage = practicePercentageConfig.activities[activity.activity_id] || 0;
-                  return (
-                    <div
-                      key={activity.activity_id}
-                      className={`absolute top-0 h-full ${color} flex items-center justify-center transition-all duration-500`}
-                      style={{ 
-                        left: `${leftPosition}%`,
-                        width: `${activityPercentage}%`
-                      }}
-                      title={`${activity.activity_name || activity.title || 'Unknown Activity'} (${activityPercentage.toFixed(1)}%)`}
-                    >
-                      <span className="text-xs font-medium text-white px-1 truncate">
-                        {activity.activity_name || activity.title || 'Unknown Activity'} ({activityPercentage.toFixed(1)}%)
-                      </span>
+            {/* Modern Gradient Header with Progress */}
+            <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl shadow-xl overflow-hidden">
+              <div className="px-6 py-8 relative">
+                <div className="absolute inset-0 bg-black/10"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h2 className="text-3xl font-bold text-white mb-2">Research Activities</h2>
+                      <p className="text-blue-100 text-lg">
+                        Discover and configure research activities for maximum R&D credit optimization
+                      </p>
                     </div>
-                  );
-                })}
-              </div>
-              
-              {/* Legend */}
-              {selectedActivitiesState.length > 0 && (
-                <div className="mt-4 space-y-2">
-                  <h5 className="text-sm font-medium text-gray-700">Activity Breakdown:</h5>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {selectedActivitiesState.map((activity, index) => {
-                      const colors = ['bg-blue-400', 'bg-green-400', 'bg-purple-400', 'bg-orange-400', 'bg-pink-400'];
-                      const color = colors[index % colors.length];
-                      const activityPercentage = practicePercentageConfig.activities[activity.activity_id] || 0;
+                    <div className="flex items-center space-x-3">
+                      <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+                      <span className="text-blue-100 text-sm font-medium">Live Configuration</span>
+                    </div>
+                  </div>
+                  
+                  {/* Practice Percentage Bar - RESTORED WITH EXACT SAME LOGIC */}
+                  <div className="bg-white bg-opacity-20 backdrop-blur-sm rounded-xl p-4 mb-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center space-x-2">
+                        <h4 className="text-lg font-semibold text-white">Practice Percentage</h4>
+                        <button
+                          onClick={() => setShowNonRndModal(true)}
+                          className="p-1 text-blue-200 hover:text-white transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div className="text-sm text-blue-100">
+                        Total: 100% (Non-R&D: {practicePercentageConfig.nonRndTime}% | Research: {100 - practicePercentageConfig.nonRndTime}%)
+                      </div>
+                    </div>
+                    
+                    <div className="relative h-8 bg-blue-500/30 rounded-lg overflow-hidden">
+                      {/* Non-R&D Time */}
+                      <div 
+                        className="absolute left-0 top-0 h-full bg-gray-400 flex items-center justify-center transition-all duration-500"
+                        style={{ width: `${practicePercentageConfig.nonRndTime}%` }}
+                        title={`Non-R&D (${practicePercentageConfig.nonRndTime}%)`}
+                      >
+                        <span className="text-xs font-medium text-white px-2">
+                          Non-R&D ({practicePercentageConfig.nonRndTime}%)
+                        </span>
+                      </div>
                       
-                      return (
-                        <div key={activity.activity_id} className="flex items-center space-x-2 text-sm">
-                          <div className={`w-3 h-3 ${color} rounded`}></div>
-                          <span className="text-gray-700">
-                            {activity.activity_name || activity.title || 'Unknown Activity'}
-                          </span>
-                          <span className="text-gray-500 font-medium">
-                            {activityPercentage.toFixed(1)}%
-                          </span>
+                      {/* Research Activities - Animated, with tooltips */}
+                      {selectedActivitiesState.map((activity, index) => {
+                        const colors = ['bg-blue-400', 'bg-green-400', 'bg-purple-400', 'bg-orange-400', 'bg-pink-400'];
+                        const color = colors[index % colors.length];
+                        const leftPosition = practicePercentageConfig.nonRndTime + 
+                          selectedActivitiesState.slice(0, index).reduce((sum, a) => sum + (practicePercentageConfig.activities[a.activity_id] || 0), 0);
+                        const activityPercentage = practicePercentageConfig.activities[activity.activity_id] || 0;
+                        return (
+                          <div
+                            key={activity.activity_id}
+                            className={`absolute top-0 h-full ${color} flex items-center justify-center transition-all duration-500`}
+                            style={{ 
+                              left: `${leftPosition}%`,
+                              width: `${activityPercentage}%`
+                            }}
+                            title={`${activity.activity_name || activity.title || 'Unknown Activity'} (${activityPercentage.toFixed(1)}%)`}
+                          >
+                            <span className="text-xs font-medium text-white px-1 truncate">
+                              {activity.activity_name || activity.title || 'Unknown Activity'} ({activityPercentage.toFixed(1)}%)
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    
+                    {/* Legend */}
+                    {selectedActivitiesState.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        <h5 className="text-sm font-medium text-blue-100">Activity Breakdown:</h5>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {selectedActivitiesState.map((activity, index) => {
+                            const colors = ['bg-blue-400', 'bg-green-400', 'bg-purple-400', 'bg-orange-400', 'bg-pink-400'];
+                            const color = colors[index % colors.length];
+                            const activityPercentage = practicePercentageConfig.activities[activity.activity_id] || 0;
+                            
+                            return (
+                              <div key={activity.activity_id} className="flex items-center space-x-2 text-sm">
+                                <div className={`w-3 h-3 ${color} rounded`}></div>
+                                <span className="text-blue-100">
+                                  {activity.activity_name || activity.title || 'Unknown Activity'}
+                                </span>
+                                <span className="text-blue-200 font-medium">
+                                  {activityPercentage.toFixed(1)}%
+                                </span>
+                              </div>
+                            );
+                          })}
                         </div>
-                      );
-                    })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Year Selector and Header */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+              <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <div className="flex items-center">
+                  <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mr-4">Activity Configuration</h3>
+                  <div className="flex items-center space-x-2">
+                    <label className="text-sm font-medium text-gray-700">Year:</label>
+                    <select
+                      value={selectedYear}
+                      onChange={(e) => {
+                        const year = parseInt(e.target.value);
+                        setSelectedYear(year);
+                        const businessYear = availableBusinessYears.find(by => by.year === year);
+                        if (businessYear) {
+                          setSelectedBusinessYearId(businessYear.id);
+                        }
+                      }}
+                      className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {availableBusinessYears.length > 0 ? (
+                        availableBusinessYears.map(businessYear => (
+                          <option key={businessYear.id} value={businessYear.year}>
+                            {businessYear.year}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No years available</option>
+                      )}
+                    </select>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm text-gray-600">Available for R&D</div>
+                  <div className="text-2xl font-bold text-gray-900">{100 - practicePercentageConfig.nonRndTime}%</div>
+                </div>
+              </div>
+
+              {/* Year Baseline Notice */}
+              {selectedYear !== 2025 && (
+                <div className="bg-blue-50 border-b border-blue-200 px-6 py-3">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0">
+                      <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="ml-3">
+                      <p className="text-sm text-blue-800">
+                        <strong>Year-specific modifications:</strong> Changes made for {selectedYear} will override the baseline configuration.
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Header with Year Selector for Activities */}
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">
-                  Research Activities
-                </h4>
-                <p className="text-gray-600 mt-1">Select and configure your research activities for {selectedYear}</p>
-              </div>
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
-                  <label className="text-sm font-medium text-gray-700">Year:</label>
-                  <select
-                    value={selectedYear}
-                    onChange={(e) => {
-                      const year = parseInt(e.target.value);
-                      setSelectedYear(year);
-                      // Find the corresponding business year ID
-                      const businessYear = availableBusinessYears.find(by => by.year === year);
-                      if (businessYear) {
-                        setSelectedBusinessYearId(businessYear.id);
+            {/* Collapsible Filter Accordion */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+              <div className="bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 px-6 py-4 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xl font-semibold text-white mb-1">Filter Research Activities</h3>
+                    <p className="text-green-100 text-sm">Refine your search by categories, areas, and focuses</p>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    {/* Selected Filters Summary */}
+                    {(() => {
+                      const totalSelected = selectedCategories.length + selectedAreas.length + selectedFocuses.length;
+                      if (totalSelected > 0) {
+                        const filterSummary = getFilterSummary();
+                        return (
+                          <div className="flex items-center space-x-2">
+                            <div className="bg-green-500/20 backdrop-blur-sm rounded-full px-3 py-1 border border-green-400/30">
+                              <span className="text-green-100 text-sm font-medium">
+                                {totalSelected} filter{totalSelected !== 1 ? 's' : ''} active
+                              </span>
+                            </div>
+                            {/* Show selected focuses with hierarchical paths */}
+                            {selectedFocuses.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {selectedFocuses.map(focusId => {
+                                  const focus = focuses.find(f => f.id === focusId);
+                                  if (!focus) return null;
+                                  const path = getFilterPath(focusId);
+                                  const count = getActivityCountForFocus(focusId);
+                                  return (
+                                    <div key={focusId} className="bg-green-500/30 backdrop-blur-sm rounded-full px-2 py-1 border border-green-400/50">
+                                      <span className="text-green-100 text-xs font-medium">
+                                        {path} ({count})
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            <button
+                              onClick={() => {
+                                setSelectedCategories([]);
+                                setSelectedAreas([]);
+                                setSelectedFocuses([]);
+                              }}
+                              className="text-green-200 hover:text-white transition-colors text-sm"
+                              title="Clear all filters"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        );
                       }
-                    }}
-                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                  >
-                    {availableBusinessYears.length > 0 ? (
-                      availableBusinessYears.map(businessYear => (
-                        <option key={businessYear.id} value={businessYear.year}>
-                          {businessYear.year}
-                        </option>
-                      ))
-                    ) : (
-                      <option value="">No years available</option>
-                    )}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Year Baseline Notice for Activities */}
-            {selectedYear !== 2025 && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <p className="text-sm text-blue-800">
-                      <strong>Year-specific modifications:</strong> Changes made for {selectedYear} will override the baseline configuration.
-                    </p>
+                      return null;
+                    })()}
                   </div>
                 </div>
               </div>
-            )}
 
-            {/* Multi-Select Filters */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h4 className="text-lg font-semibold text-gray-900 mb-4">Filter Research Activities</h4>
-              
-              <div className="space-y-6">
+              {/* Filter Content - Always Visible but Compact */}
+              <div className="p-6 space-y-6">
                 {/* Categories */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">Categories</label>
-                  <div className="flex flex-wrap gap-2 mb-2">
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="block text-sm font-semibold text-gray-700">Categories</label>
+                    {selectedCategories.length > 0 && (
+                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                        {selectedCategories.length} selected
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
                     {categories.map(category => (
                       <SelectableChip
                         key={category.id}
@@ -2706,22 +2941,20 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
                         color="blue"
                       />
                     ))}
-                    {selectedCategories.length > 0 && (
-                      <button
-                        className="ml-2 px-3 py-1 rounded-full border border-gray-300 text-gray-500 hover:bg-gray-100 transition-colors text-xs"
-                        onClick={() => setSelectedCategories([])}
-                        title="Clear all categories"
-                      >
-                        Clear All
-                      </button>
-                    )}
                   </div>
                 </div>
 
                 {/* Areas - Only show when categories are selected */}
                 {selectedCategories.length > 0 && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-3">Areas</label>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="block text-sm font-semibold text-gray-700">Areas</label>
+                      {selectedAreas.length > 0 && (
+                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                          {selectedAreas.length} selected
+                        </span>
+                      )}
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       {getAvailableAreas().map(area => (
                         <SelectableChip
@@ -2739,7 +2972,14 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
                 {/* Focuses - Only show when areas are selected */}
                 {selectedAreas.length > 0 && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-3">Focuses</label>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="block text-sm font-semibold text-gray-700">Focuses</label>
+                      {selectedFocuses.length > 0 && (
+                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                          {selectedFocuses.length} selected
+                        </span>
+                      )}
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       {getAvailableFocuses().map(focus => (
                         <SelectableChip
@@ -2769,74 +3009,113 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
               </div>
             </div>
 
-            {/* Research Activities */}
+            {/* Research Activities Grid */}
             {selectedFocuses.length > 0 && (
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h4 className="text-lg font-semibold text-gray-900">Available Research Activities</h4>
-                  <div className="text-sm text-gray-600">
-                    {getFilteredActivities().length} activities available
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+                <div className="bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 px-6 py-4 border-b border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xl font-semibold text-white mb-1">Available Research Activities</h3>
+                      <p className="text-purple-100 text-sm">Select activities that align with your research goals</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm text-purple-100">Available</div>
+                      <div className="text-2xl font-bold text-white">{getFilteredActivities().length}</div>
+                    </div>
                   </div>
                 </div>
                 
-                <div className="grid gap-4">
-                  {getFilteredActivities().map((activity: ResearchActivity) => {
-                    const isSelected = selectedActivitiesState.some(a => a.activity_id === activity.id);
-                    const colors = ['blue', 'green', 'purple', 'orange', 'pink'];
-                    const color = colors[selectedActivitiesState.length % colors.length];
-                    const [expanded, setExpanded] = useState(false);
-                    return (
-                      <div key={activity.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-lg transition-shadow relative group bg-white">
-                        {isSelected && (
-                          <span className="absolute top-2 right-2 bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full flex items-center">
-                            <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                            Added
-                          </span>
-                        )}
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <h5 className="font-semibold text-gray-900 mb-2">{activity.title}</h5>
-                            
-                            {activity.general_description && (
-                              <p className="text-sm text-gray-600 mb-2">{activity.general_description}</p>
-                            )}
-                            
-                            {expanded && activity.examples && (
-                              <div className="text-sm text-gray-500 mb-2">
-                                <strong>Examples:</strong> {activity.examples}
+                <div className="p-6">
+                  <div className="grid gap-4">
+                    {getFilteredActivities().map((activity: ResearchActivity) => {
+                      const isSelected = selectedActivitiesState.some(a => a.activity_id === activity.id);
+                      const colors = ['blue', 'green', 'purple', 'orange', 'pink'];
+                      const color = colors[selectedActivitiesState.length % colors.length];
+                      const isExpanded = expandedActivities[activity.id] || false;
+                      
+                      return (
+                        <div key={activity.id} className={`border border-gray-200 rounded-xl p-6 hover:shadow-lg transition-all duration-300 relative group bg-white ${
+                          isSelected ? 'ring-2 ring-green-500 ring-offset-2' : ''
+                        }`}>
+                          {isSelected && (
+                            <div className="absolute top-4 right-4 bg-green-100 text-green-700 text-xs px-3 py-1 rounded-full flex items-center shadow-sm">
+                              <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                              Added
+                            </div>
+                          )}
+                          
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-3 mb-3">
+                                <div className={`w-3 h-3 rounded-full bg-${color}-500`}></div>
+                                <h5 className="font-bold text-lg text-gray-900">{activity.title}</h5>
                               </div>
-                            )}
-                            <button
-                              className="text-xs text-blue-600 hover:underline focus:outline-none"
-                              onClick={() => setExpanded(e => !e)}
-                            >
-                              {expanded ? 'Hide Details' : 'View Details'}
-                            </button>
-                          </div>
-                          <div className="ml-4">
-                            {!isSelected ? (
+                              
+                              {activity.general_description && (
+                                <p className="text-sm text-gray-600 mb-3">{activity.general_description}</p>
+                              )}
+                              
+                              {isExpanded && activity.examples && (
+                                <div className="bg-gray-50 rounded-lg p-4 mb-3">
+                                  <div className="text-sm text-gray-700">
+                                    <strong className="text-gray-900">Examples:</strong> {activity.examples}
+                                  </div>
+                                </div>
+                              )}
+                              
                               <button
-                                onClick={() => addActivity(activity)}
-                                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                                className="text-xs text-blue-600 hover:text-blue-800 font-medium focus:outline-none transition-colors"
+                                onClick={() => toggleExpanded(activity.id)}
                               >
-                                Add Activity
+                                {isExpanded ? 'Hide Details' : 'View Details'}
                               </button>
-                            ) : null}
+                            </div>
+                            
+                            <div className="ml-4">
+                              {!isSelected ? (
+                                <button
+                                  onClick={() => addActivity(activity)}
+                                  className="px-6 py-3 rounded-xl text-sm font-semibold bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
+                                >
+                                  Add Activity
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => removeActivity(activity.id)}
+                                  className="px-6 py-3 rounded-xl text-sm font-semibold bg-gradient-to-r from-red-500 to-pink-600 text-white hover:from-red-600 hover:to-pink-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
 
             {/* Selected Activities */}
             {selectedActivitiesState.length > 0 && (
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h4 className="text-lg font-semibold text-gray-900 mb-6">Selected Research Activities</h4>
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+                <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 px-6 py-4 border-b border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xl font-semibold text-white mb-1">Selected Research Activities</h3>
+                      <p className="text-emerald-100 text-sm">Configure practice percentages and roles for each activity</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm text-emerald-100">Selected</div>
+                      <div className="text-2xl font-bold text-white">{selectedActivitiesState.length}</div>
+                    </div>
+                  </div>
+                </div>
                 
-                <div className="space-y-6">
+                <div className="p-6 space-y-6">
                   {selectedActivitiesState.map((activity, index) => {
                     const colors = ['blue', 'green', 'purple', 'orange', 'pink'];
                     const color = colors[index % colors.length];
@@ -2865,14 +3144,23 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
             {/* Empty State */}
             {selectedFocuses.length === 0 && selectedCategories.length > 0 && (
-              <div className="text-center py-12">
-                <div className="mx-auto h-12 w-12 text-gray-400 mb-4">
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-12 text-center">
+                <div className="mx-auto h-16 w-16 text-gray-400 mb-4">
                   <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                   </svg>
                 </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Select Focus Areas</h3>
-                <p className="text-gray-600">Choose areas and focuses above to see available research activities.</p>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">Select Focus Areas</h3>
+                <p className="text-gray-600 mb-6">Choose areas and focuses above to see available research activities.</p>
+                <button
+                  onClick={() => {
+                    setSelectedAreas([]);
+                    setSelectedFocuses([]);
+                  }}
+                  className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-purple-700 transition-all duration-200"
+                >
+                  Reset Filters
+                </button>
               </div>
             )}
           </div>
@@ -2880,18 +3168,40 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
         {activeTab === 'design' && (
           <div className="space-y-6">
-            <h4 className="text-xl font-semibold text-gray-900">Research Guidelines</h4>
-            
+            <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-2xl shadow-xl overflow-hidden">
+              <div className="px-6 py-8 relative">
+                <div className="absolute inset-0 bg-black/10"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h2 className="text-3xl font-bold text-white mb-2">Research Guidelines</h2>
+                      <p className="text-indigo-100 text-lg">
+                        Complete R&D qualification questions for each selected activity
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm text-indigo-100">Activities</div>
+                      <div className="text-2xl font-bold text-white">{selectedActivitiesState.length}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {selectedActivitiesState.length === 0 ? (
-              <div className="text-center py-8">
-                <div className="text-gray-400 text-6xl mb-4">📋</div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">No Activities Selected</h3>
-                <p className="text-gray-600 mb-4">
-                  Please select research activities from the Activities tab first.
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-12 text-center">
+                <div className="mx-auto h-16 w-16 text-gray-400 mb-4">
+                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">No Activities Selected</h3>
+                <p className="text-gray-600 mb-6">
+                  Please select research activities from the Activities tab first to complete the research guidelines.
                 </p>
                 <button
                   onClick={() => setActiveTab('activities')}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-semibold hover:from-indigo-700 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
                 >
                   Go to Activities
                 </button>
@@ -2899,14 +3209,11 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
             ) : (
               <div className="space-y-6">
                 {selectedActivitiesState.map(activity => (
-                  <ActivityCard
+                  <ResearchGuidelinesAccordion
                     key={activity.activity_id}
                     activity={activity}
                     allRoles={roles}
-                    onUpdatePercentage={(percentage) => updateActivityPercentage(activity.activity_id, percentage)}
-                    onUpdateRoles={(roles) => updateActivityRoles(activity.activity_id, roles)}
-                    onRemove={() => removeActivity(activity.activity_id)}
-                    color="blue"
+                    onUpdateGuidelines={(guidelines) => updateResearchGuidelines(activity.activity_id, guidelines)}
                   />
                 ))}
               </div>
@@ -3107,6 +3414,336 @@ const CopyConfirmationModal: React.FC<CopyConfirmationModalProps> = ({
           </button>
         </div>
       </div>
+    </div>
+  );
+};
+
+interface ResearchGuidelinesAccordionProps {
+  activity: SelectedActivity;
+  onUpdateGuidelines: (guidelines: ResearchGuidelines) => void;
+  allRoles: ResearchRole[];
+}
+
+const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = ({
+  activity,
+  onUpdateGuidelines,
+  allRoles
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [guidelines, setGuidelines] = useState<ResearchGuidelines>(
+    activity.research_guidelines || {
+      outcome_uncertain: true,
+      considered_alternatives: true,
+      us_based: true,
+      science_based: true,
+      primary_goal: 'Develop a new product or process',
+      uncertainty_type: 'Design',
+      success_measurement: 'Functional performance',
+      hypothesis: '',
+      development_steps: '',
+      data_feedback: ''
+    }
+  );
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const handleGuidelineChange = (field: keyof ResearchGuidelines, value: any) => {
+    const updatedGuidelines = { ...guidelines, [field]: value };
+    setGuidelines(updatedGuidelines);
+    onUpdateGuidelines(updatedGuidelines);
+  };
+
+  const generateAIAnswers = async () => {
+    setIsGenerating(true);
+    try {
+      // Get role names for the selected roles
+      const selectedRoleNames = allRoles
+        .filter(role => activity.selected_roles.includes(role.id))
+        .map(role => role.name);
+
+      const context: AIGenerationContext = {
+        research_activity_name: activity.activity_name || 'Unknown Activity',
+        practice_percentage: activity.practice_percent,
+        roles_involved: selectedRoleNames,
+        industry_type: activity.activity_category || 'General',
+        category: activity.activity_category,
+        frequency_percent: 100
+      };
+
+      const aiAnswers = await AIService.generateAllAnswers(context);
+      
+      const updatedGuidelines = {
+        ...guidelines,
+        hypothesis: aiAnswers.hypothesis,
+        development_steps: aiAnswers.development_steps,
+        data_feedback: aiAnswers.data_feedback
+      };
+      
+      setGuidelines(updatedGuidelines);
+      onUpdateGuidelines(updatedGuidelines);
+    } catch (error) {
+      console.error('Error generating AI answers:', error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const regenerateField = async (field: 'hypothesis' | 'development_steps' | 'data_feedback') => {
+    setIsGenerating(true);
+    try {
+      const selectedRoleNames = allRoles
+        .filter(role => activity.selected_roles.includes(role.id))
+        .map(role => role.name);
+
+      const context: AIGenerationContext = {
+        research_activity_name: activity.activity_name || 'Unknown Activity',
+        practice_percentage: activity.practice_percent,
+        roles_involved: selectedRoleNames,
+        industry_type: activity.activity_category || 'General',
+        category: activity.activity_category,
+        frequency_percent: 100
+      };
+
+      let newValue = '';
+      switch (field) {
+        case 'hypothesis':
+          newValue = await AIService.generateHypothesis(context);
+          break;
+        case 'development_steps':
+          newValue = await AIService.generateDevelopmentSteps(context);
+          break;
+        case 'data_feedback':
+          newValue = await AIService.generateDataFeedback(context);
+          break;
+      }
+
+      const updatedGuidelines = { ...guidelines, [field]: newValue };
+      setGuidelines(updatedGuidelines);
+      onUpdateGuidelines(updatedGuidelines);
+    } catch (error) {
+      console.error(`Error regenerating ${field}:`, error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full px-6 py-4 bg-gradient-to-r from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-200 transition-all duration-200 flex items-center justify-between"
+      >
+        <div className="flex items-center space-x-3">
+          <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+          <h3 className="text-lg font-semibold text-gray-900">{activity.activity_name}</h3>
+        </div>
+        <div className="flex items-center space-x-2">
+          <span className="text-sm text-gray-600">Research Guidelines</span>
+          <svg
+            className={`w-5 h-5 text-gray-500 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+
+      {isExpanded && (
+        <div className="px-6 py-6 space-y-6">
+          {/* YES/NO Questions */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">YES/NO Questions</h4>
+              
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-gray-700">Was the outcome of this activity uncertain at the outset?</label>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={guidelines.outcome_uncertain}
+                      onChange={(e) => handleGuidelineChange('outcome_uncertain', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-gray-700">Did you consider multiple methods or alternatives to achieve the intended result?</label>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={guidelines.considered_alternatives}
+                      onChange={(e) => handleGuidelineChange('considered_alternatives', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-gray-700">Was the work conducted primarily in the U.S.?</label>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={guidelines.us_based}
+                      onChange={(e) => handleGuidelineChange('us_based', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-gray-700">Did the activity rely on the principles of a hard science (e.g., engineering, biology, computer science)?</label>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={guidelines.science_based}
+                      onChange={(e) => handleGuidelineChange('science_based', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Radio Button Questions */}
+            <div className="space-y-4">
+              <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Multiple Choice Questions</h4>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">What was the primary goal of this activity?</label>
+                  <select
+                    value={guidelines.primary_goal}
+                    onChange={(e) => handleGuidelineChange('primary_goal', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="Develop a new product or process">Develop a new product or process</option>
+                    <option value="Improve an existing product or process">Improve an existing product or process</option>
+                    <option value="Integrate or test new technology">Integrate or test new technology</option>
+                    <option value="Optimize workflow or performance">Optimize workflow or performance</option>
+                    <option value="Evaluate alternative methods">Evaluate alternative methods</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Which type of uncertainty best describes the challenge you were addressing?</label>
+                  <select
+                    value={guidelines.uncertainty_type}
+                    onChange={(e) => handleGuidelineChange('uncertainty_type', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="Capability">Capability (Can it be done?)</option>
+                    <option value="Method">Method (How will it be done?)</option>
+                    <option value="Design">Design (What is the best configuration?)</option>
+                    <option value="None">None (activity was routine)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">How was success measured in this activity?</label>
+                  <select
+                    value={guidelines.success_measurement}
+                    onChange={(e) => handleGuidelineChange('success_measurement', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="Functional performance">Functional performance</option>
+                    <option value="Time/cost reduction">Time/cost reduction</option>
+                    <option value="Compliance with design specs">Compliance with design specs</option>
+                    <option value="Product/process stability">Product/process stability</option>
+                    <option value="Other">Other (specify in notes)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Short Answer Questions */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Short Answer Questions</h4>
+              <button
+                onClick={generateAIAnswers}
+                disabled={isGenerating}
+                className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>{isGenerating ? 'Generating...' : 'Generate All with AI'}</span>
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">Briefly describe the hypothesis or idea you tested.</label>
+                  <button
+                    onClick={() => regenerateField('hypothesis')}
+                    disabled={isGenerating}
+                    className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors disabled:opacity-50"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Regenerate</span>
+                  </button>
+                </div>
+                <textarea
+                  value={guidelines.hypothesis}
+                  onChange={(e) => handleGuidelineChange('hypothesis', e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Describe your hypothesis or idea..."
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">What were the key steps taken during the development or testing process?</label>
+                  <button
+                    onClick={() => regenerateField('development_steps')}
+                    disabled={isGenerating}
+                    className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors disabled:opacity-50"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Regenerate</span>
+                  </button>
+                </div>
+                <textarea
+                  value={guidelines.development_steps}
+                  onChange={(e) => handleGuidelineChange('development_steps', e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Describe the key steps..."
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">What data or feedback helped you determine success or failure?</label>
+                  <button
+                    onClick={() => regenerateField('data_feedback')}
+                    disabled={isGenerating}
+                    className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors disabled:opacity-50"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Regenerate</span>
+                  </button>
+                </div>
+                <textarea
+                  value={guidelines.data_feedback}
+                  onChange={(e) => handleGuidelineChange('data_feedback', e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Describe the data or feedback..."
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
