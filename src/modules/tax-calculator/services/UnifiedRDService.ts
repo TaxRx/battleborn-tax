@@ -21,6 +21,8 @@ export interface RDSelectedSubcomponent {
   start_month: number;
   selected_roles: string[];
   applied_percentage: number;
+  time_percentage?: number;
+  step_name?: string;
   general_description?: string;
   goal?: string;
   hypothesis?: string;

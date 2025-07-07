@@ -101,7 +101,7 @@ const SubcomponentCard: React.FC<SubcomponentCardProps> = ({
         
         if (error) throw error;
         setAllRoles(data || []);
-      } catch (error) {
+    } catch (error) {
         console.error('Error loading roles:', error);
       }
     };
@@ -227,8 +227,8 @@ const SubcomponentCard: React.FC<SubcomponentCardProps> = ({
             <p className={`text-sm leading-relaxed ${isSelected ? 'text-blue-700' : 'text-gray-600'}`}>
               {subcomponent.hint}
             </p>
-          </div>
-          
+            </div>
+
           {/* Right side controls */}
           <div className="flex items-center space-x-3 ml-4">
             {/* Applied Percentage Chip - Always visible when selected */}
@@ -287,16 +287,16 @@ const SubcomponentCard: React.FC<SubcomponentCardProps> = ({
                 <label className="text-sm font-semibold text-blue-900">Frequency %</label>
                 <span className="text-lg font-bold text-blue-700">{formatPercentage(frequencyPercent)}%</span>
               </div>
-              <input
-                type="range"
-                min="0"
-                max="100"
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
                 step="0.1"
                 value={frequencyPercent}
                 onChange={(e) => handleFrequencyChange(parseFloat(e.target.value))}
                 className="w-full h-3 bg-blue-200 rounded-lg appearance-none cursor-pointer slider"
-              />
-            </div>
+                />
+              </div>
 
             {/* Year % and Start Year in a grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -352,6 +352,11 @@ const SubcomponentCard: React.FC<SubcomponentCardProps> = ({
                   );
                 })}
               </div>
+              {parentActivityRoles.length === 0 && (
+                <p className="text-sm text-orange-600 italic">
+                  No roles selected in parent activity. Please go back to Research Activities and select roles.
+                </p>
+              )}
             </div>
 
             {/* Applied Percentage Display */}

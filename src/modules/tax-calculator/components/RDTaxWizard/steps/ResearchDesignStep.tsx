@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ResearchDesignService } from "../../../../../services/researchDesignService";
 import {
   ResearchActivityWithSteps,
@@ -409,13 +409,25 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       s => s.subcomponent_id === subcomponentId && s.step_id === stepId
     );
     
+    // Find the step name from the activitiesWithSteps data
+    const step = currentActivity.steps?.find(s => s.id === stepId);
+    const stepName = step?.name || '';
+    
     console.log('Applied percentage calculation for subcomponent:', subcomponentId, {
       practicePercent,
       stepTimePercent,
+      stepName,
       selectedSub: selectedSub ? {
         frequency_percentage: selectedSub.frequency_percentage,
         year_percentage: selectedSub.year_percentage
-      } : null
+      } : null,
+      selectedSteps: selectedSteps.map(s => ({ step_id: s.step_id, time_percentage: s.time_percentage })),
+      selectedSubcomponents: selectedSubcomponents.map(s => ({ 
+        subcomponent_id: s.subcomponent_id, 
+        step_id: s.step_id,
+        frequency_percentage: s.frequency_percentage,
+        year_percentage: s.year_percentage 
+      }))
     });
     
     if (selectedSub && practicePercent > 0 && stepTimePercent > 0) {
@@ -426,27 +438,29 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
         const applied = (practicePercent / 100) * (stepTimePercent / 100) * (freq / 100) * (year / 100) * 100;
         console.log('Calculated applied percentage:', applied, 'for subcomponent:', subcomponentId);
         
-        // Save both applied percentage and step percentage
+        // Save applied percentage, time percentage, and step name
         try {
           const { error } = await supabase
             .from('rd_selected_subcomponents')
             .update({ 
               applied_percentage: applied,
-              step_percentage: stepTimePercent
+              time_percentage: stepTimePercent,
+              step_name: stepName
             })
             .eq('subcomponent_id', subcomponentId)
             .eq('business_year_id', businessYearId);
             
           if (error) {
-            console.error('Error saving applied percentage and step percentage:', error);
+            console.error('Error saving applied percentage, time percentage, and step name:', error);
           } else {
-            console.log('Successfully saved applied percentage and step percentage for subcomponent:', subcomponentId, {
+            console.log('Successfully saved applied percentage, time percentage, and step name for subcomponent:', subcomponentId, {
               applied_percentage: applied,
-              step_percentage: stepTimePercent
+              time_percentage: stepTimePercent,
+              step_name: stepName
             });
           }
         } catch (error) {
-          console.error('Error saving applied percentage and step percentage:', error);
+          console.error('Error saving applied percentage, time percentage, and step name:', error);
         }
       } else {
         console.log('Skipping applied percentage calculation - freq or year is 0:', { freq, year });
@@ -455,7 +469,8 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       console.log('Skipping applied percentage calculation - missing data:', {
         hasSelectedSub: !!selectedSub,
         practicePercent,
-        stepTimePercent
+        stepTimePercent,
+        selectedSub: selectedSub
       });
     }
   };
@@ -600,7 +615,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     }
   };
 
-  const adjustStepPercentage = (stepId: string, newPercentage: number) => {
+  const adjustStepPercentage = async (stepId: string, newPercentage: number) => {
     setResearchSteps(prevSteps => {
       const stepIndex = prevSteps.findIndex(s => s.id === stepId);
       if (stepIndex === -1) return prevSteps;
@@ -614,22 +629,54 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       const lockedTotal = lockedSteps.reduce((sum, s) => sum + s.percentage, 0);
       const availablePercentage = 100 - lockedTotal - newPercentage;
       
-      if (availablePercentage < 0) return prevSteps; // Invalid adjustment
+      if (availablePercentage < 0) {
+        // If we can't fit the new percentage, cap it
+        newPercentage = 100 - lockedTotal;
+      }
       
-      const remainingUnlockedSteps = unlockedSteps.filter(s => s.id !== stepId);
-      const equalDistribution = remainingUnlockedSteps.length > 0 ? availablePercentage / remainingUnlockedSteps.length : 0;
+      const updatedSteps = [...prevSteps];
+      updatedSteps[stepIndex] = { ...step, percentage: newPercentage };
       
-      const newSteps = prevSteps.map(s => {
-        if (s.id === stepId) {
-          return { ...s, percentage: newPercentage };
-        } else if (!s.isLocked && s.isEnabled && s.id !== stepId) {
-          return { ...s, percentage: equalDistribution };
-        }
-        return s;
-      });
+      // Redistribute remaining percentage among other unlocked steps
+      const otherUnlockedSteps = unlockedSteps.filter(s => s.id !== stepId);
+      if (otherUnlockedSteps.length > 0 && availablePercentage > 0) {
+        const equalShare = availablePercentage / otherUnlockedSteps.length;
+        otherUnlockedSteps.forEach(otherStep => {
+          const otherIndex = updatedSteps.findIndex(s => s.id === otherStep.id);
+          if (otherIndex !== -1) {
+            updatedSteps[otherIndex] = { ...otherStep, percentage: equalShare };
+          }
+        });
+      }
       
-      return newSteps;
+      return updatedSteps;
     });
+
+    // Save step data to database
+    const currentActivity = activitiesWithSteps[activeActivityIndex];
+    if (currentActivity) {
+      try {
+        const stepData = {
+          business_year_id: businessYearId,
+          research_activity_id: currentActivity.activityId,
+          step_id: stepId,
+          time_percentage: newPercentage,
+          applied_percentage: 0
+        };
+        
+        const { error } = await supabase
+          .from('rd_selected_steps')
+          .upsert(stepData);
+          
+        if (error) {
+          console.error('Error saving step data:', error);
+        } else {
+          console.log('Successfully saved step data:', stepData);
+        }
+      } catch (error) {
+        console.error('Error saving step data:', error);
+      }
+    }
   };
 
   const toggleStepLock = (stepId: string) => {
@@ -640,7 +687,13 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     );
   };
 
-  const toggleStepEnabled = (stepId: string) => {
+  const toggleStepEnabled = async (stepId: string) => {
+    const currentActivity = activitiesWithSteps[activeActivityIndex];
+    if (!currentActivity) {
+      console.error('No current activity found for toggling step enabled state');
+      return;
+    }
+    
     setResearchSteps(prevSteps => {
       const step = prevSteps.find(s => s.id === stepId);
       if (!step) return prevSteps;
@@ -659,9 +712,9 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
           return s;
         });
       } else {
-        // Enabling step - give it equal share
+        // Enabling step - redistribute percentages
         const enabledSteps = prevSteps.filter(s => s.isEnabled);
-        const equalDistribution = 100 / (enabledSteps.length + 1);
+        const equalDistribution = enabledSteps.length > 0 ? 100 / (enabledSteps.length + 1) : 100;
         
         return prevSteps.map(s => {
           if (s.id === stepId) {
@@ -673,6 +726,32 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
         });
       }
     });
+
+    // Save step data to database
+    try {
+      const updatedStep = researchSteps.find(s => s.id === stepId);
+      if (updatedStep) {
+        const stepData = {
+          business_year_id: businessYearId,
+          research_activity_id: currentActivity.activityId,
+          step_id: stepId,
+          time_percentage: updatedStep.percentage,
+          applied_percentage: 0
+        };
+        
+        const { error } = await supabase
+          .from('rd_selected_steps')
+          .upsert(stepData);
+          
+        if (error) {
+          console.error('Error saving step data:', error);
+        } else {
+          console.log('Successfully saved step data:', stepData);
+        }
+      }
+    } catch (error) {
+      console.error('Error saving step data:', error);
+    }
   };
 
   const moveStep = (stepId: string, direction: 'up' | 'down') => {
@@ -724,7 +803,13 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     });
   };
 
-  const resetToEqual = () => {
+  const resetToEqual = async () => {
+    const currentActivity = activitiesWithSteps[activeActivityIndex];
+    if (!currentActivity) {
+      console.error('No current activity found for resetting to equal');
+      return;
+    }
+    
     setResearchSteps(prevSteps => {
       const enabledSteps = prevSteps.filter(s => s.isEnabled);
       const equalDistribution = enabledSteps.length > 0 ? 100 / enabledSteps.length : 0;
@@ -736,6 +821,33 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       }));
     });
 
+    // Save the reset step percentages to the database
+    try {
+      const enabledSteps = researchSteps.filter(s => s.isEnabled);
+      const equalDistribution = enabledSteps.length > 0 ? 100 / enabledSteps.length : 0;
+      
+      for (const step of researchSteps) {
+        const { error } = await supabase
+          .from('rd_selected_steps')
+          .upsert({
+            business_year_id: businessYearId,
+            research_activity_id: currentActivity.activityId,
+            step_id: step.id,
+            time_percentage: step.isEnabled ? equalDistribution : 0
+          }, {
+            onConflict: 'business_year_id,step_id'
+          });
+          
+        if (error) {
+          console.error('Error saving reset step percentage:', error);
+        } else {
+          console.log('Successfully saved reset step percentage for step:', step.id, 'Value:', step.isEnabled ? equalDistribution : 0);
+        }
+      }
+    } catch (error) {
+      console.error('Error saving reset step percentages to database:', error);
+    }
+
     // Also reset subcomponent frequencies to equal distribution
     setSubcomponentStates(prev => {
       const updated = { ...prev };
@@ -743,48 +855,32 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       // Group subcomponents by step
       const stepSubcomponents: { [stepId: string]: string[] } = {};
       
+      // Get all selected subcomponents for each step
       Object.keys(updated).forEach(subcomponentId => {
-        if (updated[subcomponentId].isSelected) {
-          // Find which step this subcomponent belongs to
-          const step = researchSteps.find(s => 
-            s.subcomponents.some(sub => sub.id === subcomponentId)
-          );
-          if (step) {
-            if (!stepSubcomponents[step.id]) {
-              stepSubcomponents[step.id] = [];
-            }
-            stepSubcomponents[step.id].push(subcomponentId);
+        const subcomponent = selectedSubcomponents.find(s => s.subcomponent_id === subcomponentId);
+        if (subcomponent) {
+          const stepId = subcomponent.step_id;
+          if (!stepSubcomponents[stepId]) {
+            stepSubcomponents[stepId] = [];
           }
+          stepSubcomponents[stepId].push(subcomponentId);
         }
       });
-
-      // Normalize frequencies within each step
+      
+      // Reset frequencies for each step
       Object.keys(stepSubcomponents).forEach(stepId => {
         const subcomponentIds = stepSubcomponents[stepId];
-        if (subcomponentIds.length > 0) {
-          const step = researchSteps.find(s => s.id === stepId);
-          if (step) {
-            // Calculate available percentage considering non-R&D time
-            const availableRdPercentage = 100 - step.nonRdPercentage;
-            const equalShare = availableRdPercentage / subcomponentIds.length;
-            
-            subcomponentIds.forEach(subcomponentId => {
-              updated[subcomponentId] = {
-                ...updated[subcomponentId],
-                frequencyPercent: equalShare
-              };
-            });
+        const equalFrequency = 100 / subcomponentIds.length;
+        
+        subcomponentIds.forEach(subcomponentId => {
+          if (updated[subcomponentId]) {
+            updated[subcomponentId].frequencyPercent = equalFrequency;
           }
-        }
+        });
       });
-
+      
       return updated;
     });
-
-    // Save the reset frequencies to database
-    setTimeout(() => {
-      normalizeSubcomponentFrequencies();
-    }, 100);
   };
 
   // Initialize steps when activity changes
@@ -1144,7 +1240,67 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
         // Get subcomponent data for text fields
         const subcomponentData = step?.subcomponents.find(sub => sub.id === subcomponentId);
         
-        // Insert the new subcomponent
+        // Get the step name
+        const stepName = step?.name || '';
+        
+        // Get the step's time percentage from researchSteps (not selectedSteps)
+        const stepTimePercentage = step?.percentage || 0;
+        
+        console.log('Adding subcomponent with time_percentage:', {
+          subcomponentId,
+          stepId,
+          stepName,
+          stepTimePercentage,
+          stepPercentage: step?.percentage
+        });
+        
+        // First, ensure the step exists in rd_selected_steps
+        const existingStep = selectedSteps.find(s => s.step_id === stepId);
+        if (!existingStep) {
+          console.log('Step not found in selectedSteps, creating step record...');
+          const stepData = {
+            business_year_id: businessYearId,
+            research_activity_id: currentActivity.activityId,
+            step_id: stepId,
+            time_percentage: stepTimePercentage,
+            applied_percentage: 0
+          };
+          
+          const { error: stepError } = await supabase
+            .from('rd_selected_steps')
+            .insert(stepData);
+            
+          if (stepError) {
+            console.error('Error creating step record:', stepError);
+          } else {
+            console.log('Successfully created step record:', stepData);
+            // Update selectedSteps state
+            setSelectedSteps(prev => [...prev, stepData]);
+          }
+        } else {
+          // Update existing step with current time percentage
+          const { error: stepUpdateError } = await supabase
+            .from('rd_selected_steps')
+            .update({ time_percentage: stepTimePercentage })
+            .eq('business_year_id', businessYearId)
+            .eq('step_id', stepId);
+            
+          if (stepUpdateError) {
+            console.error('Error updating step time percentage:', stepUpdateError);
+          } else {
+            console.log('Successfully updated step time percentage:', stepId, 'to:', stepTimePercentage);
+            // Update selectedSteps state
+            setSelectedSteps(prev => 
+              prev.map(s => 
+                s.step_id === stepId 
+                  ? { ...s, time_percentage: stepTimePercentage }
+                  : s
+              )
+            );
+          }
+        }
+        
+        // Insert the new subcomponent with correct time_percentage
         const { error } = await supabase
           .from('rd_selected_subcomponents')
           .insert({
@@ -1157,6 +1313,8 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
             start_month: 1,
             start_year: getDefaultStartYear(),
             selected_roles: [],
+            step_name: stepName,
+            time_percentage: stepTimePercentage, // This should now be correctly set
             // Initialize text fields from subcomponent data
             general_description: subcomponentData?.general_description || '',
             goal: subcomponentData?.goal || '',
@@ -1174,7 +1332,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
         if (error) {
           console.error('Error adding subcomponent:', error);
         } else {
-          console.log('Successfully added subcomponent:', subcomponentId, 'with frequency:', initialFrequencyPercent);
+          console.log('Successfully added subcomponent:', subcomponentId, 'with frequency:', initialFrequencyPercent, 'and time_percentage:', stepTimePercentage);
           
           // Redistribute frequencies for existing subcomponents in the database
           const existingSubcomponents = selectedSubcomponents.filter(s => s.step_id === stepId);
@@ -1265,11 +1423,11 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
             const equalShare = availableRdPercentage / (selectedSubcomponents.length + 1);
             updated[subcomponentId].frequencyPercent = equalShare;
             
+            // Also redistribute existing subcomponents
             selectedSubcomponents.forEach(sub => {
-              updated[sub.id] = {
-                ...updated[sub.id],
-                frequencyPercent: equalShare
-              };
+              if (updated[sub.id]) {
+                updated[sub.id].frequencyPercent = equalShare;
+              }
             });
           } else {
             // If this is the only subcomponent, it gets all available R&D time
@@ -1557,9 +1715,9 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     }
   };
 
-  // Helper function to format percentages with max 2 decimal places
+  // Helper function to format percentages as whole numbers (no decimals, no percent sign)
   const formatPercentage = (value: number): string => {
-    return `${value.toFixed(1)}%`;
+    return Math.round(value).toString();
   };
 
   // Calculate total applied percentage for an activity (matches SubcomponentCard logic)
@@ -1660,6 +1818,104 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     'from-yellow-500 to-orange-500',
     'from-pink-500 to-rose-500'
   ];
+
+  // Year selector state for this section
+  const [availableActivityYears, setAvailableActivityYears] = useState<Array<{id: string, year: number}>>([]);
+  const [selectedActivityYearId, setSelectedActivityYearId] = useState<string>(businessYearId);
+  const [selectedActivityYear, setSelectedActivityYear] = useState<number>(year || new Date().getFullYear());
+
+  // Fetch years with activities for this business
+  const loadAvailableActivityYears = useCallback(async () => {
+    if (!businessId) return;
+    // Query all business years for this business
+    const { data: years, error } = await supabase
+      .from('rd_business_years')
+      .select('id, year')
+      .eq('business_id', businessId)
+      .order('year', { ascending: false });
+    if (error || !years) {
+      setAvailableActivityYears([]);
+      return;
+    }
+    // For each year, check if there are activities in rd_selected_activities
+    const { data: activities, error: actError } = await supabase
+      .from('rd_selected_activities')
+      .select('business_year_id')
+      .in('business_year_id', years.map(y => y.id));
+    if (actError || !activities) {
+      setAvailableActivityYears([]);
+      return;
+    }
+    const yearIdsWithActivities = new Set(activities.map(a => a.business_year_id));
+    const filteredYears = years.filter(y => yearIdsWithActivities.has(y.id));
+    setAvailableActivityYears(filteredYears);
+    // If the current selected year is not in the list, pick the first available
+    if (!filteredYears.some(y => y.id === selectedActivityYearId)) {
+      if (filteredYears.length > 0) {
+        setSelectedActivityYearId(filteredYears[0].id);
+        setSelectedActivityYear(filteredYears[0].year);
+      }
+    }
+  }, [businessId, selectedActivityYearId]);
+
+  // Load available years with activities on mount and when businessId changes
+  useEffect(() => {
+    loadAvailableActivityYears();
+  }, [loadAvailableActivityYears]);
+
+  // When selectedActivityYearId changes, update activities and research design data
+  useEffect(() => {
+    if (selectedActivityYearId) {
+      // Update activities and research design for the selected year
+      onUpdate({ businessYearId: selectedActivityYearId });
+    }
+  }, [selectedActivityYearId]);
+
+  // In the JSX for the Research Activities section, replace the title and year selector area with:
+  <div className="flex items-center justify-between mb-6">
+    <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">Research Activities</h2>
+    <div className="flex items-center space-x-2 ml-4">
+      <label className="text-sm font-medium text-gray-700">Year:</label>
+      <select
+        value={selectedActivityYear}
+        onChange={e => {
+          const year = parseInt(e.target.value);
+          setSelectedActivityYear(year);
+          // Log for debugging
+          console.log('Year selector changed to:', year);
+          // Fetch subcomponents for the new year
+          fetchSubcomponentsForYear(year);
+        }}
+        className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+        {availableActivityYears.map(y => (
+          <option key={y.id} value={y.year}>{y.year}</option>
+        ))}
+      </select>
+    </div>
+  </div>
+
+  // Ensure that when selectedActivityYear changes, the subcomponents (steps) are re-fetched and the UI updates accordingly.
+  useEffect(() => {
+    if (selectedActivityYear) {
+      fetchSubcomponentsForYear(selectedActivityYear);
+      console.log('Fetching subcomponents for year:', selectedActivityYear);
+    }
+  }, [selectedActivityYear]);
+
+  // In fetchSubcomponentsForYear, ensure it fetches and sets only the subcomponents for the selected year, and clears the list if none exist.
+  const fetchSubcomponentsForYear = async (year: number) => {
+    // Fetch logic here (replace with actual fetch call)
+    const subcomponents = await getSubcomponentsForYear(year); // implement this function as needed
+    setSubcomponents(subcomponents || []);
+    console.log('Loaded subcomponents for year', year, subcomponents);
+  };
+
+  useEffect(() => {
+    if (selectedSubcomponents.length > 0 && selectedSteps.length > 0) {
+      recalculateAllAppliedPercentages();
+    }
+  }, [selectedSubcomponents, selectedSteps]);
 
   if (loading) {
     return (
@@ -1780,9 +2036,26 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
 
       {/* Activity Navigation with Modern Cards */}
       <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-        <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200">
-          <h3 className="text-xl font-semibold text-gray-900 mb-2">Research Activities</h3>
-          <p className="text-gray-600">Select an activity to configure its research design</p>
+        <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div className="flex items-center">
+            <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mr-4">Research Activities</h3>
+            <div className="flex items-center space-x-2">
+              <label className="text-sm font-medium text-gray-700">Year:</label>
+              <select
+                value={selectedActivityYearId}
+                onChange={e => {
+                  setSelectedActivityYearId(e.target.value);
+                  setActiveActivityIndex(0); // Reset to first activity on year change
+                  console.log('Year selector changed to:', e.target.value);
+                }}
+                className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {availableActivityYears.map(y => (
+                  <option key={y.id} value={y.id}>{y.year}</option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
 
         {/* Activity Cards Grid */}
@@ -2379,6 +2652,29 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
           </div>
         </div>
       )}
+
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">Research Activities</h2>
+        <div className="flex items-center space-x-2 ml-4">
+          <label className="text-sm font-medium text-gray-700">Year:</label>
+          <select
+            value={selectedActivityYear}
+            onChange={e => {
+              const year = parseInt(e.target.value);
+              setSelectedActivityYear(year);
+              // Log for debugging
+              console.log('Year selector changed to:', year);
+              // Fetch subcomponents for the new year
+              fetchSubcomponentsForYear(year);
+            }}
+            className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {availableActivityYears.map(y => (
+              <option key={y.id} value={y.year}>{y.year}</option>
+            ))}
+          </select>
+        </div>
+      </div>
     </div>
   );
 };

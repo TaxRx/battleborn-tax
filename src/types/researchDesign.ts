@@ -55,6 +55,8 @@ export interface SelectedSubcomponent {
   selected_roles: string[];
   non_rd_percentage: number;
   applied_percentage?: number;
+  time_percentage?: number;
+  step_name?: string;
   user_notes?: string;
   hint?: string;
   general_description?: string;
@@ -152,4 +154,119 @@ export const getYearOptions = () => {
     value: currentYear + i,
     label: (currentYear + i).toString()
   }));
-}; 
+};
+
+export interface EmployeeSubcomponent {
+  id: string;
+  employee_id: string;
+  business_year_id: string;
+  subcomponent_id: string;
+  step_id: string;
+  research_activity_id: string;
+  employee_time_percentage: number;
+  baseline_time_percentage: number;
+  is_included: boolean;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmployeeWithSubcomponents {
+  id: string;
+  business_id: string;
+  name: string;
+  role_id: string;
+  is_owner: boolean;
+  annual_wage: number;
+  created_at: string;
+  updated_at: string;
+  role?: {
+    id: string;
+    name: string;
+    description?: string;
+  };
+  subcomponents?: EmployeeSubcomponent[];
+}
+
+export interface RDExpense {
+  id: string;
+  business_year_id: string;
+  research_activity_id: string;
+  step_id: string;
+  subcomponent_id: string;
+  employee_id?: string;
+  contractor_id?: string;
+  supply_id?: string;
+  category: 'Employee' | 'Contractor' | 'Supply';
+  first_name?: string;
+  last_name?: string;
+  role_name?: string;
+  supply_name?: string;
+  research_activity_title: string;
+  research_activity_practice_percent: number;
+  step_name: string;
+  subcomponent_title: string;
+  subcomponent_year_percent: number;
+  subcomponent_frequency_percent: number;
+  subcomponent_time_percent: number;
+  total_cost: number;
+  applied_percent: number;
+  baseline_applied_percent: number;
+  employee_practice_percent?: number;
+  employee_time_percent?: number;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RDContractor {
+  id: string;
+  business_id: string;
+  name: string;
+  role?: string;
+  annual_cost: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RDSupply {
+  id: string;
+  business_id: string;
+  name: string;
+  description?: string;
+  annual_cost: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RDEmployeeSubcomponent {
+  id: string;
+  employee_id: string;
+  subcomponent_id: string;
+  business_year_id: string;
+  time_percentage: number;
+  applied_percentage: number;
+  is_included: boolean;
+  baseline_applied_percent: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmployeeWithExpenses {
+  id: string;
+  business_id: string;
+  name: string;
+  role_id: string;
+  is_owner: boolean;
+  annual_wage: number;
+  created_at: string;
+  updated_at: string;
+  role?: {
+    id: string;
+    name: string;
+    description?: string;
+  };
+  employee_subcomponents?: RDEmployeeSubcomponent[];
+  practice_percent?: number;
+  time_percentages?: Record<string, number>;
+} 

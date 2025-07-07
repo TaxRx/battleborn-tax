@@ -314,6 +314,8 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
             onUpdate={(updates) => updateWizardState(updates)}
             onNext={handleNext}
             onPrevious={handlePrevious}
+            businessYearId={wizardState.selectedYear?.id || ''}
+            businessId={wizardState.business?.id || ''}
           />
         );
       case 4:
