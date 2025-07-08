@@ -5,6 +5,7 @@ import BattleBornApp from './NewApp';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
+  
   <React.StrictMode>
     <BrowserRouter future={{ 
       v7_startTransition: true,

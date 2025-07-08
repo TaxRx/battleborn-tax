@@ -70,7 +70,7 @@ function ProfileError({ onRetry }: { onRetry: () => void }) {
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useUser();
   const { isAuthenticated, demoMode } = useAuthStore();
-
+  console.log("Inside Protected Route",user, isAuthenticated, demoMode);
   // Skip loading for demo mode
   if (loading && !demoMode) {
     return <div>Loading...</div>;
