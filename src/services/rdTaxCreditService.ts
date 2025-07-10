@@ -87,10 +87,6 @@ export class RDTaxCreditService {
       .from('rd_businesses')
       .select(`
         *,
-        client:users (
-          *,
-          user:users (*)
-        ),
         years:rd_business_years (*),
         roles:rd_roles (*),
         employees:rd_employees (

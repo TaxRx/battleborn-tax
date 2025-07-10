@@ -1,10 +1,11 @@
 import OpenAI from 'openai';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: import.meta.env.VITE_OPENAI_API_KEY,
+// Initialize OpenAI client with fallback for missing API key
+const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
+const openai = apiKey ? new OpenAI({
+  apiKey,
   dangerouslyAllowBrowser: true, // Required for browser environment
-});
+}) : null;
 
 export interface AIGenerationContext {
   research_activity_name: string;
@@ -24,6 +25,11 @@ export interface AIGeneratedAnswers {
 
 export class AIService {
   static async generateHypothesis(context: AIGenerationContext): Promise<string> {
+    if (!openai) {
+      console.warn('OpenAI API key not configured, returning placeholder hypothesis');
+      return `Hypothesis for ${context.research_activity_name}: This activity tested the effectiveness of new methodologies and processes to improve outcomes in ${context.industry_type} operations, involving ${context.roles_involved.join(', ')} with ${context.practice_percentage}% practice implementation.`;
+    }
+
     const prompt = `Generate a concise explanation of the hypothesis tested during an R&D project. 
 Use this context:
 - Activity: ${context.research_activity_name}
@@ -61,6 +67,11 @@ Keep the response concise (2-3 sentences) and professional.`;
   }
 
   static async generateDevelopmentSteps(context: AIGenerationContext): Promise<string> {
+    if (!openai) {
+      console.warn('OpenAI API key not configured, returning placeholder development steps');
+      return `Development steps for ${context.research_activity_name}: The ${context.roles_involved.join(', ')} implemented and tested new procedures across ${context.practice_percentage}% of operations, collecting data on outcomes and refining the process based on results.`;
+    }
+
     const prompt = `Summarize the key development or testing steps taken during the activity "${context.research_activity_name}" in the ${context.industry_type} industry.
 
 Include role involvement (${context.roles_involved.join(', ')}), practice implementation (%: ${context.practice_percentage}), and emphasize the iterative nature of the process.
@@ -95,6 +106,11 @@ Example Output:
   }
 
   static async generateDataFeedback(context: AIGenerationContext): Promise<string> {
+    if (!openai) {
+      console.warn('OpenAI API key not configured, returning placeholder data feedback');
+      return `Data feedback for ${context.research_activity_name}: Success was evaluated by tracking key performance metrics and outcomes across ${context.practice_percentage}% of operations. The ${context.roles_involved.join(', ')} collected and analyzed data to determine effectiveness and identify areas for improvement.`;
+    }
+
     const prompt = `Describe the data or observations collected to evaluate the success of the activity "${context.research_activity_name}" in the ${context.industry_type} space.
 
 Reference the types of metrics commonly tracked in private practice or private business ownership, aligned with a practice percentage of ${context.practice_percentage}%. Include who was involved (${context.roles_involved.join(', ')}) in collecting or interpreting the data.

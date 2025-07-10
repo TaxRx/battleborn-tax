@@ -222,11 +222,16 @@ export interface RDExpense {
 export interface RDContractor {
   id: string;
   business_id: string;
-  name: string;
-  role?: string;
-  annual_cost: number;
+  first_name: string;
+  last_name?: string;
+  role_id?: string;
+  is_owner?: boolean;
+  amount: number;
   created_at: string;
   updated_at: string;
+  role?: {
+    name: string;
+  };
 }
 
 export interface RDSupply {

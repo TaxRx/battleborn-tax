@@ -476,11 +476,17 @@ export class UnifiedRDService {
 
   static async saveContractorYearData(contractorYearData: Partial<RDContractorYearData>): Promise<RDContractorYearData> {
     try {
+      // Ensure activity_link is always present and non-null
+      const dataToSave = {
+        ...contractorYearData,
+        activity_link: contractorYearData.activity_link || {}
+      };
+
       if (contractorYearData.id) {
         // Update existing
         const { data, error } = await supabase
           .from('rd_contractor_year_data')
-          .update(contractorYearData)
+          .update(dataToSave)
           .eq('id', contractorYearData.id)
           .select()
           .single();
@@ -495,7 +501,7 @@ export class UnifiedRDService {
         // Create new
         const { data, error } = await supabase
           .from('rd_contractor_year_data')
-          .insert(contractorYearData)
+          .insert(dataToSave)
           .select()
           .single();
 
