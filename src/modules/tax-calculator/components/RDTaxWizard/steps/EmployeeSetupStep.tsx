@@ -1402,7 +1402,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         setRoles(rolesData || []);
       }
 
-      // Load employees with calculated QRE
+      // Load employees with calculated QRE - only show employees that have data for the selected year
       const { data: employeesData, error: employeesError } = await supabase
         .from('rd_employees')
         .select(`
@@ -1415,15 +1415,24 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           year_data:rd_employee_year_data (
             calculated_qre,
             applied_percent
+          ),
+          subcomponents:rd_employee_subcomponents (
+            id
           )
         `)
-        .eq('business_id', businessId);
+        .eq('business_id', businessId)
+        .eq('rd_employee_subcomponents.business_year_id', selectedYear || businessYearId);
 
       if (employeesError) {
         console.error('❌ EmployeeSetupStep - Error loading employees:', employeesError);
       } else {
+        // Filter employees to only include those that have subcomponents for the selected year
+        const employeesWithYearData = (employeesData || []).filter(employee => 
+          employee.subcomponents && employee.subcomponents.length > 0
+        );
+
         // Calculate QRE for each employee using actual applied percentage from subcomponents
-        const employeesWithQRE = await Promise.all((employeesData || []).map(async (employee) => {
+        const employeesWithQRE = await Promise.all(employeesWithYearData.map(async (employee) => {
           const role = employee.role;
           const yearData = employee.year_data?.[0];
           const baselinePercent = role?.baseline_applied_percent || 0;
@@ -2406,11 +2415,32 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         <div className="p-6">
           {activeTab === 'employees' && (
             <div>
-              <div className="mb-6">
-                <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">Employee Roster</h3>
-                <p className="text-sm text-gray-600 mt-1">
-                  Manage employee roles, wages, and R&D allocations
-                </p>
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">Employee Roster</h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Manage employee roles, wages, and R&D allocations
+                  </p>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <label className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg cursor-pointer border border-blue-200 hover:bg-blue-200 transition-colors font-medium">
+                    Import Employees (CSV)
+                    <input
+                      type="file"
+                      accept=".csv"
+                      className="hidden"
+                      onChange={e => {
+                        if (e.target.files && e.target.files[0]) {
+                          setCsvFile(e.target.files[0]);
+                          handleCSVImport(e.target.files[0]);
+                        }
+                      }}
+                      disabled={csvImporting}
+                    />
+                  </label>
+                  {csvImporting && <span className="text-blue-600 text-sm">Importing...</span>}
+                  {csvError && <span className="text-red-600 text-sm">{csvError}</span>}
+                </div>
               </div>
               {employeesWithData.length === 0 ? (
                 <div className="text-center py-12">
@@ -2731,26 +2761,6 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           onUpdate={loadData}
         />
       )}
-      {/* CSV Import UI */}
-      <div className="mb-6 flex items-center space-x-4">
-        <label className="px-4 py-2 bg-blue-100 text-blue-700 rounded cursor-pointer border border-blue-200 hover:bg-blue-200">
-          Import Employees (CSV)
-          <input
-            type="file"
-            accept=".csv"
-            className="hidden"
-            onChange={e => {
-              if (e.target.files && e.target.files[0]) {
-                setCsvFile(e.target.files[0]);
-                handleCSVImport(e.target.files[0]);
-              }
-            }}
-            disabled={csvImporting}
-          />
-        </label>
-        {csvImporting && <span className="text-blue-600">Importing...</span>}
-        {csvError && <span className="text-red-600">{csvError}</span>}
-      </div>
     </div>
   );
 };
