@@ -183,7 +183,7 @@ export class ExpenseManagementService {
             subcomponent_year_percent: yearPercent,
             subcomponent_frequency_percent: freqPercent,
             subcomponent_time_percent: stepPercent,
-            total_cost: contractor.total_cost,
+            total_cost: contractor.amount,
             applied_percent: appliedPercent,
             baseline_applied_percent: appliedPercent
           });
@@ -199,7 +199,7 @@ export class ExpenseManagementService {
         if (error) throw error;
       }
 
-      console.log(`Created ${expenseRecords.length} expense records for contractor ${contractor.name}`);
+      console.log(`Created ${expenseRecords.length} expense records for contractor ${contractor.first_name} ${contractor.last_name}`);
     } catch (error) {
       console.error('Error creating contractor expenses:', error);
       throw error;
@@ -327,9 +327,11 @@ export class ExpenseManagementService {
     try {
       const { data, error } = await supabase
         .from('rd_contractors')
-        .select('*')
-        .eq('business_year_id', businessYearId)
-        .order('name');
+        .select(`
+          *,
+          role:rd_roles(name)
+        `)
+        .order('last_name', { ascending: true });
 
       if (error) throw error;
       return data || [];

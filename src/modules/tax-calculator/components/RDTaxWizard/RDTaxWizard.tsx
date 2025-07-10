@@ -4,7 +4,6 @@ import BusinessSetupStep from './steps/BusinessSetupStep';
 import ResearchExplorerStep from './steps/ResearchExplorerStep';
 import ResearchDesignStep from './steps/ResearchDesignStep';
 import EmployeeSetupStep from './steps/EmployeeSetupStep';
-import ExpenseEntryStep from './steps/ExpenseEntryStep';
 import CalculationStep from './steps/CalculationStep';
 import ReportStep from './steps/ReportStep';
 import { toast } from 'react-hot-toast';
@@ -52,12 +51,8 @@ const steps = [
     description: 'Define the research components and their percentages'
   },
   {
-    title: 'Employees',
-    description: 'Add employees and their time allocation'
-  },
-  {
-    title: 'Expenses',
-    description: 'Enter supplies and contractor expenses'
+    title: 'Employee Management',
+    description: 'Manage employees and their R&D allocations'
   },
   {
     title: 'Calculations',
@@ -330,16 +325,6 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
         );
       case 4:
         return (
-          <ExpenseEntryStep
-            supplies={wizardState.supplies}
-            contractors={wizardState.contractors}
-            onUpdate={(updates) => updateWizardState(updates)}
-            onNext={handleNext}
-            onPrevious={handlePrevious}
-          />
-        );
-      case 5:
-        return (
           <CalculationStep
             wizardState={wizardState}
             onUpdate={(updates) => updateWizardState(updates)}
@@ -347,7 +332,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
             onPrevious={handlePrevious}
           />
         );
-      case 6:
+      case 5:
         return (
           <ReportStep
             wizardState={wizardState}
