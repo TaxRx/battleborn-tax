@@ -1,3 +1,5 @@
+console.log("AdminDashboard");
+
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { AdminStats, TaxProposal } from '../types/proposal';

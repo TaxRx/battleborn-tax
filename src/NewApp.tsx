@@ -4,7 +4,7 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
 // // Use the new modular AdminDashboard
-// import AdminDashboard from './modules/admin/pages/AdminDashboard';
+import AdminDashboard from './modules/admin/pages/AdminDashboard';
 import { UserProvider } from './context/UserContext';
 import useAuthStore from './store/authStore';
 
@@ -17,9 +17,8 @@ const BattleBornApp: React.FC = () => {
 
   // // Public routes
   const isPublicRoute = ['/', '/login', '/signup'].includes(location.pathname);
-  console.log("Inside Main App",isAuthenticated, isPublicRoute);
-
-  return ( <div>Hello BB 1234</div>)
+  
+  
   if (!isAuthenticated && !isPublicRoute) {
     return <Navigate to="/login" replace />;
   }

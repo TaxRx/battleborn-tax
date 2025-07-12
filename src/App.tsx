@@ -39,6 +39,7 @@ import { Toaster } from 'react-hot-toast';
 import RDTaxWizard from './modules/tax-calculator/components/RDTaxWizard/RDTaxWizard';
 import UnifiedClientDashboard from './components/UnifiedClientDashboard';
 import RDClientManagement from './components/RDClientManagement';
+import ErrorBoundary from './modules/shared/components/ErrorBoundary';
 
 const defaultTaxInfo = {
   standardDeduction: true,
@@ -339,41 +340,43 @@ const App = () => {
   } : profile;
 
   return (
-    <Router>
-      <Toaster position="top-right" />
-      <UserProvider>
-        <div className="min-h-screen bg-gray-50">
-          {/* Only show Navigation on non-public routes and not on Admin routes */}
-          {isUserAuthenticated && !isPublicRoute && !isAdminRoute && (
-            <Navigation 
-              currentView={location.pathname.substring(1) || 'dashboard'}
-              onViewChange={(view) => navigate(`/${view}`)}
-              isAuthenticated={isUserAuthenticated}
-              onLoginClick={() => navigate('/login')}
-              onLogoutClick={() => {
-                if (demoMode) {
-                  const { disableDemoMode } = useAuthStore.getState();
-                  disableDemoMode();
-                  navigate('/');
-                } else {
-                  supabase.auth.signOut();
-                }
-              }}
-              userType={(() => {
-                if (demoMode) return userType || 'client';
-                if (effectiveProfile?.email === 'admin@taxrxgroup.com') return 'admin';
-                return effectiveProfile?.role || 'client';
-              })()}
-            />
-          )}
-          <main className={isUserAuthenticated && !isPublicRoute ? 'ml-64' : ''}>
-            <AppRoutes profile={effectiveProfile} />
-          </main>
-        </div>
-        <ToastContainer position="top-right" autoClose={5000} />
-        <DemoModeIndicator />
-      </UserProvider>
-    </Router>
+    <ErrorBoundary>
+      <Router>
+        <Toaster position="top-right" />
+        <UserProvider>
+          <div className="min-h-screen bg-gray-50">
+            {/* Only show Navigation on non-public routes and not on Admin routes */}
+            {isUserAuthenticated && !isPublicRoute && !isAdminRoute && (
+              <Navigation 
+                currentView={location.pathname.substring(1) || 'dashboard'}
+                onViewChange={(view) => navigate(`/${view}`)}
+                isAuthenticated={isUserAuthenticated}
+                onLoginClick={() => navigate('/login')}
+                onLogoutClick={() => {
+                  if (demoMode) {
+                    const { disableDemoMode } = useAuthStore.getState();
+                    disableDemoMode();
+                    navigate('/');
+                  } else {
+                    supabase.auth.signOut();
+                  }
+                }}
+                userType={(() => {
+                  if (demoMode) return userType || 'client';
+                  if (effectiveProfile?.email === 'admin@taxrxgroup.com') return 'admin';
+                  return effectiveProfile?.role || 'client';
+                })()}
+              />
+            )}
+            <main className={isUserAuthenticated && !isPublicRoute ? 'ml-64' : ''}>
+              <AppRoutes profile={effectiveProfile} />
+            </main>
+          </div>
+          <ToastContainer position="top-right" autoClose={5000} />
+          <DemoModeIndicator />
+        </UserProvider>
+      </Router>
+    </ErrorBoundary>
   );
 };
 
