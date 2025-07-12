@@ -998,6 +998,55 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
         }
       }
 
+      // --- After all subcomponent upserts, recalculate and update employee year QRE ---
+      try {
+        // Fetch employee wage and role baseline
+        const { data: employeeData, error: employeeError } = await supabase
+          .from('rd_employees')
+          .select('annual_wage, role:rd_roles(baseline_applied_percent)')
+          .eq('id', employee.id)
+          .single();
+        if (employeeError) {
+          console.error('❌ Error fetching employee wage/role:', employeeError);
+        }
+        const annualWage = employeeData?.annual_wage || 0;
+        const baselinePercent = employeeData?.role 
+          ? (Array.isArray(employeeData.role) 
+              ? (employeeData.role[0] as any)?.baseline_applied_percent || 0
+              : (employeeData.role as any)?.baseline_applied_percent || 0)
+          : 0;
+
+        // Fetch all subcomponents for this employee/year
+        const { data: subcomponents, error: subError } = await supabase
+          .from('rd_employee_subcomponents')
+          .select('applied_percentage')
+          .eq('employee_id', employee.id)
+          .eq('business_year_id', businessYearId);
+        if (subError) {
+          console.error('❌ Error fetching subcomponents for QRE recalc:', subError);
+        }
+        const totalAppliedPercentage = subcomponents?.reduce((sum, sub) => sum + (sub.applied_percentage || 0), 0) || 0;
+        const actualAppliedPercentage = totalAppliedPercentage > 0 ? totalAppliedPercentage : baselinePercent;
+        const calculatedQRE = Math.round((annualWage * actualAppliedPercentage) / 100);
+
+        // Update rd_employee_year_data
+        const { error: yearDataError } = await supabase
+          .from('rd_employee_year_data')
+          .update({
+            calculated_qre: calculatedQRE,
+            applied_percent: actualAppliedPercentage
+          })
+          .eq('employee_id', employee.id)
+          .eq('business_year_id', businessYearId);
+        if (yearDataError) {
+          console.error('❌ Error updating employee year QRE after allocations:', yearDataError);
+        } else {
+          console.log('✅ Updated employee year QRE after allocations:', calculatedQRE);
+        }
+      } catch (err) {
+        console.error('❌ Error in QRE recalc after allocations:', err);
+      }
+
       console.log('✅ Allocations saved successfully');
       onUpdate();
       onClose();
@@ -1284,7 +1333,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
                                 <input
                                   type="range"
                                   min="0"
-                                  max={subcomponent.maxTimePercentage}
+                                  max={100}
                                   step="0.01"
                                   value={subcomponent.timePercentage}
                                   onChange={(e) => updateSubcomponentTimePercentage(activity.id, subcomponent.id, parseFloat(e.target.value))}
@@ -1564,17 +1613,8 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     loadData();
   }, [businessId, selectedYear]);
 
-  // Recalculate QRE when roles change (but only if not already loading and not initial load)
-  useEffect(() => {
-    if (roles.length > 0 && employeesWithData.length > 0 && !loading && !isInitialLoad) {
-      console.log('🔄 EmployeeSetupStep - Roles changed, recalculating QRE for all employees');
-      // Use a timeout to prevent infinite loops
-      const timeoutId = setTimeout(() => {
-        recalculateAllQRE();
-      }, 100);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [roles, loading, isInitialLoad]);
+  // Removed the problematic useEffect that was causing infinite loops
+  // QRE recalculation should only happen when explicitly triggered, not automatically
 
   const handleQuickAddContractor = async (contractorData: QuickContractorEntry) => {
     try {
@@ -1662,13 +1702,23 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       // First, try to find an existing default role for this business
       const { data: existingDefaultRole, error: findError } = await supabase
         .from('rd_roles')
-        .select('id, name')
+        .select('id, name, baseline_applied_percent')
         .eq('business_id', businessId)
         .eq('is_default', true)
         .single();
 
       if (existingDefaultRole && !findError) {
         console.log('✅ Found existing default role:', existingDefaultRole);
+        
+        // If the existing default role doesn't have a baseline percentage, update it
+        if (!existingDefaultRole.baseline_applied_percent) {
+          console.log('🔄 Updating existing default role with baseline percentage');
+          await supabase
+            .from('rd_roles')
+            .update({ baseline_applied_percent: 25.0 }) // Default 25% for Research Leader
+            .eq('id', existingDefaultRole.id);
+        }
+        
         return existingDefaultRole.id;
       }
 
@@ -1679,7 +1729,8 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         .insert({
           business_id: businessId,
           name: 'Research Leader',
-          is_default: true
+          is_default: true,
+          baseline_applied_percent: 25.0 // Default 25% for Research Leader
         })
         .select('id, name')
         .single();
@@ -1721,12 +1772,13 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         // Get role details for baseline percentage
         const { data: roleData, error: roleError } = await supabase
           .from('rd_roles')
-          .select('name')
+          .select('name, baseline_applied_percent')
           .eq('id', roleId)
           .single();
 
         if (roleData && !roleError) {
           roleName = roleData.name;
+          baselinePercent = roleData.baseline_applied_percent || 0;
         }
       }
 
@@ -1757,14 +1809,18 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       // Create employee year data for the selected year
       if (businessYearId) {
         console.log('📅 EmployeeSetupStep - Creating employee year data for year:', businessYearId);
+        
+        // Calculate initial QRE: (Annual Wage × Applied Percentage) / 100
+        const calculatedQRE = Math.round((annualWage * baselinePercent) / 100);
+        
         const { error: yearDataError } = await supabase
           .from('rd_employee_year_data')
           .insert({
             employee_id: newEmployee.id,
             business_year_id: businessYearId,
             applied_percent: baselinePercent,
-            calculated_qre: 0,
-            activity_roles: []
+            calculated_qre: calculatedQRE,
+            activity_roles: [roleId]
           });
 
         if (yearDataError) {
@@ -1785,33 +1841,94 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           console.log('🔗 EmployeeSetupStep - Creating subcomponent relationships for', selectedActivities.length, 'activities');
           
           for (const activity of selectedActivities) {
-            // Get subcomponents for this activity
+            // Get subcomponents for this activity that are assigned to this role
             const { data: subcomponents, error: subcomponentsError } = await supabase
-              .from('rd_subcomponents')
-              .select('id')
-              .eq('activity_id', activity.activity_id);
+              .from('rd_selected_subcomponents')
+              .select('subcomponent_id')
+              .eq('research_activity_id', activity.activity_id)
+              .eq('business_year_id', businessYearId)
+              .filter('selected_roles', 'cs', `["${roleId}"]`);
 
             if (subcomponents && !subcomponentsError) {
+              console.log(`✅ Found ${subcomponents.length} subcomponents for activity ${activity.activity_id} assigned to role ${roleId}`);
+              
               for (const subcomponent of subcomponents) {
+                // Get ALL subcomponent details from rd_selected_subcomponents (the source of truth)
+                const { data: selectedSubcomponent, error: subDetailsError } = await supabase
+                  .from('rd_selected_subcomponents')
+                  .select('year_percentage, frequency_percentage, time_percentage, practice_percentage, step_id')
+                  .eq('subcomponent_id', subcomponent.subcomponent_id)
+                  .eq('business_year_id', businessYearId)
+                  .single();
+
+                if (subDetailsError) {
+                  console.error('❌ Error fetching selected subcomponent details:', subDetailsError);
+                }
+
+                // Use data from rd_selected_subcomponents (the source of truth)
+                const stepTimePercentage = selectedSubcomponent?.time_percentage || 0;
+                const baselinePracticePercentage = selectedSubcomponent?.practice_percentage || activity.practice_percent || 0;
+                const yearPercentage = selectedSubcomponent?.year_percentage || 100;
+                const frequencyPercentage = selectedSubcomponent?.frequency_percentage || 100;
+                
+                // Calculate baseline applied percentage: Practice% × Year% × Frequency% × Time%
+                const baselineAppliedPercentage = (baselinePracticePercentage / 100) * 
+                                               (yearPercentage / 100) * 
+                                               (frequencyPercentage / 100) * 
+                                               (stepTimePercentage / 100) * 100;
+
                 const { error: subcomponentError } = await supabase
                   .from('rd_employee_subcomponents')
                   .insert({
                     employee_id: newEmployee.id,
-                    subcomponent_id: subcomponent.id,
+                    subcomponent_id: subcomponent.subcomponent_id,
                     business_year_id: businessYearId,
-                    time_percentage: 0,
-                    applied_percentage: 0,
+                    time_percentage: stepTimePercentage,
+                    applied_percentage: baselineAppliedPercentage,
+                    practice_percentage: baselinePracticePercentage,
+                    year_percentage: yearPercentage,
+                    frequency_percentage: frequencyPercentage,
                     is_included: true,
-                    baseline_applied_percent: 0
+                    baseline_applied_percent: baselineAppliedPercentage,
+                    baseline_time_percentage: stepTimePercentage,
+                    baseline_practice_percentage: baselinePracticePercentage
                   });
 
                 if (subcomponentError) {
                   console.error('❌ EmployeeSetupStep - Error creating subcomponent relationship:', subcomponentError);
+                } else {
+                  console.log('✅ EmployeeSetupStep - Created subcomponent relationship with baseline values:', {
+                    subcomponent: subcomponent.subcomponent_id,
+                    timePercentage: stepTimePercentage,
+                    appliedPercentage: baselineAppliedPercentage,
+                    practicePercentage: baselinePracticePercentage
+                  });
                 }
               }
             }
           }
         }
+      }
+
+      // Calculate and update QRE in rd_employee_year_data
+      const employeeWage = annualWage; // Use the already parsed annualWage
+      const totalAppliedPercentage = baselinePercent; // Use role's baseline percentage for initial QRE
+      
+      // Calculate QRE: (Annual Wage × Applied Percentage) / 100
+      const calculatedQRE = Math.round((employeeWage * totalAppliedPercentage) / 100);
+      
+      // Update rd_employee_year_data with calculated QRE
+      const { error: yearDataError } = await supabase
+        .from('rd_employee_year_data')
+        .update({
+          calculated_qre: calculatedQRE,
+          applied_percent: totalAppliedPercentage
+        })
+        .eq('employee_id', newEmployee.id)
+        .eq('business_year_id', businessYearId);
+
+      if (yearDataError) {
+        console.error('❌ EmployeeSetupStep - Error updating employee year data:', yearDataError);
       }
 
       // Refresh employee data
@@ -2081,9 +2198,21 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
 
       // 1b. Update activity_roles in rd_employee_year_data for this employee/year
       if (businessYearId) {
+        // Get the new role's baseline percentage
+        const { data: roleData, error: roleError } = await supabase
+          .from('rd_roles')
+          .select('baseline_applied_percent')
+          .eq('id', newRoleId)
+          .single();
+
+        const baselinePercent = roleData?.baseline_applied_percent || 0;
+
         await supabase
           .from('rd_employee_year_data')
-          .update({ activity_roles: [newRoleId] })
+          .update({ 
+            activity_roles: [newRoleId],
+            applied_percent: baselinePercent
+          })
           .eq('employee_id', employeeId)
           .eq('business_year_id', businessYearId);
       }
@@ -2104,7 +2233,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           .from('rd_selected_subcomponents')
           .select('*')
           .eq('business_year_id', businessYearId)
-          .filter('selected_roles', 'cs', `["${String(newRoleId || '')}"]`);
+          .filter('selected_roles', 'cs', `[\"${String(newRoleId || '')}\"]`);
 
         if (subcomponentsError) {
           console.error('❌ Error fetching selected subcomponents:', subcomponentsError);
@@ -2112,46 +2241,39 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
 
         if (selectedSubcomponents && selectedSubcomponents.length > 0) {
           console.log('🔍 Debug - Raw selectedSubcomponents data:', selectedSubcomponents);
-          console.log('🔍 Debug - First subcomponent keys:', Object.keys(selectedSubcomponents[0] || {}));
-          
-          // Prepare insert payloads for all subcomponents
-          const subcomponentInserts = selectedSubcomponents.map((sub) => {
-            // On creation, copy values from rd_selected_subcomponents into BOTH live and baseline columns
-            const practice_percentage = sub.practice_percentage ?? 0;
-            const applied_percentage = sub.applied_percentage ?? 0;
-            const time_percentage = sub.time_percentage ?? 0;
+          console.log('🔍 Debug - First subcomponent keys:', Object.keys(selectedSubcomponents[0]));
 
-            const insertData = {
-              employee_id: employeeId,
-              subcomponent_id: sub.subcomponent_id,
-              business_year_id: businessYearId,
-              time_percentage: time_percentage,
-              applied_percentage: applied_percentage,
-              is_included: sub.is_included ?? true,
-              baseline_applied_percent: applied_percentage, // baseline set on creation only
-              practice_percentage: practice_percentage,
-              year_percentage: sub.year_percentage ?? null,
-              frequency_percentage: sub.frequency_percentage ?? null,
-              baseline_practice_percentage: practice_percentage, // baseline set on creation only
-              baseline_time_percentage: time_percentage, // baseline set on creation only
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            };
-            console.log('🔍 Debug - Insert data for subcomponent:', sub.subcomponent_id, insertData);
-            return insertData;
-          });
+          // Create employee subcomponent relationships with baseline values
+          const employeeSubcomponentData = selectedSubcomponents.map((subcomponent: any) => ({
+            employee_id: employeeId,
+            subcomponent_id: subcomponent.subcomponent_id,
+            business_year_id: businessYearId,
+            time_percentage: subcomponent.time_percentage || 0,
+            applied_percentage: subcomponent.applied_percentage || 0,
+            is_included: true,
+            baseline_applied_percent: subcomponent.applied_percentage || 0,
+            practice_percentage: subcomponent.practice_percent || 0,
+            year_percentage: subcomponent.year_percentage || 0,
+            frequency_percentage: subcomponent.frequency_percentage || 0,
+            baseline_practice_percentage: subcomponent.practice_percent || 0,
+            baseline_time_percentage: subcomponent.time_percentage || 0,
+            user_id: userId
+          }));
 
-          // Insert all subcomponents for this employee
-          const { error: insertError } = await supabase
+          console.log('🔍 Debug - Employee subcomponent data to insert:', employeeSubcomponentData);
+
+          const { data: insertedSubcomponents, error: insertError } = await supabase
             .from('rd_employee_subcomponents')
-            .insert(subcomponentInserts);
+            .insert(employeeSubcomponentData)
+            .select();
+
           if (insertError) {
-            console.error('❌ Error inserting employee subcomponents:', insertError, subcomponentInserts);
+            console.error('❌ Error inserting employee subcomponents:', insertError);
           } else {
-            console.log('✅ Successfully inserted employee subcomponents:', subcomponentInserts);
+            console.log('✅ Successfully inserted employee subcomponents:', insertedSubcomponents);
           }
         } else {
-          console.warn('⚠️ No selected subcomponents found for role', newRoleId, 'and year', businessYearId);
+          console.warn(`⚠️ No selected subcomponents found for role ${newRoleId} and year ${businessYearId}`);
         }
       }
 
@@ -2159,6 +2281,106 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       await loadData();
     } catch (err) {
       toast.error('Error updating role, activity_roles, or subcomponents');
+    }
+  };
+
+  const updateContractorRole = async (contractorId: string, newRoleId: string) => {
+    console.log('👷 EmployeeSetupStep - Updating role for contractor:', contractorId, 'new role:', newRoleId);
+    try {
+      // 1. Update the contractor's role_id
+      const { error: updateError } = await supabase
+        .from('rd_contractors')
+        .update({ role_id: newRoleId })
+        .eq('id', contractorId);
+      if (updateError) {
+        toast.error('Failed to update contractor role');
+        return;
+      }
+
+      // 1b. Update activity_roles in rd_contractor_year_data for this contractor/year
+      if (businessYearId) {
+        // Get the new role's baseline percentage
+        const { data: roleData, error: roleError } = await supabase
+          .from('rd_roles')
+          .select('baseline_applied_percent')
+          .eq('id', newRoleId)
+          .single();
+
+        const baselinePercent = roleData?.baseline_applied_percent || 0;
+
+        await supabase
+          .from('rd_contractor_year_data')
+          .update({ 
+            activity_roles: [newRoleId]
+          })
+          .eq('contractor_id', contractorId)
+          .eq('business_year_id', businessYearId);
+      }
+
+      // 2. Remove old subcomponent links for this contractor/year
+      if (businessYearId) {
+        await supabase
+          .from('rd_contractor_subcomponents')
+          .delete()
+          .eq('contractor_id', contractorId)
+          .eq('business_year_id', businessYearId);
+      }
+
+      // 3. Add new subcomponent links for the new role (using the selected year's activities/subcomponents)
+      if (businessYearId && newRoleId) {
+        // Fetch all selected subcomponents for this business year and role
+        const { data: selectedSubcomponents, error: subcomponentsError } = await supabase
+          .from('rd_selected_subcomponents')
+          .select('*')
+          .eq('business_year_id', businessYearId)
+          .filter('selected_roles', 'cs', `[\"${String(newRoleId || '')}\"]`);
+
+        if (subcomponentsError) {
+          console.error('❌ Error fetching selected subcomponents:', subcomponentsError);
+        }
+
+        if (selectedSubcomponents && selectedSubcomponents.length > 0) {
+          console.log('🔍 Debug - Raw selectedSubcomponents data for contractor:', selectedSubcomponents);
+          console.log('🔍 Debug - First subcomponent keys:', Object.keys(selectedSubcomponents[0]));
+
+          // Create contractor subcomponent relationships with baseline values
+          const contractorSubcomponentData = selectedSubcomponents.map((subcomponent: any) => ({
+            contractor_id: contractorId,
+            subcomponent_id: subcomponent.subcomponent_id,
+            business_year_id: businessYearId,
+            time_percentage: subcomponent.time_percentage || 0,
+            applied_percentage: subcomponent.applied_percentage || 0,
+            is_included: true,
+            baseline_applied_percent: subcomponent.applied_percentage || 0,
+            practice_percentage: subcomponent.practice_percent || 0,
+            year_percentage: subcomponent.year_percentage || 0,
+            frequency_percentage: subcomponent.frequency_percentage || 0,
+            baseline_practice_percentage: subcomponent.practice_percent || 0,
+            baseline_time_percentage: subcomponent.time_percentage || 0,
+            user_id: userId
+          }));
+
+          console.log('🔍 Debug - Contractor subcomponent data to insert:', contractorSubcomponentData);
+
+          const { data: insertedSubcomponents, error: insertError } = await supabase
+            .from('rd_contractor_subcomponents')
+            .insert(contractorSubcomponentData)
+            .select();
+
+          if (insertError) {
+            console.error('❌ Error inserting contractor subcomponents:', insertError);
+          } else {
+            console.log('✅ Successfully inserted contractor subcomponents:', insertedSubcomponents);
+          }
+        } else {
+          console.warn(`⚠️ No selected subcomponents found for contractor role ${newRoleId} and year ${businessYearId}`);
+        }
+      }
+
+      toast.success('Contractor role updated, activity_roles and subcomponents refreshed!');
+      await loadData();
+    } catch (err) {
+      toast.error('Error updating contractor role, activity_roles, or subcomponents');
     }
   };
 
@@ -2414,14 +2636,17 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                 <div className="flex items-center space-x-2">
                   <span className="inline-block w-3 h-3 rounded-full bg-blue-500"></span>
                   <span className="text-xs text-blue-100 font-semibold">Employees</span>
+                  <span className="text-xs text-blue-100 font-semibold">{formatCurrency(employeeQRE)}</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <span className="inline-block w-3 h-3 rounded-full bg-orange-500"></span>
                   <span className="text-xs text-orange-100 font-semibold">Contractors</span>
+                  <span className="text-xs text-orange-100 font-semibold">{formatCurrency(contractorQRE)}</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <span className="inline-block w-3 h-3 rounded-full bg-emerald-500"></span>
                   <span className="text-xs text-emerald-100 font-semibold">Supplies</span>
+                  <span className="text-xs text-emerald-100 font-semibold">{formatCurrency(supplyQRE)}</span>
                 </div>
               </div>
             </div>
@@ -2587,7 +2812,25 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
 
                   {/* Employee Table Rows */}
                   {sortedEmployees.map((employee) => {
-                    const isCustom = Number(employee.applied_percentage).toFixed(2) !== Number(employee.baseline_applied_percent).toFixed(2);
+                    // Remove isCustom and chip logic
+                    // Owner dot logic
+                    const isOwner = employee.is_owner;
+                    // Applied % color logic
+                    let appliedColor = "text-blue-700";
+                    let appliedValue = Number(employee.applied_percentage);
+                    let appliedDisplay = appliedValue.toFixed(2);
+                    if (appliedValue >= 80) {
+                      appliedColor = "text-black";
+                      appliedDisplay = "100.00";
+                    } else if (appliedValue >= 60) {
+                      appliedColor = "text-orange-700";
+                    } else if (appliedValue >= 50) {
+                      appliedColor = "text-orange-500";
+                    } else if (appliedValue >= 40) {
+                      appliedColor = "text-green-900";
+                    } else if (appliedValue >= 30) {
+                      appliedColor = "text-green-500";
+                    }
                     return (
                       <div
                         key={employee.id}
@@ -2613,11 +2856,8 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                                 </option>
                               ))}
                             </select>
-                            {isCustom && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 text-xs font-semibold border border-yellow-200">Custom</span>
-                            )}
-                            {!isCustom && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-semibold border border-green-200">Baseline</span>
+                            {isOwner && (
+                              <span className="inline-block w-2 h-2 rounded-full bg-green-500 ml-1" title="Owner"></span>
                             )}
                           </div>
                         </div>
@@ -2625,7 +2865,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                         <div className="text-right">
                           <input
                             type="text"
-                            className="w-36 px-2 py-1 rounded border border-gray-200 text-lg font-semibold text-gray-900 text-right focus:outline-none focus:ring-2 focus:ring-blue-200"
+                            className="w-36 px-2 py-1 rounded border border-gray-200 text-lg text-gray-900 text-right focus:outline-none focus:ring-2 focus:ring-blue-200"
                             value={formatCurrency(employee.annual_wage)}
                             onChange={(e) => {
                               const numericValue = e.target.value.replace(/[^0-9]/g, '');
@@ -2641,8 +2881,8 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                           {formatCurrency(employee.calculated_qre)}
                         </div>
                         {/* Applied % Column */}
-                        <div className="text-center text-lg font-semibold text-blue-700">
-                          {Number(employee.applied_percentage).toFixed(2)}%
+                        <div className={`text-center text-lg font-semibold ${appliedColor}`}>
+                          {appliedDisplay}%
                         </div>
                         {/* Actions Column */}
                         <div className="flex justify-end items-center space-x-2">
@@ -2706,7 +2946,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                       <span className="text-xs ml-1">{getSortIcon('last_name')}</span>
                     </button>
                     <div className="text-center">Role</div>
-                    <div className="text-right font-semibold">Wage (65%)</div>
+                    <div className="text-right font-semibold">Amount</div>
                     <button 
                       onClick={() => handleSort('calculated_qre')}
                       className="text-center hover:text-orange-600 transition-colors flex items-center justify-center"
@@ -2725,7 +2965,23 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                   </div>
                   {/* Contractor Table Rows */}
                   {sortedContractors.map((contractor) => {
-                    const isCustom = Number(contractor.applied_percentage).toFixed(2) !== Number(contractor.baseline_applied_percent).toFixed(2);
+                    // Applied % color logic for contractors
+                    let appliedColor = "text-blue-700";
+                    let appliedValue = Number(contractor.applied_percentage);
+                    let appliedDisplay = appliedValue.toFixed(2);
+                    if (appliedValue >= 80) {
+                      appliedColor = "text-black";
+                      appliedDisplay = "100.00";
+                    } else if (appliedValue >= 60) {
+                      appliedColor = "text-orange-700";
+                    } else if (appliedValue >= 50) {
+                      appliedColor = "text-orange-500";
+                    } else if (appliedValue >= 40) {
+                      appliedColor = "text-green-900";
+                    } else if (appliedValue >= 30) {
+                      appliedColor = "text-green-500";
+                    }
+                    
                     return (
                       <div
                         key={contractor.id}
@@ -2739,29 +2995,42 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                         {/* Role Column */}
                         <div className="flex flex-col items-center">
                           <div className="flex items-center space-x-2">
-                            <span className="inline-flex items-center px-3 py-1 rounded-full bg-orange-100 text-orange-800 text-sm font-medium border border-orange-200">
-                              {contractor.role?.name || contractor.role_id} {contractor.baseline_applied_percent ? `(${Number(contractor.baseline_applied_percent).toFixed(2)}%)` : ''}
-                              <ChevronDown className="w-4 h-4 ml-1 text-orange-500 cursor-pointer" />
-                            </span>
-                            {isCustom && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 text-xs font-semibold border border-yellow-200">Custom</span>
-                            )}
-                            {!isCustom && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-semibold border border-green-200">Baseline</span>
+                            <div className="relative">
+                              <select
+                                value={contractor.role_id || ''}
+                                onChange={(e) => {
+                                  const newRoleId = e.target.value;
+                                  if (newRoleId && newRoleId !== contractor.role_id) {
+                                    updateContractorRole(contractor.id, newRoleId);
+                                  }
+                                }}
+                                className="inline-flex items-center px-3 py-1 rounded-full bg-orange-100 text-orange-800 text-sm font-medium border border-orange-200 cursor-pointer hover:bg-orange-200 transition-colors appearance-none pr-8"
+                              >
+                                <option value="" disabled>Select Role</option>
+                                {roles.map(role => (
+                                  <option key={role.id} value={role.id}>
+                                    {role.name} {role.baseline_applied_percent ? `(${Number(role.baseline_applied_percent).toFixed(2)}%)` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown className="w-4 h-4 absolute right-2 top-1/2 transform -translate-y-1/2 text-orange-500 pointer-events-none" />
+                            </div>
+                            {contractor.is_owner && (
+                              <span className="inline-block w-2 h-2 rounded-full bg-green-500 ml-1" title="Owner"></span>
                             )}
                           </div>
                         </div>
-                        {/* Wage (65%) Column */}
+                        {/* Amount Column */}
                         <div className="text-right text-lg font-semibold text-gray-900">
-                          {formatCurrency((contractor.amount || 0) * 0.65)}
+                          {formatCurrency(contractor.amount || 0)}
                         </div>
                         {/* QRE Column */}
                         <div className="text-center text-lg font-semibold text-purple-700">
                           {formatCurrency(contractor.calculated_qre)}
                         </div>
                         {/* Applied % Column */}
-                        <div className="text-center text-lg font-semibold text-blue-700">
-                          {Number(contractor.applied_percentage).toFixed(2)}%
+                        <div className={`text-center text-lg font-semibold ${appliedColor}`}>
+                          {appliedDisplay}%
                         </div>
                         {/* Actions Column */}
                         <div className="flex justify-end items-center space-x-2">

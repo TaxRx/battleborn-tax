@@ -178,7 +178,7 @@ export class EmployeeManagementService {
       }
 
       // Create baseline subcomponent entries for the employee
-      await this.createBaselineSubcomponentEntries(employeeId, businessYearId);
+      await this.createBaselineSubcomponentEntries(employeeId, businessYearId, roleIds);
       console.log('✅ EmployeeManagementService.assignRolesToEmployee - Assignment completed successfully');
     } catch (error) {
       console.error('❌ EmployeeManagementService.assignRolesToEmployee - Error:', error);
@@ -189,10 +189,11 @@ export class EmployeeManagementService {
   // Create baseline subcomponent entries for an employee
   static async createBaselineSubcomponentEntries(
     employeeId: string,
-    businessYearId: string
+    businessYearId: string,
+    roleIds: string[] = []
   ): Promise<void> {
     try {
-      console.log('🔍 EmployeeManagementService.createBaselineSubcomponentEntries - Starting creation for employeeId:', employeeId, 'businessYearId:', businessYearId);
+      console.log('🔍 EmployeeManagementService.createBaselineSubcomponentEntries - Starting creation for employeeId:', employeeId, 'businessYearId:', businessYearId, 'roleIds:', roleIds);
       
       // Get all selected subcomponents for this business year
       const { data: subcomponents, error: subError } = await supabase
@@ -207,14 +208,50 @@ export class EmployeeManagementService {
 
       console.log('✅ EmployeeManagementService.createBaselineSubcomponentEntries - Subcomponents loaded:', subcomponents);
 
-      // Create baseline entries for each subcomponent
-      const baselineEntries = subcomponents?.map(subcomponent => ({
-        employee_id: employeeId,
-        business_year_id: businessYearId,
-        subcomponent_id: subcomponent.subcomponent_id,
-        employee_time_percentage: 0, // Default to 0, will be set by user
-        is_included: true // Default to included
-      })) || [];
+      // Filter subcomponents to only include those that match the employee's roles
+      const filteredSubcomponents = (subcomponents || []).filter(subcomponent => {
+        // If no roles are specified, include all subcomponents
+        if (roleIds.length === 0) {
+          return true;
+        }
+        
+        // Check if this subcomponent has any of the employee's roles
+        const hasMatchingRole = subcomponent.selected_roles?.some(roleId => 
+          roleIds.includes(roleId)
+        );
+        
+        return hasMatchingRole;
+      });
+
+      console.log('🔧 EmployeeManagementService.createBaselineSubcomponentEntries - Filtered subcomponents:', filteredSubcomponents);
+
+      // Create baseline entries for each filtered subcomponent using actual percentages from rd_selected_subcomponents
+      const baselineEntries = filteredSubcomponents.map(subcomponent => {
+        const time_percentage = subcomponent.time_percentage || 0;
+        const practice_percentage = subcomponent.practice_percent || 0;
+        const year_percentage = subcomponent.year_percentage || 0;
+        const frequency_percentage = subcomponent.frequency_percentage || 0;
+        const applied_percentage = (practice_percentage * time_percentage * year_percentage * frequency_percentage) / 1000000;
+        const baseline_applied_percent = subcomponent.applied_percentage || applied_percentage;
+        const baseline_time_percentage = time_percentage;
+        const baseline_practice_percentage = practice_percentage;
+        return {
+          employee_id: employeeId,
+          business_year_id: businessYearId,
+          subcomponent_id: subcomponent.subcomponent_id,
+          time_percentage,
+          applied_percentage,
+          is_included: true,
+          baseline_applied_percent,
+          practice_percentage,
+          year_percentage,
+          frequency_percentage,
+          baseline_practice_percentage,
+          baseline_time_percentage,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+      });
 
       console.log('🔧 EmployeeManagementService.createBaselineSubcomponentEntries - Baseline entries to create:', baselineEntries);
 

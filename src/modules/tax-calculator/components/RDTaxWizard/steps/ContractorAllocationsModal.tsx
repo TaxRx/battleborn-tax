@@ -651,9 +651,45 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
         }
       }
 
-      // --- Upsert rd_contractor_year_data ---
-      // Calculate total applied percent (sum of all included subcomponent applied %)
-      let totalAppliedPercent = 0;
+      // Save subcomponent allocations to rd_contractor_subcomponents
+      const subcomponentUpserts = activities.flatMap(activity =>
+        activity.subcomponents.map(subcomponent => ({
+          contractor_id: contractor.id,
+          subcomponent_id: subcomponent.id,
+          business_year_id: businessYearId,
+          time_percentage: subcomponent.timePercentage,
+          applied_percentage: (
+            (activity.practicePercentage || 0) *
+            (subcomponent.timePercentage || 0) *
+            (subcomponent.yearPercentage || 0) *
+            (subcomponent.frequencyPercentage || 0)
+          ) / 1000000,
+          is_included: subcomponent.isIncluded,
+          baseline_applied_percent: subcomponent.baselineTimePercentage || 0,
+          practice_percentage: activity.practicePercentage,
+          year_percentage: subcomponent.yearPercentage,
+          frequency_percentage: subcomponent.frequencyPercentage,
+          baseline_practice_percentage: subcomponent.baselinePracticePercentage || 0,
+          baseline_time_percentage: subcomponent.baselineTimePercentage || 0
+        }))
+      );
+
+      // Delete existing allocations for this contractor and business year
+      await supabase
+        .from('rd_contractor_subcomponents')
+        .delete()
+        .eq('contractor_id', contractor.id)
+        .eq('business_year_id', businessYearId);
+
+      // Insert new allocations
+      if (subcomponentUpserts.length > 0) {
+        await supabase
+          .from('rd_contractor_subcomponents')
+          .insert(subcomponentUpserts);
+      }
+
+      // Calculate total applied percentage from all subcomponents
+      let totalAppliedPercentage = 0;
       for (const activity of activities) {
         if (activity.isEnabled) {
           for (const subcomponent of activity.subcomponents) {
@@ -662,37 +698,32 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
                                      (subcomponent.yearPercentage / 100) * 
                                      (subcomponent.frequencyPercentage / 100) * 
                                      (subcomponent.timePercentage / 100) * 100;
-              totalAppliedPercent += appliedPercentage;
+              totalAppliedPercentage += appliedPercentage;
             }
           }
         }
       }
-      
-      // Use contractor's amount as cost_amount
-      const costAmount = Number(contractor.amount) || 0;
-      // Name for year data
-      const name = `${contractor.first_name} ${contractor.last_name}`.trim();
-      // Activity roles (if available)
-      const activityRoles = contractor.role_id ? [contractor.role_id] : null;
-      // Calculated QRE
-      const calculatedQRE = Math.round(costAmount * 0.65 * (totalAppliedPercent / 100));
-      // Activity link (required, plain object)
-      const activityLink = {};
-      
-      const yearDataUpsert: any = {
-        business_year_id: businessYearId,
-        contractor_id: contractor.id,
-        name,
-        cost_amount: costAmount,
-        applied_percent: totalAppliedPercent,
-        calculated_qre: calculatedQRE,
-        activity_link: activityLink
-      };
-      if (activityRoles) yearDataUpsert.activity_roles = activityRoles;
-      // Upsert by business_year_id + contractor_id
-      await supabase
+
+      // Update rd_contractor_year_data with new applied percentage and calculated QRE (65% of wage)
+      const contractorAmount = contractor.amount || 0;
+      const fullQRE = Math.round((contractorAmount * totalAppliedPercentage) / 100);
+      const calculatedQRE = Math.round(fullQRE * 0.65); // Apply 65% reduction for contractors
+
+      const { error: yearDataError } = await supabase
         .from('rd_contractor_year_data')
-        .upsert(yearDataUpsert, { onConflict: 'business_year_id,contractor_id' });
+        .update({
+          applied_percent: totalAppliedPercentage,
+          calculated_qre: calculatedQRE,
+          updated_at: new Date().toISOString()
+        })
+        .eq('contractor_id', contractor.id)
+        .eq('business_year_id', businessYearId);
+
+      if (yearDataError) {
+        console.error('❌ Error updating contractor year data:', yearDataError);
+      } else {
+        console.log('✅ Updated contractor year data with new applied percentage:', totalAppliedPercentage, 'and QRE:', calculatedQRE);
+      }
 
       console.log('✅ Allocations and year data saved successfully');
       onUpdate();
@@ -722,6 +753,28 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
         console.error('❌ Error reverting to baseline:', error);
       } else {
         console.log('✅ Reverted to baseline successfully');
+        
+        // Reset rd_contractor_year_data to baseline values
+        const baselinePercent = contractor.baseline_applied_percent || 0;
+        const contractorAmount = contractor.amount || 0;
+        const fullQRE = Math.round((contractorAmount * baselinePercent) / 100);
+        const calculatedQRE = Math.round(fullQRE * 0.65); // Apply 65% reduction for contractors
+
+        const { error: yearDataError } = await supabase
+          .from('rd_contractor_year_data')
+          .update({
+            applied_percent: baselinePercent,
+            calculated_qre: calculatedQRE,
+            updated_at: new Date().toISOString()
+          })
+          .eq('contractor_id', contractor.id)
+          .eq('business_year_id', businessYearId);
+
+        if (yearDataError) {
+          console.error('❌ Error updating contractor year data on revert:', yearDataError);
+        } else {
+          console.log('✅ Reset contractor year data to baseline:', baselinePercent, 'and QRE:', calculatedQRE);
+        }
         
         // Reset subcomponent time percentages back to baseline
         setActivities(prev => prev.map(activity => ({
@@ -973,14 +1026,14 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
                                   <span className="text-xs text-gray-500">({subcomponent.stepName})</span>
                                 </div>
                                 <span className="text-xs text-gray-500">
-                                  Max: {formatPercentage(subcomponent.maxTimePercentage)}%
+                                  Baseline: {formatPercentage(subcomponent.maxTimePercentage)}%
                                 </span>
                               </div>
                               <div className="flex items-center space-x-2">
                                 <input
                                   type="range"
                                   min="0"
-                                  max={subcomponent.maxTimePercentage}
+                                  max={100}
                                   step="0.01"
                                   value={subcomponent.timePercentage}
                                   onChange={(e) => updateSubcomponentTimePercentage(activity.id, subcomponent.id, parseFloat(e.target.value))}

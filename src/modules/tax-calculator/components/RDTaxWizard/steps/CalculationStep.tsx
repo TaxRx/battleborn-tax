@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Calculator, TrendingUp, Building2, MapPin, DollarSign, AlertTriangle, CheckCircle, Info, Settings as SettingsIcon, ChevronDown, ChevronUp, FileText } from 'lucide-react';
+import { Calculator, TrendingUp, Building2, MapPin, DollarSign, AlertTriangle, CheckCircle, Info, Settings as SettingsIcon, ChevronDown, ChevronUp, FileText, RefreshCw } from 'lucide-react';
 import { RDCalculationsService, CalculationResults, FederalCreditResults } from '../../../services/rdCalculationsService';
 import { StateCalculationService, StateCalculationResult, QREBreakdown } from '../../../services/stateCalculationService';
 import { toast } from 'react-hot-toast';
@@ -175,6 +175,26 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
 
   // --- Add state for prior 3 years gross receipts average ---
   const [avgPrior3GrossReceipts, setAvgPrior3GrossReceipts] = useState<number>(0);
+
+  // --- Employee Wages QRE: Fetch from DB on load/year change ---
+  const [employeeWagesQRE, setEmployeeWagesQRE] = useState<number>(0);
+  useEffect(() => {
+    async function fetchEmployeeWagesQRE() {
+      if (!selectedActivityYearId) return;
+      const { data, error } = await supabase
+        .from('rd_employee_year_data')
+        .select('calculated_qre')
+        .eq('business_year_id', selectedActivityYearId);
+      if (error) {
+        console.error('❌ Error fetching employee QRE:', error);
+        setEmployeeWagesQRE(0);
+        return;
+      }
+      const sum = (data || []).reduce((acc, row) => acc + (row.calculated_qre || 0), 0);
+      setEmployeeWagesQRE(sum);
+    }
+    fetchEmployeeWagesQRE();
+  }, [selectedActivityYearId]);
 
   // Derive selectedYearData from allYears and selectedYearId
   const selectedYearData = useMemo(() => {
@@ -685,11 +705,12 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
     fetchHistoricalCards();
   }, [allYears]);
 
+  // Load calculations when component mounts or year changes
   useEffect(() => {
-    if (wizardState.selectedYear?.id) {
+    if (selectedActivityYearId) {
       loadCalculations();
     }
-  }, [wizardState.selectedYear?.id, use280C, corporateTaxRate]);
+  }, [selectedActivityYearId]);
 
   const loadCalculations = async () => {
     if (!wizardState.selectedYear?.id) return;
@@ -1371,6 +1392,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       {/* Header with Year Selector and Filing Guide Button */}
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow-lg p-6 text-white">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+          {/* Left: Title, Year Selector, Filing Guide */}
           <div className="flex items-center mb-4 md:mb-0">
             <TrendingUp className="w-8 h-8 mr-3" />
             <div>
@@ -1402,12 +1424,54 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                 >
                   <FileText className="w-4 h-4" /> Filing Guide
                 </button>
+                {/* Refresh Button */}
+                <button
+                  onClick={handleRecalculate}
+                  disabled={loading}
+                  className="ml-2 flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-all duration-200 text-sm font-medium shadow-sm border border-white/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Refresh calculations with latest data"
+                >
+                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+                </button>
               </div>
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-sm opacity-90">Total Credits</div>
-            <div className="text-3xl font-bold">{formatCurrency(totalCredits)}</div>
+          {/* Right: Credit Summary Card */}
+          <div className="flex flex-col items-end">
+            <div className="bg-white/90 rounded-xl shadow-lg px-6 py-4 min-w-[260px] flex flex-col items-end space-y-2">
+              <div className="flex items-center justify-between w-full">
+                <span className="flex items-center text-sm font-medium text-blue-900">
+                  <Building2 className="w-4 h-4 mr-1 text-blue-500" />
+                  Federal Credit
+                  <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-semibold">
+                    {selectedMethod === 'asc' ? 'ASC' : 'Standard'}
+                  </span>
+                </span>
+                <span className="text-lg font-bold text-blue-700">
+                  {formatCurrency(selectedMethod === 'asc' ? federalCredits.asc.credit : federalCredits.standard.credit)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between w-full">
+                <span className="flex items-center text-sm font-medium text-green-900">
+                  <MapPin className="w-4 h-4 mr-1 text-green-500" />
+                  State Credit
+                  <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-semibold">
+                    {selectedStateMethod}
+                  </span>
+                </span>
+                <span className="text-lg font-bold text-green-700">{formatCurrency(totalStateCredits)}</span>
+              </div>
+              <div className="border-t border-gray-200 w-full my-1"></div>
+              <div className="flex items-center justify-between w-full">
+                <span className="flex items-center text-base font-semibold text-purple-900">
+                  <DollarSign className="w-5 h-5 mr-1 text-purple-500" />
+                  Total Credits
+                </span>
+                <span className="text-2xl font-extrabold text-purple-700 drop-shadow-lg">
+                  {formatCurrency((selectedMethod === 'asc' ? federalCredits.asc.credit : federalCredits.standard.credit) + totalStateCredits)}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1450,7 +1514,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-blue-50 rounded-lg p-4">
           <div className="text-2xl font-bold text-blue-900">
-            {formatCurrency(currentYearQRE?.employee_costs || 0)}
+            {formatCurrency(employeeWagesQRE)}
           </div>
           <div className="text-sm text-blue-600">Employee Wages</div>
         </div>
@@ -1507,7 +1571,9 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
             </h3>
             <div className="text-right">
               <div className="text-sm text-gray-600">Total Federal</div>
-              <div className="text-xl font-bold text-blue-600">{formatCurrency(totalFederalCredit)}</div>
+              <div className="text-xl font-bold text-blue-600">
+                {formatCurrency(selectedMethod === 'asc' ? federalCredits.asc.credit : federalCredits.standard.credit)}
+              </div>
             </div>
           </div>
 

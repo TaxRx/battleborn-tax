@@ -48,16 +48,31 @@ export class ContractorManagementService {
 
       if (error) throw error;
 
-      // Use database values for QRE and applied percentage
-      const contractorsWithQRE = (contractors || []).map((contractor) => {
+      // For each contractor, sum applied_percentage from rd_contractor_subcomponents for the business year
+      const contractorsWithQRE = await Promise.all((contractors || []).map(async (contractor) => {
         const baselineAppliedPercent = contractor.role?.baseline_applied_percent || 0;
         const yearData = contractor.year_data?.[0];
-        
-        // Use calculated_qre from database if available, otherwise calculate
-        const calculatedQRE = yearData?.calculated_qre || 0;
-        
-        // Use applied_percent from database if available, otherwise use baseline
-        const appliedPercent = yearData?.applied_percent || baselineAppliedPercent;
+
+        // Fetch sum of applied_percentage from subcomponents
+        const { data: subcomponents, error: subError } = await supabase
+          .from('rd_contractor_subcomponents')
+          .select('applied_percentage')
+          .eq('contractor_id', contractor.id)
+          .eq('business_year_id', businessYearId);
+        if (subError) {
+          console.error('Error fetching contractor subcomponents:', subError);
+        }
+        const appliedPercent = (subcomponents || []).reduce((sum, s) => sum + (s.applied_percentage || 0), 0);
+
+        // Calculate QRE based on 65% wage and current applied percentage: wage × 0.65 × (applied_percentage / 100)
+        const calculatedQRE = contractor.amount * 0.65 * (appliedPercent / 100);
+
+        // Debug log
+        console.log(`[ContractorManagementService] Contractor ${contractor.first_name} ${contractor.last_name}:`, {
+          cost_amount: contractor.amount,
+          applied_percent: appliedPercent,
+          calculated_qre: calculatedQRE
+        });
         
         return {
           ...contractor,
@@ -65,7 +80,7 @@ export class ContractorManagementService {
           baseline_applied_percent: baselineAppliedPercent,
           applied_percentage: appliedPercent
         };
-      });
+      }));
 
       return contractorsWithQRE;
     } catch (error) {
@@ -113,7 +128,22 @@ export class ContractorManagementService {
   // Delete contractor
   static async deleteContractor(contractorId: string): Promise<void> {
     try {
-      // First delete related records in order of dependency
+      console.log('🗑️ Starting contractor deletion process for contractor:', contractorId);
+      
+      // First, try to delete the contractor directly (this should work if foreign key constraints are properly set up)
+      console.log('🗑️ Attempting direct contractor deletion with CASCADE...');
+      const { error: directDeleteError } = await supabase
+        .from('rd_contractors')
+        .delete()
+        .eq('id', contractorId);
+
+      if (!directDeleteError) {
+        console.log('✅ Contractor deleted successfully with CASCADE');
+        return;
+      }
+
+      // If direct deletion fails due to foreign key constraints, manually delete related records
+      console.log('⚠️ Direct deletion failed, manually deleting related records...');
       console.log('🗑️ Deleting contractor subcomponents for contractor:', contractorId);
       const { error: subError } = await supabase
         .from('rd_contractor_subcomponents')
@@ -122,7 +152,7 @@ export class ContractorManagementService {
 
       if (subError) {
         console.error('❌ Error deleting contractor subcomponents:', subError);
-        throw subError;
+        // Continue anyway, as some records might not exist
       }
 
       console.log('🗑️ Deleting contractor year data for contractor:', contractorId);
@@ -133,18 +163,22 @@ export class ContractorManagementService {
 
       if (yearError) {
         console.error('❌ Error deleting contractor year data:', yearError);
-        throw yearError;
+        // Continue anyway, as some records might not exist
       }
 
-      // Finally delete the contractor
-      console.log('🗑️ Deleting contractor:', contractorId);
+      // Now try to delete the contractor again
+      console.log('🗑️ Deleting contractor after manual cleanup:', contractorId);
       const { error } = await supabase
         .from('rd_contractors')
         .delete()
         .eq('id', contractorId);
 
-      if (error) throw error;
-      console.log('✅ Contractor deleted successfully');
+      if (error) {
+        console.error('❌ Error deleting contractor after cleanup:', error);
+        throw error;
+      }
+      
+      console.log('✅ Contractor deleted successfully after manual cleanup');
     } catch (error) {
       console.error('Error deleting contractor:', error);
       throw error;
