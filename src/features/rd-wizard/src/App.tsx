@@ -39,7 +39,6 @@ import PendingApproval from './pages/admin/PendingApproval';
 // Common
 import LandingPage from './pages/common/LandingPage';
 import NotFound from './pages/common/NotFound';
-import DemoModeIndicator from './components/common/DemoModeIndicator';
 
 function App() {
   return (
@@ -92,7 +91,6 @@ function App() {
           </Routes>
           
           <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} />
-          <DemoModeIndicator />
         </Router>
       </UserProvider>
     </ImpersonationProvider>

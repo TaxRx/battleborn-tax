@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../../../../lib/supabase';
-import { Plus, ChevronDown, ChevronRight, Edit, Trash2, MoveUp, MoveDown, UserPlus } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Edit, Trash2, MoveUp, MoveDown, UserPlus, Sparkles, RotateCcw } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { AIService, AIGenerationContext } from '../../../../../services/aiService';
 
 interface ResearchExplorerStepProps {
   selectedActivities: any[];
@@ -70,8 +72,22 @@ interface SelectedActivity {
   practice_percent: number;
   selected_roles: string[];
   config: any;
+  research_guidelines?: ResearchGuidelines;
   created_at?: string;
   updated_at?: string;
+}
+
+interface ResearchGuidelines {
+  outcome_uncertain: boolean;
+  considered_alternatives: boolean;
+  us_based: boolean;
+  science_based: boolean;
+  primary_goal: string;
+  uncertainty_type: string;
+  success_measurement: string;
+  hypothesis: string;
+  development_steps: string;
+  data_feedback: string;
 }
 
 interface PracticePercentageConfig {
@@ -106,62 +122,102 @@ const RoleCard: React.FC<RoleCardProps> = ({
   renderChildRole
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [isHovered, setIsHovered] = useState(false);
   const childRoles = allRoles.filter(r => r.parent_id === role.id);
 
+  // Generate a unique color based on role name
+  const getRoleColor = (roleName: string) => {
+    const colors = [
+      'from-blue-500 to-blue-600',
+      'from-purple-500 to-purple-600', 
+      'from-green-500 to-green-600',
+      'from-orange-500 to-orange-600',
+      'from-pink-500 to-pink-600',
+      'from-indigo-500 to-indigo-600',
+      'from-teal-500 to-teal-600',
+      'from-red-500 to-red-600'
+    ];
+    const index = roleName.charCodeAt(0) % colors.length;
+    return colors[index];
+  };
+
+  const roleColor = getRoleColor(role.name);
+
   return (
-    <div className={`${level > 0 ? 'ml-8' : ''}`}>
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-all duration-200">
+    <div className={`${level > 0 ? 'ml-8' : ''} transition-all duration-300`}>
+      <div 
+        className={`
+          relative bg-white border-2 border-gray-100 rounded-xl p-6 shadow-sm 
+          hover:shadow-lg hover:border-blue-200 transition-all duration-300
+          ${isHovered ? 'transform scale-[1.02]' : ''}
+          ${level === 0 ? 'bg-gradient-to-br from-blue-50 to-indigo-50' : 'bg-gradient-to-br from-gray-50 to-blue-50'}
+        `}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        {/* Connection line for child roles */}
+        {childRoles.length > 0 && (
+          <div className="absolute left-1/2 bottom-0 w-px h-4 bg-gradient-to-b from-blue-300 to-transparent transform -translate-x-1/2"></div>
+        )}
+
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-4">
             {childRoles.length > 0 && (
               <button
                 onClick={() => setIsExpanded(!isExpanded)}
-                className="text-blue-600 hover:text-blue-800 transition-colors"
+                className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-lg transition-all duration-200"
               >
                 {isExpanded ? (
-                  <ChevronDown className="h-4 w-4" />
+                  <ChevronDown className="h-5 w-5" />
                 ) : (
-                  <ChevronRight className="h-4 w-4" />
+                  <ChevronRight className="h-5 w-5" />
                 )}
               </button>
             )}
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center">
-                <span className="text-white text-sm font-semibold">
+            
+            <div className="flex items-center space-x-4">
+              {/* Enhanced Role Avatar */}
+              <div className={`relative w-12 h-12 bg-gradient-to-r ${roleColor} rounded-xl flex items-center justify-center shadow-lg`}>
+                <span className="text-white text-lg font-bold">
                   {role.name.charAt(0).toUpperCase()}
                 </span>
-              </div>
-              <div>
-                <h6 className="font-semibold text-gray-900">{role.name}</h6>
                 {role.is_default && (
-                  <span className="inline-block px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
-                    Default
-                  </span>
+                  <div className="absolute -top-1 -right-1 w-5 h-5 bg-yellow-400 rounded-full flex items-center justify-center">
+                    <span className="text-yellow-900 text-xs font-bold">★</span>
+                  </div>
                 )}
+              </div>
+              
+              <div className="flex-1">
+                <h6 className="text-lg font-bold text-gray-900 mb-1">{role.name}</h6>
+                {role.description && (
+                  <p className="text-sm text-gray-600 line-clamp-2">{role.description}</p>
+                )}
+                <div className="flex items-center space-x-2 mt-2">
+                  {role.is_default && (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      <span className="w-1.5 h-1.5 bg-blue-400 rounded-full mr-1.5"></span>
+                      Default Role
+                    </span>
+                  )}
+                  {childRoles.length > 0 && (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      <UserPlus className="w-3 h-3 mr-1" />
+                      {childRoles.length} Subordinate{childRoles.length !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
           
+          {/* Enhanced Action Buttons */}
           <div className="flex items-center space-x-2">
-            <button
-              onClick={onEdit}
-              className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-              title="Edit role"
-            >
-              <Edit className="h-4 w-4" />
-            </button>
-            <button
-              onClick={onDelete}
-              className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-              title="Delete role"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-            <div className="flex items-center space-x-1">
+            <div className="flex items-center space-x-1 bg-gray-50 rounded-lg p-1">
               <button
                 onClick={onMoveUp}
                 disabled={!canMoveUp}
-                className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-100 rounded-md transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed"
                 title="Move up"
               >
                 <MoveUp className="h-4 w-4" />
@@ -169,39 +225,62 @@ const RoleCard: React.FC<RoleCardProps> = ({
               <button
                 onClick={onMoveDown}
                 disabled={!canMoveDown}
-                className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-100 rounded-md transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed"
                 title="Move down"
               >
                 <MoveDown className="h-4 w-4" />
               </button>
             </div>
-          </div>
-        </div>
-        
-        {childRoles.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-blue-200">
-            <div className="flex items-center space-x-2 text-sm text-blue-600">
-              <UserPlus className="h-4 w-4" />
-              <span>{childRoles.length} subordinate{childRoles.length !== 1 ? 's' : ''}</span>
+            
+            <div className="flex items-center space-x-1">
+              <button
+                onClick={onEdit}
+                className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-100 rounded-lg transition-all duration-200"
+                title="Edit role"
+              >
+                <Edit className="h-4 w-4" />
+              </button>
+              <button
+                onClick={onDelete}
+                className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-100 rounded-lg transition-all duration-200"
+                title="Delete role"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
             </div>
           </div>
-        )}
+        </div>
       </div>
       
-      {/* Child Roles */}
+      {/* Enhanced Child Roles */}
       {isExpanded && childRoles.length > 0 && (
-        <div className="mt-3 space-y-3">
-          {childRoles.map((childRole) => (
-            renderChildRole ? renderChildRole(childRole, allRoles, level + 1) : (
-              <div key={`child-${childRole.id}`} className="ml-8">
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-gray-700">{childRole.name}</span>
-                    <span className="text-sm text-gray-500">Child role</span>
+        <div className="mt-4 space-y-4 relative">
+          {/* Connection lines */}
+          <div className="absolute left-6 top-0 w-px h-full bg-gradient-to-b from-blue-300 via-blue-200 to-transparent"></div>
+          
+          {childRoles.map((childRole, index) => (
+            <div key={`child-${childRole.id}`} className="relative">
+              {/* Horizontal connection line */}
+              <div className="absolute left-6 top-6 w-4 h-px bg-blue-300"></div>
+              
+              {renderChildRole ? renderChildRole(childRole, allRoles, level + 1) : (
+                <div className="ml-12">
+                  <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-all duration-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-8 h-8 bg-gradient-to-r from-gray-400 to-gray-500 rounded-lg flex items-center justify-center">
+                          <span className="text-white text-sm font-semibold">
+                            {childRole.name.charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                        <span className="font-medium text-gray-700">{childRole.name}</span>
+                      </div>
+                      <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded-full">Subordinate</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )
+              )}
+            </div>
           ))}
         </div>
       )}
@@ -249,45 +328,72 @@ const AddRoleModal: React.FC<AddRoleModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-        <h3 className="text-lg font-semibold mb-4">Add New Role</h3>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 transform transition-all duration-300 scale-100">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-t-2xl p-6 text-white">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-xl font-bold">Add New Role</h3>
+                <p className="text-blue-100 text-sm">Define a new research team position</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 bg-white bg-opacity-20 rounded-lg flex items-center justify-center hover:bg-opacity-30 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
         
-        <div className="space-y-4">
+        {/* Form */}
+        <div className="p-6 space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
+              <span className="w-2 h-2 bg-red-500 rounded-full mr-2"></span>
               Role Name *
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg"
               placeholder="e.g., Research Scientist"
             />
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
+              <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
               Description
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Brief description of responsibilities"
-              rows={3}
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-none"
+              placeholder="Brief description of responsibilities and qualifications..."
+              rows={4}
             />
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
+              <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
               Reports To
             </label>
             <select
               value={parentId}
               onChange={(e) => setParentId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg"
             >
               <option value="">No supervisor (top level)</option>
               {existingRoles.map(role => (
@@ -299,18 +405,24 @@ const AddRoleModal: React.FC<AddRoleModalProps> = ({
           </div>
         </div>
         
-        <div className="flex justify-end space-x-3 mt-6">
+        {/* Footer */}
+        <div className="bg-gray-50 rounded-b-2xl p-6 flex justify-end space-x-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+            className="px-6 py-3 text-gray-600 hover:text-gray-800 transition-colors font-medium"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl hover:from-blue-600 hover:to-indigo-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl transform hover:scale-105"
           >
-            Add Role
+            <span className="flex items-center space-x-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              <span>Add Role</span>
+            </span>
           </button>
         </div>
       </div>
@@ -385,45 +497,72 @@ const EditRoleModal: React.FC<EditRoleModalProps> = ({
   const availableParents = getAvailableParents(role.id, existingRoles);
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-        <h3 className="text-lg font-semibold mb-4">Edit Role</h3>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 transform transition-all duration-300 scale-100">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-purple-500 to-pink-600 rounded-t-2xl p-6 text-white">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2-2V6a2 2 0 002-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-xl font-bold">Edit Role</h3>
+                <p className="text-purple-100 text-sm">Update role information and hierarchy</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 bg-white bg-opacity-20 rounded-lg flex items-center justify-center hover:bg-opacity-30 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
         
-        <div className="space-y-4">
+        {/* Form */}
+        <div className="p-6 space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
+              <span className="w-2 h-2 bg-red-500 rounded-full mr-2"></span>
               Role Name *
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 text-lg"
               placeholder="e.g., Research Scientist"
             />
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
+              <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
               Description
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Brief description of responsibilities"
-              rows={3}
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 resize-none"
+              placeholder="Brief description of responsibilities and qualifications..."
+              rows={4}
             />
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
+              <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
               Reports To
             </label>
             <select
               value={parentId}
               onChange={(e) => setParentId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 text-lg"
             >
               <option value="">No supervisor (top level)</option>
               {availableParents.map(availableRole => (
@@ -435,18 +574,24 @@ const EditRoleModal: React.FC<EditRoleModalProps> = ({
           </div>
         </div>
         
-        <div className="flex justify-end space-x-3 mt-6">
+        {/* Footer */}
+        <div className="bg-gray-50 rounded-b-2xl p-6 flex justify-end space-x-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+            className="px-6 py-3 text-gray-600 hover:text-gray-800 transition-colors font-medium"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-xl hover:from-purple-600 hover:to-pink-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl transform hover:scale-105"
           >
-            Save Changes
+            <span className="flex items-center space-x-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <span>Save Changes</span>
+            </span>
           </button>
         </div>
       </div>
@@ -478,57 +623,118 @@ const NonRndModal: React.FC<NonRndModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Configure Non-R&D Time</h3>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        
-        <div className="mb-6">
-          <p className="text-sm text-gray-600 mb-4">
-            Set the percentage of time that is not dedicated to research and development activities. 
-            This includes administrative tasks, meetings, and other non-research work.
-          </p>
-          
-          <div className="flex items-center space-x-4">
-            <input
-              type="range"
-              min="0"
-              max="50"
-              value={tempValue}
-              onChange={(e) => setTempValue(parseInt(e.target.value))}
-              className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
-            />
-            <span className="text-lg font-semibold text-blue-600 min-w-[3rem]">
-              {tempValue}%
-            </span>
-          </div>
-          
-          <div className="mt-2 text-xs text-gray-500">
-            Available for R&D: {100 - tempValue}%
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 transform transition-all duration-300 scale-100">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-orange-500 to-red-600 rounded-t-2xl p-6 text-white">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-xl font-bold">Configure Non-R&D Time</h3>
+                <p className="text-orange-100 text-sm">Set time allocation for non-research activities</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 bg-white bg-opacity-20 rounded-lg flex items-center justify-center hover:bg-opacity-30 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         </div>
         
-        <div className="flex space-x-3">
+        {/* Content */}
+        <div className="p-6 space-y-6">
+          <div className="bg-gradient-to-r from-orange-50 to-red-50 rounded-xl p-4 border border-orange-200">
+            <div className="flex items-center space-x-3 mb-3">
+              <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold text-orange-800">Time Allocation</h4>
+                <p className="text-xs text-orange-700">Set the percentage of time for non-research activities</p>
+              </div>
+            </div>
+            <p className="text-sm text-orange-700">
+              This includes administrative tasks, meetings, and other non-research work that reduces available R&D time.
+            </p>
+          </div>
+          
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-semibold text-gray-700">Non-R&D Time</label>
+              <div className="flex items-center space-x-2">
+                <span className="text-2xl font-bold text-orange-600">
+                  {tempValue}%
+                </span>
+                <div className="w-3 h-3 bg-orange-500 rounded-full animate-pulse"></div>
+              </div>
+            </div>
+            
+            <div className="relative">
+              <input
+                type="range"
+                min="0"
+                max="50"
+                value={tempValue}
+                onChange={(e) => setTempValue(parseInt(e.target.value))}
+                className="w-full h-3 bg-gradient-to-r from-orange-200 to-red-200 rounded-lg appearance-none cursor-pointer slider"
+                style={{
+                  background: `linear-gradient(to right, #fed7aa 0%, #fed7aa ${tempValue * 2}%, #fecaca ${tempValue * 2}%, #fecaca 100%)`
+                }}
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-2">
+                <span>0%</span>
+                <span>25%</span>
+                <span>50%</span>
+              </div>
+            </div>
+            
+            <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-4 border border-green-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-6 h-6 bg-green-100 rounded-lg flex items-center justify-center">
+                    <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <span className="text-sm font-semibold text-green-800">Available for R&D</span>
+                </div>
+                <span className="text-lg font-bold text-green-600">
+                  {100 - tempValue}%
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Footer */}
+        <div className="bg-gray-50 rounded-b-2xl p-6 flex justify-end space-x-3">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+            className="px-6 py-3 text-gray-600 hover:text-gray-800 transition-colors font-medium"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
-            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="px-6 py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl hover:from-orange-600 hover:to-red-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl transform hover:scale-105"
           >
-            Save
+            <span className="flex items-center space-x-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <span>Save Configuration</span>
+            </span>
           </button>
         </div>
       </div>
@@ -722,12 +928,24 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
   // State for copy confirmation modal
   const [showCopyModal, setShowCopyModal] = useState(false);
   const [copyType, setCopyType] = useState<'roles' | 'activities' | null>(null);
+  const [copyTargetYear, setCopyTargetYear] = useState<string | null>(null);
 
   // Practice percentage configuration
   const [practicePercentageConfig, setPracticePercentageConfig] = useState<PracticePercentageConfig>({
     nonRndTime: 10, // Start at 10% instead of 0
     activities: {}
   });
+
+  // State for expanded activities (fixes React Hooks error)
+  const [expandedActivities, setExpandedActivities] = useState<{ [key: string]: boolean }>({});
+
+  // Helper function to toggle expanded state
+  const toggleExpanded = (activityId: string) => {
+    setExpandedActivities(prev => ({
+      ...prev,
+      [activityId]: !prev[activityId]
+    }));
+  };
 
   useEffect(() => {
     const initializeData = async () => {
@@ -1085,7 +1303,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
               } else {
                 console.log(`✅ Successfully updated parent relationship for ${role.name}`);
                 // Update the copied role in our array
-                const roleIndex = copiedRoles.findIndex(r => r.id === newRoleId);
+                const roleIndex: number = copiedRoles.findIndex(r => r.id === newRoleId);
                 if (roleIndex !== -1) {
                   copiedRoles[roleIndex] = { ...copiedRoles[roleIndex], parent_id: newParentId };
                 }
@@ -1351,166 +1569,83 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
   const addActivity = async (activity: ResearchActivity) => {
     const availablePercentage = 100 - practicePercentageConfig.nonRndTime;
-    const existingActivities = selectedActivitiesState.length;
-    
-    // Calculate new percentage distribution
-    let newPercentage: number;
-    let updatedActivities = { ...practicePercentageConfig.activities };
-    
-    if (existingActivities === 0) {
-      // First activity gets all available percentage
-      newPercentage = availablePercentage;
-    } else {
-      // For any additional activity, redistribute percentages proportionally
-      const totalExistingPercentage = Object.values(updatedActivities).reduce((sum, percent) => sum + percent, 0);
+    const newTotalActivities = selectedActivitiesState.length + 1;
+    const equalShare = Math.round((availablePercentage / newTotalActivities) * 100) / 100;
+
+    // Get all roles and set them as selected by default
+    let defaultRoles: string[] = [];
+    try {
+      const { data: rolesData, error } = await supabase
+        .from('rd_roles')
+        .select('id')
+        .eq('business_year_id', selectedBusinessYearId);
       
-      if (totalExistingPercentage > 0) {
-        // Scale down existing activities proportionally
-        const scalingFactor = (totalExistingPercentage - availablePercentage / (existingActivities + 1)) / totalExistingPercentage;
-        
-        Object.keys(updatedActivities).forEach(activityId => {
-          updatedActivities[activityId] = Math.round(updatedActivities[activityId] * scalingFactor * 100) / 100;
-        });
+      if (!error && rolesData) {
+        defaultRoles = rolesData.map(role => role.id);
       }
-      
-      // New activity gets equal share
-      newPercentage = availablePercentage / (existingActivities + 1);
+    } catch (error) {
+      console.error('Error loading roles for default selection:', error);
     }
-    
-    // Pre-select all available roles for the new activity
-    const allRoleIds = roles.map(role => role.id);
-    
-    // Create the new activity with all roles pre-selected
-    const newActivity: Omit<SelectedActivity, 'id'> = {
+
+    // Build new activities config with equal shares
+    const updatedActivities: { [activityId: string]: number } = {};
+    selectedActivitiesState.forEach(act => {
+      updatedActivities[act.activity_id] = equalShare;
+    });
+    updatedActivities[activity.id] = equalShare;
+
+    // Update state and save to database
+    setPracticePercentageConfig(prev => ({
+      ...prev,
+      activities: updatedActivities
+    }));
+
+    // Update all selected activities' practice_percent
+    for (const act of selectedActivitiesState) {
+      try {
+        const { error } = await supabase
+          .from('rd_selected_activities')
+          .update({ practice_percent: equalShare })
+          .eq('business_year_id', selectedBusinessYearId)
+          .eq('activity_id', act.activity_id);
+        if (error) throw error;
+      } catch (error) {
+        console.error('Error updating activity percentage:', error);
+      }
+    }
+
+    // Add activity to selected activities
+    const newSelectedActivity: SelectedActivity = {
+      id: activity.id,
       activity_id: activity.id,
       title: activity.title,
       activity_name: activity.title,
-      activity_category: getCategoryName(activity.focus_id),
-      activity_area: getAreaName(activity.focus_id),
-      activity_focus: getFocusName(activity.focus_id),
-      practice_percent: newPercentage,
-      selected_roles: allRoleIds, // Pre-select all roles
-      config: {}
+      activity_category: undefined,
+      activity_area: undefined,
+      activity_focus: undefined,
+      practice_percent: equalShare,
+      selected_roles: defaultRoles,
+      config: {},
+      research_guidelines: undefined,
+      created_at: undefined,
+      updated_at: undefined
     };
+    setSelectedActivitiesState(prev => [...prev.map(act => ({ ...act, practice_percent: equalShare })), newSelectedActivity]);
 
-    // Save to database
-    const savedActivity = await saveSelectedActivity(newActivity);
-    
-    if (savedActivity) {
-      // Update local state
-      setSelectedActivitiesState(prev => [...prev, savedActivity]);
-      
-      // Update practice percentage config
-      setPracticePercentageConfig(prev => ({
-        ...prev,
-        activities: {
-          ...prev.activities,
-          [activity.id]: newPercentage
-        }
-      }));
-      
-      // Update parent component
-      onUpdate({
-        selectedActivities: [...selectedActivitiesState, savedActivity],
-        practicePercentageConfig: {
-          ...practicePercentageConfig,
-          activities: {
-            ...practicePercentageConfig.activities,
-            [activity.id]: newPercentage
-          }
-        }
-      });
-    }
-  };
-
-  const removeActivity = async (activityId: string) => {
-    // Find the activity to be removed
-    const activityToRemove = selectedActivitiesState.find(a => a.activity_id === activityId);
-    if (!activityToRemove) return;
-    
-    // Remove from selected activities state
-    const remainingActivities = selectedActivitiesState.filter(a => a.activity_id !== activityId);
-    const remainingCount = remainingActivities.length;
-    
-    if (remainingCount > 0) {
-      // Redistribute the removed percentage proportionally to fill entire available space
-      const availablePercentage = 100 - practicePercentageConfig.nonRndTime;
-      const removedPercentage = activityToRemove.practice_percent;
-      
-      // Calculate how much each remaining activity should get
-      const totalRemainingPercentage = remainingActivities.reduce((sum, act) => sum + act.practice_percent, 0);
-      const scaleFactor = availablePercentage / totalRemainingPercentage;
-      
-      // Update all remaining activities proportionally
-      const updatedActivities = { ...practicePercentageConfig.activities };
-      delete updatedActivities[activityId];
-      
-      // Scale up remaining activities to fill the space
-      Object.keys(updatedActivities).forEach(id => {
-        updatedActivities[id] = updatedActivities[id] * scaleFactor;
-      });
-      
-      // Update practice percentage config
-      setPracticePercentageConfig(prev => ({
-        ...prev,
-        activities: updatedActivities
-      }));
-      
-      // Update all remaining activities in database
-      for (const activity of remainingActivities) {
-        const newPercentage = updatedActivities[activity.activity_id] || 0;
-        await updateSelectedActivity(activity.id, { practice_percent: newPercentage });
-      }
-      
-      // Update local state
-      const updatedActivitiesList = remainingActivities.map(activity => ({
-        ...activity,
-        practice_percent: updatedActivities[activity.activity_id] || 0
-      }));
-      
-      setSelectedActivitiesState(updatedActivitiesList);
-      
-      // Update parent component
-      onUpdate({
-        selectedActivities: updatedActivitiesList,
-        practicePercentageConfig: {
-          ...practicePercentageConfig,
-          activities: updatedActivities
-        }
-      });
-    } else {
-      // No activities left, clear the practice percentage config
-      setPracticePercentageConfig(prev => ({
-        ...prev,
-        activities: {}
-      }));
-      
-      setSelectedActivitiesState([]);
-      
-      // Update parent component
-      onUpdate({
-        selectedActivities: [],
-        practicePercentageConfig: {
-          ...practicePercentageConfig,
-          activities: {}
-        }
-      });
-    }
-    
-    // Delete from database
-    await deleteSelectedActivity(activityId);
-  };
-
-  const deleteSelectedActivity = async (activityId: string) => {
+    // Save new activity to database
     try {
       const { error } = await supabase
         .from('rd_selected_activities')
-        .delete()
-        .eq('id', activityId);
-
+        .insert({
+          business_year_id: selectedBusinessYearId,
+          activity_id: activity.id,
+          practice_percent: equalShare,
+          selected_roles: defaultRoles,
+          config: {}
+        });
       if (error) throw error;
-    } catch (err) {
-      console.error('Error deleting selected activity:', err);
+    } catch (error) {
+      console.error('Error saving selected activity:', error);
     }
   };
 
@@ -1526,57 +1661,66 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
     
     // If the new total would exceed available space, redistribute proportionally
     if (currentTotal + difference > availablePercentage) {
-      const excess = (currentTotal + difference) - availablePercentage;
       const otherActivities = selectedActivitiesState.filter(a => a.activity_id !== activityId);
+      const otherTotal = otherActivities.reduce((sum, act) => sum + act.practice_percent, 0);
+      const remainingPercentage = availablePercentage - newPercentage;
       
-      if (otherActivities.length > 0) {
-        // Reduce other activities proportionally to make room
-        const totalOtherPercentage = otherActivities.reduce((sum, act) => sum + act.practice_percent, 0);
-        const scalingFactor = (totalOtherPercentage - excess) / totalOtherPercentage;
-        
-        const updatedActivities = selectedActivitiesState.map(activity => {
-          if (activity.activity_id === activityId) {
-            return { ...activity, practice_percent: newPercentage };
+      if (remainingPercentage < 0) {
+        // New percentage is too high, cap it
+        newPercentage = availablePercentage;
+      } else {
+        // Redistribute remaining percentage proportionally among other activities
+        const scaleFactor = remainingPercentage / otherTotal;
+        const updatedActivities = selectedActivitiesState.map(act => {
+          if (act.activity_id === activityId) {
+            return { ...act, practice_percent: newPercentage };
           } else {
-            const newPercentage = Math.round(activity.practice_percent * scalingFactor * 100) / 100;
-            return { ...activity, practice_percent: newPercentage };
+            return { ...act, practice_percent: Math.round(act.practice_percent * scaleFactor * 100) / 100 };
           }
         });
-        
-        // Final check: ensure total equals exactly availablePercentage
-        const finalTotal = updatedActivities.reduce((sum, act) => sum + act.practice_percent, 0);
-        if (Math.abs(finalTotal - availablePercentage) > 0.01) {
-          // Adjust the modified activity to make total exactly equal to availablePercentage
-          const adjustment = availablePercentage - finalTotal;
-          const targetActivity = updatedActivities.find(a => a.activity_id === activityId);
-          if (targetActivity) {
-            targetActivity.practice_percent = Math.round((targetActivity.practice_percent + adjustment) * 100) / 100;
-          }
-        }
-        
-        // Update all activities in database
-        for (const updatedActivity of updatedActivities) {
-          await updateSelectedActivity(updatedActivity.id, { practice_percent: updatedActivity.practice_percent });
-        }
         
         setSelectedActivitiesState(updatedActivities);
         
         // Update practice percentage config
-        const activitiesConfig: { [activityId: string]: number } = {};
-        updatedActivities.forEach(activity => {
-          activitiesConfig[activity.activity_id] = activity.practice_percent;
+        const updatedConfig = { ...practicePercentageConfig.activities };
+        updatedActivities.forEach(act => {
+          updatedConfig[act.activity_id] = act.practice_percent;
         });
         
         setPracticePercentageConfig(prev => ({
           ...prev,
-          activities: activitiesConfig
+          activities: updatedConfig
         }));
+        
+        // Update remaining activities in database
+        for (const act of updatedActivities) {
+          try {
+            const { error } = await supabase
+              .from('rd_selected_activities')
+              .update({ practice_percent: act.practice_percent })
+              .eq('business_year_id', selectedBusinessYearId)
+              .eq('activity_id', act.activity_id);
+            
+            if (error) throw error;
+          } catch (error) {
+            console.error('Error updating activity percentage:', error);
+          }
+        }
         
         return;
       }
     }
     
-    // Simple update if no redistribution needed
+    // Simple update without redistribution
+    setSelectedActivitiesState(prev => 
+      prev.map(act => 
+        act.activity_id === activityId 
+          ? { ...act, practice_percent: newPercentage }
+          : act
+      )
+    );
+    
+    // Update practice percentage config
     setPracticePercentageConfig(prev => ({
       ...prev,
       activities: {
@@ -1584,32 +1728,99 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         [activityId]: newPercentage
       }
     }));
+    
+    // Update individual activity in database
+    try {
+      const { error } = await supabase
+        .from('rd_selected_activities')
+        .update({ practice_percent: newPercentage })
+        .eq('business_year_id', selectedBusinessYearId)
+        .eq('activity_id', activityId);
+      
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error updating activity percentage:', error);
+    }
+  };
 
-    setSelectedActivitiesState(prev => 
-      prev.map(activity => 
-        activity.activity_id === activityId 
-          ? { ...activity, practice_percent: newPercentage }
-          : activity
-      )
-    );
+  const removeActivity = async (activityId: string) => {
+    const remainingActivities = selectedActivitiesState.filter(a => a.activity_id !== activityId);
+    const availablePercentage = 100 - practicePercentageConfig.nonRndTime;
+    const newTotal = remainingActivities.length;
+    const equalShare = newTotal > 0 ? Math.round((availablePercentage / newTotal) * 100) / 100 : 0;
+    const updatedActivities: { [activityId: string]: number } = {};
+    remainingActivities.forEach(act => {
+      updatedActivities[act.activity_id] = equalShare;
+    });
 
-    // Update in database
-    await updateSelectedActivity(currentActivity.id, { practice_percent: newPercentage });
+    setPracticePercentageConfig(prev => ({
+      ...prev,
+      activities: updatedActivities
+    }));
+
+    // Update practice percentage config in state only (no separate table needed)
+
+    // Update all remaining activities' practice_percent
+    for (const act of remainingActivities) {
+      try {
+        const { error } = await supabase
+          .from('rd_selected_activities')
+          .update({ practice_percent: equalShare })
+          .eq('business_year_id', selectedBusinessYearId)
+          .eq('activity_id', act.activity_id);
+        if (error) throw error;
+      } catch (error) {
+        console.error('Error updating activity percentage:', error);
+      }
+    }
+
+    setSelectedActivitiesState(remainingActivities.map(act => ({ ...act, practice_percent: equalShare })));
+
+    // Delete the removed activity from database
+    try {
+      const { error } = await supabase
+        .from('rd_selected_activities')
+        .delete()
+        .eq('business_year_id', selectedBusinessYearId)
+        .eq('activity_id', activityId);
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error deleting selected activity:', error);
+    }
+  };
+
+  const deleteSelectedActivity = async (activityId: string) => {
+    try {
+      const { error } = await supabase
+        .from('rd_selected_activities')
+        .delete()
+        .eq('id', activityId);
+
+      if (error) throw error;
+    } catch (err) {
+      console.error('Error deleting selected activity:', err);
+    }
   };
 
   const updateActivityRoles = async (activityId: string, selectedRoles: string[]) => {
     setSelectedActivitiesState(prev => 
-      prev.map(activity => 
-        activity.activity_id === activityId 
-          ? { ...activity, selected_roles: selectedRoles }
-          : activity
+      prev.map(act => 
+        act.activity_id === activityId 
+          ? { ...act, selected_roles: selectedRoles }
+          : act
       )
     );
 
-    // Update in database
-    const activity = selectedActivitiesState.find(a => a.activity_id === activityId);
-    if (activity) {
-      await updateSelectedActivity(activity.id, { selected_roles: selectedRoles });
+    try {
+      const { error } = await supabase
+        .from('rd_selected_activities')
+        .update({ selected_roles: selectedRoles })
+        .eq('business_year_id', selectedBusinessYearId)
+        .eq('activity_id', activityId);
+      
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error updating activity roles:', error);
     }
   };
 
@@ -1645,6 +1856,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         practice_percent: data.practice_percent,
         selected_roles: data.selected_roles,
         config: data.config,
+        research_guidelines: activity.research_guidelines,
         created_at: data.created_at,
         updated_at: data.updated_at
       };
@@ -1767,6 +1979,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
           practice_percent,
           selected_roles,
           config,
+          research_guidelines,
           rd_research_activities (
             id,
             title,
@@ -1783,20 +1996,21 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       if (data && data.length > 0) {
         const mappedActivities = data.map(activity => {
           // Get the related focus, area, and category names
-          const focus = focuses.find(f => f.id === activity.rd_research_activities?.focus_id);
-          const area = focus ? areas.find(a => a.id === focus.area_id) : null;
-          const category = area ? categories.find(c => c.id === area.category_id) : null;
+          const focusObj = (focuses as { id: string; name: string; area_id: string }[]).find((f) => f.id === activity.rd_research_activities?.focus_id);
+          const area = focusObj ? (areas as { id: string; name: string; category_id: string }[]).find((a) => a.id === focusObj.area_id) : null;
+          const category = area ? (categories as { id: string; name: string }[]).find((c) => c.id === area.category_id) : null;
 
           return {
             id: activity.id,
             activity_id: activity.activity_id,
             practice_percent: activity.practice_percent,
-            selected_roles: activity.selected_roles,
+            selected_roles: Array.isArray(activity.selected_roles) ? activity.selected_roles : [],
             config: activity.config,
+            research_guidelines: activity.research_guidelines,
             activity_name: activity.rd_research_activities?.title || 'Unknown Activity',
             activity_category: category?.name || '',
             activity_area: area?.name || '',
-            activity_focus: focus?.name || ''
+            activity_focus: focusObj?.name || ''
           };
         });
 
@@ -2091,6 +2305,120 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
     }));
   };
 
+  // Helper function to get filter summary with counts
+  const getFilterSummary = () => {
+    const summary: Array<{
+      type: 'category' | 'area' | 'focus';
+      id: string;
+      name: string;
+      count: number;
+    }> = [];
+    
+    // Add categories with counts
+    selectedCategories.forEach(categoryId => {
+      const category = categories.find(c => c.id === categoryId);
+      if (category) {
+        const categoryAreas = areas.filter(a => a.category_id === categoryId);
+        const categoryFocuses = focuses.filter(f => categoryAreas.some(a => a.id === f.area_id));
+        const categoryActivities = activities.filter(a => categoryFocuses.some(f => f.id === a.focus_id));
+        
+        summary.push({
+          type: 'category',
+          id: categoryId,
+          name: category.name,
+          count: categoryActivities.length
+        });
+      }
+    });
+    
+    // Add areas with counts
+    selectedAreas.forEach(areaId => {
+      const area = areas.find(a => a.id === areaId);
+      if (area) {
+        const areaFocuses = focuses.filter(f => f.area_id === areaId);
+        const areaActivities = activities.filter(a => areaFocuses.some(f => f.id === a.focus_id));
+        
+        summary.push({
+          type: 'area',
+          id: areaId,
+          name: area.name,
+          count: areaActivities.length
+        });
+      }
+    });
+    
+    // Add focuses with counts
+    selectedFocuses.forEach(focusId => {
+      const focus = focuses.find(f => f.id === focusId);
+      if (focus) {
+        const focusActivities = activities.filter(a => a.focus_id === focusId);
+        
+        summary.push({
+          type: 'focus',
+          id: focusId,
+          name: focus.name,
+          count: focusActivities.length
+        });
+      }
+    });
+    
+    return summary;
+  };
+
+  // Helper function to get hierarchical filter path
+  const getFilterPath = (focusId: string) => {
+    const focus = focuses.find(f => f.id === focusId);
+    if (!focus) return '';
+    
+    const area = areas.find(a => a.id === focus.area_id);
+    if (!area) return focus.name;
+    
+    const category = categories.find(c => c.id === area.category_id);
+    if (!category) return `${area.name}-${focus.name}`;
+    
+    return `${category.name}-${area.name}-${focus.name}`;
+  };
+
+  // Helper function to get activity count for a focus
+  const getActivityCountForFocus = (focusId: string) => {
+    return activities.filter(a => a.focus_id === focusId).length;
+  };
+
+  // Helper function to get activity count for an area
+  const getActivityCountForArea = (areaId: string) => {
+    const areaFocuses = focuses.filter(f => f.area_id === areaId);
+    return activities.filter(a => areaFocuses.some(f => f.id === a.focus_id)).length;
+  };
+
+  // Helper function to get activity count for a category
+  const getActivityCountForCategory = (categoryId: string) => {
+    const categoryAreas = areas.filter(a => a.category_id === categoryId);
+    const categoryFocuses = focuses.filter(f => categoryAreas.some(a => a.id === f.area_id));
+    return activities.filter(a => categoryFocuses.some(f => f.id === a.focus_id)).length;
+  };
+
+  const updateResearchGuidelines = async (activityId: string, guidelines: ResearchGuidelines) => {
+    setSelectedActivitiesState(prev => 
+      prev.map(act => 
+        act.activity_id === activityId 
+          ? { ...act, research_guidelines: guidelines }
+          : act
+      )
+    );
+
+    try {
+      const { error } = await supabase
+        .from('rd_selected_activities')
+        .update({ research_guidelines: guidelines })
+        .eq('business_year_id', selectedBusinessYearId)
+        .eq('activity_id', activityId);
+      
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error updating research guidelines:', error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -2156,7 +2484,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
               : 'text-gray-600 hover:text-gray-900'
           }`}
         >
-          Research Design
+          Research Guidelines
         </button>
       </div>
 
@@ -2164,264 +2492,445 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       <div className="bg-white rounded-lg shadow-sm p-6">
         {activeTab === 'roles' && (
           <div className="space-y-6">
-            {/* Header with Year Selector */}
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">
-                  Research Roles
-                </h4>
-                <p className="text-gray-600 mt-1">Define your research team hierarchy and responsibilities</p>
-              </div>
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
-                  <label className="text-sm font-medium text-gray-700">Year:</label>
-                  <select
-                    value={selectedYear}
-                    onChange={(e) => {
-                      const year = parseInt(e.target.value);
-                      setSelectedYear(year);
-                      // Find the corresponding business year ID
-                      const businessYear = availableBusinessYears.find(by => by.year === year);
-                      if (businessYear) {
-                        setSelectedBusinessYearId(businessYear.id);
-                      }
-                    }}
-                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                  >
-                    {availableBusinessYears.length > 0 ? (
-                      availableBusinessYears.map(businessYear => (
-                        <option key={businessYear.id} value={businessYear.year}>
-                          {businessYear.year}
-                        </option>
-                      ))
-                    ) : (
-                      <option value="">No years available</option>
-                    )}
-                  </select>
+            {/* Enhanced Header with Year Selector */}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-3xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mb-2">
+                    Research Roles
+                  </h4>
+                  <p className="text-gray-600 text-lg">Define your research team hierarchy and responsibilities</p>
+                  <div className="flex items-center space-x-4 mt-3">
+                    <div className="flex items-center space-x-2 bg-white rounded-lg px-3 py-2 shadow-sm">
+                      <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <label className="text-sm font-medium text-gray-700">Year:</label>
+                      <select
+                        value={selectedYear}
+                        onChange={(e) => {
+                          const year = parseInt(e.target.value);
+                          setSelectedYear(year);
+                          const businessYear = availableBusinessYears.find(by => by.year === year);
+                          if (businessYear) {
+                            setSelectedBusinessYearId(businessYear.id);
+                          }
+                        }}
+                        className="px-3 py-1 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-transparent"
+                      >
+                        {availableBusinessYears.length > 0 ? (
+                          availableBusinessYears.map(businessYear => (
+                            <option key={businessYear.id} value={businessYear.year}>
+                              {businessYear.year}
+                            </option>
+                          ))
+                        ) : (
+                          <option value="">No years available</option>
+                        )}
+                      </select>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                      <span className="text-sm text-gray-600">Active configuration</span>
+                    </div>
+                  </div>
                 </div>
-                <button
-                  onClick={() => setShowAddRoleModal(true)}
-                  className="btn-primary-modern flex items-center"
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Role
-                </button>
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={() => setShowCopyModal(true)}
+                    className="px-4 py-2 text-blue-600 border border-blue-300 rounded-lg hover:bg-blue-50 transition-colors flex items-center space-x-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    <span>Copy from Year</span>
+                  </button>
+                  <button
+                    onClick={() => setShowAddRoleModal(true)}
+                    className="btn-primary-modern flex items-center space-x-2 px-6 py-3"
+                  >
+                    <Plus className="h-5 w-5" />
+                    <span>Add Role</span>
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Year Baseline Notice */}
+            {/* Enhanced Year Baseline Notice */}
             {selectedYear !== 2025 && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-xl p-4">
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
+                    <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center">
+                      <svg className="h-5 w-5 text-amber-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                    </div>
                   </div>
-                  <div className="ml-3">
-                    <p className="text-sm text-blue-800">
-                      <strong>Year-specific modifications:</strong> Changes made for {selectedYear} will override the baseline configuration.
+                  <div className="ml-4">
+                    <h4 className="text-sm font-semibold text-amber-800">Year-specific modifications</h4>
+                    <p className="text-sm text-amber-700 mt-1">
+                      Changes made for {selectedYear} will override the baseline configuration from 2025.
                     </p>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Org Chart Visualization */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h5 className="text-lg font-semibold text-gray-900 mb-4">Organization Chart</h5>
+            {/* Enhanced Org Chart Visualization */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-6 py-4 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h5 className="text-lg font-semibold text-gray-900">Organization Chart</h5>
+                      <p className="text-sm text-gray-600">Visualize your research team structure</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-gray-500">
+                      {roles.length} role{roles.length !== 1 ? 's' : ''} defined
+                    </span>
+                  </div>
+                </div>
+              </div>
               
-              {roles.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="mx-auto h-12 w-12 text-gray-400">
-                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                    </svg>
+              <div className="p-6">
+                {roles.length === 0 ? (
+                  <div className="text-center py-16">
+                    <div className="mx-auto w-24 h-24 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center mb-6">
+                      <svg className="w-12 h-12 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">No roles defined yet</h3>
+                    <p className="text-gray-600 mb-8 max-w-md mx-auto">
+                      Start building your research team by creating roles that define responsibilities and hierarchy.
+                    </p>
+                    <div className="flex items-center justify-center space-x-4">
+                      <button
+                        onClick={() => setShowAddRoleModal(true)}
+                        className="btn-primary-modern flex items-center space-x-2 px-6 py-3"
+                      >
+                        <Plus className="h-5 w-5" />
+                        <span>Create First Role</span>
+                      </button>
+                      <button
+                        onClick={() => setShowCopyModal(true)}
+                        className="px-4 py-3 text-blue-600 border border-blue-300 rounded-lg hover:bg-blue-50 transition-colors flex items-center space-x-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        <span>Copy from Another Year</span>
+                      </button>
+                    </div>
+                    
+                    {/* Quick Tips */}
+                    <div className="mt-12 bg-gray-50 rounded-xl p-6 max-w-2xl mx-auto">
+                      <h4 className="text-sm font-semibold text-gray-900 mb-4 flex items-center">
+                        <svg className="w-4 h-4 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Quick Tips
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600">
+                        <div className="flex items-start space-x-3">
+                          <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
+                          <div>
+                            <span className="font-medium text-gray-900">Start with leadership roles</span>
+                            <p className="text-gray-500 mt-1">Create senior positions first, then add subordinates</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start space-x-3">
+                          <div className="w-2 h-2 bg-green-500 rounded-full mt-2 flex-shrink-0"></div>
+                          <div>
+                            <span className="font-medium text-gray-900">Use clear descriptions</span>
+                            <p className="text-gray-500 mt-1">Include responsibilities and qualifications</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start space-x-3">
+                          <div className="w-2 h-2 bg-purple-500 rounded-full mt-2 flex-shrink-0"></div>
+                          <div>
+                            <span className="font-medium text-gray-900">Establish hierarchy</span>
+                            <p className="text-gray-500 mt-1">Set up reporting relationships between roles</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start space-x-3">
+                          <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 flex-shrink-0"></div>
+                          <div>
+                            <span className="font-medium text-gray-900">Mark default roles</span>
+                            <p className="text-gray-500 mt-1">Identify roles that are automatically assigned</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">No roles defined</h3>
-                  <p className="mt-1 text-sm text-gray-500">Get started by creating your first research role.</p>
-                  <div className="mt-6">
-                    <button
-                      onClick={() => setShowAddRoleModal(true)}
-                      className="btn-primary-modern"
-                    >
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add First Role
-                    </button>
+                ) : (
+                  <div className="space-y-6">
+                    {/* Top Level Roles */}
+                    {roles.filter(role => !role.parent_id).map((role, index) => (
+                      <RoleCard
+                        key={`role-${role.id}`}
+                        role={role}
+                        allRoles={roles}
+                        onMoveUp={() => moveRoleUp(role.id)}
+                        onMoveDown={() => moveRoleDown(role.id)}
+                        onEdit={() => editRole(role)}
+                        onDelete={() => deleteRole(role.id)}
+                        canMoveUp={index > 0}
+                        canMoveDown={index < roles.filter(r => !r.parent_id).length - 1}
+                        level={0}
+                        renderChildRole={renderRoleCard}
+                      />
+                    ))}
                   </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {/* Top Level Roles */}
-                  {roles.filter(role => !role.parent_id).map((role, index) => (
-                    <RoleCard
-                      key={`role-${role.id}`}
-                      role={role}
-                      allRoles={roles}
-                      onMoveUp={() => moveRoleUp(role.id)}
-                      onMoveDown={() => moveRoleDown(role.id)}
-                      onEdit={() => editRole(role)}
-                      onDelete={() => deleteRole(role.id)}
-                      canMoveUp={index > 0}
-                      canMoveDown={index < roles.filter(r => !r.parent_id).length - 1}
-                      level={0}
-                      renderChildRole={renderRoleCard}
-                    />
-                  ))}
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         )}
 
         {activeTab === 'activities' && (
           <div className="space-y-6">
-            {/* Practice Percentage Bar */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-2">
-                  <h4 className="text-lg font-semibold text-gray-900">Practice Percentage</h4>
-                  <button
-                    onClick={() => setShowNonRndModal(true)}
-                    className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                  >
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </div>
-                <div className="text-sm text-gray-600">
-                  Total: 100% (Non-R&D: {practicePercentageConfig.nonRndTime}% | Research: {100 - practicePercentageConfig.nonRndTime}%)
-                </div>
-              </div>
-              
-              <div className="relative h-8 bg-gray-100 rounded-lg overflow-hidden">
-                {/* Non-R&D Time */}
-                <div 
-                  className="absolute left-0 top-0 h-full bg-gray-400 flex items-center justify-center"
-                  style={{ width: `${practicePercentageConfig.nonRndTime}%` }}
-                >
-                  <span className="text-xs font-medium text-white px-2">
-                    Non-R&D ({practicePercentageConfig.nonRndTime}%)
-                  </span>
-                </div>
-                
-                {/* Research Activities - Always fill remaining space */}
-                {selectedActivitiesState.map((activity, index) => {
-                  const colors = ['bg-blue-400', 'bg-green-400', 'bg-purple-400', 'bg-orange-400', 'bg-pink-400'];
-                  const color = colors[index % colors.length];
-                  const leftPosition = practicePercentageConfig.nonRndTime + 
-                    selectedActivitiesState.slice(0, index).reduce((sum, a) => sum + (practicePercentageConfig.activities[a.activity_id] || 0), 0);
-                  const activityPercentage = practicePercentageConfig.activities[activity.activity_id] || 0;
-                  
-                  return (
-                    <div
-                      key={activity.id}
-                      className={`absolute top-0 h-full ${color} flex items-center justify-center transition-all duration-300`}
-                      style={{ 
-                        left: `${leftPosition}%`,
-                        width: `${activityPercentage}%`
-                      }}
-                    >
-                      <span className="text-xs font-medium text-white px-1 truncate">
-                        {activity.activity_name || activity.title || 'Unknown Activity'} ({activityPercentage.toFixed(1)}%)
-                      </span>
+            {/* Modern Gradient Header with Progress */}
+            <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl shadow-xl overflow-hidden">
+              <div className="px-6 py-8 relative">
+                <div className="absolute inset-0 bg-black/10"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h2 className="text-3xl font-bold text-white mb-2">Research Activities</h2>
+                      <p className="text-blue-100 text-lg">
+                        Discover and configure research activities for maximum R&D credit optimization
+                      </p>
                     </div>
-                  );
-                })}
-              </div>
-              
-              {/* Legend */}
-              {selectedActivitiesState.length > 0 && (
-                <div className="mt-4 space-y-2">
-                  <h5 className="text-sm font-medium text-gray-700">Activity Breakdown:</h5>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {selectedActivitiesState.map((activity, index) => {
-                      const colors = ['bg-blue-400', 'bg-green-400', 'bg-purple-400', 'bg-orange-400', 'bg-pink-400'];
-                      const color = colors[index % colors.length];
-                      const activityPercentage = practicePercentageConfig.activities[activity.activity_id] || 0;
+                    <div className="flex items-center space-x-3">
+                      <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+                      <span className="text-blue-100 text-sm font-medium">Live Configuration</span>
+                    </div>
+                  </div>
+                  
+                  {/* Practice Percentage Bar - RESTORED WITH EXACT SAME LOGIC */}
+                  <div className="bg-white bg-opacity-20 backdrop-blur-sm rounded-xl p-4 mb-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center space-x-2">
+                        <h4 className="text-lg font-semibold text-white">Practice Percentage</h4>
+                        <button
+                          onClick={() => setShowNonRndModal(true)}
+                          className="p-1 text-blue-200 hover:text-white transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div className="text-sm text-blue-100">
+                        Total: 100% (Non-R&D: {practicePercentageConfig.nonRndTime}% | Research: {100 - practicePercentageConfig.nonRndTime}%)
+                      </div>
+                    </div>
+                    
+                    <div className="relative h-8 bg-blue-500/30 rounded-lg overflow-hidden">
+                      {/* Non-R&D Time */}
+                      <div 
+                        className="absolute left-0 top-0 h-full bg-gray-400 flex items-center justify-center transition-all duration-500"
+                        style={{ width: `${practicePercentageConfig.nonRndTime}%` }}
+                        title={`Non-R&D (${practicePercentageConfig.nonRndTime}%)`}
+                      >
+                        <span className="text-xs font-medium text-white px-2">
+                          Non-R&D ({practicePercentageConfig.nonRndTime}%)
+                        </span>
+                      </div>
                       
-                      return (
-                        <div key={activity.id} className="flex items-center space-x-2 text-sm">
-                          <div className={`w-3 h-3 ${color} rounded`}></div>
-                          <span className="text-gray-700">
-                            {activity.activity_name || activity.title || 'Unknown Activity'}
-                          </span>
-                          <span className="text-gray-500 font-medium">
-                            {activityPercentage.toFixed(1)}%
-                          </span>
+                      {/* Research Activities - Animated, with tooltips */}
+                      {selectedActivitiesState.map((activity, index) => {
+                        const colors = ['bg-blue-400', 'bg-green-400', 'bg-purple-400', 'bg-orange-400', 'bg-pink-400'];
+                        const color = colors[index % colors.length];
+                        const leftPosition = practicePercentageConfig.nonRndTime + 
+                          selectedActivitiesState.slice(0, index).reduce((sum, a) => sum + (practicePercentageConfig.activities[a.activity_id] || 0), 0);
+                        const activityPercentage = practicePercentageConfig.activities[activity.activity_id] || 0;
+                        return (
+                          <div
+                            key={activity.activity_id}
+                            className={`absolute top-0 h-full ${color} flex items-center justify-center transition-all duration-500`}
+                            style={{ 
+                              left: `${leftPosition}%`,
+                              width: `${activityPercentage}%`
+                            }}
+                            title={`${activity.activity_name || activity.title || 'Unknown Activity'} (${activityPercentage.toFixed(1)}%)`}
+                          >
+                            <span className="text-xs font-medium text-white px-1 truncate">
+                              {activity.activity_name || activity.title || 'Unknown Activity'} ({activityPercentage.toFixed(1)}%)
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    
+                    {/* Legend */}
+                    {selectedActivitiesState.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        <h5 className="text-sm font-medium text-blue-100">Activity Breakdown:</h5>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {selectedActivitiesState.map((activity, index) => {
+                            const colors = ['bg-blue-400', 'bg-green-400', 'bg-purple-400', 'bg-orange-400', 'bg-pink-400'];
+                            const color = colors[index % colors.length];
+                            const activityPercentage = practicePercentageConfig.activities[activity.activity_id] || 0;
+                            
+                            return (
+                              <div key={activity.activity_id} className="flex items-center space-x-2 text-sm">
+                                <div className={`w-3 h-3 ${color} rounded`}></div>
+                                <span className="text-blue-100">
+                                  {activity.activity_name || activity.title || 'Unknown Activity'}
+                                </span>
+                                <span className="text-blue-200 font-medium">
+                                  {activityPercentage.toFixed(1)}%
+                                </span>
+                              </div>
+                            );
+                          })}
                         </div>
-                      );
-                    })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Year Selector and Header */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+              <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <div className="flex items-center">
+                  <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mr-4">Activity Configuration</h3>
+                  <div className="flex items-center space-x-2">
+                    <label className="text-sm font-medium text-gray-700">Year:</label>
+                    <select
+                      value={selectedYear}
+                      onChange={(e) => {
+                        const year = parseInt(e.target.value);
+                        setSelectedYear(year);
+                        const businessYear = availableBusinessYears.find(by => by.year === year);
+                        if (businessYear) {
+                          setSelectedBusinessYearId(businessYear.id);
+                        }
+                      }}
+                      className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {availableBusinessYears.length > 0 ? (
+                        availableBusinessYears.map(businessYear => (
+                          <option key={businessYear.id} value={businessYear.year}>
+                            {businessYear.year}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No years available</option>
+                      )}
+                    </select>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm text-gray-600">Available for R&D</div>
+                  <div className="text-2xl font-bold text-gray-900">{100 - practicePercentageConfig.nonRndTime}%</div>
+                </div>
+              </div>
+
+              {/* Year Baseline Notice */}
+              {selectedYear !== 2025 && (
+                <div className="bg-blue-50 border-b border-blue-200 px-6 py-3">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0">
+                      <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="ml-3">
+                      <p className="text-sm text-blue-800">
+                        <strong>Year-specific modifications:</strong> Changes made for {selectedYear} will override the baseline configuration.
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Header with Year Selector for Activities */}
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">
-                  Research Activities
-                </h4>
-                <p className="text-gray-600 mt-1">Select and configure your research activities for {selectedYear}</p>
-              </div>
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
-                  <label className="text-sm font-medium text-gray-700">Year:</label>
-                  <select
-                    value={selectedYear}
-                    onChange={(e) => {
-                      const year = parseInt(e.target.value);
-                      setSelectedYear(year);
-                      // Find the corresponding business year ID
-                      const businessYear = availableBusinessYears.find(by => by.year === year);
-                      if (businessYear) {
-                        setSelectedBusinessYearId(businessYear.id);
+            {/* Collapsible Filter Accordion */}
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+              <div className="bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 px-6 py-4 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xl font-semibold text-white mb-1">Filter Research Activities</h3>
+                    <p className="text-green-100 text-sm">Refine your search by categories, areas, and focuses</p>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    {/* Selected Filters Summary */}
+                    {(() => {
+                      const totalSelected = selectedCategories.length + selectedAreas.length + selectedFocuses.length;
+                      if (totalSelected > 0) {
+                        const filterSummary = getFilterSummary();
+                        return (
+                          <div className="flex items-center space-x-2">
+                            <div className="bg-green-500/20 backdrop-blur-sm rounded-full px-3 py-1 border border-green-400/30">
+                              <span className="text-green-100 text-sm font-medium">
+                                {totalSelected} filter{totalSelected !== 1 ? 's' : ''} active
+                              </span>
+                            </div>
+                            {/* Show selected focuses with hierarchical paths */}
+                            {selectedFocuses.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {selectedFocuses.map(focusId => {
+                                  const focus = focuses.find(f => f.id === focusId);
+                                  if (!focus) return null;
+                                  const path = getFilterPath(focusId);
+                                  const count = getActivityCountForFocus(focusId);
+                                  return (
+                                    <div key={focusId} className="bg-green-500/30 backdrop-blur-sm rounded-full px-2 py-1 border border-green-400/50">
+                                      <span className="text-green-100 text-xs font-medium">
+                                        {path} ({count})
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            <button
+                              onClick={() => {
+                                setSelectedCategories([]);
+                                setSelectedAreas([]);
+                                setSelectedFocuses([]);
+                              }}
+                              className="text-green-200 hover:text-white transition-colors text-sm"
+                              title="Clear all filters"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        );
                       }
-                    }}
-                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                  >
-                    {availableBusinessYears.length > 0 ? (
-                      availableBusinessYears.map(businessYear => (
-                        <option key={businessYear.id} value={businessYear.year}>
-                          {businessYear.year}
-                        </option>
-                      ))
-                    ) : (
-                      <option value="">No years available</option>
-                    )}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Year Baseline Notice for Activities */}
-            {selectedYear !== 2025 && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <p className="text-sm text-blue-800">
-                      <strong>Year-specific modifications:</strong> Changes made for {selectedYear} will override the baseline configuration.
-                    </p>
+                      return null;
+                    })()}
                   </div>
                 </div>
               </div>
-            )}
 
-            {/* Multi-Select Filters */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h4 className="text-lg font-semibold text-gray-900 mb-4">Filter Research Activities</h4>
-              
-              <div className="space-y-6">
+              {/* Filter Content - Always Visible but Compact */}
+              <div className="p-6 space-y-6">
                 {/* Categories */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">Categories</label>
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="block text-sm font-semibold text-gray-700">Categories</label>
+                    {selectedCategories.length > 0 && (
+                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                        {selectedCategories.length} selected
+                      </span>
+                    )}
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     {categories.map(category => (
                       <SelectableChip
@@ -2438,7 +2947,14 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
                 {/* Areas - Only show when categories are selected */}
                 {selectedCategories.length > 0 && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-3">Areas</label>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="block text-sm font-semibold text-gray-700">Areas</label>
+                      {selectedAreas.length > 0 && (
+                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                          {selectedAreas.length} selected
+                        </span>
+                      )}
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       {getAvailableAreas().map(area => (
                         <SelectableChip
@@ -2456,7 +2972,14 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
                 {/* Focuses - Only show when areas are selected */}
                 {selectedAreas.length > 0 && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-3">Focuses</label>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="block text-sm font-semibold text-gray-700">Focuses</label>
+                      {selectedFocuses.length > 0 && (
+                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                          {selectedFocuses.length} selected
+                        </span>
+                      )}
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       {getAvailableFocuses().map(focus => (
                         <SelectableChip
@@ -2486,84 +3009,133 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
               </div>
             </div>
 
-            {/* Research Activities */}
+            {/* Research Activities Grid */}
             {selectedFocuses.length > 0 && (
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h4 className="text-lg font-semibold text-gray-900">Available Research Activities</h4>
-                  <div className="text-sm text-gray-600">
-                    {getFilteredActivities().length} activities available
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+                <div className="bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 px-6 py-4 border-b border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xl font-semibold text-white mb-1">Available Research Activities</h3>
+                      <p className="text-purple-100 text-sm">Select activities that align with your research goals</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm text-purple-100">Available</div>
+                      <div className="text-2xl font-bold text-white">{getFilteredActivities().length}</div>
+                    </div>
                   </div>
                 </div>
                 
-                <div className="grid gap-4">
-                  {getFilteredActivities().map(activity => {
-                    const isSelected = selectedActivitiesState.some(a => a.activity_id === activity.id);
-                    const colors = ['blue', 'green', 'purple', 'orange', 'pink'];
-                    const color = colors[selectedActivitiesState.length % colors.length];
-                    
-                    return (
-                      <div key={activity.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <h5 className="font-semibold text-gray-900 mb-2">{activity.title}</h5>
-                            
-                            {activity.general_description && (
-                              <p className="text-sm text-gray-600 mb-2">{activity.general_description}</p>
-                            )}
-                            
-                            {activity.examples && (
-                              <div className="text-sm text-gray-500">
-                                <strong>Examples:</strong> {activity.examples}
-                              </div>
-                            )}
-                          </div>
+                <div className="p-6">
+                  <div className="grid gap-4">
+                    {getFilteredActivities().map((activity: ResearchActivity) => {
+                      const isSelected = selectedActivitiesState.some(a => a.activity_id === activity.id);
+                      const colors = ['blue', 'green', 'purple', 'orange', 'pink'];
+                      const color = colors[selectedActivitiesState.length % colors.length];
+                      const isExpanded = expandedActivities[activity.id] || false;
+                      
+                      return (
+                        <div key={activity.id} className={`border border-gray-200 rounded-xl p-6 hover:shadow-lg transition-all duration-300 relative group bg-white ${
+                          isSelected ? 'ring-2 ring-green-500 ring-offset-2' : ''
+                        }`}>
+                          {isSelected && (
+                            <div className="absolute top-4 right-4 bg-green-100 text-green-700 text-xs px-3 py-1 rounded-full flex items-center shadow-sm">
+                              <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                              Added
+                            </div>
+                          )}
                           
-                          <div className="ml-4">
-                            {!isSelected ? (
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-3 mb-3">
+                                <div className={`w-3 h-3 rounded-full bg-${color}-500`}></div>
+                                <h5 className="font-bold text-lg text-gray-900">{activity.title}</h5>
+                              </div>
+                              
+                              {activity.general_description && (
+                                <p className="text-sm text-gray-600 mb-3">{activity.general_description}</p>
+                              )}
+                              
+                              {isExpanded && activity.examples && (
+                                <div className="bg-gray-50 rounded-lg p-4 mb-3">
+                                  <div className="text-sm text-gray-700">
+                                    <strong className="text-gray-900">Examples:</strong> {activity.examples}
+                                  </div>
+                                </div>
+                              )}
+                              
                               <button
-                                onClick={() => addActivity(activity)}
-                                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                                className="text-xs text-blue-600 hover:text-blue-800 font-medium focus:outline-none transition-colors"
+                                onClick={() => toggleExpanded(activity.id)}
                               >
-                                Add Activity
+                                {isExpanded ? 'Hide Details' : 'View Details'}
                               </button>
-                            ) : (
-                              <span className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-green-100 text-green-800">
-                                <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                </svg>
-                                Added
-                              </span>
-                            )}
+                            </div>
+                            
+                            <div className="ml-4">
+                              {!isSelected ? (
+                                <button
+                                  onClick={() => addActivity(activity)}
+                                  className="px-6 py-3 rounded-xl text-sm font-semibold bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
+                                >
+                                  Add Activity
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => removeActivity(activity.id)}
+                                  className="px-6 py-3 rounded-xl text-sm font-semibold bg-gradient-to-r from-red-500 to-pink-600 text-white hover:from-red-600 hover:to-pink-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
 
             {/* Selected Activities */}
             {selectedActivitiesState.length > 0 && (
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h4 className="text-lg font-semibold text-gray-900 mb-6">Selected Research Activities</h4>
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+                <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 px-6 py-4 border-b border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xl font-semibold text-white mb-1">Selected Research Activities</h3>
+                      <p className="text-emerald-100 text-sm">Configure practice percentages and roles for each activity</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm text-emerald-100">Selected</div>
+                      <div className="text-2xl font-bold text-white">{selectedActivitiesState.length}</div>
+                    </div>
+                  </div>
+                </div>
                 
-                <div className="space-y-6">
+                <div className="p-6 space-y-6">
                   {selectedActivitiesState.map((activity, index) => {
                     const colors = ['blue', 'green', 'purple', 'orange', 'pink'];
                     const color = colors[index % colors.length];
-                    
                     return (
-                      <ActivityCard
-                        key={activity.id}
-                        activity={activity}
-                        allRoles={roles}
-                        onUpdatePercentage={(percentage) => updateActivityPercentage(activity.activity_id, percentage)}
-                        onUpdateRoles={(roles) => updateActivityRoles(activity.activity_id, roles)}
-                        onRemove={() => removeActivity(activity.activity_id)}
-                        color={color}
-                      />
+                      <motion.div
+                        key={activity.activity_id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        <ActivityCard
+                          activity={activity}
+                          allRoles={roles}
+                          onUpdatePercentage={(percentage) => updateActivityPercentage(activity.activity_id, percentage)}
+                          onUpdateRoles={(roles) => updateActivityRoles(activity.activity_id, roles)}
+                          onRemove={() => removeActivity(activity.activity_id)}
+                          color={color}
+                        />
+                      </motion.div>
                     );
                   })}
                 </div>
@@ -2572,14 +3144,23 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
             {/* Empty State */}
             {selectedFocuses.length === 0 && selectedCategories.length > 0 && (
-              <div className="text-center py-12">
-                <div className="mx-auto h-12 w-12 text-gray-400 mb-4">
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-12 text-center">
+                <div className="mx-auto h-16 w-16 text-gray-400 mb-4">
                   <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                   </svg>
                 </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Select Focus Areas</h3>
-                <p className="text-gray-600">Choose areas and focuses above to see available research activities.</p>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">Select Focus Areas</h3>
+                <p className="text-gray-600 mb-6">Choose areas and focuses above to see available research activities.</p>
+                <button
+                  onClick={() => {
+                    setSelectedAreas([]);
+                    setSelectedFocuses([]);
+                  }}
+                  className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-purple-700 transition-all duration-200"
+                >
+                  Reset Filters
+                </button>
               </div>
             )}
           </div>
@@ -2587,18 +3168,40 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
         {activeTab === 'design' && (
           <div className="space-y-6">
-            <h4 className="text-xl font-semibold text-gray-900">Research Design</h4>
-            
+            <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-2xl shadow-xl overflow-hidden">
+              <div className="px-6 py-8 relative">
+                <div className="absolute inset-0 bg-black/10"></div>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h2 className="text-3xl font-bold text-white mb-2">Research Guidelines</h2>
+                      <p className="text-indigo-100 text-lg">
+                        Complete R&D qualification questions for each selected activity
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm text-indigo-100">Activities</div>
+                      <div className="text-2xl font-bold text-white">{selectedActivitiesState.length}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {selectedActivitiesState.length === 0 ? (
-              <div className="text-center py-8">
-                <div className="text-gray-400 text-6xl mb-4">📋</div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">No Activities Selected</h3>
-                <p className="text-gray-600 mb-4">
-                  Please select research activities from the Activities tab first.
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-12 text-center">
+                <div className="mx-auto h-16 w-16 text-gray-400 mb-4">
+                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">No Activities Selected</h3>
+                <p className="text-gray-600 mb-6">
+                  Please select research activities from the Activities tab first to complete the research guidelines.
                 </p>
                 <button
                   onClick={() => setActiveTab('activities')}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-semibold hover:from-indigo-700 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
                 >
                   Go to Activities
                 </button>
@@ -2606,14 +3209,11 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
             ) : (
               <div className="space-y-6">
                 {selectedActivitiesState.map(activity => (
-                  <ActivityCard
-                    key={activity.id}
+                  <ResearchGuidelinesAccordion
+                    key={activity.activity_id}
                     activity={activity}
                     allRoles={roles}
-                    onUpdatePercentage={(percentage) => updateActivityPercentage(activity.activity_id, percentage)}
-                    onUpdateRoles={(roles) => updateActivityRoles(activity.activity_id, roles)}
-                    onRemove={() => removeActivity(activity.activity_id)}
-                    color="blue"
+                    onUpdateGuidelines={(guidelines) => updateResearchGuidelines(activity.activity_id, guidelines)}
                   />
                 ))}
               </div>
@@ -2814,6 +3414,336 @@ const CopyConfirmationModal: React.FC<CopyConfirmationModalProps> = ({
           </button>
         </div>
       </div>
+    </div>
+  );
+};
+
+interface ResearchGuidelinesAccordionProps {
+  activity: SelectedActivity;
+  onUpdateGuidelines: (guidelines: ResearchGuidelines) => void;
+  allRoles: ResearchRole[];
+}
+
+const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = ({
+  activity,
+  onUpdateGuidelines,
+  allRoles
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [guidelines, setGuidelines] = useState<ResearchGuidelines>(
+    activity.research_guidelines || {
+      outcome_uncertain: true,
+      considered_alternatives: true,
+      us_based: true,
+      science_based: true,
+      primary_goal: 'Develop a new product or process',
+      uncertainty_type: 'Design',
+      success_measurement: 'Functional performance',
+      hypothesis: '',
+      development_steps: '',
+      data_feedback: ''
+    }
+  );
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const handleGuidelineChange = (field: keyof ResearchGuidelines, value: any) => {
+    const updatedGuidelines = { ...guidelines, [field]: value };
+    setGuidelines(updatedGuidelines);
+    onUpdateGuidelines(updatedGuidelines);
+  };
+
+  const generateAIAnswers = async () => {
+    setIsGenerating(true);
+    try {
+      // Get role names for the selected roles
+      const selectedRoleNames = allRoles
+        .filter(role => activity.selected_roles.includes(role.id))
+        .map(role => role.name);
+
+      const context: AIGenerationContext = {
+        research_activity_name: activity.activity_name || 'Unknown Activity',
+        practice_percentage: activity.practice_percent,
+        roles_involved: selectedRoleNames,
+        industry_type: activity.activity_category || 'General',
+        category: activity.activity_category,
+        frequency_percent: 100
+      };
+
+      const aiAnswers = await AIService.generateAllAnswers(context);
+      
+      const updatedGuidelines = {
+        ...guidelines,
+        hypothesis: aiAnswers.hypothesis,
+        development_steps: aiAnswers.development_steps,
+        data_feedback: aiAnswers.data_feedback
+      };
+      
+      setGuidelines(updatedGuidelines);
+      onUpdateGuidelines(updatedGuidelines);
+    } catch (error) {
+      console.error('Error generating AI answers:', error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const regenerateField = async (field: 'hypothesis' | 'development_steps' | 'data_feedback') => {
+    setIsGenerating(true);
+    try {
+      const selectedRoleNames = allRoles
+        .filter(role => activity.selected_roles.includes(role.id))
+        .map(role => role.name);
+
+      const context: AIGenerationContext = {
+        research_activity_name: activity.activity_name || 'Unknown Activity',
+        practice_percentage: activity.practice_percent,
+        roles_involved: selectedRoleNames,
+        industry_type: activity.activity_category || 'General',
+        category: activity.activity_category,
+        frequency_percent: 100
+      };
+
+      let newValue = '';
+      switch (field) {
+        case 'hypothesis':
+          newValue = await AIService.generateHypothesis(context);
+          break;
+        case 'development_steps':
+          newValue = await AIService.generateDevelopmentSteps(context);
+          break;
+        case 'data_feedback':
+          newValue = await AIService.generateDataFeedback(context);
+          break;
+      }
+
+      const updatedGuidelines = { ...guidelines, [field]: newValue };
+      setGuidelines(updatedGuidelines);
+      onUpdateGuidelines(updatedGuidelines);
+    } catch (error) {
+      console.error(`Error regenerating ${field}:`, error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full px-6 py-4 bg-gradient-to-r from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-200 transition-all duration-200 flex items-center justify-between"
+      >
+        <div className="flex items-center space-x-3">
+          <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+          <h3 className="text-lg font-semibold text-gray-900">{activity.activity_name}</h3>
+        </div>
+        <div className="flex items-center space-x-2">
+          <span className="text-sm text-gray-600">Research Guidelines</span>
+          <svg
+            className={`w-5 h-5 text-gray-500 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+
+      {isExpanded && (
+        <div className="px-6 py-6 space-y-6">
+          {/* YES/NO Questions */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">YES/NO Questions</h4>
+              
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-gray-700">Was the outcome of this activity uncertain at the outset?</label>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={guidelines.outcome_uncertain}
+                      onChange={(e) => handleGuidelineChange('outcome_uncertain', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-gray-700">Did you consider multiple methods or alternatives to achieve the intended result?</label>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={guidelines.considered_alternatives}
+                      onChange={(e) => handleGuidelineChange('considered_alternatives', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-gray-700">Was the work conducted primarily in the U.S.?</label>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={guidelines.us_based}
+                      onChange={(e) => handleGuidelineChange('us_based', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-gray-700">Did the activity rely on the principles of a hard science (e.g., engineering, biology, computer science)?</label>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={guidelines.science_based}
+                      onChange={(e) => handleGuidelineChange('science_based', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Radio Button Questions */}
+            <div className="space-y-4">
+              <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Multiple Choice Questions</h4>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">What was the primary goal of this activity?</label>
+                  <select
+                    value={guidelines.primary_goal}
+                    onChange={(e) => handleGuidelineChange('primary_goal', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="Develop a new product or process">Develop a new product or process</option>
+                    <option value="Improve an existing product or process">Improve an existing product or process</option>
+                    <option value="Integrate or test new technology">Integrate or test new technology</option>
+                    <option value="Optimize workflow or performance">Optimize workflow or performance</option>
+                    <option value="Evaluate alternative methods">Evaluate alternative methods</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Which type of uncertainty best describes the challenge you were addressing?</label>
+                  <select
+                    value={guidelines.uncertainty_type}
+                    onChange={(e) => handleGuidelineChange('uncertainty_type', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="Capability">Capability (Can it be done?)</option>
+                    <option value="Method">Method (How will it be done?)</option>
+                    <option value="Design">Design (What is the best configuration?)</option>
+                    <option value="None">None (activity was routine)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">How was success measured in this activity?</label>
+                  <select
+                    value={guidelines.success_measurement}
+                    onChange={(e) => handleGuidelineChange('success_measurement', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="Functional performance">Functional performance</option>
+                    <option value="Time/cost reduction">Time/cost reduction</option>
+                    <option value="Compliance with design specs">Compliance with design specs</option>
+                    <option value="Product/process stability">Product/process stability</option>
+                    <option value="Other">Other (specify in notes)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Short Answer Questions */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Short Answer Questions</h4>
+              <button
+                onClick={generateAIAnswers}
+                disabled={isGenerating}
+                className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>{isGenerating ? 'Generating...' : 'Generate All with AI'}</span>
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">Briefly describe the hypothesis or idea you tested.</label>
+                  <button
+                    onClick={() => regenerateField('hypothesis')}
+                    disabled={isGenerating}
+                    className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors disabled:opacity-50"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Regenerate</span>
+                  </button>
+                </div>
+                <textarea
+                  value={guidelines.hypothesis}
+                  onChange={(e) => handleGuidelineChange('hypothesis', e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Describe your hypothesis or idea..."
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">What were the key steps taken during the development or testing process?</label>
+                  <button
+                    onClick={() => regenerateField('development_steps')}
+                    disabled={isGenerating}
+                    className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors disabled:opacity-50"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Regenerate</span>
+                  </button>
+                </div>
+                <textarea
+                  value={guidelines.development_steps}
+                  onChange={(e) => handleGuidelineChange('development_steps', e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Describe the key steps..."
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">What data or feedback helped you determine success or failure?</label>
+                  <button
+                    onClick={() => regenerateField('data_feedback')}
+                    disabled={isGenerating}
+                    className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors disabled:opacity-50"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Regenerate</span>
+                  </button>
+                </div>
+                <textarea
+                  value={guidelines.data_feedback}
+                  onChange={(e) => handleGuidelineChange('data_feedback', e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Describe the data or feedback..."
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

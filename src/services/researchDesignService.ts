@@ -195,6 +195,9 @@ export class ResearchDesignService {
       if (subcomponentData.cpt_codes !== undefined) updateData.cpt_codes = subcomponentData.cpt_codes;
       if (subcomponentData.cdt_codes !== undefined) updateData.cdt_codes = subcomponentData.cdt_codes;
       if (subcomponentData.alternative_paths !== undefined) updateData.alternative_paths = subcomponentData.alternative_paths;
+      if (subcomponentData.applied_percentage !== undefined) updateData.applied_percentage = subcomponentData.applied_percentage;
+      if (subcomponentData.time_percentage !== undefined) updateData.time_percentage = subcomponentData.time_percentage;
+      if (subcomponentData.step_name !== undefined) updateData.step_name = subcomponentData.step_name;
 
       const { data: updatedSubcomponent, error } = await supabase
         .from('rd_selected_subcomponents')

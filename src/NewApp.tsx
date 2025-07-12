@@ -107,13 +107,6 @@ const BattleBornApp: React.FC = () => {
           draggable
           pauseOnHover
         />
-
-        {/* Demo Mode Indicator */}
-        {demoMode && (
-          <div className="fixed bottom-4 left-4 bg-yellow-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
-            <span className="font-medium">Demo Mode</span>
-          </div>
-        )}
       </div>
     </UserProvider>
   );
