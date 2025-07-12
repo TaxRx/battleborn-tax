@@ -1,4 +1,4 @@
-import { supabase } from "../lib/supabase";
+import { supabase } from "../../../lib/supabase";
 
 // Standardized rounding functions
 const roundToDollar = (value: number): number => Math.round(value);

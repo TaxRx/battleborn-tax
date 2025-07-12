@@ -8,6 +8,7 @@ import CalculationStep from './steps/CalculationStep';
 import ReportStep from './steps/ReportStep';
 import { toast } from 'react-hot-toast';
 import { RDBusinessService } from '../../services/rdBusinessService';
+import { FilingGuideModal } from '../FilingGuide/FilingGuideModal';
 
 // Helper function to get URL parameters
 const getUrlParams = () => {
@@ -82,6 +83,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [isFilingGuideOpen, setIsFilingGuideOpen] = useState(false);
 
   // Get current user ID on component mount
   useEffect(() => {
@@ -363,14 +365,29 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
                 Step {wizardState.currentStep + 1} of {steps.length}: {steps[wizardState.currentStep].title}
               </p>
             </div>
-            <button
-              onClick={onClose}
-              className="text-white hover:text-blue-200 transition-colors"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-4">
+              {/* Filing Guide Button */}
+              {/* {wizardState.calculations && (
+                <button
+                  onClick={() => setIsFilingGuideOpen(true)}
+                  className="flex items-center gap-2 px-3 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded-lg transition-all duration-200 text-sm font-medium"
+                  title="Generate Filing Guide"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Filing Guide
+                </button>
+              )} */}
+              <button
+                onClick={onClose}
+                className="text-white hover:text-blue-200 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
           
           {/* Progress Bar */}
@@ -449,6 +466,17 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
           </div>
         </div>
       </div>
+
+      {/* Filing Guide Modal */}
+      {isFilingGuideOpen && (
+        <FilingGuideModal
+          isOpen={isFilingGuideOpen}
+          onClose={() => setIsFilingGuideOpen(false)}
+          businessData={wizardState.business}
+          selectedYear={wizardState.selectedYear}
+          calculations={wizardState.calculations}
+        />
+      )}
     </div>
   );
 };

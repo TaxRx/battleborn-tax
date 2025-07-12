@@ -1,0 +1,1083 @@
+/* Filing Guide Modal Styles */
+.filing-guide-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.filing-guide-modal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  width: 90vw;
+  max-width: 1200px;
+  height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.filing-guide-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+}
+
+.filing-guide-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1a202c;
+  margin: 0;
+}
+
+.filing-guide-icon {
+  color: #3182ce;
+}
+
+.filing-guide-close-btn {
+  background: none;
+  border: none;
+  color: #718096;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.filing-guide-close-btn:hover {
+  background-color: #f7fafc;
+  color: #4a5568;
+}
+
+.filing-guide-modal-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+}
+
+.filing-guide-preview {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  min-height: 100%;
+}
+
+.filing-guide-modal-footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+}
+
+.filing-guide-export-controls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.filing-guide-format-select {
+  padding: 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background-color: white;
+  font-size: 0.875rem;
+}
+
+.filing-guide-export-btn,
+.filing-guide-print-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.filing-guide-export-btn {
+  background-color: #3182ce;
+  color: white;
+}
+
+.filing-guide-export-btn:hover:not(:disabled) {
+  background-color: #2c5282;
+}
+
+.filing-guide-export-btn:disabled {
+  background-color: #a0aec0;
+  cursor: not-allowed;
+}
+
+.filing-guide-print-btn {
+  background-color: #38a169;
+  color: white;
+}
+
+.filing-guide-print-btn:hover {
+  background-color: #2f855a;
+}
+
+/* Warning and Debug Styles */
+.warning-box {
+  padding: 1rem;
+  background-color: #fef5e7;
+  border: 1px solid #f6ad55;
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+}
+
+.warning-box h3 {
+  color: #c05621;
+  margin-bottom: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.warning-box p {
+  color: #744210;
+  margin-bottom: 0.5rem;
+}
+
+.debug-info {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background-color: #f7fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.375rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  color: #4a5568;
+}
+
+.debug-info strong {
+  color: #2d3748;
+  font-weight: 600;
+}
+
+.debug-info pre {
+  margin: 0.5rem 0 0 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Document Styles */
+.filing-guide-document {
+  font-family: 'Plus Jakarta Sans', Helvetica, Arial, sans-serif;
+  font-size: 11pt;
+  line-height: 1.4;
+  color: #333;
+  max-width: 8.5in;
+  margin: 0 auto;
+  background: white;
+}
+
+.filing-guide-cover-page {
+  text-align: center;
+  padding: 2in 0.5in;
+  min-height: 11in;
+  position: relative;
+}
+
+.filing-guide-logo {
+  margin-bottom: 1in;
+}
+
+.filing-guide-logo-img {
+  max-width: 4in;
+  height: auto;
+}
+
+.filing-guide-main-title {
+  font-size: 14pt;
+  font-weight: 600;
+  margin-bottom: 0.5in;
+  color: #1a365d;
+}
+
+.filing-guide-subtitle {
+  font-size: 12pt;
+  font-weight: 500;
+  margin-bottom: 1in;
+  color: #4a5568;
+}
+
+.filing-guide-cover-details {
+  text-align: left;
+  margin: 1in 0;
+}
+
+.filing-guide-detail-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.25in;
+  padding: 0.1in 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.filing-guide-detail-label {
+  font-weight: 500;
+  color: #4a5568;
+}
+
+.filing-guide-detail-value {
+  font-weight: 400;
+}
+
+.filing-guide-footer {
+  position: absolute;
+  bottom: 0.5in;
+  left: 0.5in;
+  right: 0.5in;
+  text-align: center;
+  font-size: 10pt;
+  color: #718096;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 0.25in;
+}
+
+.filing-guide-section {
+  margin-bottom: 0.5in;
+  page-break-inside: avoid;
+}
+
+.filing-guide-section-title {
+  font-size: 14pt;
+  font-weight: 600;
+  margin-bottom: 0.25in;
+  color: #1a365d;
+  border-bottom: 2px solid #3182ce;
+  padding-bottom: 0.1in;
+}
+
+.filing-guide-placeholder {
+  padding: 1rem;
+  background-color: #f7fafc;
+  border: 1px dashed #cbd5e0;
+  border-radius: 4px;
+  text-align: center;
+  color: #718096;
+}
+
+/* About Direct Research Section Styles */
+.about-direct-research {
+  margin: 0.5in 0;
+  padding: 0.25in;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.1in;
+}
+
+.about-direct-research-content {
+  max-width: 100%;
+  margin: 0;
+}
+
+.about-direct-research-intro {
+  text-align: left;
+  font-size: 11pt;
+  line-height: 1.6;
+  color: #2d3748;
+  margin-bottom: 0.25in;
+}
+
+.about-direct-research-expertise h3,
+.about-direct-research-process h3,
+.about-direct-research-commitment h3 {
+  font-size: 14pt;
+  font-weight: 600;
+  margin-bottom: 0.25in;
+  color: #1a365d;
+  text-align: left;
+  border-bottom: 2px solid #3182ce;
+  padding-bottom: 0.1in;
+}
+
+.expertise-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(2in, 1fr));
+  gap: 0.25in;
+  margin-bottom: 0.25in;
+}
+
+.expertise-item {
+  background: #f8fafc;
+  padding: 0.25in;
+  border-radius: 0.1in;
+  text-align: center;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s ease;
+}
+
+.expertise-item:hover {
+  background: #f1f5f9;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.expertise-icon {
+  font-size: 24pt;
+  margin-bottom: 0.1in;
+}
+
+.expertise-item h4 {
+  font-size: 11pt;
+  font-weight: 600;
+  margin-bottom: 0.1in;
+  color: #2d3748;
+}
+
+.expertise-item p {
+  font-size: 9pt;
+  line-height: 1.4;
+  color: #4a5568;
+}
+
+.process-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2in;
+}
+
+.process-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.2in;
+  background: #f8fafc;
+  padding: 0.2in;
+  border-radius: 0.1in;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s ease;
+}
+
+.process-step:hover {
+  background: #f1f5f9;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.step-number {
+  background: linear-gradient(135deg, #3182ce, #2c5282);
+  color: white;
+  width: 0.4in;
+  height: 0.4in;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 10pt;
+  flex-shrink: 0;
+}
+
+.step-content h4 {
+  font-size: 11pt;
+  font-weight: 600;
+  margin-bottom: 0.05in;
+  color: #2d3748;
+}
+
+.step-content p {
+  font-size: 9pt;
+  line-height: 1.4;
+  color: #4a5568;
+  margin: 0;
+}
+
+.about-direct-research-commitment {
+  text-align: left;
+  background: #f8fafc;
+  padding: 0.25in;
+  border-radius: 0.1in;
+  border: 1px solid #e2e8f0;
+  margin-top: 0.25in;
+}
+
+.about-direct-research-commitment p {
+  font-size: 11pt;
+  line-height: 1.6;
+  color: #2d3748;
+  margin: 0;
+}
+
+/* Filing Process Overview Enhanced Styles */
+.filing-summary-section {
+  margin-bottom: 0.5in;
+  background: #f8fafc;
+  padding: 0.25in;
+  border-radius: 0.1in;
+  border: 1px solid #e2e8f0;
+}
+
+.filing-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.25in;
+}
+
+.filing-summary-table td {
+  padding: 0.1in;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 10pt;
+}
+
+.filing-summary-table td:first-child {
+  font-weight: 600;
+  color: #4a5568;
+  width: 40%;
+}
+
+.filing-summary-table td:last-child {
+  color: #2d3748;
+}
+
+.calculation-method-explanation {
+  margin-top: 0.5in;
+  background: #f7fafc;
+  padding: 0.25in;
+  border-radius: 0.1in;
+  border-left: 4px solid #3182ce;
+}
+
+.method-details h4 {
+  color: #2d3748;
+  font-size: 12pt;
+  font-weight: 600;
+  margin-bottom: 0.15in;
+}
+
+.method-details p {
+  font-size: 10pt;
+  line-height: 1.5;
+  color: #4a5568;
+  margin-bottom: 0.15in;
+}
+
+.method-details ul {
+  font-size: 10pt;
+  line-height: 1.4;
+  color: #4a5568;
+  padding-left: 0.25in;
+}
+
+.method-details li {
+  margin-bottom: 0.05in;
+}
+
+/* Form 6765 Enhanced Styles */
+.form-6765-method-indicator {
+  margin-top: 0.25in;
+  padding: 0.15in;
+  background: #f0f9ff;
+  border: 1px solid #0ea5e9;
+  border-radius: 0.1in;
+  text-align: center;
+}
+
+.method-highlight {
+  color: #0ea5e9;
+  font-weight: 600;
+}
+
+/* QRE Summary Tables Enhanced Styles */
+.qre-summary-tables {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5in;
+}
+
+.qre-table-section {
+  margin-bottom: 0.5in;
+}
+
+.qre-table-title {
+  font-size: 12pt;
+  font-weight: 600;
+  color: #1a365d;
+  margin-bottom: 0.25in;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.1in;
+}
+
+.qre-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10pt;
+  margin-bottom: 0.25in;
+}
+
+.qre-table th,
+.qre-table td {
+  padding: 0.1in;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.qre-table th {
+  background-color: #f8fafc;
+  font-weight: 600;
+  color: #4a5568;
+}
+
+.qre-table td {
+  color: #2d3748;
+}
+
+.qre-amount {
+  text-align: right;
+  font-family: 'Courier New', monospace;
+  font-weight: 500;
+}
+
+.qre-percentage {
+  text-align: right;
+  font-family: 'Courier New', monospace;
+  font-weight: 500;
+}
+
+.qre-total-row {
+  background-color: #f8fafc;
+  font-weight: 600;
+}
+
+.qre-total-row td {
+  border-top: 2px solid #e2e8f0;
+}
+
+.no-data {
+  text-align: center;
+  color: #718096;
+  font-style: italic;
+  padding: 0.5in;
+}
+
+.qre-chart-section {
+  margin-top: 0.5in;
+}
+
+.qre-chart {
+  display: flex;
+  gap: 0.5in;
+  align-items: center;
+}
+
+.qre-chart-legend {
+  flex: 1;
+}
+
+.chart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.1in;
+  margin-bottom: 0.1in;
+  font-size: 9pt;
+}
+
+.legend-color {
+  width: 0.2in;
+  height: 0.2in;
+  border-radius: 50%;
+}
+
+.wages-color {
+  background-color: #3182ce;
+}
+
+.supplies-color {
+  background-color: #38a169;
+}
+
+.contractors-color {
+  background-color: #e53e3e;
+}
+
+.qre-chart-visual {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.pie-chart {
+  width: 2in;
+  height: 2in;
+  border-radius: 50%;
+  position: relative;
+  background: conic-gradient(
+    #3182ce 0deg 120deg,
+    #38a169 120deg 240deg,
+    #e53e3e 240deg 360deg
+  );
+}
+
+/* Form 6765 Pro Forma Styles - IRS Official Style */
+.form-6765-proforma {
+  margin-bottom: 0.5in;
+  font-family: 'Courier New', monospace;
+  font-size: 10pt;
+  line-height: 1.2;
+}
+
+.form-6765-header {
+  text-align: center;
+  margin-bottom: 0.25in;
+  border-bottom: 2px solid #000;
+  padding-bottom: 0.1in;
+}
+
+.form-6765-header h3 {
+  font-size: 14pt;
+  font-weight: 700;
+  margin-bottom: 0.05in;
+  color: #000;
+  text-transform: uppercase;
+}
+
+.form-6765-subtitle {
+  font-size: 11pt;
+  font-weight: 600;
+  margin-bottom: 0.05in;
+  color: #000;
+}
+
+.form-6765-year {
+  font-size: 10pt;
+  font-weight: 500;
+  color: #333;
+}
+
+.form-6765-section {
+  margin-bottom: 0.25in;
+}
+
+.form-6765-section-title {
+  font-size: 12pt;
+  font-weight: 700;
+  margin-bottom: 0.15in;
+  color: #000;
+  text-transform: uppercase;
+  border-bottom: 1px solid #000;
+  padding-bottom: 0.05in;
+}
+
+.form-6765-form-container {
+  border: 2px solid #000;
+  background: #fff;
+  margin-bottom: 0.25in;
+}
+
+.form-6765-line {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid #ccc;
+  min-height: 0.3in;
+}
+
+.form-6765-line:last-child {
+  border-bottom: none;
+}
+
+.form-6765-line-number {
+  width: 0.4in;
+  height: 0.3in;
+  background: #f0f0f0;
+  border-right: 1px solid #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 10pt;
+  color: #000;
+  flex-shrink: 0;
+}
+
+.form-6765-line-description {
+  flex: 1;
+  padding: 0.05in 0.1in;
+  font-size: 10pt;
+  color: #000;
+  line-height: 1.2;
+}
+
+.form-6765-line-amount {
+  width: 1.5in;
+  height: 0.3in;
+  background: #f9f9f9;
+  border-left: 1px solid #000;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 0.1in;
+  font-weight: 600;
+  font-size: 10pt;
+  color: #000;
+  font-family: 'Courier New', monospace;
+  flex-shrink: 0;
+}
+
+.form-6765-credit-line {
+  background: #e6f3ff;
+}
+
+.form-6765-credit-line .form-6765-line-number {
+  background: #cce7ff;
+  font-weight: 800;
+}
+
+.form-6765-credit-line .form-6765-line-amount {
+  background: #e6f3ff;
+  font-weight: 800;
+}
+
+.form-6765-method-indicator {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  padding: 0.15in;
+  margin-bottom: 0.15in;
+  border-radius: 0.05in;
+}
+
+.form-6765-method-indicator p {
+  margin: 0;
+  font-size: 10pt;
+  color: #333;
+}
+
+.method-highlight {
+  color: #0066cc;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.form-6765-notes {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  padding: 0.15in;
+  margin-top: 0.1in;
+  border-radius: 0.05in;
+}
+
+.form-6765-notes h4 {
+  font-size: 11pt;
+  font-weight: 700;
+  margin-bottom: 0.1in;
+  color: #000;
+  text-transform: uppercase;
+}
+
+.form-6765-notes ul {
+  margin: 0;
+  padding-left: 0.2in;
+  font-size: 9pt;
+  line-height: 1.3;
+  color: #333;
+}
+
+.form-6765-notes li {
+  margin-bottom: 0.05in;
+}
+
+.filing-process-overview {
+  margin-bottom: 0.5in;
+}
+
+.filing-process-steps {
+  margin-bottom: 0.5in;
+}
+
+.filing-process-steps h3 {
+  font-size: 12pt;
+  font-weight: 600;
+  color: #2d3748;
+  margin-bottom: 0.25in;
+}
+
+.filing-process-list {
+  font-size: 10pt;
+  line-height: 1.5;
+  color: #4a5568;
+  padding-left: 0.25in;
+}
+
+.filing-process-list li {
+  margin-bottom: 0.15in;
+}
+
+.filing-process-list ul {
+  margin-top: 0.1in;
+  padding-left: 0.25in;
+}
+
+.filing-process-list ul li {
+  margin-bottom: 0.05in;
+}
+
+.method-highlight {
+  color: #0ea5e9;
+  font-weight: 600;
+}
+
+.filing-process-notes {
+  margin-top: 0.5in;
+}
+
+.filing-process-notes h3 {
+  font-size: 12pt;
+  font-weight: 600;
+  color: #2d3748;
+  margin-bottom: 0.25in;
+}
+
+.filing-note {
+  margin-bottom: 0.25in;
+  padding: 0.15in;
+  background-color: #f8fafc;
+  border-radius: 0.1in;
+  border-left: 4px solid #3182ce;
+  font-size: 9pt;
+  line-height: 1.4;
+  color: #4a5568;
+}
+
+.filing-note strong {
+  color: #2d3748;
+  font-weight: 600;
+}
+
+.filing-note ul {
+  margin-top: 0.1in;
+  padding-left: 0.25in;
+}
+
+.filing-note li {
+  margin-bottom: 0.05in;
+}
+
+/* Comprehensive Data Summary Styles */
+.comprehensive-data-summary {
+  margin-bottom: 0.5in;
+}
+
+.data-summary-section {
+  margin-bottom: 0.4in;
+}
+
+.data-summary-section h3 {
+  font-size: 12pt;
+  font-weight: 600;
+  margin-bottom: 0.15in;
+  color: #1a365d;
+  border-bottom: 1px solid #3182ce;
+  padding-bottom: 0.05in;
+}
+
+.data-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 0.2in;
+  font-size: 9pt;
+  line-height: 1.3;
+}
+
+.data-summary-table th {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 0.08in;
+  text-align: left;
+  font-weight: 600;
+  color: #2d3748;
+  font-size: 9pt;
+}
+
+.data-summary-table td {
+  border: 1px solid #e2e8f0;
+  padding: 0.08in;
+  color: #4a5568;
+  font-size: 9pt;
+}
+
+.data-summary-table .amount-cell {
+  text-align: right;
+  font-family: 'Courier New', monospace;
+  font-weight: 500;
+  color: #2d3748;
+}
+
+.data-summary-table .percentage-cell {
+  text-align: right;
+  font-family: 'Courier New', monospace;
+  font-weight: 500;
+  color: #2d3748;
+}
+
+.data-summary-table .total-row {
+  background-color: #f0f9ff;
+  font-weight: 600;
+}
+
+.data-summary-table .total-row td {
+  color: #1a365d;
+  font-weight: 600;
+}
+
+.data-summary-totals {
+  margin-top: 0.3in;
+  padding: 0.2in;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.1in;
+}
+
+.data-summary-totals h3 {
+  margin-bottom: 0.15in;
+  color: #1a365d;
+  font-size: 11pt;
+  font-weight: 600;
+}
+
+.data-summary-totals .data-summary-table {
+  margin-bottom: 0;
+}
+
+.data-summary-totals .data-summary-table th {
+  background-color: #e6f3ff;
+  color: #1a365d;
+}
+
+.data-summary-totals .data-summary-table td {
+  background-color: #ffffff;
+}
+
+/* Print styles for data summary */
+@media print {
+  .data-summary-table {
+    font-size: 8pt;
+  }
+  
+  .data-summary-table th {
+    background-color: #f8fafc !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  .data-summary-table .total-row {
+    background-color: #f0f9ff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  .data-summary-totals {
+    background-color: #f8fafc !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* Print styles for About section */
+@media (max-width: 600px) {
+  .about-direct-research {
+    margin: 1rem 0.5rem;
+    border-radius: 1rem;
+    max-width: 100%;
+  }
+  .about-direct-research-content {
+    padding: 1.25rem 0.75rem;
+    border-radius: 1rem;
+  }
+}
+
+@media print {
+  .filing-guide-modal-overlay {
+    position: static;
+    background: none;
+  }
+  
+  .filing-guide-modal {
+    width: 100%;
+    height: auto;
+    box-shadow: none;
+    border-radius: 0;
+  }
+  
+  .filing-guide-modal-header,
+  .filing-guide-modal-footer {
+    display: none;
+  }
+  
+  .filing-guide-modal-content {
+    padding: 0;
+  }
+  
+  .filing-guide-preview {
+    border: none;
+  }
+  
+  .page-break {
+    page-break-before: always;
+  }
+
+  /* Print styles for About section */
+  .about-direct-research {
+    max-width: 7.5in;
+    margin: 0.5in auto;
+    border-radius: 0.5in;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  .expertise-item,
+  .process-step,
+  .about-direct-research-commitment {
+    background: rgba(255, 255, 255, 0.1) !important;
+    -webkit-print-color-adjust: exact;
+    color-adjust: exact;
+  }
+
+  /* Print styles for Form 6765 */
+  .form-6765-proforma {
+    font-size: 9pt;
+  }
+  
+  .form-6765-line-number {
+    background: #f0f0f0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  .form-6765-line-amount {
+    background: #f9f9f9 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  .form-6765-credit-line {
+    background: #e6f3ff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  .form-6765-credit-line .form-6765-line-number {
+    background: #cce7ff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  .form-6765-credit-line .form-6765-line-amount {
+    background: #e6f3ff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+} 
