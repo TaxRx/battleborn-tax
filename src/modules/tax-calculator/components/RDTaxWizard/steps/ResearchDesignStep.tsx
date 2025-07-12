@@ -1659,7 +1659,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
         return;
       }
 
-      console.log('Successfully updated roles for subcomponent:', subcomponentId, 'New roles:', newRoles);
+            console.log('Successfully updated roles for subcomponent:', subcomponentId, 'New roles:', newRoles);
 
       // Update local state
       setSubcomponentStates(prev => ({
@@ -1952,7 +1952,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     setAvailableActivityYears(filteredYears);
     
     // Set the initial selected year to the current year if it exists in the filtered years
-    if (filteredYears.length > 0) {
+      if (filteredYears.length > 0) {
       const currentYear = new Date().getFullYear();
       // First try to find the current year, then fall back to the first available year
       const initialYear = filteredYears.find(y => y.year === currentYear) || 
@@ -2168,7 +2168,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
                   ][idx % 8];
                   return (
                     <div
-                      key={activity.id}
+              key={activity.id}
                       className={`${color} h-full flex items-center justify-center transition-all duration-300`}
                       style={{ width: `${width}%` }}
                     >
@@ -2177,7 +2177,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
                           {getActivityName(activity)} ({applied.toFixed(2)}%)
                         </span>
                       )}
-                    </div>
+        </div>
                   );
                 })}
                 {/* Fill unused portion if total < 100% */}
@@ -2243,40 +2243,40 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
             {/* Activity Cards - 2/3 width */}
             <div className="w-2/3">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {selectedActivities.map((activity, index) => {
-                  const isActive = activeActivityIndex === index;
-                  const appliedPercentage = loading ? 0 : calculateActivityAppliedPercentage(activity);
-                  const practicePercentage = getActivityPercentage(activity);
-                  const colorGradient = ACTIVITY_COLORS[index % ACTIVITY_COLORS.length];
-                  
-                  return (
-                    <div
-                      key={activity.id}
-                      onClick={() => setActiveActivityIndex(index)}
-                      className={`relative group cursor-pointer transition-all duration-300 transform hover:scale-105 ${
-                        isActive ? 'ring-2 ring-blue-500 ring-offset-2' : ''
-                      }`}
-                    >
+            {selectedActivities.map((activity, index) => {
+              const isActive = activeActivityIndex === index;
+              const appliedPercentage = loading ? 0 : calculateActivityAppliedPercentage(activity);
+              const practicePercentage = getActivityPercentage(activity);
+              const colorGradient = ACTIVITY_COLORS[index % ACTIVITY_COLORS.length];
+              
+              return (
+                <div
+                  key={activity.id}
+                  onClick={() => setActiveActivityIndex(index)}
+                  className={`relative group cursor-pointer transition-all duration-300 transform hover:scale-105 ${
+                    isActive ? 'ring-2 ring-blue-500 ring-offset-2' : ''
+                  }`}
+                >
                       <div className={`bg-gradient-to-br rounded-lg p-4 shadow-lg border-2 transition-all duration-300 ${
-                        isActive 
-                          ? `from-blue-500 to-blue-600 border-blue-400 text-white` 
-                          : `${colorGradient} border-gray-200 hover:shadow-xl text-white`
-                      }`}>
-                        {/* Activity Name */}
+                    isActive 
+                      ? `from-blue-500 to-blue-600 border-blue-400 text-white` 
+                      : `${colorGradient} border-gray-200 hover:shadow-xl text-white`
+                  }`}>
+                    {/* Activity Name */}
                         <h4 className={`font-bold text-lg mb-2 ${isActive ? 'text-white' : 'text-white'}`}>
-                          {getActivityName(activity)}
-                        </h4>
-                        {/* Practice/Applied Percentages Combined */}
+                      {getActivityName(activity)}
+                    </h4>
+                    {/* Practice/Applied Percentages Combined */}
                         <div className="mb-3">
                           <div className="text-xs opacity-90 mb-1">Practice/Applied</div>
                           <div className="text-lg font-bold">
-                            {practicePercentage}% / {loading ? '...' : `${appliedPercentage.toFixed(2)}%`}
-                          </div>
-                        </div>
+                        {practicePercentage}% / {loading ? '...' : `${appliedPercentage.toFixed(2)}%`}
                       </div>
                     </div>
-                  );
-                })}
+                  </div>
+                </div>
+              );
+            })}
               </div>
             </div>
 
@@ -2329,8 +2329,8 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
               </div>
             </div>
           </div>
+          </div>
         </div>
-      </div>
 
       {/* Subcomponent Applied Percentage Bar Chart (moved above step allocation) */}
       <div className="bg-gradient-to-r from-orange-50 to-red-50 rounded-xl p-6 border border-orange-200 mb-6">

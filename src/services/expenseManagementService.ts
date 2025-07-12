@@ -62,7 +62,7 @@ export class ExpenseManagementService {
         const employeeTimePercent = employeeTimePercentages[subcomponent.subcomponent_id] || 0;
         
         // Calculate applied percentage
-        const practicePercent = subcomponent.research_activity?.name ? employeePracticePercent : 0;
+        const practicePercent = subcomponent.research_activity?.title ? employeePracticePercent : 0;
         const stepPercent = subcomponent.step?.time_percentage || 0;
         const freqPercent = subcomponent.frequency_percentage || 0;
         const yearPercent = subcomponent.year_percentage || 0;
@@ -80,7 +80,7 @@ export class ExpenseManagementService {
           first_name: employee.name?.split(' ')[0] || '',
           last_name: employee.name?.split(' ').slice(1).join(' ') || '',
           role_name: employee.role?.name || '',
-          research_activity_title: subcomponent.research_activity?.name || '',
+          research_activity_title: subcomponent.research_activity?.title || '',
           research_activity_practice_percent: practicePercent,
           step_name: subcomponent.step?.name || '',
           subcomponent_title: subcomponent.subcomponent?.name || '',
@@ -134,7 +134,7 @@ export class ExpenseManagementService {
           *,
           research_activity:rd_research_activities (
             id,
-            name
+            title
           ),
           step:rd_research_steps (
             id,
@@ -176,7 +176,7 @@ export class ExpenseManagementService {
             subcomponent_id: subcomponent.subcomponent_id,
             contractor_id: contractorId,
             category: 'Contractor',
-            research_activity_title: subcomponent.research_activity?.name || '',
+            research_activity_title: subcomponent.research_activity?.title || '',
             research_activity_practice_percent: 100, // Contractors typically get full practice percentage
             step_name: subcomponent.step?.name || '',
             subcomponent_title: subcomponent.subcomponent?.name || '',
@@ -229,7 +229,7 @@ export class ExpenseManagementService {
           *,
           research_activity:rd_research_activities (
             id,
-            name
+            title
           ),
           step:rd_research_steps (
             id,
@@ -272,7 +272,7 @@ export class ExpenseManagementService {
             supply_id: supplyId,
             category: 'Supply',
             supply_name: supply.name,
-            research_activity_title: subcomponent.research_activity?.name || '',
+            research_activity_title: subcomponent.research_activity?.title || '',
             research_activity_practice_percent: 100, // Supplies typically get full practice percentage
             step_name: subcomponent.step?.name || '',
             subcomponent_title: subcomponent.subcomponent?.name || '',
@@ -379,53 +379,313 @@ export class ExpenseManagementService {
   // Export expenses to CSV format
   static async exportExpensesToCSV(businessYearId: string): Promise<string> {
     try {
-      const expenses = await this.getExpenses(businessYearId);
+      console.log('📊 ExpenseManagementService - Starting CSV export for business year:', businessYearId);
       
+      // First, get the business_id from the business_year_id
+      const { data: businessYear, error: businessYearError } = await supabase
+        .from('rd_business_years')
+        .select('business_id, year')
+        .eq('id', businessYearId)
+        .single();
+
+      if (businessYearError) {
+        console.error('❌ Error fetching business year:', businessYearError);
+        throw businessYearError;
+      }
+
+      const businessId = businessYear.business_id;
+      const selectedYear = businessYear.year;
+      console.log('📊 Using business_id:', businessId, 'selected year:', selectedYear);
+      
+      // Get all business years for this business
+      const { data: allBusinessYears, error: yearsError } = await supabase
+        .from('rd_business_years')
+        .select('id, year')
+        .eq('business_id', businessId)
+        .order('year');
+
+      if (yearsError) {
+        console.error('❌ Error fetching business years:', yearsError);
+        throw yearsError;
+      }
+
+      // Get all selected subcomponents for all years
+      const { data: allSubcomponents, error: subError } = await supabase
+        .from('rd_selected_subcomponents')
+        .select(`
+          *,
+          research_activity:rd_research_activities (
+            id,
+            title
+          ),
+          step:rd_research_steps (
+            id,
+            name
+          ),
+          subcomponent:rd_research_subcomponents (
+            id,
+            name
+          ),
+          business_year:rd_business_years (
+            id,
+            year
+          )
+        `)
+        .in('business_year_id', allBusinessYears?.map(by => by.id) || []);
+
+      if (subError) {
+        console.error('❌ Error fetching subcomponents:', subError);
+        throw subError;
+      }
+
+      // Get all employees for this business
+      const { data: allEmployees, error: employeesError } = await supabase
+        .from('rd_employees')
+        .select(`
+          *,
+          role:rd_roles (
+            id,
+            name
+          ),
+          subcomponents:rd_employee_subcomponents (
+            subcomponent_id,
+            business_year_id,
+            applied_percentage,
+            time_percentage,
+            practice_percentage,
+            baseline_applied_percent,
+            baseline_practice_percentage,
+            baseline_time_percentage
+          )
+        `)
+        .eq('business_id', businessId);
+
+      if (employeesError) {
+        console.error('❌ Error fetching employees:', employeesError);
+        throw employeesError;
+      }
+
+      // Get all contractors for this business
+      const { data: allContractors, error: contractorsError } = await supabase
+        .from('rd_contractors')
+        .select(`
+          *,
+          role:rd_roles (
+            id,
+            name
+          ),
+          subcomponents:rd_contractor_subcomponents (
+            subcomponent_id,
+            business_year_id,
+            applied_percentage,
+            time_percentage,
+            practice_percentage,
+            baseline_applied_percent,
+            baseline_practice_percentage,
+            baseline_time_percentage
+          )
+        `)
+        .eq('business_id', businessId);
+
+      if (contractorsError) {
+        console.error('❌ Error fetching contractors:', contractorsError);
+        throw contractorsError;
+      }
+
+      // Get all supplies for this business
+      const { data: allSupplies, error: suppliesError } = await supabase
+        .from('rd_supplies')
+        .select(`
+          *,
+          subcomponents:rd_supply_subcomponents (
+            subcomponent_id,
+            business_year_id,
+            applied_percentage,
+            amount_applied,
+            is_included
+          )
+        `)
+        .eq('business_id', businessId);
+
+      if (suppliesError) {
+        console.error('❌ Error fetching supplies:', suppliesError);
+        throw suppliesError;
+      }
+
+      console.log('📊 CSV Export Data:', {
+        subcomponents: allSubcomponents?.length || 0,
+        employees: allEmployees?.length || 0,
+        contractors: allContractors?.length || 0,
+        supplies: allSupplies?.length || 0,
+        years: allBusinessYears?.length || 0
+      });
+
+      // Define CSV headers based on the original structure
       const headers = [
-        'Year',
-        'Research Activity Title',
-        'Research Activity Practice Percent',
+        'Subcomponent',
+        'Research Activity',
         'Step',
-        'Subcomponent Title',
-        'Subcomponent Year %',
-        'Subcomponent Frequency %',
-        'Subcomponent Time %',
+        'Year',
+        'Category',
+        'Name',
         'First Name',
         'Last Name',
         'Role',
-        'Supply Name',
-        'Total Cost',
-        'Applied Percent',
-        'Category'
+        'Annual Wage/Cost',
+        'Subcomponent Year %',
+        'Subcomponent Frequency %',
+        'Subcomponent Time %',
+        'Practice %',
+        'Time %',
+        'Applied %',
+        'Applied Dollar Amount',
+        'Baseline Applied %',
+        'Baseline Practice %',
+        'Baseline Time %',
+        'Calculated QRE',
+        'Is Owner'
       ];
 
       const csvRows = [headers.join(',')];
 
-      for (const expense of expenses) {
-        const row = [
-          new Date().getFullYear(), // Year
-          expense.research_activity_title,
-          expense.research_activity_practice_percent,
-          expense.step_name,
-          expense.subcomponent_title,
-          expense.subcomponent_year_percent,
-          expense.subcomponent_frequency_percent,
-          expense.subcomponent_time_percent,
-          expense.first_name || '',
-          expense.last_name || '',
-          expense.role_name || '',
-          expense.supply_name || '',
-          expense.total_cost,
-          expense.applied_percent,
-          expense.category
-        ];
+      // Create rows for each subcomponent-expense combination
+      for (const subcomponent of allSubcomponents || []) {
+        const subcomponentName = subcomponent.subcomponent?.name || '';
+        const researchActivityName = subcomponent.research_activity?.title || '';
+        const stepName = subcomponent.step?.name || '';
+        const year = subcomponent.business_year?.year || '';
+        const businessYearId = subcomponent.business_year_id;
 
-        csvRows.push(row.join(','));
+        // Add employee rows for this subcomponent
+        for (const employee of allEmployees || []) {
+          const employeeSubcomponent = employee.subcomponents?.find(
+            sub => sub.subcomponent_id === subcomponent.subcomponent_id && 
+                   sub.business_year_id === businessYearId
+          );
+
+          if (employeeSubcomponent) {
+            const annualWage = employee.annual_wage || 0;
+            const appliedDollarAmount = Math.round((annualWage * (employeeSubcomponent.applied_percentage || 0)) / 100);
+            const calculatedQRE = appliedDollarAmount;
+
+            const row = [
+              subcomponentName,
+              researchActivityName,
+              stepName,
+              year,
+              'Employee',
+              `${employee.first_name} ${employee.last_name}`.trim(),
+              employee.first_name || '',
+              employee.last_name || '',
+              employee.role?.name || '',
+              annualWage,
+              subcomponent.year_percentage || 0,
+              subcomponent.frequency_percentage || 0,
+              subcomponent.time_percentage || 0,
+              employeeSubcomponent.practice_percentage || 0,
+              employeeSubcomponent.time_percentage || 0,
+              employeeSubcomponent.applied_percentage || 0,
+              appliedDollarAmount,
+              employeeSubcomponent.baseline_applied_percent || 0,
+              employeeSubcomponent.baseline_practice_percentage || 0,
+              employeeSubcomponent.baseline_time_percentage || 0,
+              calculatedQRE,
+              employee.is_owner ? 'Yes' : 'No'
+            ];
+
+            csvRows.push(row.join(','));
+          }
+        }
+
+        // Add contractor rows for this subcomponent
+        for (const contractor of allContractors || []) {
+          const contractorSubcomponent = contractor.subcomponents?.find(
+            sub => sub.subcomponent_id === subcomponent.subcomponent_id && 
+                   sub.business_year_id === businessYearId
+          );
+
+          if (contractorSubcomponent) {
+            const annualCost = contractor.amount || 0;
+            const appliedDollarAmount = Math.round((annualCost * (contractorSubcomponent.applied_percentage || 0)) / 100);
+            // Calculate QRE (65% reduction for contractors)
+            const calculatedQRE = Math.round(appliedDollarAmount * 0.65);
+
+            const row = [
+              subcomponentName,
+              researchActivityName,
+              stepName,
+              year,
+              'Contractor',
+              `${contractor.first_name} ${contractor.last_name}`.trim(),
+              contractor.first_name || '',
+              contractor.last_name || '',
+              contractor.role?.name || '',
+              annualCost,
+              subcomponent.year_percentage || 0,
+              subcomponent.frequency_percentage || 0,
+              subcomponent.time_percentage || 0,
+              contractorSubcomponent.practice_percentage || 0,
+              contractorSubcomponent.time_percentage || 0,
+              contractorSubcomponent.applied_percentage || 0,
+              appliedDollarAmount,
+              contractorSubcomponent.baseline_applied_percent || 0,
+              contractorSubcomponent.baseline_practice_percentage || 0,
+              contractorSubcomponent.baseline_time_percentage || 0,
+              calculatedQRE,
+              contractor.is_owner ? 'Yes' : 'No'
+            ];
+
+            csvRows.push(row.join(','));
+          }
+        }
+
+        // Add supply rows for this subcomponent
+        for (const supply of allSupplies || []) {
+          const supplySubcomponent = supply.subcomponents?.find(
+            sub => sub.subcomponent_id === subcomponent.subcomponent_id && 
+                   sub.business_year_id === businessYearId
+          );
+
+          if (supplySubcomponent) {
+            const annualCost = supply.annual_cost || 0;
+            const appliedDollarAmount = Math.round(supplySubcomponent.amount_applied || 0);
+            const calculatedQRE = appliedDollarAmount;
+
+            const row = [
+              subcomponentName,
+              researchActivityName,
+              stepName,
+              year,
+              'Supply',
+              supply.name || '',
+              '', // No first name for supplies
+              '', // No last name for supplies
+              '', // No role for supplies
+              annualCost,
+              subcomponent.year_percentage || 0,
+              subcomponent.frequency_percentage || 0,
+              subcomponent.time_percentage || 0,
+              0, // Supplies don't have practice_percentage
+              0, // Supplies don't have time_percentage
+              supplySubcomponent.applied_percentage || 0,
+              appliedDollarAmount,
+              0, // Supplies don't have baseline_applied_percent
+              0, // Supplies don't have baseline_practice_percentage
+              0, // Supplies don't have baseline_time_percentage
+              calculatedQRE,
+              'No' // Supplies are never owners
+            ];
+
+            csvRows.push(row.join(','));
+          }
+        }
       }
 
-      return csvRows.join('\n');
+      const csvContent = csvRows.join('\n');
+      console.log('✅ CSV Export completed successfully');
+      return csvContent;
     } catch (error) {
-      console.error('Error exporting expenses to CSV:', error);
+      console.error('❌ Error exporting expenses to CSV:', error);
       throw error;
     }
   }

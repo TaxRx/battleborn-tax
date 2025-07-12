@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Settings } from 'lucide-react';
+import { Plus, Edit, Trash2, Settings, Package } from 'lucide-react';
 import { SupplyManagementService, SupplyWithExpenses, QuickSupplyEntry } from '../../../services/supplyManagementService';
-import { SupplyAllocationsModal } from './SupplyAllocationsModal';
+import SupplyAllocationsModal from './SupplyAllocationsModal';
 
 const formatCurrency = (value: number | undefined): string => {
   if (value === undefined || value === null) return '$0.00';
@@ -74,66 +74,64 @@ const QuickSupplyEntryForm: React.FC<QuickSupplyEntryFormProps> = ({ onAdd }) =>
   };
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Add Supply</h3>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-              Name *
-            </label>
-            <input
-              type="text"
-              id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              placeholder="e.g., Lab Equipment"
-              required
-            />
-          </div>
-          
-          <div>
-            <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
-              Description
-            </label>
-            <input
-              type="text"
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              placeholder="Brief description"
-            />
-          </div>
-          
-          <div>
-            <label htmlFor="amount" className="block text-sm font-medium text-gray-700 mb-1">
-              Total Amount *
-            </label>
-            <input
-              type="text"
-              id="amount"
-              value={amount}
-              onChange={handleAmountChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              placeholder="0.00"
-              required
-            />
-          </div>
+    <form onSubmit={handleSubmit} className="bg-gradient-to-r from-green-50 to-emerald-50 p-6 rounded-xl border border-green-200">
+      <div className="flex items-center mb-4">
+        <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-emerald-600 rounded-full flex items-center justify-center mr-3">
+          <Package className="w-4 h-4 text-white" />
+        </div>
+        <h3 className="text-xl font-semibold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">Quick Add Supply</h3>
+      </div>
+      
+      <div className="grid grid-cols-6 gap-4 items-end">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors"
+            placeholder="Lab Equipment"
+            required
+          />
         </div>
         
-        <div className="flex justify-end">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+          <input
+            type="text"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors"
+            placeholder="Brief description"
+          />
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Total Amount</label>
+          <input
+            type="text"
+            value={amount}
+            onChange={handleAmountChange}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors"
+            placeholder="0.00"
+            required
+          />
+        </div>
+        
+        <div></div>
+        <div></div>
+        
+        <div>
           <button
             type="submit"
-            className="inline-flex items-center px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-md hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2"
+            className="w-full px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:from-green-600 hover:to-emerald-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-all duration-200 shadow-md font-medium"
           >
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="w-4 h-4 mr-2 inline" />
             Add Supply
           </button>
         </div>
-      </form>
-    </div>
+      </div>
+    </form>
   );
 };
 
@@ -232,26 +230,12 @@ const SupplySetupStep: React.FC<SupplySetupStepProps> = ({
           </div>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-gray-50 rounded-lg p-4">
-            <div className="text-sm font-medium text-gray-500">Total Supplies</div>
-            <div className="text-2xl font-bold text-gray-900">{supplies.length}</div>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-4">
-            <div className="text-sm font-medium text-gray-500">Total Applied %</div>
-            <div className="text-2xl font-bold text-gray-900">{formatPercentage(totalAppliedPercentage)}</div>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-4">
-            <div className="text-sm font-medium text-gray-500">Average Applied %</div>
-            <div className="text-2xl font-bold text-gray-900">
-              {supplies.length > 0 ? formatPercentage(totalAppliedPercentage / supplies.length) : '0%'}
-            </div>
-          </div>
-        </div>
+        {/* Remove the Supply Management summary card/section */}
+
       </div>
 
       {/* Quick Add Form */}
-      <QuickSupplyEntryForm onAdd={handleQuickAddSupply} />
+      {/* QuickSupplyEntryForm moved to Quick Actions card in EmployeeSetupStep */}
 
       {/* Supplies Table */}
       <div className="bg-white rounded-lg border border-gray-200">
@@ -267,72 +251,56 @@ const SupplySetupStep: React.FC<SupplySetupStepProps> = ({
         ) : supplies.length === 0 ? (
           <div className="px-6 py-8 text-center">
             <div className="text-gray-500 mb-2">No supplies added yet</div>
-            <div className="text-sm text-gray-400">Use the Quick Add form above to add your first supply</div>
+            <div className="text-sm text-gray-400">Use the Quick Add form in Quick Actions to add your first supply</div>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Total Amount
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    QRE
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Applied %
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {supplies.map((supply) => (
-                  <tr key={supply.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">{supply.name}</div>
-                        {supply.description && (
-                          <div className="text-sm text-gray-500">{supply.description}</div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatCurrency(supply.cost_amount)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatCurrency(supply.calculated_qre)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatPercentage(supply.applied_percentage)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex items-center justify-end space-x-2">
-                        <button
-                          onClick={() => handleEditSupply(supply)}
-                          className="text-orange-600 hover:text-orange-900 p-1"
-                          title="Manage Allocations"
-                        >
-                          <Settings className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteSupply(supply.id)}
-                          className="text-red-600 hover:text-red-900 p-1"
-                          title="Delete Supply"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-4">
+            {/* Supplies Table Header */}
+            <div className="grid grid-cols-5 gap-2 px-6 py-2 bg-purple-50 border-b border-purple-200 font-semibold text-purple-700 text-base items-center">
+              <div className="text-left">Name</div>
+              <div className="text-left">Total Amount</div>
+              <div className="text-center">QRE</div>
+              <div className="text-center">Applied %</div>
+              <div className="text-right">Actions</div>
+            </div>
+            {/* Supplies Table Rows */}
+            {supplies.map((supply) => (
+              <div
+                key={supply.id}
+                className="grid grid-cols-5 gap-2 px-6 py-3 border-b border-purple-100 items-center hover:bg-purple-50 transition-all duration-150"
+                style={{ minHeight: '56px' }}
+              >
+                {/* Name */}
+                <div className="font-bold text-lg text-gray-900">{supply.name}
+                  {supply.description && (
+                    <div className="text-sm text-gray-500 font-normal">{supply.description}</div>
+                  )}
+                </div>
+                {/* Total Amount */}
+                <div className="text-lg text-gray-900">{formatCurrency(supply.cost_amount)}</div>
+                {/* QRE */}
+                <div className="text-lg text-gray-900 text-center">{formatCurrency(supply.calculated_qre)}</div>
+                {/* Applied % */}
+                <div className="text-lg text-gray-900 text-center">{formatPercentage(supply.applied_percentage)}</div>
+                {/* Actions */}
+                <div className="flex justify-end items-center space-x-2">
+                  <button
+                    onClick={() => handleEditSupply(supply)}
+                    className="p-2 rounded-full hover:bg-purple-100 transition"
+                    title="Manage Allocations"
+                  >
+                    <Settings className="w-5 h-5 text-purple-600" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteSupply(supply.id)}
+                    className="p-2 rounded-full hover:bg-red-100 transition"
+                    title="Delete Supply"
+                  >
+                    <Trash2 className="w-5 h-5 text-red-600" />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -359,13 +327,15 @@ const SupplySetupStep: React.FC<SupplySetupStepProps> = ({
         <SupplyAllocationsModal
           isOpen={isAllocationsModalOpen}
           onClose={handleAllocationsModalClose}
-          supply={selectedSupply}
+          supplyId={selectedSupply.id}
           businessYearId={businessYearId}
-          onUpdate={loadData}
+          supplyName={selectedSupply.name}
+          annualCost={selectedSupply.cost_amount || 0}
         />
       )}
     </div>
   );
 };
 
+export { QuickSupplyEntryForm };
 export default SupplySetupStep; 

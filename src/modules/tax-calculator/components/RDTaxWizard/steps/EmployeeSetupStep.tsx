@@ -4,11 +4,17 @@ import { supabase } from '../../../../../lib/supabase';
 import { EmployeeManagementService } from '../../../../../services/employeeManagementService';
 import { ExpenseManagementService } from '../../../../../services/expenseManagementService';
 import { ContractorManagementService, ContractorWithExpenses, QuickContractorEntry } from '../../../../../services/contractorManagementService';
-import { RDExpense, RDContractor, RDSupply } from '../../../../../types/researchDesign';
-// import ContractorAllocationsModal from './ContractorAllocationsModal';
-import SupplySetupStep from './SupplySetupStep';
+import { RDExpense, RDContractor, RDSupply as RDSupplyBase } from '../../../../../types/researchDesign';
+import SupplySetupStep, { QuickSupplyEntryForm } from './SupplySetupStep';
 import Papa from 'papaparse';
 import { toast } from 'react-toastify';
+import { SupplyManagementService, QuickSupplyEntry } from '../../../services/supplyManagementService';
+import ContractorAllocationsModal from './ContractorAllocationsModal';
+
+// Extend RDSupply to include calculated_qre for local use
+interface RDSupply extends RDSupplyBase {
+  calculated_qre?: number;
+}
 
 // Helper functions for formatting
 const formatPercentage = (value: number | undefined): string => {
@@ -474,7 +480,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
         } else {
           // First try with role filter using proper JSON syntax
           console.log('🔍 Trying role filter with role ID:', employee.role?.id);
-          console.log('🔍 JSON query:', JSON.stringify([employee.role?.id]));
+          console.log('🔍 JSON query:', JSON.stringify([employee.role?.id ?? '']));
           
           const { data, error } = await supabase
             .from('rd_selected_activities')
@@ -486,7 +492,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
               )
             `)
             .eq('business_year_id', businessYearId)
-            .contains('selected_roles', JSON.stringify([employee.role?.id]));
+            .contains('selected_roles', JSON.stringify([employee.role?.id ?? '']));
           
           selectedActivities = data;
           activitiesError = error;
@@ -503,23 +509,23 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
         let fallbackAttempts = [
           () => {
             console.log('🔄 Fallback 1: JSON.stringify([roleId])');
-            return supabase.from('rd_selected_activities').select('*').eq('business_year_id', businessYearId).contains('selected_roles', JSON.stringify([employee.role?.id]));
+            return supabase.from('rd_selected_activities').select('*').eq('business_year_id', businessYearId).contains('selected_roles', JSON.stringify([employee.role?.id ?? '']));
           },
           () => {
             console.log('🔄 Fallback 2: JSON.stringify(roleId)');
-            return supabase.from('rd_selected_activities').select('*').eq('business_year_id', businessYearId).contains('selected_roles', JSON.stringify(employee.role?.id));
+            return supabase.from('rd_selected_activities').select('*').eq('business_year_id', businessYearId).contains('selected_roles', JSON.stringify(employee.role?.id ?? ''));
           },
           () => {
             console.log('🔄 Fallback 3: roleId directly');
-            return supabase.from('rd_selected_activities').select('*').eq('business_year_id', businessYearId).contains('selected_roles', employee.role?.id);
+            return supabase.from('rd_selected_activities').select('*').eq('business_year_id', businessYearId).contains('selected_roles', employee.role?.id ?? '');
           },
           () => {
             console.log('🔄 Fallback 4: ["roleId"] string');
-            return supabase.from('rd_selected_activities').select('*').eq('business_year_id', businessYearId).contains('selected_roles', `["${employee.role?.id}"]`);
+            return supabase.from('rd_selected_activities').select('*').eq('business_year_id', businessYearId).contains('selected_roles', `["${employee.role?.id ?? ''}"]`);
           },
           () => {
             console.log('🔄 Fallback 5: "roleId" string');
-            return supabase.from('rd_selected_activities').select('*').eq('business_year_id', businessYearId).contains('selected_roles', `"${employee.role?.id}"`);
+            return supabase.from('rd_selected_activities').select('*').eq('business_year_id', businessYearId).contains('selected_roles', `"${employee.role?.id ?? ''}"`);
           }
         ];
         
@@ -708,7 +714,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
   // Calculate practice percentage segments for visualization (including non-R&D)
   const getPracticePercentageSegments = () => {
     const enabledActivities = activities.filter(a => a.isEnabled);
-    const segments = [];
+    const segments: any[] = [];
     let currentPosition = 0;
     
     // Calculate total research time (excluding non-R&D)
@@ -748,7 +754,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
 
   // Calculate applied percentage segments for visualization (based on custom allocations or baseline)
   const getAppliedPercentageSegments = () => {
-    const segments = [];
+    const segments: any[] = [];
     let currentPosition = 0;
     
     // Get the employee's role baseline applied percentage
@@ -793,7 +799,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
       }
       
       // Group by activity for visualization
-      const activityGroups = {};
+      const activityGroups: { [key: string]: any } = {};
       subcomponentSegments.forEach(segment => {
         if (!activityGroups[segment.activityId]) {
           activityGroups[segment.activityId] = {
@@ -1352,7 +1358,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeWithExpenses | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [activeTab, setActiveTab] = useState<'employees' | 'contractors' | 'supplies'>('employees');
-  const [sortBy, setSortBy] = useState<'first_name' | 'last_name' | 'annual_wage' | 'calculated_qre' | 'applied_percentage'>('last_name');
+  const [sortBy, setSortBy] = useState<'first_name' | 'last_name' | 'calculated_qre' | 'applied_percentage'>('last_name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [showContractorDetailModal, setShowContractorDetailModal] = useState(false);
   const [selectedContractor, setSelectedContractor] = useState<any | null>(null);
@@ -1488,6 +1494,61 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         console.error('❌ EmployeeSetupStep - Error loading expenses:', expensesError);
       } else {
         setExpenses(expensesData || []);
+      }
+
+      // Load supplies with subcomponents for the selected year
+      try {
+        const { data: supplySubcomponents, error: supplyError } = await supabase
+          .from('rd_supply_subcomponents')
+          .select(`
+            *,
+            supply:rd_supplies (
+              id,
+              name,
+              annual_cost,
+              business_id
+            )
+          `)
+          .eq('business_year_id', selectedYear || businessYearId);
+
+        if (supplyError) {
+          console.error('❌ EmployeeSetupStep - Error loading supply subcomponents:', supplyError);
+        } else {
+          // Group supplies by supply_id and calculate QRE
+          const suppliesMap = new Map();
+          (supplySubcomponents || []).forEach(ssc => {
+            const supply = ssc.supply;
+            if (!supply) return;
+            
+            if (!suppliesMap.has(supply.id)) {
+              suppliesMap.set(supply.id, {
+                ...supply,
+                subcomponents: [],
+                total_qre: 0
+              });
+            }
+            
+            const supplyEntry = suppliesMap.get(supply.id);
+            supplyEntry.subcomponents.push(ssc);
+            
+            // Calculate QRE for this subcomponent
+            const amountApplied = ssc.amount_applied || 0;
+            const appliedPercentage = ssc.applied_percentage || 0;
+            const supplyCost = supply.annual_cost || 0;
+            const supplyQRE = amountApplied > 0 ? amountApplied : (supplyCost * appliedPercentage / 100);
+            
+            supplyEntry.total_qre += Math.round(supplyQRE);
+          });
+          
+          const suppliesWithQRE = Array.from(suppliesMap.values()).map(supply => ({
+            ...supply,
+            calculated_qre: supply.total_qre
+          }));
+          
+          setSupplies(suppliesWithQRE);
+        }
+      } catch (error) {
+        console.error('❌ EmployeeSetupStep - Error loading supplies:', error);
       }
     } catch (error) {
       console.error('❌ EmployeeSetupStep - Error in loadData:', error);
@@ -1837,8 +1898,11 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     }
   };
 
-  const totalQRE = employeesWithData.reduce((sum, employee) => sum + (employee.calculated_qre || 0), 0) + 
-                   contractorsWithData.reduce((sum, contractor) => sum + (contractor.calculated_qre || 0), 0);
+  // Calculate QRE totals for each group
+  const employeeQRE = employeesWithData.reduce((sum, e) => sum + (e.calculated_qre || 0), 0);
+  const contractorQRE = contractorsWithData.reduce((sum, c) => sum + (c.calculated_qre || 0), 0);
+  const supplyQRE = supplies.reduce((sum, s) => sum + (s.calculated_qre || 0), 0);
+  const totalQRE = employeeQRE + contractorQRE + supplyQRE;
 
   console.log('📊 EmployeeSetupStep - Render state:', {
     loading,
@@ -1855,7 +1919,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     console.log('🔄 EmployeeSetupStep - Recalculating QRE for all employees');
     
     try {
-      const updatedEmployees = [];
+      const updatedEmployees: any[] = [];
       
       for (const employee of employeesWithData) {
         const role = employee.role;
@@ -2100,67 +2164,63 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
 
   // Sorting logic
   const sortedEmployees = [...employeesWithData].sort((a, b) => {
-    let valA, valB;
+    let valA: string | number = '';
+    let valB: string | number = '';
     switch (sortBy) {
       case 'first_name':
-        valA = a.first_name.toLowerCase();
-        valB = b.first_name.toLowerCase();
+        valA = (a.first_name ?? '').toLowerCase();
+        valB = (b.first_name ?? '').toLowerCase();
         break;
       case 'last_name':
-        valA = a.last_name.toLowerCase();
-        valB = b.last_name.toLowerCase();
-        break;
-      case 'annual_wage':
-        valA = a.annual_wage;
-        valB = b.annual_wage;
+        valA = (a.last_name ?? '').toLowerCase();
+        valB = (b.last_name ?? '').toLowerCase();
         break;
       case 'calculated_qre':
-        valA = a.calculated_qre;
-        valB = b.calculated_qre;
+        valA = a.calculated_qre ?? 0;
+        valB = b.calculated_qre ?? 0;
         break;
       case 'applied_percentage':
-        valA = a.applied_percentage;
-        valB = b.applied_percentage;
+        valA = a.applied_percentage ?? 0;
+        valB = b.applied_percentage ?? 0;
         break;
       default:
-        valA = a.last_name.toLowerCase();
-        valB = b.last_name.toLowerCase();
+        valA = (a.last_name ?? '').toLowerCase();
+        valB = (b.last_name ?? '').toLowerCase();
     }
-    if (valA < valB) return sortDir === 'asc' ? -1 : 1;
-    if (valA > valB) return sortDir === 'asc' ? 1 : -1;
-    return 0;
+    if (typeof valA === 'string' && typeof valB === 'string') {
+      return sortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+    }
+    return sortDir === 'asc' ? (valA as number) - (valB as number) : (valB as number) - (valA as number);
   });
 
   const sortedContractors = [...contractorsWithData].sort((a, b) => {
-    let valA, valB;
+    let valA: string | number = '';
+    let valB: string | number = '';
     switch (sortBy) {
       case 'first_name':
-        valA = a.first_name.toLowerCase();
-        valB = b.first_name.toLowerCase();
+        valA = (a.first_name ?? '').toLowerCase();
+        valB = (b.first_name ?? '').toLowerCase();
         break;
       case 'last_name':
-        valA = a.last_name.toLowerCase();
-        valB = b.last_name.toLowerCase();
-        break;
-      case 'amount':
-        valA = a.amount;
-        valB = b.amount;
+        valA = (a.last_name ?? '').toLowerCase();
+        valB = (b.last_name ?? '').toLowerCase();
         break;
       case 'calculated_qre':
-        valA = a.calculated_qre;
-        valB = b.calculated_qre;
+        valA = a.calculated_qre ?? 0;
+        valB = b.calculated_qre ?? 0;
         break;
       case 'applied_percentage':
-        valA = a.applied_percentage;
-        valB = b.applied_percentage;
+        valA = a.applied_percentage ?? 0;
+        valB = b.applied_percentage ?? 0;
         break;
       default:
-        valA = a.last_name.toLowerCase();
-        valB = b.last_name.toLowerCase();
+        valA = (a.last_name ?? '').toLowerCase();
+        valB = (b.last_name ?? '').toLowerCase();
     }
-    if (valA < valB) return sortDir === 'asc' ? -1 : 1;
-    if (valA > valB) return sortDir === 'asc' ? 1 : -1;
-    return 0;
+    if (typeof valA === 'string' && typeof valB === 'string') {
+      return sortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+    }
+    return sortDir === 'asc' ? (valA as number) - (valB as number) : (valB as number) - (valA as number);
   });
 
   const handleSort = (column: typeof sortBy) => {
@@ -2262,6 +2322,20 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     });
   };
 
+  // Add this inside EmployeeSetupStep component
+  const handleQuickAddSupply = async (supplyData: QuickSupplyEntry) => {
+    if (!businessId) return;
+    try {
+      console.log('🔄 Adding supply:', supplyData);
+      await SupplyManagementService.addSupply(supplyData, businessId);
+      // Reload supplies (call your loadData or similar function)
+      await loadData();
+      console.log('✅ Supply added successfully');
+    } catch (error) {
+      console.error('❌ Error adding supply:', error);
+    }
+  };
+
   if (loading) {
     console.log('⏳ EmployeeSetupStep - Rendering loading state');
     return (
@@ -2275,60 +2349,79 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     <div className="space-y-6">
       {/* Modern Gradient Header with Progress */}
       <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl shadow-xl overflow-hidden">
-        <div className="px-6 py-8 relative">
+        <div className="px-8 py-8 relative">
           <div className="absolute inset-0 bg-black/10"></div>
           <div className="relative z-10">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-3xl font-bold text-white mb-2">Expense Management</h2>
-                <p className="text-blue-100 text-lg">
-                  Manage employees, contractors, and supplies for R&D tax credits
-                </p>
-              </div>
-              <div className="flex items-center space-x-3">
-                <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-                <span className="text-blue-100 text-sm font-medium">Live Configuration</span>
-              </div>
+            {/* Title and Subtitle */}
+            <div className="mb-4">
+              <h2 className="text-2xl font-bold text-white mb-1">Expense Management</h2>
+              <p className="text-blue-100 text-base">Manage employees, contractors, and supplies for R&D tax credits</p>
             </div>
-            
-            {/* Year Selector and Summary Stats */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <Calendar className="w-5 h-5 text-blue-200" />
-                <label className="text-sm font-medium text-blue-100">Business Year:</label>
-                <select
-                  value={selectedYear}
-                  onChange={(e) => {
-                    console.log('📅 EmployeeSetupStep - Year changed from', selectedYear, 'to', e.target.value);
-                    setSelectedYear(e.target.value);
-                  }}
-                  className="px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white/10 text-white placeholder-blue-200"
-                >
-                  {availableYears.map((year) => (
-                    <option key={year.id} value={year.id} className="text-gray-900">
-                      {year.year}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              {/* Summary Stats */}
-              <div className="flex space-x-6">
+            {/* Header Row: Summary Stats + Year Selector */}
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
+              <div className="flex flex-1 items-end space-x-8 justify-start">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-white">{employeesWithData.length}</div>
-                  <div className="text-xs text-blue-200">Employees</div>
+                  <div className="text-sm text-blue-100">Employees</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-white">{contractorsWithData.length}</div>
-                  <div className="text-xs text-blue-200">Contractors</div>
+                  <div className="text-sm text-blue-100">Contractors</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-white">{supplies.length}</div>
+                  <div className="text-sm text-blue-100">Supplies</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-white">{formatCurrency(totalQRE)}</div>
-                  <div className="text-xs text-blue-200">Total QRE</div>
+                  <div className="text-sm text-blue-100">Total QRE</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-white">{roles.length}</div>
-                  <div className="text-xs text-blue-200">Roles</div>
+                  <div className="text-sm text-blue-100">Roles</div>
+                </div>
+              </div>
+              <div className="flex flex-col md:items-end mt-4 md:mt-0">
+                <label className="text-xs font-medium text-blue-100 mb-1">Business Year</label>
+                <div className="flex items-center space-x-2">
+                  <Calendar className="w-5 h-5 text-blue-200" />
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => {
+                      setSelectedYear(e.target.value);
+                    }}
+                    className="px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white/10 text-white placeholder-blue-200 min-w-[100px]"
+                  >
+                    {availableYears.map((year) => (
+                      <option key={year.id} value={year.id} className="text-gray-900">
+                        {year.year}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+            {/* Expense Distribution Bar */}
+            <div className="mt-2 mb-4">
+              <div className="text-sm font-medium text-blue-100 mb-2">Expense Distribution</div>
+              <div className="w-full h-6 rounded-lg overflow-hidden flex border border-blue-200 bg-blue-100/20">
+                <div style={{ width: `${employeeQRE / totalQRE * 100 || 0}%` }} className="bg-blue-500 h-full" title={`Employees: ${employeeQRE}`}></div>
+                <div style={{ width: `${contractorQRE / totalQRE * 100 || 0}%` }} className="bg-orange-500 h-full" title={`Contractors: ${contractorQRE}`}></div>
+                <div style={{ width: `${supplyQRE / totalQRE * 100 || 0}%` }} className="bg-emerald-500 h-full" title={`Supplies: ${supplyQRE}`}></div>
+              </div>
+              {/* Color Dot Legend */}
+              <div className="flex items-center space-x-6 mt-2">
+                <div className="flex items-center space-x-2">
+                  <span className="inline-block w-3 h-3 rounded-full bg-blue-500"></span>
+                  <span className="text-xs text-blue-100 font-semibold">Employees</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="inline-block w-3 h-3 rounded-full bg-orange-500"></span>
+                  <span className="text-xs text-orange-100 font-semibold">Contractors</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="inline-block w-3 h-3 rounded-full bg-emerald-500"></span>
+                  <span className="text-xs text-emerald-100 font-semibold">Supplies</span>
                 </div>
               </div>
             </div>
@@ -2367,6 +2460,9 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           )}
           {activeTab === 'contractors' && (
             <QuickContractorEntryForm onAdd={handleQuickAddContractor} roles={roles} />
+          )}
+          {activeTab === 'supplies' && (
+            <QuickSupplyEntryForm onAdd={handleQuickAddSupply} />
           )}
         </div>
       </div>
@@ -2471,13 +2567,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                       <span className="text-xs ml-1">{getSortIcon('last_name')}</span>
                     </button>
                     <div className="text-center">Role</div>
-                    <button 
-                      onClick={() => handleSort('annual_wage')}
-                      className="text-right hover:text-blue-600 transition-colors flex items-center justify-between"
-                    >
-                      Wage
-                      <span className="text-xs ml-1">{getSortIcon('annual_wage')}</span>
-                    </button>
+                    <div className="text-right font-semibold">Annual Wage</div>
                     <button 
                       onClick={() => handleSort('calculated_qre')}
                       className="text-center hover:text-blue-600 transition-colors flex items-center justify-center"
@@ -2616,13 +2706,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                       <span className="text-xs ml-1">{getSortIcon('last_name')}</span>
                     </button>
                     <div className="text-center">Role</div>
-                    <button 
-                      onClick={() => handleSort('amount')}
-                      className="text-right hover:text-orange-600 transition-colors flex items-center justify-between"
-                    >
-                      Wage (65%)
-                      <span className="text-xs ml-1">{getSortIcon('amount')}</span>
-                    </button>
+                    <div className="text-right font-semibold">Wage (65%)</div>
                     <button 
                       onClick={() => handleSort('calculated_qre')}
                       className="text-center hover:text-orange-600 transition-colors flex items-center justify-center"
