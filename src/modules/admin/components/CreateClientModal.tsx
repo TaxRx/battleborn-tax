@@ -49,7 +49,7 @@ const CreateClientModal: React.FC<CreateClientModalProps> = ({
 
         {/* InfoForm for new client creation */}
         <div className="p-6">
-          <InfoForm onSubmit={handleInfoFormSubmit} />
+          <InfoForm onSubmit={handleInfoFormSubmit} isOpen={true} onClose={onClose} />
         </div>
       </div>
     </div>

@@ -98,7 +98,7 @@ export const useUserStore = create<UserState>()((set, get) => ({
       const { data: taxProfileData } = await supabase
         .from('tax_profiles')
         .select('*')
-        .eq('userId', user.id)
+        .eq('user_id', user.id)
         .single();
 
       if (taxProfileData) {

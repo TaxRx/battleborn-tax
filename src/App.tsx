@@ -39,6 +39,7 @@ import RDTaxWizard from './modules/tax-calculator/components/RDTaxWizard/RDTaxWi
 import UnifiedClientDashboard from './components/UnifiedClientDashboard';
 import RDClientManagement from './components/RDClientManagement';
 import ErrorBoundary from './modules/shared/components/ErrorBoundary';
+import DemoModeIndicator from './components/DemoModeIndicator';
 
 const defaultTaxInfo = {
   standardDeduction: true,
@@ -223,7 +224,7 @@ const App = () => {
           const { data: taxProfile, error: taxProfileError } = await supabase
             .from('tax_profiles')
             .select('*')
-            .eq('uuid', userId)
+            .eq('user_id', userId)
             .single();
           if (taxProfile && !taxProfileError) {
             setTaxInfo({

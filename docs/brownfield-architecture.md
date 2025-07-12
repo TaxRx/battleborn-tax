@@ -104,3 +104,22 @@ The addition of a client-facing portal will require several architectural change
 *   **API Layer**: New API endpoints will be required to support the client portal's functionality.
 *   **File Storage**: A solution for securely storing and retrieving client documents will be needed. Supabase Storage is a likely candidate.
 *   **E-signature**: An integration with an e-signature service will be required.
+
+## Database Migration Structure
+
+**IMPORTANT**: The project now uses a **separate testing environment** to avoid interfering with production:
+
+### Migration Paths
+- **Production Environment**: `taxapp/supabase/migrations/` (DO NOT MODIFY)
+- **Testing/Development Environment**: `taxapp/db/bba/supabase/migrations/` (CURRENT ACTIVE)
+
+### Current Setup
+- **Testing Database**: Separate Supabase project for development and testing
+- **Migration Location**: All new migrations should be created in `taxapp/db/bba/supabase/migrations/`
+- **Schema File**: Current schema snapshot at `taxapp/db/bba/db-20250711.sql`
+
+### Development Workflow
+1. Create new migrations in `taxapp/db/bba/supabase/migrations/`
+2. Test migrations against the testing database
+3. Once validated, migrations can be applied to production environment
+4. Keep both environments in sync through careful migration management

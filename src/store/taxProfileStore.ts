@@ -31,7 +31,7 @@ export const useTaxProfileStore = create<TaxProfileState>((set, get) => ({
       const { data, error } = await supabase
         .from('tax_profiles')
         .select('*')
-        .eq('uuid', user.id)
+        .eq('user_id', user.id)
         .single();
       if (error && error.code !== 'PGRST116') throw error;
       if (data) {
