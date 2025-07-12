@@ -7,6 +7,12 @@ import 'react-toastify/dist/ReactToastify.css';
 import AdminDashboard from './modules/admin/pages/AdminDashboard';
 import { UserProvider } from './context/UserContext';
 import useAuthStore from './store/authStore';
+import ClientRegistration from './pages/ClientRegistration';
+import LandingPage from './pages/LandingPage';
+import EmailVerification from './pages/EmailVerification';
+import AcceptInvitation from './pages/AcceptInvitation';
+import LoginPage from './pages/LoginPage';
+import ClientDashboard from './components/ClientDashboard';
 
 const BattleBornApp: React.FC = () => {
   const location = useLocation();
@@ -16,43 +22,14 @@ const BattleBornApp: React.FC = () => {
   const isAuthenticated = demoMode || demoAuth;
 
   // // Public routes
-  const isPublicRoute = ['/', '/login', '/signup'].includes(location.pathname);
+  const isPublicRoute = ['/', '/login', '/signup', '/register', '/verify-email', '/accept-invitation'].includes(location.pathname);
   
   
   if (!isAuthenticated && !isPublicRoute) {
     return <Navigate to="/login" replace />;
   }
 
-  const LandingPage = () => (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">BattleBorn Tax Services</h1>
-          <p className="text-gray-600 mb-8">Welcome to the admin panel</p>
-          
-          <div className="space-y-4">
-            <button
-              onClick={() => enableDemoMode('admin')}
-              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 transition"
-            >
-              Enter Admin Demo Mode
-            </button>
-            
-            <button
-              onClick={() => enableDemoMode('client')}
-              className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-green-700 transition"
-            >
-              Enter Client Demo Mode
-            </button>
-          </div>
-          
-          <p className="text-sm text-gray-500 mt-6">
-            Demo mode allows you to explore the platform without authentication
-          </p>
-        </div>
-      </div>
-    </div>
-  );
+
 
   return (
     <UserProvider>
@@ -62,8 +39,11 @@ const BattleBornApp: React.FC = () => {
           <Route path="/" element={<LandingPage />} />
           <Route 
             path="/login" 
-            element={<div className="p-8 text-center">Login Page (Coming Soon)</div>} 
+            element={<LoginPage />} 
           />
+          <Route path="/register" element={<ClientRegistration />} />
+          <Route path="/verify-email" element={<EmailVerification />} />
+          <Route path="/accept-invitation" element={<AcceptInvitation />} />
 
           {/* Protected Routes */}
           {isAuthenticated && (
@@ -72,6 +52,12 @@ const BattleBornApp: React.FC = () => {
               <Route 
                 path="/admin/*" 
                 element={<AdminDashboard />} 
+              />
+
+              {/* Client Routes */}
+              <Route 
+                path="/client" 
+                element={<ClientDashboard />} 
               />
 
               {/* Default redirects */}

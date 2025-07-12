@@ -1,15 +1,4 @@
-/*
-  # User Data Schema Update
 
-  1. Changes
-    - Create user_profiles and tax_calculations tables if they don't exist
-    - Add policies with existence checks
-    - Enable RLS on both tables
-    
-  2. Notes
-    - Uses DO blocks to safely check for existing policies
-    - Maintains all original functionality while avoiding conflicts
-*/
 
 -- Create user_profiles table
 CREATE TABLE IF NOT EXISTS user_profiles (
@@ -28,6 +17,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
   UNIQUE(user_id)
 );
 
+
 -- Create tax_calculations table
 CREATE TABLE IF NOT EXISTS tax_calculations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -40,9 +30,12 @@ CREATE TABLE IF NOT EXISTS tax_calculations (
   updated_at timestamptz DEFAULT now()
 );
 
+
 -- Enable RLS
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE tax_calculations ENABLE ROW LEVEL SECURITY;
+
 
 -- Safely create policies for user_profiles
 DO $$ 
@@ -57,7 +50,9 @@ BEGIN
       FOR SELECT
       TO authenticated
       USING (auth.uid() = user_id);
+
   END IF;
+
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies 
@@ -69,7 +64,9 @@ BEGIN
       FOR UPDATE
       TO authenticated
       USING (auth.uid() = user_id);
+
   END IF;
+
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies 
@@ -81,8 +78,11 @@ BEGIN
       FOR INSERT
       TO authenticated
       WITH CHECK (auth.uid() = user_id);
+
   END IF;
+
 END $$;
+
 
 -- Safely create policies for tax_calculations
 DO $$ 
@@ -97,7 +97,9 @@ BEGIN
       FOR SELECT
       TO authenticated
       USING (auth.uid() = user_id);
+
   END IF;
+
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies 
@@ -109,7 +111,9 @@ BEGIN
       FOR INSERT
       TO authenticated
       WITH CHECK (auth.uid() = user_id);
+
   END IF;
+
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies 
@@ -121,7 +125,9 @@ BEGIN
       FOR UPDATE
       TO authenticated
       USING (auth.uid() = user_id);
+
   END IF;
+
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies 
@@ -133,5 +139,8 @@ BEGIN
       FOR DELETE
       TO authenticated
       USING (auth.uid() = user_id);
+
   END IF;
+
 END $$;
+;

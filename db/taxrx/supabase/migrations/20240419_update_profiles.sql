@@ -12,6 +12,11 @@ CREATE INDEX IF NOT EXISTS idx_profiles_preferences ON profiles USING GIN (prefe
 -- Add RLS policies for tax info and preferences
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
+-- Drop existing policies if they exist to avoid conflicts
+DROP POLICY IF EXISTS "Users can view their own profile" ON profiles;
+DROP POLICY IF EXISTS "Users can update their own profile" ON profiles;
+
+-- Create policies
 CREATE POLICY "Users can view their own profile"
   ON profiles FOR SELECT
   USING (auth.uid() = id);

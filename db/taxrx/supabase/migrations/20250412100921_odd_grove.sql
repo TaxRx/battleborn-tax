@@ -1,10 +1,20 @@
+/*
+  # Create Admin User
 
+  1. Changes
+    - Creates admin user in auth.users table
+    - Sets up admin profile in user_profiles table
+    - Ensures admin has proper credentials and permissions
+
+  2. Security
+    - Password is securely hashed
+    - Admin flag is set to true
+*/
 
 -- Create admin user in auth.users if it doesn't exist
 DO $$
 DECLARE
   admin_uid uuid := '66354160-ada7-4e40-a5c1-96336c8fd873';
-
 BEGIN
   -- Insert admin user into auth.users if not exists
   IF NOT EXISTS (
@@ -36,9 +46,7 @@ BEGIN
       false,
       'authenticated'
     );
-
   END IF;
-
 
   -- Ensure admin profile exists and has admin privileges
   INSERT INTO public.user_profiles (
@@ -61,6 +69,4 @@ BEGIN
   DO UPDATE SET
     is_admin = true,
     updated_at = now();
-
 END $$;
-;

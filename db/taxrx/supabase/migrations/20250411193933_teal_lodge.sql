@@ -1,4 +1,13 @@
+/*
+  # Add business address column
 
+  1. Changes
+    - Add `business_address` column to `user_profiles` table
+    
+  2. Notes
+    - Column is nullable to maintain compatibility with existing records
+    - Uses text type for flexible address storage
+*/
 
 DO $$ 
 BEGIN
@@ -8,8 +17,5 @@ BEGIN
     AND column_name = 'business_address'
   ) THEN
     ALTER TABLE user_profiles ADD COLUMN business_address text;
-
   END IF;
-
 END $$;
-;

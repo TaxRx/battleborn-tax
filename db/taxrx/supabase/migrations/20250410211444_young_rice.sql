@@ -2,14 +2,12 @@
 ALTER TABLE user_profiles
 ADD COLUMN is_admin boolean DEFAULT false;
 
-
 -- Create admin access policy
 CREATE POLICY "Admins can view all profiles"
   ON user_profiles
   FOR SELECT
   TO authenticated
   USING (is_admin = true);
-
 
 CREATE POLICY "Admins can view all calculations"
   ON tax_calculations
@@ -20,4 +18,3 @@ CREATE POLICY "Admins can view all calculations"
     WHERE user_id = auth.uid()
     AND is_admin = true
   ));
-;

@@ -12,6 +12,7 @@ import DocumentsPage from './components/DocumentsPage';
 import AugustaRuleWizard from './components/AugustaRuleWizard';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
+import EmailVerification from './pages/EmailVerification';
 import LeadsPage from './pages/LeadsPage';
 import TaxCalculator from './components/TaxCalculator.tsx';
 import AccountPage from './components/AccountPage';
@@ -40,6 +41,7 @@ import UnifiedClientDashboard from './components/UnifiedClientDashboard';
 import RDClientManagement from './components/RDClientManagement';
 import ErrorBoundary from './modules/shared/components/ErrorBoundary';
 import DemoModeIndicator from './components/DemoModeIndicator';
+import AcceptInvitation from './pages/AcceptInvitation';
 
 const defaultTaxInfo = {
   standardDeduction: true,
@@ -97,6 +99,8 @@ const AppRoutes = ({ profile }: { profile: any }) => {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/verify-email" element={<EmailVerification />} />
+      <Route path="/accept-invitation" element={<AcceptInvitation />} />
       <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>}>
         <Route path="clients" element={<ProtectedRoute><UserProvider><UnifiedClientDashboard /></UserProvider></ProtectedRoute>} />
         <Route path="rd-clients" element={<ProtectedRoute><UserProvider><RDClientManagement /></UserProvider></ProtectedRoute>} />
@@ -116,6 +120,14 @@ const AppRoutes = ({ profile }: { profile: any }) => {
         element={
           <ProtectedRoute>
             <AdvisorDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/client"
+        element={
+          <ProtectedRoute>
+            <ClientDashboard />
           </ProtectedRoute>
         }
       />
