@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Calculator, TrendingUp, Building2, MapPin, DollarSign, AlertTriangle, CheckCircle, Info, Settings as SettingsIcon, ChevronDown, ChevronUp } from 'lucide-react';
+import { Calculator, TrendingUp, Building2, MapPin, DollarSign, AlertTriangle, CheckCircle, Info, Settings as SettingsIcon, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import { RDCalculationsService, CalculationResults, FederalCreditResults } from '../../../services/rdCalculationsService';
 import { StateCalculationService, StateCalculationResult, QREBreakdown } from '../../../services/stateCalculationService';
 import { toast } from 'react-hot-toast';
 import { supabase } from '../../../lib/supabase';
+import { FilingGuideModal } from '../../FilingGuide/FilingGuideModal';
 
 // Standardized rounding functions
 const roundToDollar = (value: number): number => Math.round(value);
@@ -1324,6 +1325,8 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
     return { qreData, creditData, efficiencyData };
   }, [allYears, totalStateCredits]);
 
+  const [isFilingGuideOpen, setIsFilingGuideOpen] = useState(false);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1365,7 +1368,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header with Year Selector */}
+      {/* Header with Year Selector and Filing Guide Button */}
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow-lg p-6 text-white">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between">
           <div className="flex items-center mb-4 md:mb-0">
@@ -1391,6 +1394,14 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                     <option key={y.id} value={y.id}>{y.year}</option>
                   ))}
                 </select>
+                {/* Filing Guide Button */}
+                <button
+                  onClick={() => setIsFilingGuideOpen(true)}
+                  className="ml-2 flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-all duration-200 text-sm font-medium shadow-sm border border-white/30"
+                  title="Open Filing Guide"
+                >
+                  <FileText className="w-4 h-4" /> Filing Guide
+                </button>
               </div>
             </div>
           </div>
@@ -2000,6 +2011,28 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           Next
         </button>
       </div>
+      {/* Filing Guide Modal */}
+      {isFilingGuideOpen && (
+        <FilingGuideModal
+          isOpen={isFilingGuideOpen}
+          onClose={() => setIsFilingGuideOpen(false)}
+          businessData={wizardState.business}
+          selectedYear={selectedYearData}
+          calculations={results}
+          selectedMethod={selectedMethod}
+          debugData={{
+            selectedMethod,
+            results,
+            selectedYearData,
+            wizardState,
+            federalCredits,
+            currentYearQRE: federalCurrentYearQRE,
+            totalFederalCredit,
+            totalStateCredits: totalFederalStateCredits,
+            totalCredits,
+          }}
+        />
+      )}
     </div>
   );
 };
