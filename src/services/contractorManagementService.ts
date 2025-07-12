@@ -38,36 +38,26 @@ export class ContractorManagementService {
             id,
             name,
             baseline_applied_percent
+          ),
+          year_data:rd_contractor_year_data (
+            calculated_qre,
+            applied_percent
           )
         `)
         .eq('business_id', businessYear.business_id);
 
       if (error) throw error;
 
-      // Calculate QRE and applied percentage for each contractor
-      const contractorsWithQRE = await Promise.all((contractors || []).map(async (contractor) => {
+      // Use database values for QRE and applied percentage
+      const contractorsWithQRE = (contractors || []).map((contractor) => {
         const baselineAppliedPercent = contractor.role?.baseline_applied_percent || 0;
+        const yearData = contractor.year_data?.[0];
         
-        // Get actual applied percentage from subcomponent allocations
-        const { data: subcomponentAllocations, error: allocError } = await supabase
-          .from('rd_contractor_subcomponents')
-          .select('applied_percentage')
-          .eq('contractor_id', contractor.id)
-          .eq('business_year_id', businessYearId)
-          .eq('is_included', true);
-
-        if (allocError) {
-          console.error('Error fetching contractor allocations:', allocError);
-        }
-
-        // Calculate total applied percentage from allocations
-        const totalAppliedPercentage = subcomponentAllocations?.reduce((sum, alloc) => 
-          sum + (alloc.applied_percentage || 0), 0) || 0;
+        // Use calculated_qre from database if available, otherwise calculate
+        const calculatedQRE = yearData?.calculated_qre || 0;
         
-        // Use actual applied percentage if available, otherwise use baseline
-        // For contractors, we want to show the total applied percentage across all subcomponents
-        const appliedPercent = totalAppliedPercentage > 0 ? totalAppliedPercentage : baselineAppliedPercent;
-        const calculatedQRE = (contractor.amount || 0) * 0.65 * (appliedPercent / 100);
+        // Use applied_percent from database if available, otherwise use baseline
+        const appliedPercent = yearData?.applied_percent || baselineAppliedPercent;
         
         return {
           ...contractor,
@@ -75,7 +65,7 @@ export class ContractorManagementService {
           baseline_applied_percent: baselineAppliedPercent,
           applied_percentage: appliedPercent
         };
-      }));
+      });
 
       return contractorsWithQRE;
     } catch (error) {

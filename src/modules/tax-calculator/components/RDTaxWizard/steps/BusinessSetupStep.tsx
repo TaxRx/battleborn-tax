@@ -328,6 +328,17 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
 
       console.log('[BusinessSetupStep] All historical data saved successfully');
       setIsSaving(false);
+      
+      // Update the parent with the business data including state
+      const updatedBusinessData = {
+        business: {
+          ...savedBusiness,
+          state: formData.state
+        }
+      };
+      console.log('[BusinessSetupStep] Calling onUpdate with:', updatedBusinessData);
+      onUpdate(updatedBusinessData);
+      
       onNext();
     } catch (error) {
       console.error('[BusinessSetupStep] Error saving business data', error);

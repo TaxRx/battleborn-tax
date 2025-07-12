@@ -752,27 +752,27 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
             onClientCreated(completeTaxInfo);
             onClose();
           }
-        }
-      } else {
-        // Create new client
+          }
+        } else {
+          // Create new client
         console.log(`[handleSubmit] Creating new client`);
-        const createClientData = CentralizedClientService.transformTaxInfoToCreateData(completeTaxInfo);
+          const createClientData = CentralizedClientService.transformTaxInfoToCreateData(completeTaxInfo);
         
         console.log(`[handleSubmit] Create client data:`, createClientData);
-        
-        const result = await CentralizedClientService.createClient(createClientData);
+          
+          const result = await CentralizedClientService.createClient(createClientData);
         
         console.log(`[handleSubmit] Create client result:`, result);
-        
-        if (result.success && result.clientId) {
+          
+          if (result.success && result.clientId) {
           console.log(`[handleSubmit] Client created successfully with ID: ${result.clientId}`);
-          toast.success('Client created successfully!');
-          onClientCreated(completeTaxInfo);
-          onClose();
-        } else {
+            toast.success('Client created successfully!');
+            onClientCreated(completeTaxInfo);
+            onClose();
+          } else {
           console.error(`[handleSubmit] Failed to create client:`, result.error);
-          setError(result.error || 'Failed to create client');
-          toast.error(result.error || 'Failed to create client');
+            setError(result.error || 'Failed to create client');
+            toast.error(result.error || 'Failed to create client');
         }
       }
     } catch (error) {

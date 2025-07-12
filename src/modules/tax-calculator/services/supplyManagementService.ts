@@ -46,6 +46,7 @@ export class SupplyManagementService {
 
       if (yearError) throw yearError;
 
+      // Get all supplies for this business
       const { data: supplies, error } = await supabase
         .from('rd_supplies')
         .select('*')
@@ -53,14 +54,31 @@ export class SupplyManagementService {
 
       if (error) throw error;
 
-      // For now, return supplies with basic info
-      // We'll calculate QRE and percentages later when we have the allocation system working
-      return (supplies || []).map(supply => ({
-        ...supply,
-        calculated_qre: 0, // Will be calculated when allocations are implemented
-        applied_percentage: 0, // Will be calculated when allocations are implemented
-        cost_amount: supply.annual_cost
-      }));
+      // For each supply, aggregate allocations for this business year
+      const supplyIds = (supplies || []).map(s => s.id);
+      let allocations: any[] = [];
+      if (supplyIds.length > 0) {
+        const { data: allocs, error: allocError } = await supabase
+          .from('rd_supply_subcomponents')
+          .select('supply_id, applied_percentage, amount_applied, is_included')
+          .eq('business_year_id', businessYearId)
+          .in('supply_id', supplyIds);
+        if (allocError) throw allocError;
+        allocations = allocs || [];
+      }
+
+      // Aggregate QRE and applied % for each supply
+      return (supplies || []).map(supply => {
+        const supplyAllocs = allocations.filter(a => a.supply_id === supply.id && a.is_included);
+        const totalQRE = supplyAllocs.reduce((sum, a) => sum + (a.amount_applied || 0), 0);
+        const totalAppliedPct = supplyAllocs.reduce((sum, a) => sum + (a.applied_percentage || 0), 0);
+        return {
+          ...supply,
+          calculated_qre: totalQRE,
+          applied_percentage: totalAppliedPct,
+          cost_amount: supply.annual_cost
+        };
+      });
     } catch (error) {
       console.error('Error fetching supplies:', error);
       throw error;
@@ -123,12 +141,16 @@ export class SupplyManagementService {
   // Get all available subcomponents for a business year (contractor modal approach)
   static async getAvailableSubcomponents(businessYearId: string): Promise<any[]> {
     try {
-      // Fetch selected subcomponents with join to rd_research_subcomponents (like contractor modal)
+      // Fetch selected subcomponents with join to rd_research_subcomponents and steps
       const { data, error } = await supabase
         .from('rd_selected_subcomponents')
         .select(`
           *,
           subcomponent:rd_research_subcomponents (
+            id,
+            name
+          ),
+          step:rd_research_steps (
             id,
             name
           )
@@ -139,9 +161,9 @@ export class SupplyManagementService {
       
       return (data || []).map(item => ({
         id: item.subcomponent_id,
-        subcomponent_id: item.subcomponent_id, // Use the original ID from rd_selected_subcomponents
-        title: item.subcomponent?.name || item.step_name || 'Untitled',
-        step_name: item.step_name
+        subcomponent_id: item.subcomponent_id,
+        title: item.subcomponent?.name || 'Untitled Subcomponent',
+        step_name: item.step?.name || item.step_name || 'Untitled Step'
       }));
     } catch (error) {
       console.error('Error fetching available subcomponents:', error);
@@ -166,18 +188,74 @@ export class SupplyManagementService {
     businessYearId: string,
     allocations: SupplySubcomponentAllocation[]
   ): Promise<void> {
-    // Upsert all allocations (unique on supply_id, subcomponent_id, business_year_id)
-    if (!allocations.length) return;
-    const upserts = allocations.map(a => ({
-      supply_id: supplyId,
-      subcomponent_id: a.subcomponent_id,
-      business_year_id: businessYearId,
-      applied_percentage: a.applied_percentage,
-      is_included: a.is_included
-    }));
-    const { error } = await supabase
-      .from('rd_supply_subcomponents')
-      .upsert(upserts, { onConflict: 'supply_id,subcomponent_id,business_year_id' });
-    if (error) throw error;
+    try {
+      console.log('💾 Saving supply allocations:', { supplyId, businessYearId, allocations });
+      
+      // First, let's check if we can access the supply and business year
+      const { data: supply, error: supplyError } = await supabase
+        .from('rd_supplies')
+        .select('*')
+        .eq('id', supplyId)
+        .single();
+
+      if (supplyError) {
+        console.error('❌ Error accessing supply:', supplyError);
+        throw supplyError;
+      }
+
+      const { data: businessYear, error: yearError } = await supabase
+        .from('rd_business_years')
+        .select('*')
+        .eq('id', businessYearId)
+        .single();
+
+      if (yearError) {
+        console.error('❌ Error accessing business year:', yearError);
+        throw yearError;
+      }
+
+      console.log('✅ Supply and business year access confirmed:', { supply, businessYear });
+      
+      // First, delete existing allocations for this supply and business year
+      const { error: deleteError } = await supabase
+        .from('rd_supply_subcomponents')
+        .delete()
+        .eq('supply_id', supplyId)
+        .eq('business_year_id', businessYearId);
+
+      if (deleteError) {
+        console.error('❌ Error deleting existing allocations:', deleteError);
+        throw deleteError;
+      }
+
+      console.log('✅ Existing allocations deleted');
+
+      // Then insert new allocations
+      if (allocations.length > 0) {
+        const inserts = allocations.map(a => ({
+          supply_id: supplyId,
+          subcomponent_id: a.subcomponent_id,
+          business_year_id: businessYearId,
+          applied_percentage: a.applied_percentage,
+          is_included: a.is_included
+        }));
+
+        console.log('📝 Inserting allocations:', inserts);
+
+        const { error: insertError } = await supabase
+          .from('rd_supply_subcomponents')
+          .insert(inserts);
+
+        if (insertError) {
+          console.error('❌ Error inserting allocations:', insertError);
+          throw insertError;
+        }
+      }
+
+      console.log('✅ Supply allocations saved successfully');
+    } catch (error) {
+      console.error('❌ Error saving supply allocations:', error);
+      throw error;
+    }
   }
 } 
