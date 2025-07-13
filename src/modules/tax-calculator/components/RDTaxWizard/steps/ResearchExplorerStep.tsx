@@ -2453,10 +2453,37 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
   return (
     <div className="space-y-6">
-      <div className="text-center mb-8">
-        <h3 className="text-3xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mb-4">
-          Research Explorer
-        </h3>
+      {/* Header with Year Selector */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 rounded-xl shadow-lg p-8 mb-8">
+        <div>
+          <h3 className="text-3xl font-bold text-white mb-2">Research Guidelines</h3>
+          <p className="text-blue-100 text-lg">Complete R&D qualification questions for each selected activity</p>
+        </div>
+        <div className="flex items-center space-x-3 mt-4 md:mt-0">
+          <label className="text-white text-sm font-medium mr-2">Year:</label>
+          <select
+            value={selectedYear}
+            onChange={(e) => {
+              const year = parseInt(e.target.value);
+              setSelectedYear(year);
+              const businessYear = availableBusinessYears.find(by => by.year === year);
+              if (businessYear) {
+                setSelectedBusinessYearId(businessYear.id);
+              }
+            }}
+            className="px-3 py-2 border border-white/30 rounded-md bg-white/10 text-white text-lg focus:outline-none focus:ring-2 focus:ring-white/50"
+          >
+            {availableBusinessYears.length > 0 ? (
+              availableBusinessYears.map(businessYear => (
+                <option key={businessYear.id} value={businessYear.year} className="text-black">
+                  {businessYear.year}
+                </option>
+              ))
+            ) : (
+              <option value="">No years available</option>
+            )}
+          </select>
+        </div>
       </div>
 
       {/* Tab Navigation */}
@@ -2497,7 +2524,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       <div className="bg-white rounded-lg shadow-sm p-6">
         {activeTab === 'roles' && (
           <div className="space-y-6">
-            {/* Enhanced Header with Year Selector */}
+            {/* Enhanced Header - remove year selector here */}
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
               <div className="flex items-center justify-between">
                 <div>
@@ -2505,40 +2532,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
                     Research Roles
                   </h4>
                   <p className="text-gray-600 text-lg">Define your research team hierarchy and responsibilities</p>
-                  <div className="flex items-center space-x-4 mt-3">
-                    <div className="flex items-center space-x-2 bg-white rounded-lg px-3 py-2 shadow-sm">
-                      <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <label className="text-sm font-medium text-gray-700">Year:</label>
-                      <select
-                        value={selectedYear}
-                        onChange={(e) => {
-                          const year = parseInt(e.target.value);
-                          setSelectedYear(year);
-                          const businessYear = availableBusinessYears.find(by => by.year === year);
-                          if (businessYear) {
-                            setSelectedBusinessYearId(businessYear.id);
-                          }
-                        }}
-                        className="px-3 py-1 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-transparent"
-                      >
-                        {availableBusinessYears.length > 0 ? (
-                          availableBusinessYears.map(businessYear => (
-                            <option key={businessYear.id} value={businessYear.year}>
-                              {businessYear.year}
-                            </option>
-                          ))
-                        ) : (
-                          <option value="">No years available</option>
-                        )}
-                      </select>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                      <span className="text-sm text-gray-600">Active configuration</span>
-                    </div>
-                  </div>
+                  {/* Year selector removed */}
                 </div>
                 <div className="flex items-center space-x-3">
                   <button
@@ -2703,7 +2697,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
         {activeTab === 'activities' && (
           <div className="space-y-6">
-            {/* Modern Gradient Header with Progress */}
+            {/* Modern Gradient Header with Progress - remove year selector here */}
             <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl shadow-xl overflow-hidden">
               <div className="px-6 py-8 relative">
                 <div className="absolute inset-0 bg-black/10"></div>
@@ -2812,31 +2806,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
               <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200 flex items-center justify-between">
                 <div className="flex items-center">
                   <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mr-4">Activity Configuration</h3>
-                  <div className="flex items-center space-x-2">
-                    <label className="text-sm font-medium text-gray-700">Year:</label>
-                    <select
-                      value={selectedYear}
-                      onChange={(e) => {
-                        const year = parseInt(e.target.value);
-                        setSelectedYear(year);
-                        const businessYear = availableBusinessYears.find(by => by.year === year);
-                        if (businessYear) {
-                          setSelectedBusinessYearId(businessYear.id);
-                        }
-                      }}
-                      className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      {availableBusinessYears.length > 0 ? (
-                        availableBusinessYears.map(businessYear => (
-                          <option key={businessYear.id} value={businessYear.year}>
-                            {businessYear.year}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="">No years available</option>
-                      )}
-                    </select>
-                  </div>
+                  {/* Year selector removed */}
                 </div>
                 <div className="text-right">
                   <div className="text-sm text-gray-600">Available for R&D</div>
