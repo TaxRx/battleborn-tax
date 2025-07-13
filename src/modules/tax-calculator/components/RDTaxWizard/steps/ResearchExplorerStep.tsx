@@ -88,6 +88,8 @@ interface ResearchGuidelines {
   hypothesis: string;
   development_steps: string;
   data_feedback: string;
+  internal_use_software: boolean;
+  business_component_complete: boolean;
 }
 
 interface PracticePercentageConfig {
@@ -3436,12 +3438,14 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
       considered_alternatives: true,
       us_based: true,
       science_based: true,
-      primary_goal: 'Develop a new product or process',
+      primary_goal: 'Technique',
       uncertainty_type: 'Design',
       success_measurement: 'Functional performance',
       hypothesis: '',
       development_steps: '',
-      data_feedback: ''
+      data_feedback: '',
+      internal_use_software: false,
+      business_component_complete: false
     }
   );
   const [isGenerating, setIsGenerating] = useState(false);
@@ -3608,6 +3612,32 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                   </label>
                 </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-gray-700">Internal Use Software?</label>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={guidelines.internal_use_software}
+                      onChange={(e) => handleGuidelineChange('internal_use_software', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-gray-700">Business Component Complete?</label>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={guidelines.business_component_complete}
+                      onChange={(e) => handleGuidelineChange('business_component_complete', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
               </div>
             </div>
 
@@ -3623,11 +3653,18 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
                     onChange={(e) => handleGuidelineChange('primary_goal', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
-                    <option value="Develop a new product or process">Develop a new product or process</option>
-                    <option value="Improve an existing product or process">Improve an existing product or process</option>
-                    <option value="Integrate or test new technology">Integrate or test new technology</option>
-                    <option value="Optimize workflow or performance">Optimize workflow or performance</option>
-                    <option value="Evaluate alternative methods">Evaluate alternative methods</option>
+                    <option value="Product">Product	A physical good developed for sale, lease, or use in the business (e.g., medical device, prosthetic material)</option>
+                    <option value="Process">Process	A method or series of steps used in manufacturing, clinical workflows, treatment protocols, etc.</option>
+                    <option value="Software – External Use">Software – External Use	Software developed for sale, license, or interaction with clients or the public</option>
+                    <option value="Software – Internal Use">Software – Internal Use	Software developed for internal business operations (must meet the three-part high threshold test)</option>
+                    <option value="Technique">Technique	A specialized method or clinical/technical approach (e.g., chairside same-day restoration)</option>
+                    <option value="Formula">Formula	A unique composition of ingredients/materials (often in pharma, dentistry, labs)</option>
+                    <option value="Invention">Invention	A novel concept or device with potential patentability</option>
+                    <option value="Pilot Model / Prototype">Pilot Model / Prototype	A first physical implementation used to test and validate a product or process before commercialization</option>
+                    <option value="Tooling / Fixture">Tooling / Fixture	A custom manufacturing aid or setup used in producing goods or delivering services</option>
+                    <option value="Algorithm / AI Model">Algorithm / AI Model	A distinct algorithm or machine learning model being designed or improved for business use</option>
+                    <option value="System Integration / Workflow">System Integration / Workflow	Combining hardware, software, or processes into a cohesive operational system (especially in practices or labs)</option>
+                    <option value="Platform">Platform	A technology stack or infrastructure enabling multiple functions (e.g., health tech apps)</option>
                   </select>
                 </div>
 
