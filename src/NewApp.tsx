@@ -12,7 +12,9 @@ import LandingPage from './pages/LandingPage';
 import EmailVerification from './pages/EmailVerification';
 import AcceptInvitation from './pages/AcceptInvitation';
 import LoginPage from './pages/LoginPage';
-import ClientDashboard from './components/ClientDashboard';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import EnhancedClientDashboard from './components/EnhancedClientDashboard';
 
 const BattleBornApp: React.FC = () => {
   const location = useLocation();
@@ -22,7 +24,7 @@ const BattleBornApp: React.FC = () => {
   const isAuthenticated = demoMode || demoAuth;
 
   // // Public routes
-  const isPublicRoute = ['/', '/login', '/signup', '/register', '/verify-email', '/accept-invitation'].includes(location.pathname);
+  const isPublicRoute = ['/', '/login', '/signup', '/register', '/verify-email', '/accept-invitation', '/forgot-password', '/reset-password'].includes(location.pathname);
   
   
   if (!isAuthenticated && !isPublicRoute) {
@@ -44,6 +46,8 @@ const BattleBornApp: React.FC = () => {
           <Route path="/register" element={<ClientRegistration />} />
           <Route path="/verify-email" element={<EmailVerification />} />
           <Route path="/accept-invitation" element={<AcceptInvitation />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           {/* Protected Routes */}
           {isAuthenticated && (
@@ -57,7 +61,7 @@ const BattleBornApp: React.FC = () => {
               {/* Client Routes */}
               <Route 
                 path="/client" 
-                element={<ClientDashboard />} 
+                element={<EnhancedClientDashboard />} 
               />
 
               {/* Default redirects */}

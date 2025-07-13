@@ -13,7 +13,17 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "postinstall": "npx update-browserslist-db@latest",
-    "test": "jest"
+    "test": "jest",
+    "test:epic1": "node scripts/run-epic1-tests.js",
+    "test:epic2": "jest src/tests/epic2-functionality.test.ts --testTimeout=30000",
+    "test:epic2:functionality": "jest src/tests/epic2-functionality.test.ts --testTimeout=30000",
+    "test:security": "jest src/tests/epic1-security.test.ts --testTimeout=30000",
+    "test:integration": "jest src/tests/epic1-integration.test.ts --testTimeout=30000",
+    "test:performance": "jest src/tests/epic1-performance.test.ts --testTimeout=30000",
+    "test:epic1:coverage": "jest src/tests/epic1-*.test.ts --coverage --testTimeout=30000",
+    "test:epic2:coverage": "jest src/tests/epic2-*.test.ts --coverage --testTimeout=30000",
+    "test:all": "jest --testTimeout=30000",
+    "test:coverage": "jest --coverage --testTimeout=30000"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

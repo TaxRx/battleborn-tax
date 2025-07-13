@@ -11,11 +11,15 @@ import {
   PencilIcon,
   TrashIcon
 } from '@heroicons/react/24/outline';
+import ClientProfileModal from './ClientProfileModal';
+import UserManagementModal from './UserManagementModal';
 
 export default function ClientDashboard() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedClient, setSelectedClient] = useState<ClientUser | null>(null);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showUserManagementModal, setShowUserManagementModal] = useState(false);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -298,14 +302,20 @@ export default function ClientDashboard() {
                     )}
                     
                     {authService.hasPermission(user, `client:${selectedClient.client_id}:edit_profile`) && (
-                      <button className="flex items-center justify-center p-4 border border-gray-300 rounded-lg hover:bg-gray-50">
+                      <button 
+                        onClick={() => setShowProfileModal(true)}
+                        className="flex items-center justify-center p-4 border border-gray-300 rounded-lg hover:bg-gray-50"
+                      >
                         <PencilIcon className="w-5 h-5 text-gray-400 mr-2" />
                         <span className="text-sm font-medium text-gray-700">Edit Profile</span>
                       </button>
                     )}
                     
                     {authService.hasPermission(user, `client:${selectedClient.client_id}:manage_users`) && (
-                      <button className="flex items-center justify-center p-4 border border-gray-300 rounded-lg hover:bg-gray-50">
+                      <button 
+                        onClick={() => setShowUserManagementModal(true)}
+                        className="flex items-center justify-center p-4 border border-gray-300 rounded-lg hover:bg-gray-50"
+                      >
                         <UserGroupIcon className="w-5 h-5 text-gray-400 mr-2" />
                         <span className="text-sm font-medium text-gray-700">Manage Users</span>
                       </button>
@@ -332,6 +342,48 @@ export default function ClientDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Profile Modal */}
+      {selectedClient && (
+        <ClientProfileModal
+          isOpen={showProfileModal}
+          onClose={() => setShowProfileModal(false)}
+          clientId={selectedClient.client_id}
+          onProfileUpdated={() => {
+            // Refresh user data after profile update
+            const loadUser = async () => {
+              try {
+                const currentUser = await authService.getCurrentUser();
+                setUser(currentUser);
+              } catch (error) {
+                console.error('Error reloading user:', error);
+              }
+            };
+            loadUser();
+          }}
+        />
+      )}
+
+      {/* User Management Modal */}
+      {selectedClient && (
+        <UserManagementModal
+          isOpen={showUserManagementModal}
+          onClose={() => setShowUserManagementModal(false)}
+          clientId={selectedClient.client_id}
+          onUsersUpdated={() => {
+            // Refresh user data after user management changes
+            const loadUser = async () => {
+              try {
+                const currentUser = await authService.getCurrentUser();
+                setUser(currentUser);
+              } catch (error) {
+                console.error('Error reloading user:', error);
+              }
+            };
+            loadUser();
+          }}
+        />
+      )}
     </div>
   );
 } 

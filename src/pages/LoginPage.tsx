@@ -144,12 +144,13 @@ export default function LoginPage() {
           </div>
 
           <div className="text-center space-y-2">
-            <a
-              href="#"
+            <button
+              type="button"
+              onClick={() => navigate('/forgot-password')}
               className="font-medium text-blue-600 hover:text-blue-500"
             >
               Forgot your password?
-            </a>
+            </button>
             <div className="text-sm text-gray-600">
               Don't have an account?{' '}
               <button
