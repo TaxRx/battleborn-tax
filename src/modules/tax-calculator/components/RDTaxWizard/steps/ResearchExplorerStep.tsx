@@ -3216,6 +3216,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
                     activity={activity}
                     allRoles={roles}
                     onUpdateGuidelines={(guidelines) => updateResearchGuidelines(activity.activity_id, guidelines)}
+                    currentBusinessYear={availableBusinessYears.find(year => year.id === selectedBusinessYearId)}
                   />
                 ))}
               </div>
@@ -3424,12 +3425,14 @@ interface ResearchGuidelinesAccordionProps {
   activity: SelectedActivity;
   onUpdateGuidelines: (guidelines: ResearchGuidelines) => void;
   allRoles: ResearchRole[];
+  currentBusinessYear: any;
 }
 
 const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = ({
   activity,
   onUpdateGuidelines,
-  allRoles
+  allRoles,
+  currentBusinessYear
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [guidelines, setGuidelines] = useState<ResearchGuidelines>(
@@ -3464,13 +3467,28 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
         .filter(role => activity.selected_roles.includes(role.id))
         .map(role => role.name);
 
+      // Get subcomponent data for the activity
+      const subcomponents = await supabase
+        .from('rd_selected_subcomponents')
+        .select('*')
+        .eq('research_activity_id', activity.activity_id)
+        .eq('business_year_id', currentBusinessYear?.id);
+
+      const subcomponentCount = subcomponents?.data?.length || 0;
+      const steps = subcomponentCount; // Number of steps is the same as subcomponent count
+      const appliedPercent = activity.practice_percent;
+
       const context: AIGenerationContext = {
         research_activity_name: activity.activity_name || 'Unknown Activity',
         practice_percentage: activity.practice_percent,
         roles_involved: selectedRoleNames,
         industry_type: activity.activity_category || 'General',
         category: activity.activity_category,
-        frequency_percent: 100
+        frequency_percent: 100,
+        subcomponent_count: subcomponentCount,
+        steps: steps,
+        applied_percent: appliedPercent,
+        general_description: activity.general_description || ''
       };
 
       const aiAnswers = await AIService.generateAllAnswers(context);
@@ -3498,13 +3516,28 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
         .filter(role => activity.selected_roles.includes(role.id))
         .map(role => role.name);
 
+      // Get subcomponent data for the activity
+      const subcomponents = await supabase
+        .from('rd_selected_subcomponents')
+        .select('*')
+        .eq('research_activity_id', activity.activity_id)
+        .eq('business_year_id', currentBusinessYear?.id);
+
+      const subcomponentCount = subcomponents?.data?.length || 0;
+      const steps = subcomponentCount; // Number of steps is the same as subcomponent count
+      const appliedPercent = activity.practice_percent;
+
       const context: AIGenerationContext = {
         research_activity_name: activity.activity_name || 'Unknown Activity',
         practice_percentage: activity.practice_percent,
         roles_involved: selectedRoleNames,
         industry_type: activity.activity_category || 'General',
         category: activity.activity_category,
-        frequency_percent: 100
+        frequency_percent: 100,
+        subcomponent_count: subcomponentCount,
+        steps: steps,
+        applied_percent: appliedPercent,
+        general_description: activity.general_description || ''
       };
 
       let newValue = '';
