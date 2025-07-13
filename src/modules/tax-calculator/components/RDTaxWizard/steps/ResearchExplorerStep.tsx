@@ -3220,6 +3220,9 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
                     allRoles={roles}
                     onUpdateGuidelines={(guidelines) => updateResearchGuidelines(activity.activity_id, guidelines)}
                     currentBusinessYear={availableBusinessYears.find(year => year.id === selectedBusinessYearId)}
+                    availableBusinessYears={availableBusinessYears}
+                    selectedBusinessYearId={selectedBusinessYearId}
+                    onYearChange={(yearId) => setSelectedBusinessYearId(yearId)}
                   />
                 ))}
               </div>
@@ -3429,13 +3432,19 @@ interface ResearchGuidelinesAccordionProps {
   onUpdateGuidelines: (guidelines: ResearchGuidelines) => void;
   allRoles: ResearchRole[];
   currentBusinessYear: any;
+  availableBusinessYears: any[];
+  selectedBusinessYearId: string;
+  onYearChange: (yearId: string) => void;
 }
 
 const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = ({
   activity,
   onUpdateGuidelines,
   allRoles,
-  currentBusinessYear
+  currentBusinessYear,
+  availableBusinessYears,
+  selectedBusinessYearId,
+  onYearChange
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [guidelines, setGuidelines] = useState<ResearchGuidelines>(
@@ -3610,7 +3619,26 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
           <div className="w-3 h-3 rounded-full bg-blue-500"></div>
           <h3 className="text-lg font-semibold text-gray-900">{activity.activity_name}</h3>
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-4">
+          {/* Year Selector */}
+          <div className="flex items-center space-x-2 bg-white rounded-lg px-3 py-1 shadow-sm border border-gray-200">
+            <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <label className="text-xs font-medium text-gray-700">Year:</label>
+            <select
+              value={selectedBusinessYearId}
+              onChange={(e) => onYearChange(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              className="text-xs border-none bg-transparent focus:ring-0 focus:outline-none text-gray-700"
+            >
+              {availableBusinessYears.map(businessYear => (
+                <option key={businessYear.id} value={businessYear.id}>
+                  {businessYear.year}
+                </option>
+              ))}
+            </select>
+          </div>
           <span className="text-sm text-gray-600">Research Guidelines</span>
           <svg
             className={`w-5 h-5 text-gray-500 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
