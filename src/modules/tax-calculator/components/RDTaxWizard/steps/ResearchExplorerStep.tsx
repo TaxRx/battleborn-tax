@@ -73,6 +73,7 @@ interface SelectedActivity {
   selected_roles: string[];
   config: any;
   research_guidelines?: ResearchGuidelines;
+  general_description?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -1629,6 +1630,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       selected_roles: defaultRoles,
       config: {},
       research_guidelines: undefined,
+      general_description: undefined,
       created_at: undefined,
       updated_at: undefined
     };
@@ -1859,6 +1861,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         selected_roles: data.selected_roles,
         config: data.config,
         research_guidelines: activity.research_guidelines,
+        general_description: activity.general_description,
         created_at: data.created_at,
         updated_at: data.updated_at
       };
@@ -3462,6 +3465,17 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
   const generateAIAnswers = async () => {
     setIsGenerating(true);
     try {
+      // Debug logging
+      console.log('🔍 GenerateAIAnswers Debug:');
+      console.log('📅 Current Business Year:', currentBusinessYear);
+      console.log('📅 Current Business Year ID:', currentBusinessYear?.id);
+      console.log('🎯 Activity:', activity);
+
+      if (!currentBusinessYear?.id) {
+        console.error('❌ No current business year found');
+        throw new Error('No business year selected. Please select a business year first.');
+      }
+
       // Get role names for the selected roles
       const selectedRoleNames = allRoles
         .filter(role => activity.selected_roles.includes(role.id))
@@ -3472,7 +3486,9 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
         .from('rd_selected_subcomponents')
         .select('*')
         .eq('research_activity_id', activity.activity_id)
-        .eq('business_year_id', currentBusinessYear?.id);
+        .eq('business_year_id', currentBusinessYear.id);
+
+      console.log('🔍 Subcomponents found:', subcomponents?.data?.length || 0);
 
       const subcomponentCount = subcomponents?.data?.length || 0;
       const steps = subcomponentCount; // Number of steps is the same as subcomponent count
@@ -3490,6 +3506,8 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
         applied_percent: appliedPercent,
         general_description: activity.general_description || ''
       };
+
+      console.log('🔍 AI Context:', context);
 
       const aiAnswers = await AIService.generateAllAnswers(context);
       
@@ -3504,6 +3522,8 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
       onUpdateGuidelines(updatedGuidelines);
     } catch (error) {
       console.error('Error generating AI answers:', error);
+      // Show user-friendly error message
+      alert(`Error generating AI answers: ${error instanceof Error ? error.message : 'Unknown error occurred'}`);
     } finally {
       setIsGenerating(false);
     }
@@ -3512,6 +3532,17 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
   const regenerateField = async (field: 'hypothesis' | 'development_steps' | 'data_feedback') => {
     setIsGenerating(true);
     try {
+      // Debug logging
+      console.log('🔍 RegenerateField Debug:');
+      console.log('📅 Current Business Year:', currentBusinessYear);
+      console.log('📅 Current Business Year ID:', currentBusinessYear?.id);
+      console.log('🎯 Activity:', activity);
+
+      if (!currentBusinessYear?.id) {
+        console.error('❌ No current business year found');
+        throw new Error('No business year selected. Please select a business year first.');
+      }
+
       const selectedRoleNames = allRoles
         .filter(role => activity.selected_roles.includes(role.id))
         .map(role => role.name);
@@ -3521,7 +3552,9 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
         .from('rd_selected_subcomponents')
         .select('*')
         .eq('research_activity_id', activity.activity_id)
-        .eq('business_year_id', currentBusinessYear?.id);
+        .eq('business_year_id', currentBusinessYear.id);
+
+      console.log('🔍 Subcomponents found:', subcomponents?.data?.length || 0);
 
       const subcomponentCount = subcomponents?.data?.length || 0;
       const steps = subcomponentCount; // Number of steps is the same as subcomponent count
@@ -3539,6 +3572,8 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
         applied_percent: appliedPercent,
         general_description: activity.general_description || ''
       };
+
+      console.log('🔍 AI Context:', context);
 
       let newValue = '';
       switch (field) {
@@ -3558,6 +3593,8 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
       onUpdateGuidelines(updatedGuidelines);
     } catch (error) {
       console.error(`Error regenerating ${field}:`, error);
+      // Show user-friendly error message
+      alert(`Error regenerating ${field}: ${error instanceof Error ? error.message : 'Unknown error occurred'}`);
     } finally {
       setIsGenerating(false);
     }
