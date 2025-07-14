@@ -42,6 +42,7 @@ import RDClientManagement from './components/RDClientManagement';
 import ErrorBoundary from './modules/shared/components/ErrorBoundary';
 import DemoModeIndicator from './components/DemoModeIndicator';
 import AcceptInvitation from './pages/AcceptInvitation';
+import PartnerDashboard from './modules/partner/pages/PartnerDashboard'; // Import the new component
 
 const defaultTaxInfo = {
   standardDeduction: true,
@@ -88,73 +89,45 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 };
 
 const AppRoutes = ({ profile }: { profile: any }) => {
-  // Robust role extraction
-  const role = profile?.email === 'admin@taxrxgroup.com' ? 'admin' :
-    profile?.role ||
-    profile?.raw_user_meta_data?.role ||
-    profile?.user_metadata?.role ||
-    profile?.user_role;
-  console.log('AppRoutes profile:', profile, 'role:', role);
+  // Robust role extraction from the new, more detailed profile
+  const accessLevel = profile?.access_level;
 
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/verify-email" element={<EmailVerification />} />
       <Route path="/accept-invitation" element={<AcceptInvitation />} />
-      <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>}>
-        <Route path="clients" element={<ProtectedRoute><UserProvider><UnifiedClientDashboard /></UserProvider></ProtectedRoute>} />
-        <Route path="rd-clients" element={<ProtectedRoute><UserProvider><RDClientManagement /></UserProvider></ProtectedRoute>} />
-        <Route path="advisors" element={<div>Advisor Management (coming soon)</div>} />
-        <Route path="groups" element={<GroupList />} />
-        <Route path="documents" element={<div>Document Management (coming soon)</div>} />
-        <Route path="notifications" element={<div>Notifications (coming soon)</div>} />
-        <Route path="audit" element={<div>Audit Log (coming soon)</div>} />
-        <Route path="charitable-donations" element={<div>Charitable Donations (coming soon)</div>} />
-        <Route path="settings" element={<div>Settings (coming soon)</div>} />
-        <Route path="strategies" element={<ProtectedRoute><StrategiesAdminPage /></ProtectedRoute>} />
-        <Route path="strategies/rd-wizard" element={<ProtectedRoute><UserProvider><RDTaxWizard onClose={() => { window.history.back(); }} /></UserProvider></ProtectedRoute>} />
-        <Route path="rd-tax-credit" element={<ProtectedRoute><UserProvider><RnDAdminDashboard /></UserProvider></ProtectedRoute>} />
-      </Route>
-      <Route
-        path="/advisor"
-        element={
-          <ProtectedRoute>
-            <AdvisorDashboard />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/client"
-        element={
-          <ProtectedRoute>
-            <ClientDashboard />
-          </ProtectedRoute>
-        }
-      />
 
+      {/* Admin Routes */}
+      <Route path="/admin/*" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
+
+      {/* Partner Routes */}
+      <Route path="/partner/*" element={<ProtectedRoute><PartnerDashboard /></ProtectedRoute>} />
+
+      {/* Client Routes (Future) */}
+      <Route path="/client" element={<ProtectedRoute><ClientDashboard /></ProtectedRoute>} />
+
+      {/* Root URL: Role-based redirect */}
       <Route
         path="/"
         element={
           <ProtectedRoute>
-            {role === 'admin' ? <Navigate to="/admin" /> : <Dashboard />}
+            {accessLevel === 'platform' && <Navigate to="/admin" />}
+            {accessLevel === 'partner' && <Navigate to="/partner" />}
+            {accessLevel === 'client' && <Navigate to="/client" />}
+            {/* Default fallback for other roles or while loading */}
+            {(!accessLevel) && <Dashboard />}
           </ProtectedRoute>
         }
       />
-      <Route
-        path="/dashboard"
-        element={
-          <ProtectedRoute>
-            {role === 'admin' ? <Navigate to="/admin" /> : <Dashboard />}
-          </ProtectedRoute>
-        }
-      />
+
+      {/* Legacy and other routes */}
+      <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/tax-calculator" element={<ProtectedRoute><TaxCalculator /></ProtectedRoute>} />
       <Route path="/solutions" element={<ProtectedRoute><Solutions /></ProtectedRoute>} />
-      <Route path="/solutions/rd-credit" element={<ProtectedRoute><RDTaxWizard onClose={() => {}} /></ProtectedRoute>} />
-      <Route path="/solutions/augusta-rule" element={<ProtectedRoute><AugustaRuleWizard onClose={() => {}} /></ProtectedRoute>} />
-      <Route path="/test-research-design" element={<ProtectedRoute><UserProvider><RDTaxWizard onClose={() => {}} startStep={2} /></UserProvider></ProtectedRoute>} />
       <Route path="/documents" element={<ProtectedRoute><DocumentsPage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

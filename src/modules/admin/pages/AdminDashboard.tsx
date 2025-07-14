@@ -53,6 +53,7 @@ import CreateClientModal from '../components/CreateClientModal';
 import { useUser } from '../../../context/UserContext';
 import useAuthStore from '../../../store/authStore';
 import RDClientManagement from '../../../components/RDClientManagement';
+import PartnersList from '../components/PartnersList'; // Import the new component
 
 const proposalService = ProposalService.getInstance();
 
@@ -154,6 +155,7 @@ const AdminDashboard: React.FC = () => {
     { name: 'Users', href: '/admin/users', icon: Users, current: location.pathname === '/admin/users' },
     { name: 'Reports', href: '/admin/reports', icon: BarChart3, current: location.pathname === '/admin/reports' },
     { name: 'Settings', href: '/admin/settings', icon: Settings, current: location.pathname === '/admin/settings' },
+    { name: 'Partners', href: '/admin/partners', icon: Briefcase, current: location.pathname === '/admin/partners' },
   ];
 
   const getPageTitle = () => {
@@ -345,6 +347,7 @@ const AdminDashboard: React.FC = () => {
             <Route path="/users" element={<div className="p-8"><h1 className="text-2xl font-bold">Users Management</h1><p>Coming soon...</p></div>} />
             <Route path="/reports" element={<div className="p-8"><h1 className="text-2xl font-bold">Reports</h1><p>Coming soon...</p></div>} />
             <Route path="/settings" element={<div className="p-8"><h1 className="text-2xl font-bold">Settings</h1><p>Coming soon...</p></div>} />
+            <Route path="/partners" element={<PartnersList />} />
             <Route path="*" element={<Navigate to="/admin" replace />} />
           </Routes>
         </main>

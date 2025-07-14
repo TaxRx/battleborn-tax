@@ -15,6 +15,7 @@ import LoginPage from './pages/LoginPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import EnhancedClientDashboard from './components/EnhancedClientDashboard';
+import PartnerDashboard from './modules/partner/pages/PartnerDashboard'; // Import the new component
 
 const BattleBornApp: React.FC = () => {
   const location = useLocation();
@@ -58,16 +59,29 @@ const BattleBornApp: React.FC = () => {
                 element={<AdminDashboard />} 
               />
 
+              {/* Partner Routes */}
+              <Route 
+                path="/partner/*" 
+                element={<PartnerDashboard />} 
+              />
+
               {/* Client Routes */}
               <Route 
                 path="/client" 
                 element={<EnhancedClientDashboard />} 
               />
 
-              {/* Default redirects */}
+              {/* Default redirects based on user role */}
               <Route 
                 path="/dashboard" 
-                element={<Navigate to="/admin" replace />} 
+                element={
+                  // TODO: Replace with actual role-based logic from user profile
+                  // const { accessLevel } = useProfileStore();
+                  // if (accessLevel === 'platform') return <Navigate to="/admin" replace />;
+                  // if (accessLevel === 'partner') return <Navigate to="/partner" replace />;
+                  // if (accessLevel === 'client') return <Navigate to="/client" replace />;
+                  <Navigate to="/admin" replace /> // Default fallback
+                } 
               />
             </>
           )}

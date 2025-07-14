@@ -1,64 +1,43 @@
-# Brownfield Product Requirements Document (PRD)
+# Product Requirements Document (PRD): B2B Partner Platform
 
-**Project**: TaxApp
+**Project**: TaxApp B2B SaaS Platform
 **Author**: BMad Product Manager
-**Created**: 2025-07-08
-**Version**: 1.0
+**Version**: 2.0
+**Last Updated**: 2025-07-14
 
-## 1. Introduction & Goals
+## 1. Strategic Vision & Business Model
 
-This document outlines the existing functionality of the TaxApp application as of the analysis date. The primary goal is to establish a baseline understanding of the current system to inform future development, starting with the addition of a client-facing portal.
+This document outlines the requirements for a strategic pivot of the TaxApp application into a B2B SaaS platform. The primary goal is to empower tax professionals (Partners) by providing them with our proprietary suite of tax strategy tools. The business model is usage-based, charging Partners a per-transaction fee for each tax strategy they execute for their clients.
 
-The TaxApp is a multi-faceted system designed to assist admins and affiliates in managing their clients' tax information, with a focus on identifying and calculating tax credits.
+## 2. User Hierarchy & Roles
 
-## 2. User Personas
+The platform supports a multi-layered user hierarchy:
 
-Based on the existing documentation and schema, we can identify the following key user roles:
+*   **Admin (Platform Owner)**: Manages the entire platform, including partners, tool subscriptions, and billing.
+*   **Partner (The Customer)**: A professional firm that subscribes to the service. They manage their own clients and affiliates within their isolated workspace.
+*   **Affiliate (Partner's Agent)**: An individual user belonging to a Partner organization, with restricted access to assigned clients.
+*   **Client (The End-User)**: The taxpayer whose data is being processed by a Partner. A client-facing portal is planned for a future phase.
 
-*   **Admin**: The primary power user of the system. Admins can manage clients, businesses, and all associated tax data. They appear to have full CRUD (Create, Read, Update, Delete) access to the entire system.
-*   **Affiliate**: An external partner who brings their clients to the TaxApp service. Affiliates are responsible for creating client profiles and uploading their initial data. They have a restricted, read-only view of their own client roster and the high-level status of their clients' cases. They do not perform tax calculations.
-*   **Client**: The end-user (an individual or business) whose tax information is being managed. Currently, clients do not have direct access to the system. The new client portal will serve this persona.
-*   **Client**: The end-user whose tax information is being managed. Currently, clients do not have direct access to the system. The new client portal will serve this persona.
+## 3. Core Platform Features (MVP)
 
-## 3. Existing Features & Functionality
+### Epic 1: Partner Lifecycle Management
+*   **Admin View**: Admins can onboard, view, and manage Partner accounts from the existing `/admin` panel.
+*   **Admin View**: Admins can control which tax tools each Partner is subscribed to.
 
-The following features are understood to be part of the current system:
+### Epic 2: Partner Workspace
+*   **Partner View**: Partners have a dedicated, isolated workspace to manage their clients and affiliates.
+*   **Partner View**: Partners can use the tax tools they are subscribed to for their clients.
 
-### 3.1. Centralized Client & Business Management
+### Epic 3: Granular Permissions
+*   **Partner View**: Partners can set tool-level permissions for their affiliates (`full`, `limited`, `reporting`, `none`).
 
-*   **Client Creation**: Admins can create new clients, including personal information, filing status, and income details.
-*   **Business Creation**: Admins can create new businesses associated with clients, including entity type, revenue, and other business details.
-*   **Data Association**: The system links clients to their businesses and tracks financial data on a yearly basis for both.
+### Epic 4: Transactional Billing & Payments
+*   **System**: Every use of a tax tool is logged as a billable transaction.
+*   **System**: Invoices are generated periodically for each Partner, aggregating their transactions.
+*   **Partner View**: Partners can view their invoices and securely pay them via Stripe.
 
-### 3.2. R&D Tax Credit Wizard
+## 4. Required Third-Party Integrations
 
-*   A specialized tool for calculating R&D tax credits.
-*   The wizard appears to guide users through a series of questions to determine eligibility and calculate the credit amount.
-
-### 3.3. Admin Panel
-
-*   A central dashboard for admins to manage all aspects of the system.
-*   The panel includes functionality for client management, business management, and likely reporting and analytics.
-
-### 3.4. Affiliate to Admin Workflow
-
-*   A defined workflow for affiliates to interact with the system and manage their clients.
-*   The specifics of this workflow are not fully detailed but appear to be a key part of the application's business logic.
-
-## 4. Technical Overview
-
-*   **Backend**: Supabase (PostgreSQL)
-*   **Frontend**: React (Vite)
-*   **Styling**: Tailwind CSS
-*   **Database Schema**: The schema is complex and has undergone several revisions. It includes tables for clients, businesses, personal and business tax years, and various other supporting tables. The database makes extensive use of SQL functions and Row Level Security (RLS) to manage data access.
-
-## 5. Future Development
-
-The next major feature to be added is a client-facing portal. This will require significant new development, including:
-
-*   Client authentication and authorization.
-*   A new set of UI components for the client dashboard.
-*   Functionality for clients to view, upload, and e-sign documents.
-*   Securely displaying reports generated by the admin side.
-
-This PRD will serve as the foundation for designing and building this new functionality.
+*   **Payment Processing**: Stripe
+*   **Transactional Email**: Resend
+*   **File Management**: Supabase Storage with Uppy
