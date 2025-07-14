@@ -73,7 +73,6 @@ interface SelectedActivity {
   selected_roles: string[];
   config: any;
   research_guidelines?: ResearchGuidelines;
-  general_description?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -89,8 +88,6 @@ interface ResearchGuidelines {
   hypothesis: string;
   development_steps: string;
   data_feedback: string;
-  internal_use_software: boolean;
-  business_component_complete: boolean;
 }
 
 interface PracticePercentageConfig {
@@ -1630,7 +1627,6 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       selected_roles: defaultRoles,
       config: {},
       research_guidelines: undefined,
-      general_description: undefined,
       created_at: undefined,
       updated_at: undefined
     };
@@ -1861,7 +1857,6 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         selected_roles: data.selected_roles,
         config: data.config,
         research_guidelines: activity.research_guidelines,
-        general_description: activity.general_description,
         created_at: data.created_at,
         updated_at: data.updated_at
       };
@@ -2453,37 +2448,10 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header with Year Selector */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 rounded-xl shadow-lg p-8 mb-8">
-        <div>
-          <h3 className="text-3xl font-bold text-white mb-2">Research Guidelines</h3>
-          <p className="text-blue-100 text-lg">Complete R&D qualification questions for each selected activity</p>
-        </div>
-        <div className="flex items-center space-x-3 mt-4 md:mt-0">
-          <label className="text-white text-sm font-medium mr-2">Year:</label>
-          <select
-            value={selectedYear}
-            onChange={(e) => {
-              const year = parseInt(e.target.value);
-              setSelectedYear(year);
-              const businessYear = availableBusinessYears.find(by => by.year === year);
-              if (businessYear) {
-                setSelectedBusinessYearId(businessYear.id);
-              }
-            }}
-            className="px-3 py-2 border border-white/30 rounded-md bg-white/10 text-white text-lg focus:outline-none focus:ring-2 focus:ring-white/50"
-          >
-            {availableBusinessYears.length > 0 ? (
-              availableBusinessYears.map(businessYear => (
-                <option key={businessYear.id} value={businessYear.year} className="text-black">
-                  {businessYear.year}
-                </option>
-              ))
-            ) : (
-              <option value="">No years available</option>
-            )}
-          </select>
-        </div>
+      <div className="text-center mb-8">
+        <h3 className="text-3xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mb-4">
+          Research Explorer
+        </h3>
       </div>
 
       {/* Tab Navigation */}
@@ -2524,7 +2492,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       <div className="bg-white rounded-lg shadow-sm p-6">
         {activeTab === 'roles' && (
           <div className="space-y-6">
-            {/* Enhanced Header - remove year selector here */}
+            {/* Enhanced Header with Year Selector */}
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
               <div className="flex items-center justify-between">
                 <div>
@@ -2532,7 +2500,40 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
                     Research Roles
                   </h4>
                   <p className="text-gray-600 text-lg">Define your research team hierarchy and responsibilities</p>
-                  {/* Year selector removed */}
+                  <div className="flex items-center space-x-4 mt-3">
+                    <div className="flex items-center space-x-2 bg-white rounded-lg px-3 py-2 shadow-sm">
+                      <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <label className="text-sm font-medium text-gray-700">Year:</label>
+                      <select
+                        value={selectedYear}
+                        onChange={(e) => {
+                          const year = parseInt(e.target.value);
+                          setSelectedYear(year);
+                          const businessYear = availableBusinessYears.find(by => by.year === year);
+                          if (businessYear) {
+                            setSelectedBusinessYearId(businessYear.id);
+                          }
+                        }}
+                        className="px-3 py-1 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-transparent"
+                      >
+                        {availableBusinessYears.length > 0 ? (
+                          availableBusinessYears.map(businessYear => (
+                            <option key={businessYear.id} value={businessYear.year}>
+                              {businessYear.year}
+                            </option>
+                          ))
+                        ) : (
+                          <option value="">No years available</option>
+                        )}
+                      </select>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                      <span className="text-sm text-gray-600">Active configuration</span>
+                    </div>
+                  </div>
                 </div>
                 <div className="flex items-center space-x-3">
                   <button
@@ -2697,7 +2698,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
         {activeTab === 'activities' && (
           <div className="space-y-6">
-            {/* Modern Gradient Header with Progress - remove year selector here */}
+            {/* Modern Gradient Header with Progress */}
             <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl shadow-xl overflow-hidden">
               <div className="px-6 py-8 relative">
                 <div className="absolute inset-0 bg-black/10"></div>
@@ -2806,7 +2807,31 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
               <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200 flex items-center justify-between">
                 <div className="flex items-center">
                   <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mr-4">Activity Configuration</h3>
-                  {/* Year selector removed */}
+                  <div className="flex items-center space-x-2">
+                    <label className="text-sm font-medium text-gray-700">Year:</label>
+                    <select
+                      value={selectedYear}
+                      onChange={(e) => {
+                        const year = parseInt(e.target.value);
+                        setSelectedYear(year);
+                        const businessYear = availableBusinessYears.find(by => by.year === year);
+                        if (businessYear) {
+                          setSelectedBusinessYearId(businessYear.id);
+                        }
+                      }}
+                      className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {availableBusinessYears.length > 0 ? (
+                        availableBusinessYears.map(businessYear => (
+                          <option key={businessYear.id} value={businessYear.year}>
+                            {businessYear.year}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No years available</option>
+                      )}
+                    </select>
+                  </div>
                 </div>
                 <div className="text-right">
                   <div className="text-sm text-gray-600">Available for R&D</div>
@@ -3189,10 +3214,6 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
                     activity={activity}
                     allRoles={roles}
                     onUpdateGuidelines={(guidelines) => updateResearchGuidelines(activity.activity_id, guidelines)}
-                    currentBusinessYear={availableBusinessYears.find(year => year.id === selectedBusinessYearId)}
-                    availableBusinessYears={availableBusinessYears}
-                    selectedBusinessYearId={selectedBusinessYearId}
-                    onYearChange={(yearId) => setSelectedBusinessYearId(yearId)}
                   />
                 ))}
               </div>
@@ -3401,20 +3422,12 @@ interface ResearchGuidelinesAccordionProps {
   activity: SelectedActivity;
   onUpdateGuidelines: (guidelines: ResearchGuidelines) => void;
   allRoles: ResearchRole[];
-  currentBusinessYear: any;
-  availableBusinessYears: any[];
-  selectedBusinessYearId: string;
-  onYearChange: (yearId: string) => void;
 }
 
 const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = ({
   activity,
   onUpdateGuidelines,
-  allRoles,
-  currentBusinessYear,
-  availableBusinessYears,
-  selectedBusinessYearId,
-  onYearChange
+  allRoles
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [guidelines, setGuidelines] = useState<ResearchGuidelines>(
@@ -3423,14 +3436,12 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
       considered_alternatives: true,
       us_based: true,
       science_based: true,
-      primary_goal: 'Technique',
+      primary_goal: 'Develop a new product or process',
       uncertainty_type: 'Design',
       success_measurement: 'Functional performance',
       hypothesis: '',
       development_steps: '',
-      data_feedback: '',
-      internal_use_software: false,
-      business_component_complete: false
+      data_feedback: ''
     }
   );
   const [isGenerating, setIsGenerating] = useState(false);
@@ -3444,34 +3455,10 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
   const generateAIAnswers = async () => {
     setIsGenerating(true);
     try {
-      // Debug logging
-      console.log('🔍 GenerateAIAnswers Debug:');
-      console.log('📅 Current Business Year:', currentBusinessYear);
-      console.log('📅 Current Business Year ID:', currentBusinessYear?.id);
-      console.log('🎯 Activity:', activity);
-
-      if (!currentBusinessYear?.id) {
-        console.error('❌ No current business year found');
-        throw new Error('No business year selected. Please select a business year first.');
-      }
-
       // Get role names for the selected roles
       const selectedRoleNames = allRoles
         .filter(role => activity.selected_roles.includes(role.id))
         .map(role => role.name);
-
-      // Get subcomponent data for the activity
-      const subcomponents = await supabase
-        .from('rd_selected_subcomponents')
-        .select('*')
-        .eq('research_activity_id', activity.activity_id)
-        .eq('business_year_id', currentBusinessYear.id);
-
-      console.log('🔍 Subcomponents found:', subcomponents?.data?.length || 0);
-
-      const subcomponentCount = subcomponents?.data?.length || 0;
-      const steps = subcomponentCount; // Number of steps is the same as subcomponent count
-      const appliedPercent = activity.practice_percent;
 
       const context: AIGenerationContext = {
         research_activity_name: activity.activity_name || 'Unknown Activity',
@@ -3479,14 +3466,8 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
         roles_involved: selectedRoleNames,
         industry_type: activity.activity_category || 'General',
         category: activity.activity_category,
-        frequency_percent: 100,
-        subcomponent_count: subcomponentCount,
-        steps: steps,
-        applied_percent: appliedPercent,
-        general_description: activity.general_description || ''
+        frequency_percent: 100
       };
-
-      console.log('🔍 AI Context:', context);
 
       const aiAnswers = await AIService.generateAllAnswers(context);
       
@@ -3501,8 +3482,6 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
       onUpdateGuidelines(updatedGuidelines);
     } catch (error) {
       console.error('Error generating AI answers:', error);
-      // Show user-friendly error message
-      alert(`Error generating AI answers: ${error instanceof Error ? error.message : 'Unknown error occurred'}`);
     } finally {
       setIsGenerating(false);
     }
@@ -3511,33 +3490,9 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
   const regenerateField = async (field: 'hypothesis' | 'development_steps' | 'data_feedback') => {
     setIsGenerating(true);
     try {
-      // Debug logging
-      console.log('🔍 RegenerateField Debug:');
-      console.log('📅 Current Business Year:', currentBusinessYear);
-      console.log('📅 Current Business Year ID:', currentBusinessYear?.id);
-      console.log('🎯 Activity:', activity);
-
-      if (!currentBusinessYear?.id) {
-        console.error('❌ No current business year found');
-        throw new Error('No business year selected. Please select a business year first.');
-      }
-
       const selectedRoleNames = allRoles
         .filter(role => activity.selected_roles.includes(role.id))
         .map(role => role.name);
-
-      // Get subcomponent data for the activity
-      const subcomponents = await supabase
-        .from('rd_selected_subcomponents')
-        .select('*')
-        .eq('research_activity_id', activity.activity_id)
-        .eq('business_year_id', currentBusinessYear.id);
-
-      console.log('🔍 Subcomponents found:', subcomponents?.data?.length || 0);
-
-      const subcomponentCount = subcomponents?.data?.length || 0;
-      const steps = subcomponentCount; // Number of steps is the same as subcomponent count
-      const appliedPercent = activity.practice_percent;
 
       const context: AIGenerationContext = {
         research_activity_name: activity.activity_name || 'Unknown Activity',
@@ -3545,14 +3500,8 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
         roles_involved: selectedRoleNames,
         industry_type: activity.activity_category || 'General',
         category: activity.activity_category,
-        frequency_percent: 100,
-        subcomponent_count: subcomponentCount,
-        steps: steps,
-        applied_percent: appliedPercent,
-        general_description: activity.general_description || ''
+        frequency_percent: 100
       };
-
-      console.log('🔍 AI Context:', context);
 
       let newValue = '';
       switch (field) {
@@ -3572,8 +3521,6 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
       onUpdateGuidelines(updatedGuidelines);
     } catch (error) {
       console.error(`Error regenerating ${field}:`, error);
-      // Show user-friendly error message
-      alert(`Error regenerating ${field}: ${error instanceof Error ? error.message : 'Unknown error occurred'}`);
     } finally {
       setIsGenerating(false);
     }
@@ -3589,26 +3536,7 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
           <div className="w-3 h-3 rounded-full bg-blue-500"></div>
           <h3 className="text-lg font-semibold text-gray-900">{activity.activity_name}</h3>
         </div>
-        <div className="flex items-center space-x-4">
-          {/* Year Selector */}
-          <div className="flex items-center space-x-2 bg-white rounded-lg px-3 py-1 shadow-sm border border-gray-200">
-            <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <label className="text-xs font-medium text-gray-700">Year:</label>
-            <select
-              value={selectedBusinessYearId}
-              onChange={(e) => onYearChange(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              className="text-xs border-none bg-transparent focus:ring-0 focus:outline-none text-gray-700"
-            >
-              {availableBusinessYears.map(businessYear => (
-                <option key={businessYear.id} value={businessYear.id}>
-                  {businessYear.year}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className="flex items-center space-x-2">
           <span className="text-sm text-gray-600">Research Guidelines</span>
           <svg
             className={`w-5 h-5 text-gray-500 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
@@ -3680,32 +3608,6 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                   </label>
                 </div>
-
-                <div className="flex items-center justify-between">
-                  <label className="text-sm text-gray-700">Internal Use Software?</label>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={guidelines.internal_use_software}
-                      onChange={(e) => handleGuidelineChange('internal_use_software', e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <label className="text-sm text-gray-700">Business Component Complete?</label>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={guidelines.business_component_complete}
-                      onChange={(e) => handleGuidelineChange('business_component_complete', e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
-                </div>
               </div>
             </div>
 
@@ -3721,18 +3623,11 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
                     onChange={(e) => handleGuidelineChange('primary_goal', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
-                    <option value="Product">Product	A physical good developed for sale, lease, or use in the business (e.g., medical device, prosthetic material)</option>
-                    <option value="Process">Process	A method or series of steps used in manufacturing, clinical workflows, treatment protocols, etc.</option>
-                    <option value="Software – External Use">Software – External Use	Software developed for sale, license, or interaction with clients or the public</option>
-                    <option value="Software – Internal Use">Software – Internal Use	Software developed for internal business operations (must meet the three-part high threshold test)</option>
-                    <option value="Technique">Technique	A specialized method or clinical/technical approach (e.g., chairside same-day restoration)</option>
-                    <option value="Formula">Formula	A unique composition of ingredients/materials (often in pharma, dentistry, labs)</option>
-                    <option value="Invention">Invention	A novel concept or device with potential patentability</option>
-                    <option value="Pilot Model / Prototype">Pilot Model / Prototype	A first physical implementation used to test and validate a product or process before commercialization</option>
-                    <option value="Tooling / Fixture">Tooling / Fixture	A custom manufacturing aid or setup used in producing goods or delivering services</option>
-                    <option value="Algorithm / AI Model">Algorithm / AI Model	A distinct algorithm or machine learning model being designed or improved for business use</option>
-                    <option value="System Integration / Workflow">System Integration / Workflow	Combining hardware, software, or processes into a cohesive operational system (especially in practices or labs)</option>
-                    <option value="Platform">Platform	A technology stack or infrastructure enabling multiple functions (e.g., health tech apps)</option>
+                    <option value="Develop a new product or process">Develop a new product or process</option>
+                    <option value="Improve an existing product or process">Improve an existing product or process</option>
+                    <option value="Integrate or test new technology">Integrate or test new technology</option>
+                    <option value="Optimize workflow or performance">Optimize workflow or performance</option>
+                    <option value="Evaluate alternative methods">Evaluate alternative methods</option>
                   </select>
                 </div>
 

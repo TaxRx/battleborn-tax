@@ -1,0 +1,167 @@
+.state-proforma-container {
+  margin: 20px 0;
+  padding: 20px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.state-proforma-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.state-proforma-table {
+  margin-top: 16px;
+}
+
+.state-proforma-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.state-proforma-table th {
+  background-color: #f8fafc;
+  font-weight: 600;
+  text-align: left;
+  padding: 12px 16px;
+  border: 1px solid #e2e8f0;
+  color: #374151;
+}
+
+.state-proforma-table td {
+  padding: 12px 16px;
+  border: 1px solid #e2e8f0;
+  vertical-align: top;
+}
+
+.state-proforma-table tr:hover {
+  background-color: #f9fafb;
+}
+
+.state-proforma-table input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: border-color 0.2s ease;
+}
+
+.state-proforma-table input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.state-proforma-table input:disabled {
+  background-color: #f3f4f6;
+  color: #6b7280;
+  cursor: not-allowed;
+}
+
+.state-proforma-table input[type="number"] {
+  text-align: right;
+}
+
+/* Save button styling */
+.state-proforma-save {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.state-proforma-save button {
+  padding: 8px 16px;
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.state-proforma-save button:hover:not(:disabled) {
+  background-color: #2563eb;
+}
+
+.state-proforma-save button:disabled {
+  background-color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.state-proforma-save .save-message {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.state-proforma-save .save-message.success {
+  color: #059669;
+}
+
+.state-proforma-save .save-message.error {
+  color: #dc2626;
+}
+
+/* State selector styling */
+.state-selector-container {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.state-selector-container label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.state-selector-container select {
+  padding: 6px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 14px;
+  background-color: white;
+  cursor: pointer;
+}
+
+.state-selector-container select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.state-selector-container select:disabled {
+  background-color: #f3f4f6;
+  color: #6b7280;
+  cursor: not-allowed;
+}
+
+/* Loading state */
+.state-proforma-loading {
+  text-align: center;
+  padding: 40px 20px;
+  color: #6b7280;
+  font-size: 16px;
+}
+
+/* Error state */
+.state-proforma-error {
+  text-align: center;
+  padding: 40px 20px;
+  color: #dc2626;
+  font-size: 16px;
+} 

@@ -9,6 +9,7 @@ interface Form6765Props {
   calculations: any;
   clientId: string;
   userId?: string;
+  selectedMethod?: 'standard' | 'asc'; // Add selectedMethod prop
 }
 
 interface Form6765Line {
@@ -23,6 +24,7 @@ interface Form6765Line {
   formula?: string;
   format?: (value: number) => string; // Added for formatting
   extra?: any; // Added for extra data like use280C
+  isVisible?: boolean; // Added for conditional visibility
 }
 
 interface Form6765Section {
@@ -77,7 +79,8 @@ export const Form6765: React.FC<Form6765Props> = ({
   selectedYear,
   calculations,
   clientId,
-  userId
+  userId,
+  selectedMethod: propSelectedMethod // Destructure prop
 }) => {
   const [overrides, setOverrides] = useState<Form6765Override[]>([]);
   const [sections, setSections] = useState<Form6765Section[]>([]);
@@ -169,12 +172,14 @@ export const Form6765: React.FC<Form6765Props> = ({
     }
   };
 
+  // Define selectedMethod in component scope so it's accessible everywhere
+  const selectedMethod = propSelectedMethod || calculations?.federalCredits?.selectedMethod || 'standard'; // Use propSelectedMethod first, fallback to calculations
+
   const initializeSections = () => {
     const businessYear = selectedYear?.year || new Date().getFullYear();
     const businessStartYear = businessData?.start_year || businessYear;
     const isEligibleForPayrollCredit = (businessYear - businessStartYear) <= 5;
     const isSCorpOrPartnership = businessData?.entity_type === 'S-Corp' || businessData?.entity_type === 'Partnership';
-    const selectedMethod = calculations?.federalCredits?.selectedMethod || 'standard';
 
     console.log('Form 6765 Debug:', {
       selectedMethod,
@@ -262,44 +267,57 @@ export const Form6765: React.FC<Form6765Props> = ({
       });
     }
 
-    // Section B: ASC (lines 5-17, IRS-accurate mapping)
+    // Section B: ASC (lines 18-34, IRS-accurate mapping)
     if (selectedMethod === 'asc') {
-      // Extract QRE breakdowns
-      const employeeQRE = calculations?.currentYearQRE?.employee_costs || 0;
-      const supplyQRE = calculations?.currentYearQRE?.supply_costs || 0;
-      const contractorQRE = calculations?.currentYearQRE?.contractor_costs || 0;
-      const rentalQRE = getOverrideValue('B', 7) ?? 0;
-      const fixedBasePercent = Math.min(ascCredit?.basePercentage ?? 0.14, 0.16);
-      const avgGrossReceipts = historicalData.length > 0 
-        ? historicalData.reduce((sum, year) => sum + (year.gross_receipts || 0), 0) / historicalData.length 
-        : 0;
-      const totalQRE = employeeQRE + supplyQRE + rentalQRE + contractorQRE;
-      const line12 = avgGrossReceipts * fixedBasePercent;
-      const line13 = Math.max(totalQRE - line12, 0);
-      const line14 = totalQRE * 0.5;
-      const line15 = Math.min(line13, line14);
-      const line16 = (getOverrideValue('B', 1) ?? 0) + (getOverrideValue('B', 4) ?? 0) + line15;
-      const line17Yes = line16 * 0.079;
-      const line17No = line16;
-
+      // Extract QRE breakdowns and prior year data
+      const employeeQRE = getOverrideValue('B', 24) ?? (calculations?.currentYearQRE?.employee_wages ?? 0);
+      const supplyQRE = getOverrideValue('B', 25) ?? (calculations?.currentYearQRE?.supply_costs ?? 0);
+      const computerQRE = getOverrideValue('B', 26) ?? 0;
+      const contractorQRE = getOverrideValue('B', 27) ?? (calculations?.currentYearQRE?.contractor_costs ?? 0);
+      const totalQRE = employeeQRE + supplyQRE + computerQRE + contractorQRE;
+      
+      // Check for 3 consecutive prior years with QREs
+      const historicalData = calculations?.historicalData || [];
+      const priorYears = historicalData.slice(0, 3); // Get the 3 most recent prior years
+      const has3ConsecutiveYears = priorYears.length === 3 && priorYears.every(year => (year.qre || 0) > 0);
+      
+      const priorQRE = getOverrideValue('B', 29) ?? (has3ConsecutiveYears ? priorYears.reduce((sum, y) => sum + (y.qre || 0), 0) : 0);
+      
+      // Calculate lines 30 and 31 only if we have 3 consecutive years with QREs
+      const line30 = has3ConsecutiveYears ? priorQRE / 6.0 : 0;
+      const line31 = has3ConsecutiveYears ? Math.max(totalQRE - line30, 0) : 0;
+      
+      // Apply correct rate based on prior year data
+      const line32 = has3ConsecutiveYears 
+        ? line31 * 0.14  // 14% rate if 3 consecutive years with QREs
+        : totalQRE * 0.06; // 6% rate if not 3 consecutive years
+      
+      const line33 = (getOverrideValue('B', 23) ?? 0) + line32;
+      const line34Yes = line33 * 0.79;
+      const line34No = line33;
+      
       newSections.push({
         section: 'B',
         title: 'Section B—Alternative Simplified Credit',
         isVisible: true,
         lines: [
-          { lineNumber: 5, label: 'Wages for qualified services (do not include wages used in figuring the work opportunity credit)', value: employeeQRE, calculatedValue: employeeQRE, isEditable: false, format: formatCurrency },
-          { lineNumber: 6, label: 'Cost of supplies', value: supplyQRE, calculatedValue: supplyQRE, isEditable: false, format: formatCurrency },
-          { lineNumber: 7, label: 'Rental or lease costs of computers (see instructions)', value: rentalQRE, calculatedValue: rentalQRE, isEditable: true, format: formatCurrency },
-          { lineNumber: 8, label: 'Enter the applicable percentage of contract research expenses. See instructions', value: contractorQRE, calculatedValue: contractorQRE, isEditable: false, format: formatCurrency },
-          { lineNumber: 9, label: 'Total qualified research expenses. Add lines 5 through 8', value: totalQRE, calculatedValue: totalQRE, isEditable: false, dependsOn: [5,6,7,8], formula: 'line5+line6+line7+line8', format: formatCurrency },
-          { lineNumber: 10, label: 'Enter fixed-base percentage, but not more than 16% (0.16) (see instructions)', value: fixedBasePercent, calculatedValue: fixedBasePercent, isEditable: true, format: formatPercent },
-          { lineNumber: 11, label: 'Enter average annual gross receipts. See instructions', value: avgGrossReceipts, calculatedValue: avgGrossReceipts, isEditable: true, format: formatCurrency },
-          { lineNumber: 12, label: 'Multiply line 11 by the percentage on line 10', value: line12, calculatedValue: line12, isEditable: false, dependsOn: [10,11], formula: 'line11*line10', format: formatCurrency },
-          { lineNumber: 13, label: 'Subtract line 12 from line 9. If zero or less, enter -0-', value: line13, calculatedValue: line13, isEditable: false, dependsOn: [9,12], formula: 'line9-line12', format: formatCurrency },
-          { lineNumber: 14, label: 'Multiply line 9 by 50% (0.50)', value: line14, calculatedValue: line14, isEditable: false, dependsOn: [9], formula: 'line9*0.5', format: formatCurrency },
-          { lineNumber: 15, label: 'Enter the smaller of line 13 or line 14', value: line15, calculatedValue: line15, isEditable: false, dependsOn: [13,14], formula: 'min(line13,line14)', format: formatCurrency },
-          { lineNumber: 16, label: 'Add lines 1, 4, and 15', value: line16, calculatedValue: line16, isEditable: false, dependsOn: [1,4,15], formula: 'line1+line4+line15', format: formatCurrency },
-          { lineNumber: 17, label: 'Are you electing the reduced credit under section 280C?', value: use280C ? line17Yes : line17No, calculatedValue: use280C ? line17Yes : line17No, isEditable: false, dependsOn: [16], formula: 'line16*(use280C?0.79:1)', format: formatCurrency, extra: { preview: !use280C ? line17Yes : null } }
+          { lineNumber: 18, label: 'Certain amounts paid or incurred to energy consortia (see the line 1 instructions)', value: getOverrideValue('B', 18) ?? 0, calculatedValue: 0, isEditable: true, format: formatCurrency },
+          { lineNumber: 19, label: 'Basic research payments to qualified organizations (see the line 2 instructions)', value: getOverrideValue('B', 19) ?? 0, calculatedValue: 0, isEditable: true, format: formatCurrency },
+          { lineNumber: 20, label: 'Qualified organization base period amount (see the line 3 instructions)', value: getOverrideValue('B', 20) ?? 0, calculatedValue: 0, isEditable: true, format: formatCurrency },
+          { lineNumber: 21, label: 'Subtract line 20 from line 19. If zero or less, enter -0-', value: Math.max((getOverrideValue('B', 19) ?? 0) - (getOverrideValue('B', 20) ?? 0), 0), calculatedValue: 0, isEditable: false, dependsOn: [19,20], formula: 'line19-line20', format: formatCurrency },
+          { lineNumber: 22, label: 'Add lines 18 and 21', value: (getOverrideValue('B', 18) ?? 0) + (Math.max((getOverrideValue('B', 19) ?? 0) - (getOverrideValue('B', 20) ?? 0), 0)), calculatedValue: 0, isEditable: false, dependsOn: [18,21], formula: 'line18+line21', format: formatCurrency },
+          { lineNumber: 23, label: 'Multiply line 22 by 20% (0.20)', value: ((getOverrideValue('B', 18) ?? 0) + (Math.max((getOverrideValue('B', 19) ?? 0) - (getOverrideValue('B', 20) ?? 0), 0))) * 0.20, calculatedValue: 0, isEditable: false, dependsOn: [22], formula: 'line22*0.20', format: formatCurrency },
+          { lineNumber: 24, label: 'Wages for qualified services (do not include wages used in figuring the work opportunity credit)', value: employeeQRE, calculatedValue: employeeQRE, isEditable: true, format: formatCurrency },
+          { lineNumber: 25, label: 'Cost of supplies', value: supplyQRE, calculatedValue: supplyQRE, isEditable: true, format: formatCurrency },
+          { lineNumber: 26, label: 'Rental or lease costs of computers (see the line 7 instructions)', value: computerQRE, calculatedValue: computerQRE, isEditable: true, format: formatCurrency },
+          { lineNumber: 27, label: 'Enter the applicable percentage of contract research expenses. See the line 8 instructions', value: contractorQRE, calculatedValue: contractorQRE, isEditable: true, format: formatCurrency },
+          { lineNumber: 28, label: 'Total qualified research expenses. Add lines 24 through 27', value: totalQRE, calculatedValue: totalQRE, isEditable: false, dependsOn: [24,25,26,27], formula: 'line24+line25+line26+line27', format: formatCurrency },
+          { lineNumber: 29, label: 'Enter your total qualified research expenses for the prior 3 tax years. If you had no qualified research expenses in any one of those years, skip lines 30 and 31', value: priorQRE, calculatedValue: priorQRE, isEditable: true, format: formatCurrency },
+          { lineNumber: 30, label: 'Divide line 29 by 6.0', value: line30, calculatedValue: line30, isEditable: false, dependsOn: [29], formula: 'line29/6.0', format: formatCurrency, isVisible: has3ConsecutiveYears },
+          { lineNumber: 31, label: 'Subtract line 30 from line 28. If zero or less, enter -0-', value: line31, calculatedValue: line31, isEditable: false, dependsOn: [28,30], formula: 'line28-line30', format: formatCurrency, isVisible: has3ConsecutiveYears },
+          { lineNumber: 32, label: `Multiply line ${has3ConsecutiveYears ? '31' : '28'} by ${has3ConsecutiveYears ? '14% (0.14)' : '6% (0.06)'}. ${has3ConsecutiveYears ? '' : 'If you skipped lines 30 and 31, multiply line 28 by 6% (0.06)'}`, value: line32, calculatedValue: line32, isEditable: false, dependsOn: has3ConsecutiveYears ? [31] : [28], formula: has3ConsecutiveYears ? 'line31*0.14' : 'line28*0.06', format: formatCurrency },
+          { lineNumber: 33, label: 'Add lines 23 and 32', value: line33, calculatedValue: line33, isEditable: false, dependsOn: [23,32], formula: 'line23+line32', format: formatCurrency },
+          { lineNumber: 34, label: 'Are you electing the reduced credit under section 280C?', value: use280C ? line34Yes : line34No, calculatedValue: use280C ? line34Yes : line34No, isEditable: false, dependsOn: [33], formula: 'line33*(use280C?0.79:1)', format: formatCurrency, extra: { preview: !use280C ? line34Yes : null } }
         ]
       });
     }
@@ -372,22 +390,25 @@ export const Form6765: React.FC<Form6765Props> = ({
               ((currentYearQRE - (avgPriorQRE / 2)) * 0.14)) * 0.50),
             isEditable: false,
             dependsOn: [41],
-            formula: 'line41 * 0.50',
+            formula: 'line41*0.50',
             format: formatCurrency
           },
           {
             lineNumber: 43,
-            label: 'Payroll tax credit (enter here and on Form 8974)',
-            value: getOverrideValue('D', 43) ?? ((selectedMethod === 'standard' ? 
+            label: 'Enter the smaller of line 42 or the amount on line 41',
+            value: getOverrideValue('D', 43) ?? Math.min(((selectedMethod === 'standard' ? 
               ((currentYearQRE - Math.max((avgGrossReceipts * basePercentage), 0.5 * currentYearQRE)) * 0.20) :
-              ((currentYearQRE - (avgPriorQRE / 2)) * 0.14)) * 0.50),
-            calculatedValue: ((selectedMethod === 'standard' ? 
+              ((currentYearQRE - (avgPriorQRE / 2)) * 0.14)) * 0.50), (selectedMethod === 'standard' ? 
               ((currentYearQRE - Math.max((avgGrossReceipts * basePercentage), 0.5 * currentYearQRE)) * 0.20) :
-              ((currentYearQRE - (avgPriorQRE / 2)) * 0.14)) * 0.50),
+              ((currentYearQRE - (avgPriorQRE / 2)) * 0.14))),
+            calculatedValue: Math.min(((selectedMethod === 'standard' ? 
+              ((currentYearQRE - Math.max((avgGrossReceipts * basePercentage), 0.5 * currentYearQRE)) * 0.20) :
+              ((currentYearQRE - (avgPriorQRE / 2)) * 0.14)) * 0.50), (selectedMethod === 'standard' ? 
+              ((currentYearQRE - Math.max((avgGrossReceipts * basePercentage), 0.5 * currentYearQRE)) * 0.20) :
+              ((currentYearQRE - (avgPriorQRE / 2)) * 0.14))),
             isEditable: false,
-            dependsOn: [42],
-            formula: 'line42',
-            isCredit: true,
+            dependsOn: [41,42],
+            formula: 'min(line41,line42)',
             format: formatCurrency
           }
         ]
@@ -406,7 +427,7 @@ export const Form6765: React.FC<Form6765Props> = ({
     if (!clientId || !selectedYear?.year) return;
 
     try {
-      // Update local state immediately
+      // Update local state immediately for responsive UI
       setSections(prevSections => 
         prevSections.map(sectionObj => 
           sectionObj.section === section 
@@ -414,7 +435,7 @@ export const Form6765: React.FC<Form6765Props> = ({
                 ...sectionObj,
                 lines: sectionObj.lines.map(line => 
                   line.lineNumber === lineNumber 
-                    ? { ...line, value: newValue }
+                    ? { ...line, value: newValue, calculatedValue: newValue }
                     : line
                 )
               }
@@ -544,6 +565,15 @@ export const Form6765: React.FC<Form6765Props> = ({
     }
   };
 
+  // 1. Section selection logic: Only display Section A if selectedMethod is 'standard', Section B if 'asc'.
+  const visibleSections = sections.filter(section => {
+    // Defensive check to ensure selectedMethod is always defined
+    const method = selectedMethod || 'standard';
+    if (method === 'standard') return section.section === 'A';
+    if (method === 'asc') return section.section === 'B';
+    return false;
+  });
+
   // In render, fallback UI for missing data
   if (loading) {
     return <div className="form-6765-loading">Loading Form 6765...</div>;
@@ -562,7 +592,7 @@ export const Form6765: React.FC<Form6765Props> = ({
         </p>
       </div>
 
-      {sections.map(section => (
+      {visibleSections.map(section => (
         <div key={section.section} className="form-6765-section">
           <h3 className="section-title">{section.title}</h3>
           {section.section === 'D' && (
@@ -577,136 +607,153 @@ export const Form6765: React.FC<Form6765Props> = ({
           )}
           <div className="form-6765-lines">
             {section.lines.map((line, idx) => (
-              <React.Fragment key={line.lineNumber}>
-                <div className={`form-6765-line-row${line.isCredit ? ' form-6765-credit-line' : ''}`}
-                  style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid #eee', padding: '6px 0' }}>
-                  <div className="line-number" style={{ width: 40, textAlign: 'right', color: '#888' }}>{line.lineNumber}</div>
-                  <div className="description" style={{ flex: 1, paddingLeft: 12 }}>
-                    {line.label}
-                    {section.section === 'A' && line.lineNumber === 17 && (
-                      <span style={{ marginLeft: 16, display: 'inline-flex', alignItems: 'center' }}>
-                        <label style={{ marginRight: 8, marginLeft: 8, fontWeight: 500 }}>
-                          <input
-                            type="radio"
-                            checked={use280C}
-                            onChange={() => setUse280C(true)}
-                            style={{ marginRight: 4 }}
-                          />
-                          Yes
-                        </label>
-                        <label style={{ fontWeight: 500 }}>
-                          <input
-                            type="radio"
-                            checked={!use280C}
-                            onChange={() => setUse280C(false)}
-                            style={{ marginRight: 4 }}
-                          />
-                          No
-                        </label>
-                      </span>
-                    )}
-                    {section.section === 'B' && line.lineNumber === 17 && (
-                      <span style={{ marginLeft: 16, display: 'inline-flex', alignItems: 'center' }}>
-                        <label style={{ marginRight: 8, marginLeft: 8, fontWeight: 500 }}>
-                          <input
-                            type="radio"
-                            checked={use280C}
-                            onChange={() => setUse280C(true)}
-                            style={{ marginRight: 4 }}
-                          />
-                          Yes
-                        </label>
-                        <label style={{ fontWeight: 500 }}>
-                          <input
-                            type="radio"
-                            checked={!use280C}
-                            onChange={() => setUse280C(false)}
-                            style={{ marginRight: 4 }}
-                          />
-                          No
-                        </label>
-                        {!use280C && line.extra?.preview != null && (
-                          <span style={{ color: '#888', fontSize: '0.95em', marginLeft: 10 }}>
-                            ({safeCurrency(line.extra.preview)})<span style={{ fontSize: '1em', verticalAlign: 'super' }}>*</span>
-                          </span>
-                        )}
-                      </span>
-                    )}
-                  </div>
-                  <div className="amount" style={{ width: 120, textAlign: 'right', fontWeight: 'bold', padding: '0 8px' }}>
-                    {section.section === 'A' && [5, 6, 8, 10, 11].includes(line.lineNumber) && line.isEditable ? (
-                      <input
-                        type="text"
-                        value={(() => {
+              // Skip rendering if line is not visible (for lines 30 and 31 when no 3 consecutive years)
+              line.isVisible === false ? null : (
+                <React.Fragment key={line.lineNumber}>
+                  <div className={`form-6765-line-row${line.isCredit ? ' form-6765-credit-line' : ''}`}
+                    style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid #eee', padding: '6px 0' }}>
+                    <div className="line-number" style={{ width: 40, textAlign: 'right', color: '#888' }}>{line.lineNumber}</div>
+                    <div className="description" style={{ flex: 1, paddingLeft: 12 }}>
+                      {line.label}
+                      {section.section === 'A' && line.lineNumber === 17 && (
+                        <span style={{ marginLeft: 16, display: 'inline-flex', alignItems: 'center' }}>
+                          <label style={{ marginRight: 8, marginLeft: 8, fontWeight: 500 }}>
+                            <input
+                              type="radio"
+                              checked={use280C}
+                              onChange={() => setUse280C(true)}
+                              style={{ marginRight: 4 }}
+                            />
+                            Yes
+                          </label>
+                          <label style={{ fontWeight: 500 }}>
+                            <input
+                              type="radio"
+                              checked={!use280C}
+                              onChange={() => setUse280C(false)}
+                              style={{ marginRight: 4 }}
+                            />
+                            No
+                          </label>
+                        </span>
+                      )}
+                      {section.section === 'B' && line.lineNumber === 34 && (
+                        <span style={{ marginLeft: 16, display: 'inline-flex', alignItems: 'center' }}>
+                          <label style={{ marginRight: 8, marginLeft: 8, fontWeight: 500 }}>
+                            <input
+                              type="radio"
+                              checked={use280C}
+                              onChange={() => setUse280C(true)}
+                              style={{ marginRight: 4 }}
+                            />
+                            Yes
+                          </label>
+                          <label style={{ fontWeight: 500 }}>
+                            <input
+                              type="radio"
+                              checked={!use280C}
+                              onChange={() => setUse280C(false)}
+                              style={{ marginRight: 4 }}
+                            />
+                            No
+                          </label>
+                          {!use280C && line.extra?.preview != null && (
+                            <span style={{ color: '#888', fontSize: '0.95em', marginLeft: 10 }}>
+                              ({safeCurrency(line.extra.preview)})<span style={{ fontSize: '1em', verticalAlign: 'super' }}>*</span>
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                    <div className="amount" style={{ width: 120, textAlign: 'right', fontWeight: 'bold', padding: '0 8px' }}>
+                      {section.section === 'A' && [5, 6, 8, 10, 11].includes(line.lineNumber) && line.isEditable ? (
+                        <input
+                          type="text"
+                          value={(() => {
+                            const val = typeof line.value === 'number' && !isNaN(line.value) ? line.value : 0;
+                            if (line.lineNumber === 5) return formatCurrencyInput(val);
+                            if (line.lineNumber === 6) return formatCurrencyInput(val);
+                            if (line.lineNumber === 8) return formatCurrencyInput(val);
+                            if (line.lineNumber === 10) return formatPercentInput(val === 0 ? 0.03 : val);
+                            if (line.lineNumber === 11) return formatCurrencyInput(val);
+                            return val;
+                          })()}
+                          onChange={e => {
+                            let val = e.target.value;
+                            if ([5, 6, 8, 11].includes(line.lineNumber)) {
+                              val = parseCurrencyInput(val);
+                            } else if (line.lineNumber === 10) {
+                              val = parsePercentInput(val);
+                            }
+                            handleLineChange(section.section, line.lineNumber, val);
+                          }}
+                          onBlur={e => {
+                            let val = e.target.value;
+                            if ([5, 6, 8, 11].includes(line.lineNumber)) {
+                              val = formatCurrencyInput(parseCurrencyInput(val));
+                            } else if (line.lineNumber === 10) {
+                              val = formatPercentInput(parsePercentInput(val));
+                            }
+                            e.target.value = val;
+                          }}
+                          style={{ width: 110, textAlign: 'right', fontWeight: 'bold', background: '#f7fbff', border: '1px solid #dbeafe', borderRadius: 4, color: '#222', padding: '0 8px' }}
+                        />
+                      ) : section.section === 'B' && [24, 25, 26, 27, 29].includes(line.lineNumber) && line.isEditable ? (
+                        <input
+                          type="text"
+                          value={formatCurrencyInput(line.value)}
+                          onChange={e => {
+                            const val = parseCurrencyInput(e.target.value);
+                            handleLineChange(section.section, line.lineNumber, val);
+                          }}
+                          onBlur={e => {
+                            const val = parseCurrencyInput(e.target.value);
+                            e.target.value = formatCurrencyInput(val);
+                          }}
+                          style={{ width: 110, textAlign: 'right', fontWeight: 'bold', background: '#f7fbff', border: '1px solid #dbeafe', borderRadius: 4, color: '#222', padding: '0 8px' }}
+                        />
+                      ) : (
+                        (() => {
+                          // Special logic for line 17: swap value if 280C Yes is selected
+                          if (line.lineNumber === 17 && (section.section === 'A' || section.section === 'B')) {
+                            if (use280C && line.extra?.preview != null) {
+                              // Show reduced 280C value
+                              return formatCurrency(line.extra.preview);
+                            }
+                          }
                           const val = typeof line.value === 'number' && !isNaN(line.value) ? line.value : 0;
-                          if (line.lineNumber === 5) return formatCurrencyInput(val);
-                          if (line.lineNumber === 6) return formatCurrencyInput(val);
-                          if (line.lineNumber === 8) return formatCurrencyInput(val);
-                          if (line.lineNumber === 10) return formatPercentInput(val === 0 ? 0.03 : val);
-                          if (line.lineNumber === 11) return formatCurrencyInput(val);
-                          return val;
-                        })()}
-                        onChange={e => {
-                          let val = e.target.value;
-                          if ([5, 6, 8, 11].includes(line.lineNumber)) {
-                            val = parseCurrencyInput(val);
-                          } else if (line.lineNumber === 10) {
-                            val = parsePercentInput(val);
-                          }
-                          handleLineChange(section.section, line.lineNumber, val);
-                        }}
-                        onBlur={e => {
-                          let val = e.target.value;
-                          if ([5, 6, 8, 11].includes(line.lineNumber)) {
-                            val = formatCurrencyInput(parseCurrencyInput(val));
-                          } else if (line.lineNumber === 10) {
-                            val = formatPercentInput(parsePercentInput(val));
-                          }
-                          e.target.value = val;
-                        }}
-                        style={{ width: 110, textAlign: 'right', fontWeight: 'bold', background: '#f7fbff', border: '1px solid #dbeafe', borderRadius: 4, color: '#222', padding: '0 8px' }}
-                      />
-                    ) : (
-                      (() => {
-                        // Special logic for line 17: swap value if 280C Yes is selected
-                        if (line.lineNumber === 17 && (section.section === 'A' || section.section === 'B')) {
-                          if (use280C && line.extra?.preview != null) {
-                            // Show reduced 280C value
-                            return formatCurrency(line.extra.preview);
-                          }
-                        }
-                        const val = typeof line.value === 'number' && !isNaN(line.value) ? line.value : 0;
-                        if (line.format) return line.format(val);
-                        if (line.label && /percent|percentage/i.test(line.label)) return formatPercent(val);
-                        if (line.lineNumber === 10) return formatPercent(val === 0 ? 0.03 : val);
-                        return formatCurrency(val);
-                      })()
-                    )}
-                  </div>
-                </div>
-                {/* 280C explanation and reduction note for Section A, line 17 */}
-                {section.section === 'A' && line.lineNumber === 17 && (
-                  <div style={{ fontSize: '0.97em', color: '#555', margin: '8px 0 16px 52px', maxWidth: 900 }}>
-                    <div style={{ marginBottom: 6 }}>
-                      <span style={{ color: '#888', fontSize: '1em', verticalAlign: 'super' }}>*</span> The 280C election (reduced credit) may only be elected on a timely filed original return (including extensions). Once elected on an original return the election shall be irrevocable and must be taken on any amended returns thereafter. Please note that if you do not (or are not able to) elect the reduced credit, the amount of other deductions must be reduced by the amount of the gross credit.{!use280C && line.extra?.preview != null && ` If used, the estimated credit value is ${formatCurrency(line.extra.preview)}.`}
-                    </div>
-                    <div style={{ color: '#888' }}>
-                      The amount on line 8 is already reduced by 35% pursuant to § 41(b)(3)(A). Please note that some accounting software further reduces this number by 35%. If so, please divide the number in line 8 by 65% and enter the resulting value instead.
+                          if (line.format) return line.format(val);
+                          if (line.label && /percent|percentage/i.test(line.label)) return formatPercent(val);
+                          if (line.lineNumber === 10) return formatPercent(val === 0 ? 0.03 : val);
+                          return formatCurrency(val);
+                        })()
+                      )}
                     </div>
                   </div>
-                )}
-                {/* 280C explanation and reduction note for Section B, line 17 */}
-                {section.section === 'B' && line.lineNumber === 17 && (
-                  <div style={{ fontSize: '0.97em', color: '#555', margin: '8px 0 16px 52px', maxWidth: 900 }}>
-                    <div style={{ marginBottom: 6 }}>
-                      <span style={{ color: '#888', fontSize: '1em', verticalAlign: 'super' }}>*</span> The 280C election (reduced credit) may only be elected on a timely filed original return (including extensions). Once elected on an original return the election shall be irrevocable and must be taken on any amended returns thereafter. Please note that if you do not (or are not able to) elect the reduced credit, the amount of other deductions must be reduced by the amount of the gross credit.{!use280C && line.extra?.preview != null && ` If used, the estimated credit value is ${formatCurrency(line.extra.preview)}.`}
+                  {/* 280C explanation and reduction note for Section A, line 17 */}
+                  {section.section === 'A' && line.lineNumber === 17 && (
+                    <div style={{ fontSize: '0.97em', color: '#555', margin: '8px 0 16px 52px', maxWidth: 900 }}>
+                      <div style={{ marginBottom: 6 }}>
+                        <span style={{ color: '#888', fontSize: '1em', verticalAlign: 'super' }}>*</span> The 280C election (reduced credit) may only be elected on a timely filed original return (including extensions). Once elected on an original return the election shall be irrevocable and must be taken on any amended returns thereafter. Please note that if you do not (or are not able to) elect the reduced credit, the amount of other deductions must be reduced by the amount of the gross credit.{!use280C && line.extra?.preview != null && ` If used, the estimated credit value is ${formatCurrency(line.extra.preview)}.`}
+                      </div>
+                      <div style={{ color: '#888' }}>
+                        The amount on line 8 is already reduced by 35% pursuant to § 41(b)(3)(A). Please note that some accounting software further reduces this number by 35%. If so, please divide the number in line 8 by 65% and enter the resulting value instead.
+                      </div>
                     </div>
-                    <div style={{ color: '#888' }}>
-                      The amount on line 8 is already reduced by 35% pursuant to § 41(b)(3)(A). Please note that some accounting software further reduces this number by 35%. If so, please divide the number in line 8 by 65% and enter the resulting value instead.
+                  )}
+                  {/* 280C explanation and reduction note for Section B, line 34 */}
+                  {section.section === 'B' && line.lineNumber === 34 && (
+                    <div style={{ fontSize: '0.97em', color: '#555', margin: '8px 0 16px 52px', maxWidth: 900 }}>
+                      <div style={{ marginBottom: 6 }}>
+                        <span style={{ color: '#888', fontSize: '1em', verticalAlign: 'super' }}>*</span> The 280C election (reduced credit) may only be elected on a timely filed original return (including extensions). Once elected on an original return the election shall be irrevocable and must be taken on any amended returns thereafter. Please note that if you do not (or are not able to) elect the reduced credit, the amount of other deductions must be reduced by the amount of the gross credit.{!use280C && line.extra?.preview != null && ` If used, the estimated credit value is ${formatCurrency(line.extra.preview)}.`}
+                      </div>
+                      <div style={{ color: '#888' }}>
+                        The amount on line 8 is already reduced by 35% pursuant to § 41(b)(3)(A). Please note that some accounting software further reduces this number by 35%. If so, please divide the number in line 8 by 65% and enter the resulting value instead.
+                      </div>
                     </div>
-                  </div>
-                )}
-              </React.Fragment>
+                  )}
+                </React.Fragment>
+              )
             ))}
           </div>
         </div>

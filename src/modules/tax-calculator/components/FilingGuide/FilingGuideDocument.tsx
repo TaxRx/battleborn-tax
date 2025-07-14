@@ -1,9 +1,14 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Form6765 } from './Form6765';
 import { QRESummaryTables } from './QRESummaryTables';
 import { FilingProcessOverview } from './FilingProcessOverview';
 import { ComprehensiveDataSummary } from './ComprehensiveDataSummary';
+import Form6765v2024 from './Form6765v2024';
 import './FilingGuide.css';
+import { StateCreditProForma } from '../StateProForma/StateCreditProForma';
+import { getStateConfig, getAvailableStates, StateConfig } from '../StateProForma';
+import { saveStateProFormaData, loadStateProFormaData, StateCreditDataService } from '../../services/stateCreditDataService';
+import { FederalCreditProForma } from './FederalCreditProForma';
 
 interface FilingGuideDocumentProps {
   businessData: any;
@@ -40,6 +45,89 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
 
   // Debug output (collapsible)
   const [showDebug, setShowDebug] = React.useState(false);
+
+  const [state, setState] = useState('CA');
+  const [method, setMethod] = useState('standard');
+  const [stateProFormaData, setStateProFormaData] = useState<Record<string, number>>({});
+  const [isLoadingData, setIsLoadingData] = useState(false);
+
+  const availableStates = getAvailableStates();
+  const currentStateConfig = getStateConfig(state);
+  // Get lines from the appropriate form method
+  const availableLines = currentStateConfig?.forms?.[method]?.lines || [];
+
+  // Load existing data when state or method changes
+  useEffect(() => {
+    const loadExistingData = async () => {
+      if (!businessData?.client_id || !selectedYear?.id) return;
+      
+      setIsLoadingData(true);
+      try {
+        const existingData = await loadStateProFormaData(
+          selectedYear.id,
+          state,
+          method as 'standard' | 'alternative'
+        );
+        
+        if (existingData) {
+          setStateProFormaData(existingData);
+        } else {
+          // Load base data using the new StateCreditDataService (same as federal Section G)
+          console.log('📊 [State Credits] Loading base data using StateCreditDataService...');
+          const baseData = await StateCreditDataService.getAggregatedQREData(selectedYear.id);
+          
+          // Convert to the format expected by the pro forma
+          const formattedData = {
+            wages: baseData.wages,
+            supplies: baseData.supplies,
+            contractResearch: baseData.contractResearch,
+            computerLeases: baseData.computerLeases,
+            avgGrossReceipts: baseData.avgGrossReceipts,
+            businessEntityType: baseData.businessEntityType, // Include business entity type for 280C
+          };
+          
+          console.log('📊 [State Credits] Base data loaded:', formattedData);
+          setStateProFormaData(formattedData);
+        }
+      } catch (error) {
+        console.error('Error loading state pro forma data:', error);
+        // Fallback to base data
+        try {
+          console.log('📊 [State Credits] Fallback: Loading base data...');
+          const baseData = await StateCreditDataService.getAggregatedQREData(selectedYear.id);
+          const formattedData = {
+            wages: baseData.wages,
+            supplies: baseData.supplies,
+            contractResearch: baseData.contractResearch,
+            computerLeases: baseData.computerLeases,
+            avgGrossReceipts: baseData.avgGrossReceipts,
+            businessEntityType: baseData.businessEntityType, // Include business entity type for 280C
+          };
+          setStateProFormaData(formattedData);
+        } catch (fallbackError) {
+          console.error('Error loading base data:', fallbackError);
+        }
+      } finally {
+        setIsLoadingData(false);
+      }
+    };
+
+    loadExistingData();
+  }, [state, method, businessData?.client_id, selectedYear?.id]);
+
+  const handleSaveStateProForma = async (data: Record<string, number>, businessYearId: string) => {
+    await saveStateProFormaData(businessYearId, state, method as 'standard' | 'alternative', data);
+  };
+
+  const handleStateChange = (newState: string) => {
+    setState(newState);
+    setStateProFormaData({}); // Clear data when state changes
+  };
+
+  const handleMethodChange = (newMethod: string) => {
+    setMethod(newMethod);
+    setStateProFormaData({}); // Clear data when method changes
+  };
 
   return (
     <div className="filing-guide-document">
@@ -203,12 +291,14 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
 
       {/* Section 3: Form 6765 Pro Forma */}
       <div className="filing-guide-section">
-        <Form6765 
+        {/* Render new FederalCreditProForma with selectors and unified UI */}
+        <FederalCreditProForma
           businessData={businessData}
           selectedYear={selectedYear}
           calculations={calculations}
           clientId={businessData?.client_id || 'demo'}
           userId={businessData?.user_id}
+          selectedMethod={selectedMethod}
         />
       </div>
 
@@ -223,12 +313,53 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
         />
       </div>
 
-      {/* Section 5: State Credits (Placeholder) */}
+      {/* Section 5: State Credits (with selectors) */}
       <div className="filing-guide-section">
         <h2 className="filing-guide-section-title">State Credits</h2>
-        <div className="filing-guide-placeholder">
-          <p>State credit information will be included here based on your business location and applicable state programs.</p>
+        <div className="state-selector-container">
+          <label>
+            State:
+            <select 
+              value={state} 
+              onChange={e => handleStateChange(e.target.value)}
+            >
+              {availableStates.map(stateConfig => (
+                <option key={stateConfig.code} value={stateConfig.code}>
+                  {stateConfig.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Method:
+            <select 
+              value={method} 
+              onChange={e => handleMethodChange(e.target.value)}
+              disabled={!currentStateConfig?.hasAlternativeMethod}
+            >
+              <option value="standard">Standard</option>
+              {currentStateConfig?.hasAlternativeMethod && (
+                <option value="alternative">Alternative</option>
+              )}
+            </select>
+          </label>
         </div>
+        
+        {isLoadingData ? (
+          <div className="state-proforma-loading">Loading state data...</div>
+        ) : currentStateConfig ? (
+          <StateCreditProForma
+            lines={availableLines}
+            initialData={stateProFormaData}
+            onSave={handleSaveStateProForma}
+            title={`${currentStateConfig.name} (${currentStateConfig.code}) State Credit – ${currentStateConfig.forms?.[method]?.name || currentStateConfig.formName} Pro Forma (${method.charAt(0).toUpperCase() + method.slice(1)})`}
+            businessYearId={selectedYear?.id}
+          />
+        ) : (
+          <div className="state-proforma-error">
+            No state configuration available for {state}
+          </div>
+        )}
       </div>
     </div>
   );

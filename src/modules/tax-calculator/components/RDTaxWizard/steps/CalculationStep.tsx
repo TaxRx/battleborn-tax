@@ -1106,17 +1106,17 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
   // Fallback state credit calculation when no database data is available
   const calculateFallbackStateCredit = (state: string, totalQRE: number): number => {
     // Basic state credit rates (simplified estimates)
-    const stateRates: { [key: string]: number } = {
-      'CA': 0.15, // California
-      'NY': 0.09, // New York
-      'TX': 0.05, // Texas
-      'FL': 0.00, // Florida (no state R&D credit)
-      'IL': 0.065, // Illinois
-      'PA': 0.10, // Pennsylvania
-      'OH': 0.07, // Ohio
-      'MI': 0.04, // Michigan
-      'GA': 0.03, // Georgia
-      'NC': 0.025, // North Carolina
+        const stateRates: { [key: string]: number } = {
+          'CA': 0.15, // California
+          'NY': 0.09, // New York
+          'TX': 0.05, // Texas
+          'FL': 0.00, // Florida (no state R&D credit)
+          'IL': 0.065, // Illinois
+          'PA': 0.10, // Pennsylvania
+          'OH': 0.07, // Ohio
+          'MI': 0.04, // Michigan
+          'GA': 0.03, // Georgia
+          'NC': 0.025, // North Carolina
       'VA': 0.15, // Virginia
       'WA': 0.00, // Washington (no state R&D credit)
       'CO': 0.03, // Colorado
@@ -1433,9 +1433,9 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                 >
                   <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
                 </button>
-              </div>
-            </div>
+      </div>
           </div>
+        </div>
           {/* Right: Credit Summary Card */}
           <div className="flex flex-col items-end">
             <div className="bg-white/90 rounded-xl shadow-lg px-6 py-4 min-w-[260px] flex flex-col items-end space-y-2">
@@ -1450,7 +1450,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                 <span className="text-lg font-bold text-blue-700">
                   {formatCurrency(selectedMethod === 'asc' ? federalCredits.asc.credit : federalCredits.standard.credit)}
                 </span>
-              </div>
+          </div>
               <div className="flex items-center justify-between w-full">
                 <span className="flex items-center text-sm font-medium text-green-900">
                   <MapPin className="w-4 h-4 mr-1 text-green-500" />
@@ -1460,7 +1460,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                   </span>
                 </span>
                 <span className="text-lg font-bold text-green-700">{formatCurrency(totalStateCredits)}</span>
-              </div>
+        </div>
               <div className="border-t border-gray-200 w-full my-1"></div>
               <div className="flex items-center justify-between w-full">
                 <span className="flex items-center text-base font-semibold text-purple-900">
@@ -1470,8 +1470,8 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                 <span className="text-2xl font-extrabold text-purple-700 drop-shadow-lg">
                   {formatCurrency((selectedMethod === 'asc' ? federalCredits.asc.credit : federalCredits.standard.credit) + totalStateCredits)}
                 </span>
-              </div>
-            </div>
+          </div>
+        </div>
           </div>
         </div>
       </div>
@@ -1481,15 +1481,15 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
         <div className="bg-blue-50 rounded-lg p-4">
           <div className="text-2xl font-bold text-blue-900">
             {selectedYearData?.employees?.length || 0}
-          </div>
+              </div>
           <div className="text-sm text-blue-600">Employees</div>
-        </div>
+            </div>
         <div className="bg-green-50 rounded-lg p-4">
           <div className="text-2xl font-bold text-green-900">
             {selectedYearData?.contractors?.length || 0}
-          </div>
+              </div>
           <div className="text-sm text-green-600">Contractors</div>
-        </div>
+              </div>
         <div className="bg-purple-50 rounded-lg p-4">
           <div className="text-2xl font-bold text-purple-900">
             {selectedYearData?.supply_subcomponents?.length || 0}
@@ -1507,35 +1507,35 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
             {(selectedYearData?.supply_subcomponents?.length || 0) + (selectedYearData?.employees?.length || 0) + (selectedYearData?.contractors?.length || 0)}
           </div>
           <div className="text-sm text-indigo-600">Total Subcomponents</div>
-        </div>
-      </div>
+            </div>
+          </div>
 
       {/* QRE Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-blue-50 rounded-lg p-4">
           <div className="text-2xl font-bold text-blue-900">
             {formatCurrency(employeeWagesQRE)}
-          </div>
+              </div>
           <div className="text-sm text-blue-600">Employee Wages</div>
-        </div>
+            </div>
         <div className="bg-green-50 rounded-lg p-4">
           <div className="text-2xl font-bold text-green-900">
             {formatCurrency(currentYearQRE?.contractor_costs || 0)}
-          </div>
+              </div>
           <div className="text-sm text-green-600">Contractor Costs</div>
-        </div>
+              </div>
         <div className="bg-purple-50 rounded-lg p-4">
           <div className="text-2xl font-bold text-purple-900">
             {formatCurrency(currentYearQRE?.supply_costs || 0)}
-          </div>
+            </div>
           <div className="text-sm text-purple-600">Supply Costs</div>
-        </div>
+          </div>
         <div className="bg-orange-50 rounded-lg p-4">
           <div className="text-2xl font-bold text-orange-900">
             {formatCurrency(currentYearQRE?.total_qre || 0)}
-          </div>
+              </div>
           <div className="text-sm text-orange-600">Total QRE</div>
-        </div>
+            </div>
       </div>
 
       {/* KPI Charts */}
@@ -1574,8 +1574,8 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
               <div className="text-xl font-bold text-blue-600">
                 {formatCurrency(selectedMethod === 'asc' ? federalCredits.asc.credit : federalCredits.standard.credit)}
               </div>
+              </div>
             </div>
-          </div>
 
           {/* Calculation Settings */}
           <div className="mb-6 p-4 bg-gray-50 rounded-lg">
@@ -1590,7 +1590,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                   <option value="asc">ASC</option>
                   <option value="standard">Standard</option>
                 </select>
-              </div>
+          </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tax Rate (%)</label>
                 <input
@@ -1614,11 +1614,11 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                   <span className="ml-2 text-sm text-gray-700">280C Election</span>
                 </label>
               </div>
-            </div>
-          </div>
+        </div>
+      </div>
 
           {/* Credit Calculations */}
-          <div className="space-y-4">
+        <div className="space-y-4">
             {/* ASC Credit */}
             <div className="bg-gray-50 rounded-lg p-4">
               <div className="flex justify-between items-center mb-2">
@@ -1660,7 +1660,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                 
                 {ascVariableEditorExpanded && (
                   <div className="bg-white rounded-lg p-4 border border-gray-200">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {Object.entries(getASCCreditVariables()).map(([variableName, values]) => {
                         const isCurrency = variableName === 'Current QRE' || variableName === 'Avg Prior QRE';
                         const isPercent = variableName === 'ASC Rate';
@@ -1698,15 +1698,15 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                                   Reset
                                 </button>
                               )}
-                            </div>
-                          </div>
+              </div>
+            </div>
                         );
                       })}
-                    </div>
-                  </div>
-                )}
               </div>
-              
+            </div>
+                )}
+          </div>
+
               <AccordionSection title="ASC Details" details={federalCredits.asc.calculationDetails} />
             </div>
 
@@ -1721,8 +1721,8 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                 <div>Base Amount: {formatCurrency(Math.max(federalCredits.standard.fixedBaseAmount, 0.5 * federalCurrentYearQRE.total))}</div>
                 <div>Incremental QRE: {formatCurrency(federalCredits.standard.incrementalQRE)}</div>
                 <div>Rate: 20%</div>
-              </div>
-              
+          </div>
+
               {/* Standard Credit Variable Editor */}
               <div className="mt-4">
                 <div className="flex items-center justify-between mb-3">
@@ -1748,7 +1748,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                       Reset All
                     </button>
                   )}
-                </div>
+            </div>
                 
                 {standardVariableEditorExpanded && (
                   <div className="bg-white rounded-lg p-4 border border-gray-200">
@@ -1798,18 +1798,18 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                                   Reset
                                 </button>
                               )}
-                            </div>
-                          </div>
+          </div>
+        </div>
                         );
                       })}
                     </div>
                   </div>
                 )}
-              </div>
-              
+      </div>
+
               <AccordionSection title="Standard Details" details={federalCredits.standard.calculationDetails} />
-            </div>
-          </div>
+                  </div>
+                </div>
         </div>
 
         {/* State Credits */}
@@ -1821,18 +1821,18 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
               <MapPin className="w-5 h-5 mr-2" />
               State Credits
             </h3>
-            <div className="text-right">
+                <div className="text-right">
               <div className="text-sm text-gray-600">Total State</div>
               <div className="text-xl font-bold text-green-600">{formatCurrency(totalStateCredits)}</div>
-            </div>
-          </div>
+                  </div>
+                </div>
 
           {/* Loading State */}
           {stateLoading && (
             <div className="text-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
               <p className="text-gray-600 mt-2">Loading state credit calculations...</p>
-            </div>
+              </div>
           )}
 
           {/* No Data State */}
@@ -1859,7 +1859,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                   <option key={method} value={method}>{method}</option>
                 ))}
               </select>
-            </div>
+          </div>
           )}
 
           {/* Variable Editor */}
@@ -1927,8 +1927,8 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                   </div>
                 </div>
               )}
-            </div>
-          )}
+        </div>
+      )}
 
           {/* State Credit Result Card(s) */}
           {!stateLoading && stateCredits.length > 0 && (
@@ -1940,14 +1940,14 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                   <div className="flex justify-between items-center mb-2">
                     <span className="font-medium">{credit.method} State Credit</span>
                     <span className="text-lg font-semibold text-green-700">{formatCurrency(credit.credit)}</span>
-                  </div>
+          </div>
                   <div className="text-xs text-gray-700 mb-2">
                     <div><span className="font-semibold">Formula:</span> {credit.formula}</div>
-                  </div>
+            </div>
                   {credit.info && (
                     <div className="text-xs text-blue-800 bg-blue-50 rounded p-2 mb-2">
                       <span className="font-semibold">Usage:</span> {credit.info}
-                    </div>
+          </div>
                   )}
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     {credit.refundable && <div><span className="font-semibold">Refundable:</span> {credit.refundable}</div>}
@@ -1955,8 +1955,8 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                     {credit.eligible_entities && <div className="col-span-2"><span className="font-semibold">Eligible Entities:</span> {Array.isArray(credit.eligible_entities) ? credit.eligible_entities.join(', ') : credit.eligible_entities}</div>}
                     {credit.special_notes && <div className="col-span-2"><span className="font-semibold">Notes:</span> {credit.special_notes}</div>}
                     {credit.formula_correct && <div className="col-span-2"><span className="font-semibold">Formula Correct:</span> {credit.formula_correct}</div>}
-                  </div>
-                </div>
+          </div>
+        </div>
               ))}
               {/* Additional method card (always shown if present) */}
               {stateCredits.filter(c => c.method === 'Additional').map((credit, idx) => (
@@ -1964,7 +1964,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                   <div className="flex justify-between items-center mb-2">
                     <span className="font-medium">Additional State Credit</span>
                     <span className="text-lg font-semibold text-yellow-700">{formatCurrency(credit.credit)}</span>
-                  </div>
+      </div>
                   <div className="text-xs text-gray-700 mb-2">
                     <div><span className="font-semibold">Formula:</span> {credit.formula}</div>
                   </div>
@@ -2008,12 +2008,12 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                       businessState: wizardState.business?.state
                     }, null, 2)}
                   </pre>
-                </div>
+          </div>
               )}
             </div>
           )}
+          </div>
         </div>
-      </div>
 
       {/* Historical Summary */}
       {historicalCards.length > 0 && (
@@ -2027,7 +2027,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                   <span className={`px-2 py-1 rounded-full text-xs font-semibold ${card.isInternal ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>
                     {card.isInternal ? 'Internal' : 'External'}
                   </span>
-                </div>
+      </div>
                 <div className="space-y-2">
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-600">QRE:</span>

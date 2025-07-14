@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { FilingGuideService } from './FilingGuideService';
 import { Form6765Override } from './types';
-import { supabase } from '../../../../lib/supabase';
+import { supabase } from '../../lib/supabase';
+import SectionGTable from './SectionGTable';
 
 // Types for lines and sections
 interface Form6765Line {
@@ -968,7 +969,7 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
         )}
       </div>
       
-      {/* Section G Stub */}
+      {/* Section G */}
       <div className="form-6765-section" style={{ marginBottom: '20px' }}>
         <h3 style={{ 
           fontSize: '18px', 
@@ -978,9 +979,9 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
           paddingBottom: '8px',
           marginBottom: '15px'
         }}>
-          {sectionG.title}
+          Section G — Business Component Information
         </h3>
-        {/* TODO: Implement Section G logic */}
+        <SectionGTable businessData={businessData} selectedYear={selectedYear} clientId={clientId} />
       </div>
     </div>
   );
