@@ -168,9 +168,8 @@ export default function LoginPage() {
         <div className="mt-8 p-4 bg-gray-100 rounded-md">
           <h3 className="text-sm font-medium text-gray-900 mb-2">Development Login Info:</h3>
           <div className="text-xs text-gray-600 space-y-1">
-            <p><strong>Test Client 1:</strong> dan@fellars.com / testpass123 (owner of "Dan Fellars" client)</p>
-            <p><strong>Test Client 2:</strong> testclient@fellars.com / testpass123 (owner of "Test Client")</p>
-            <p><strong>Admin:</strong> admin@taxrxgroup.com / testpass123 (system administrator)</p>
+            <p><strong>Client User:</strong> dan@example.com / testpass123 (client access)</p>
+            <p><strong>Platform Admin:</strong> admin@example.com / testpass123 (system administrator)</p>
             <p>After login, you'll see role-based permissions and UI</p>
           </div>
         </div>

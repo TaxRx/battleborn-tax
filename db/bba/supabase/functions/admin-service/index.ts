@@ -47,12 +47,13 @@ serve(async (req) => {
       })
     }
 
-    const url = new URL(req.url)
-    const { pathname } = url
+    // Get the request body to check for pathname
+    const body = await req.json();
+    const pathname = body.pathname || new URL(req.url).pathname;
 
     // Routing logic for admin-specific actions
     if (pathname === '/admin-service/create-partner') {
-      const { companyName, contactEmail, logoUrl } = await req.json()
+      const { companyName, contactEmail, logoUrl } = body
 
       // 1. Create a Stripe Customer object
       const stripe = new Stripe(Deno.env.get('STRIPE_API_KEY') ?? '', { apiVersion: '2023-10-16' })
@@ -115,7 +116,6 @@ serve(async (req) => {
       // TODO: Implement logic to update a partner's status
       // 1. Get partner_id and new status from request body
       // 2. Update the record in the public.partners table
-      const body = await req.json()
       // ... implementation needed
       return new Response(JSON.stringify({ message: "Partner status updated" }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -125,7 +125,6 @@ serve(async (req) => {
       // TODO: Implement logic to update a partner's tool subscriptions
       // 1. Get partner_id and a list of tool subscriptions from request body
       // 2. Upsert records into the public.partner_tool_subscriptions table
-      const body = await req.json()
       // ... implementation needed
       return new Response(JSON.stringify({ message: "Partner subscriptions updated" }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

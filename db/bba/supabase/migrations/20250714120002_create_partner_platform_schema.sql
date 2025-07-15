@@ -10,7 +10,7 @@ BEGIN;
 -- Table to store Partner organizations
 CREATE TABLE IF NOT EXISTS public.partners (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    company_name TEXT NOT NULL,
+    company_name TEXT NOT NULL UNIQUE,
     logo_url TEXT,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
     stripe_customer_id TEXT UNIQUE,
@@ -106,6 +106,28 @@ VALUES
     ('Augusta Rule', 'augusta-rule', 'Applies the Augusta Rule for tax-free rental income.', 'active'),
     ('Child Work Credit', 'child-work-credit', 'Manages tax implications of hiring your children.', 'in_development')
 ON CONFLICT (slug) DO NOTHING;
+
+-- Add unique constraint to profiles email if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'profiles_email_unique'
+    ) THEN
+        ALTER TABLE public.profiles ADD CONSTRAINT profiles_email_unique UNIQUE (email);
+    END IF;
+END $$;
+
+-- Seed a test partner
+INSERT INTO public.partners (company_name, logo_url, stripe_customer_id)
+VALUES ('Test Partner Inc.', 'https://example.com/logo.png', 'cus_test123')
+ON CONFLICT (company_name) DO NOTHING;
+
+-- Update existing admin user with proper platform access
+UPDATE public.profiles 
+SET access_level = 'platform', role = 'admin'
+WHERE email = 'admin@taxrxgroup.com';
+
 
 
 -- ========= PART 4: CREATE INDEXES FOR PERFORMANCE =========
