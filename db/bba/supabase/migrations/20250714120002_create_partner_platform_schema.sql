@@ -118,10 +118,7 @@ BEGIN
     END IF;
 END $$;
 
--- Seed a test partner
-INSERT INTO public.partners (company_name, logo_url, stripe_customer_id)
-VALUES ('Test Partner Inc.', 'https://example.com/logo.png', 'cus_test123')
-ON CONFLICT (company_name) DO NOTHING;
+-- Note: Test partner seeding moved to accounts consolidation migration
 
 -- Update existing admin user with proper platform access
 UPDATE public.profiles 

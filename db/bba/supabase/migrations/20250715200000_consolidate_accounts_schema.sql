@@ -85,6 +85,16 @@ VALUES (
     NOW()
 ) ON CONFLICT (id) DO NOTHING;
 
+-- Create test partner account first (in case partners table is empty)
+INSERT INTO public.accounts (name, type, stripe_customer_id, created_at, updated_at)
+VALUES (
+    'Test Partner Inc.',
+    'platform',
+    'cus_test123',
+    NOW(),
+    NOW()
+) ON CONFLICT (stripe_customer_id) DO NOTHING;
+
 -- Migrate existing partners to platform accounts
 INSERT INTO public.accounts (id, name, type, stripe_customer_id, created_at, updated_at)
 SELECT 
