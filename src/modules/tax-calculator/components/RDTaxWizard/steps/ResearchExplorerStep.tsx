@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../../../../lib/supabase';
 import { Plus, ChevronDown, ChevronRight, Edit, Trash2, MoveUp, MoveDown, UserPlus, Sparkles, RotateCcw } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -940,25 +940,30 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
   const [expandedActivities, setExpandedActivities] = useState<{ [key: string]: boolean }>({});
 
   // CRITICAL: Clear state when business context changes to prevent data leakage
+  // Use a ref to track the last business year ID to prevent infinite loops
+  const lastBusinessYearRef = useRef<string>('');
+  
   useEffect(() => {
-    console.log('🔄 Business context changed, clearing research explorer state');
+    // Only clear state if the business year actually changed (not just initial load)
+    if (lastBusinessYearRef.current && selectedBusinessYearId !== lastBusinessYearRef.current) {
+      console.log('🔄 Business context changed, clearing research explorer state');
+      
+      // Clear all local state to prevent data leakage between businesses
+      setSelectedActivitiesState([]);
+      setExpandedActivities({});
+      setPracticePercentageConfig({
+        nonRndTime: 10,
+        activities: {}
+      });
+      setSelectedCategories([]);
+      setSelectedAreas([]);
+      setSelectedFocuses([]);
+      
+      console.log('✅ Research explorer state cleared for new business context');
+    }
     
-    // Clear all local state to prevent data leakage between businesses
-    setSelectedActivitiesState([]);
-    setExpandedActivities({});
-    setPracticePercentageConfig({
-      nonRndTime: 10,
-      activities: {}
-    });
-    setSelectedCategories([]);
-    setSelectedAreas([]);
-    setSelectedFocuses([]);
-    
-    // Reset business year selection
-    setSelectedBusinessYearId('');
-    setCurrentBusinessId('');
-    
-    console.log('✅ Research explorer state cleared for new business context');
+    // Update the ref to track the current business year
+    lastBusinessYearRef.current = selectedBusinessYearId;
   }, [selectedBusinessYearId]); // Reset when business year changes
 
   // Helper function to toggle expanded state
