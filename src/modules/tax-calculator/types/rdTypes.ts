@@ -8,7 +8,7 @@ export interface RDBusiness {
   id: string;
   client_id: string;
   name: string;
-  ein: string;
+  ein: string | null; // EIN can be null during initial enrollment
   entity_type: 'LLC' | 'SCORP' | 'CCORP' | 'PARTNERSHIP' | 'SOLEPROP' | 'OTHER';
   start_year: number;
   domicile_state: string;

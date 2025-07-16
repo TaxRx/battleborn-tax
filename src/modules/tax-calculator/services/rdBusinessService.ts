@@ -564,6 +564,16 @@ export class RDBusinessService {
     
     const business = businesses[0];
     
+    // Validate required fields and provide warnings for missing data
+    if (!business.ein || business.ein.trim() === '') {
+      console.warn('[RDBusinessService] Warning: Business has no EIN. This may cause issues with R&D credit filing.', { 
+        businessId, 
+        businessName: business.business_name 
+      });
+      // You may want to throw an error here or prompt user to add EIN
+      // For now, we'll allow it to proceed but log the warning
+    }
+
     // Map entity type from businesses table format to rd_businesses enum format
     const mapEntityType = (entityType: string): 'LLC' | 'SCORP' | 'CCORP' | 'PARTNERSHIP' | 'SOLEPROP' | 'OTHER' => {
       const normalized = entityType?.toUpperCase().replace(/[\s-]/g, '');
@@ -592,7 +602,7 @@ export class RDBusinessService {
       id: businessId,
       client_id: clientId,
       name: business.business_name,
-      ein: business.ein,
+      ein: business.ein || null, // Allow null EIN with warning
       entity_type: mapEntityType(business.entity_type),
       start_year: business.year_established || new Date().getFullYear(),
       domicile_state: business.business_state || 'NV',
