@@ -4,6 +4,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import Stripe from 'https://esm.sh/stripe@14.21.0'
 import { handleActivityOperations } from './activity-handler.ts'
 import { handleAccountOperations } from './account-handler.ts'
+import { handleSecurityOperations } from './security-handler.ts'
 
 // CORS headers to allow requests from the browser
 const corsHeaders = {
@@ -62,6 +63,11 @@ serve(async (req) => {
     // Get the request body to check for pathname
     const body = await req.json();
     const pathname = body.pathname || new URL(req.url).pathname;
+
+    // Handle security operations (highest priority for authentication/authorization)
+    if (pathname.includes('/security/')) {
+      return await handleSecurityOperations(req, supabaseServiceClient, corsHeaders);
+    }
 
     // Handle activity operations (must be before other routes to catch activity endpoints)
     if (pathname.includes('/activities') || pathname.includes('/activity-summary') || pathname.includes('/recent-activities')) {
