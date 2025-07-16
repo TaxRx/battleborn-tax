@@ -144,9 +144,25 @@ export class CentralizedClientService {
    */
   static async createClient(clientData: CreateClientData): Promise<{ success: boolean; clientId?: string; error?: string }> {
     try {
+      console.log('[CentralizedClientService] createClient called with data:', clientData);
+      
+      // Validate required fields
+      if (!clientData.full_name || clientData.full_name.trim() === '') {
+        console.error('[CentralizedClientService] Missing or empty full_name:', clientData.full_name);
+        return { success: false, error: 'Full name is required and cannot be empty' };
+      }
+      
+      if (!clientData.email || clientData.email.trim() === '') {
+        console.error('[CentralizedClientService] Missing or empty email:', clientData.email);
+        return { success: false, error: 'Email is required and cannot be empty' };
+      }
+
       // Get current user ID
       const { data: { user } } = await supabase.auth.getUser();
       const userId = user?.id;
+
+      console.log('[CentralizedClientService] Current user ID:', userId);
+      console.log('[CentralizedClientService] About to insert client with full_name:', clientData.full_name);
 
       // First, create the client
       const { data: clientDataResult, error: clientError } = await supabase
@@ -169,7 +185,7 @@ export class CentralizedClientService {
         .single();
 
       if (clientError) {
-        console.error('Error creating client:', clientError);
+        console.error('[CentralizedClientService] Error creating client:', clientError);
         
         // Handle duplicate email error specifically
         if (clientError.code === '23505' && clientError.message.includes('clients_email_key')) {
@@ -178,6 +194,8 @@ export class CentralizedClientService {
         
         return { success: false, error: clientError.message };
       }
+
+      console.log('[CentralizedClientService] Client created successfully with ID:', clientDataResult.id);
 
       const clientId = clientDataResult.id;
 

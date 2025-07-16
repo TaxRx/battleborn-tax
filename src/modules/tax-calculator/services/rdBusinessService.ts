@@ -547,26 +547,55 @@ export class RDBusinessService {
     if (existingRdBusiness) {
       return existingRdBusiness;
     }
+    
     // 2. If not found in rd_businesses, copy from businesses table (initial enrollment only)
     const { data: businesses, error: fetchError } = await supabase
       .from('businesses')
       .select('*')
       .eq('id', businessId);
+    
     if (fetchError) {
       throw new Error(`Failed to fetch business: ${fetchError.message}`);
     }
+    
     if (!businesses || businesses.length === 0) {
       throw new Error('Business not found in businesses table');
     }
+    
     const business = businesses[0];
+    
+    // Map entity type from businesses table format to rd_businesses enum format
+    const mapEntityType = (entityType: string): 'LLC' | 'SCORP' | 'CCORP' | 'PARTNERSHIP' | 'SOLEPROP' | 'OTHER' => {
+      const normalized = entityType?.toUpperCase().replace(/[\s-]/g, '');
+      switch (normalized) {
+        case 'LLC':
+          return 'LLC';
+        case 'SCORP':
+        case 'SCORPORATION':
+          return 'SCORP';
+        case 'CCORP':
+        case 'CCORPORATION':
+        case 'CORPORATION':
+          return 'CCORP';
+        case 'PARTNERSHIP':
+          return 'PARTNERSHIP';
+        case 'SOLEPROPRIETORSHIP':
+        case 'SOLEPROP':
+        case 'SOLE':
+          return 'SOLEPROP';
+        default:
+          return 'OTHER';
+      }
+    };
+    
     const rdBusinessRecord = {
       id: businessId,
       client_id: clientId,
       name: business.business_name,
       ein: business.ein,
-      entity_type: business.entity_type,
+      entity_type: mapEntityType(business.entity_type),
       start_year: business.year_established || new Date().getFullYear(),
-      domicile_state: business.business_state,
+      domicile_state: business.business_state || 'NV',
       contact_info: {
         address: business.business_address,
         city: business.business_city,
@@ -576,12 +605,17 @@ export class RDBusinessService {
       is_controlled_grp: false,
       historical_data: []
     };
+    
+    console.log('[RDBusinessService] Creating rd_business record:', rdBusinessRecord);
+    
     const { data: newRdBusiness, error: insertError } = await supabase
       .from('rd_businesses')
       .insert(rdBusinessRecord)
       .select()
       .single();
+    
     if (insertError) {
+      console.error('[RDBusinessService] Insert error:', insertError);
       throw new Error(`Failed to insert into rd_businesses: ${insertError.message}`);
     }
     // 3. Create business year entries for the previous 8 years (or up to start year)
