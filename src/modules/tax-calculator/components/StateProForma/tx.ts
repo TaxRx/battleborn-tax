@@ -19,6 +19,18 @@ export const txConfig = {
   notes: [
     'Texas offers a simple 5% credit on total qualified research expenses.',
     'No base calculation is required for Texas.',
-    'The credit is available to corporations, partnerships, and LLCs.'
-  ]
+    'The credit is available to corporations, partnerships, and LLCs.',
+    'Credit can be carried forward for up to 20 years.',
+    'No annual cap on the credit amount.'
+  ],
+  validationRules: {
+    maxCredit: null, // No annual cap
+    carryforwardYears: 20,
+    minQRE: 0,
+    requireIncremental: false
+  },
+  hasAlternativeMethod: false,
+  formReference: 'TX Form 05-163',
+  creditRate: 0.05,
+  creditType: 'total'
 }; 

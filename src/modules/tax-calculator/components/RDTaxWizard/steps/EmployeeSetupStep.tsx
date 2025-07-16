@@ -1856,7 +1856,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                 // Get ALL subcomponent details from rd_selected_subcomponents (the source of truth)
                 const { data: selectedSubcomponent, error: subDetailsError } = await supabase
                   .from('rd_selected_subcomponents')
-                  .select('year_percentage, frequency_percentage, time_percentage, practice_percentage, step_id')
+                  .select('year_percentage, frequency_percentage, time_percentage, practice_percent, step_id')
                   .eq('subcomponent_id', subcomponent.subcomponent_id)
                   .eq('business_year_id', businessYearId)
                   .single();
@@ -1867,7 +1867,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
 
                 // Use data from rd_selected_subcomponents (the source of truth)
                 const stepTimePercentage = selectedSubcomponent?.time_percentage || 0;
-                const baselinePracticePercentage = selectedSubcomponent?.practice_percentage || activity.practice_percent || 0;
+                const baselinePracticePercentage = selectedSubcomponent?.practice_percent || activity.practice_percent || 0;
                 const yearPercentage = selectedSubcomponent?.year_percentage || 100;
                 const frequencyPercentage = selectedSubcomponent?.frequency_percentage || 100;
                 

@@ -1,79 +1,169 @@
--- Create state pro forma data table
-CREATE TABLE IF NOT EXISTS rd_state_proforma_data (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  business_year_id UUID NOT NULL REFERENCES business_years(id) ON DELETE CASCADE,
-  state_code VARCHAR(2) NOT NULL,
-  method VARCHAR(20) NOT NULL CHECK (method IN ('standard', 'alternative')),
-  data JSONB NOT NULL DEFAULT '{}',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  
-  -- Unique constraint to prevent duplicate entries for same state/method/year
-  UNIQUE(business_year_id, state_code, method)
-);
+-- Create state pro forma tables
+-- Migration: 20241220000000_create_state_proforma_tables.sql
 
--- Create index for efficient lookups
-CREATE INDEX IF NOT EXISTS idx_rd_state_proforma_data_lookup 
-ON rd_state_proforma_data(business_year_id, state_code, method);
+-- Create rd_state_proformas table
+create table public.rd_state_proformas (
+  id uuid not null default gen_random_uuid (),
+  business_year_id uuid not null,
+  state_code character varying(2) not null,
+  config jsonb not null default '{}'::jsonb,
+  total_credit numeric(15, 2) null default 0,
+  created_at timestamp without time zone null default now(),
+  updated_at timestamp without time zone null default now(),
+  constraint rd_state_proformas_pkey primary key (id),
+  constraint rd_state_proformas_business_year_id_state_code_key unique (business_year_id, state_code)
+) TABLESPACE pg_default;
 
--- Create updated_at trigger
-CREATE OR REPLACE FUNCTION update_rd_state_proforma_data_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+-- Create index for business_year_id
+create index IF not exists idx_state_proformas_business_year on public.rd_state_proformas using btree (business_year_id) TABLESPACE pg_default;
 
-CREATE TRIGGER trigger_update_rd_state_proforma_data_updated_at
-  BEFORE UPDATE ON rd_state_proforma_data
-  FOR EACH ROW
-  EXECUTE FUNCTION update_rd_state_proforma_data_updated_at();
+-- Create rd_state_proforma_lines table
+create table public.rd_state_proforma_lines (
+  id uuid not null default gen_random_uuid (),
+  state_proforma_id uuid not null,
+  line_number character varying(10) not null,
+  description text not null,
+  amount numeric(15, 2) null default 0,
+  is_editable boolean null default true,
+  is_calculated boolean null default false,
+  calculation_formula text null,
+  line_type character varying(50) null,
+  sort_order integer not null,
+  created_at timestamp without time zone null default now(),
+  updated_at timestamp without time zone null default now(),
+  constraint rd_state_proforma_lines_pkey primary key (id),
+  constraint rd_state_proforma_lines_state_proforma_id_fkey foreign KEY (state_proforma_id) references rd_state_proformas (id) on delete CASCADE
+) TABLESPACE pg_default;
 
--- Enable RLS
-ALTER TABLE rd_state_proforma_data ENABLE ROW LEVEL SECURITY;
+-- Create index for state_proforma_id
+create index IF not exists idx_state_proforma_lines_state_proforma_id on public.rd_state_proforma_lines using btree (state_proforma_id) TABLESPACE pg_default;
 
--- Create RLS policies using correct column names
-CREATE POLICY "Users can view their own state pro forma data" ON rd_state_proforma_data
-  FOR SELECT USING (
-    business_year_id IN (
-      SELECT id FROM business_years 
-      WHERE business_id IN (
-        SELECT id FROM rd_businesses 
-        WHERE client_id = auth.uid()
+-- Add RLS policies
+alter table public.rd_state_proformas enable row level security;
+alter table public.rd_state_proforma_lines enable row level security;
+
+-- RLS policies for rd_state_proformas
+create policy "Users can view their own state proformas" on public.rd_state_proformas
+  for select using (
+    business_year_id in (
+      select id from public.business_years 
+      where business_id in (
+        select id from public.businesses 
+        where client_id in (
+          select id from public.clients 
+          where user_id = auth.uid()
+        )
       )
     )
   );
 
-CREATE POLICY "Users can insert their own state pro forma data" ON rd_state_proforma_data
-  FOR INSERT WITH CHECK (
-    business_year_id IN (
-      SELECT id FROM business_years 
-      WHERE business_id IN (
-        SELECT id FROM rd_businesses 
-        WHERE client_id = auth.uid()
+create policy "Users can insert their own state proformas" on public.rd_state_proformas
+  for insert with check (
+    business_year_id in (
+      select id from public.business_years 
+      where business_id in (
+        select id from public.businesses 
+        where client_id in (
+          select id from public.clients 
+          where user_id = auth.uid()
+        )
       )
     )
   );
 
-CREATE POLICY "Users can update their own state pro forma data" ON rd_state_proforma_data
-  FOR UPDATE USING (
-    business_year_id IN (
-      SELECT id FROM business_years 
-      WHERE business_id IN (
-        SELECT id FROM rd_businesses 
-        WHERE client_id = auth.uid()
+create policy "Users can update their own state proformas" on public.rd_state_proformas
+  for update using (
+    business_year_id in (
+      select id from public.business_years 
+      where business_id in (
+        select id from public.businesses 
+        where client_id in (
+          select id from public.clients 
+          where user_id = auth.uid()
+        )
       )
     )
   );
 
-CREATE POLICY "Users can delete their own state pro forma data" ON rd_state_proforma_data
-  FOR DELETE USING (
-    business_year_id IN (
-      SELECT id FROM business_years 
-      WHERE business_id IN (
-        SELECT id FROM rd_businesses 
-        WHERE client_id = auth.uid()
+create policy "Users can delete their own state proformas" on public.rd_state_proformas
+  for delete using (
+    business_year_id in (
+      select id from public.business_years 
+      where business_id in (
+        select id from public.businesses 
+        where client_id in (
+          select id from public.clients 
+          where user_id = auth.uid()
+        )
+      )
+    )
+  );
+
+-- RLS policies for rd_state_proforma_lines
+create policy "Users can view their own state proforma lines" on public.rd_state_proforma_lines
+  for select using (
+    state_proforma_id in (
+      select id from public.rd_state_proformas 
+      where business_year_id in (
+        select id from public.business_years 
+        where business_id in (
+          select id from public.businesses 
+          where client_id in (
+            select id from public.clients 
+            where user_id = auth.uid()
+          )
+        )
+      )
+    )
+  );
+
+create policy "Users can insert their own state proforma lines" on public.rd_state_proforma_lines
+  for insert with check (
+    state_proforma_id in (
+      select id from public.rd_state_proformas 
+      where business_year_id in (
+        select id from public.business_years 
+        where business_id in (
+          select id from public.businesses 
+          where client_id in (
+            select id from public.clients 
+            where user_id = auth.uid()
+          )
+        )
+      )
+    )
+  );
+
+create policy "Users can update their own state proforma lines" on public.rd_state_proforma_lines
+  for update using (
+    state_proforma_id in (
+      select id from public.rd_state_proformas 
+      where business_year_id in (
+        select id from public.business_years 
+        where business_id in (
+          select id from public.businesses 
+          where client_id in (
+            select id from public.clients 
+            where user_id = auth.uid()
+          )
+        )
+      )
+    )
+  );
+
+create policy "Users can delete their own state proforma lines" on public.rd_state_proforma_lines
+  for delete using (
+    state_proforma_id in (
+      select id from public.rd_state_proformas 
+      where business_year_id in (
+        select id from public.business_years 
+        where business_id in (
+          select id from public.businesses 
+          where client_id in (
+            select id from public.clients 
+            where user_id = auth.uid()
+          )
+        )
       )
     )
   ); 

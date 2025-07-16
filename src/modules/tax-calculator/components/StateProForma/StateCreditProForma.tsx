@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './StateProForma.css';
+import { StateValidationRules, ValidationRule } from './StateValidationRules';
 
 export interface StateProFormaLine {
   line: string;
@@ -19,6 +20,14 @@ interface StateCreditProFormaProps {
   onSave?: (data: Record<string, number>, businessYearId: string) => Promise<void>;
   title?: string;
   businessYearId?: string;
+  // Validation rules props
+  validationRules?: ValidationRule[];
+  alternativeValidationRules?: ValidationRule[];
+  hasAlternativeMethod?: boolean;
+  creditRate?: number;
+  creditType?: string;
+  formReference?: string;
+  notes?: string[];
 }
 
 // Formatting utilities
@@ -53,6 +62,14 @@ export const StateCreditProForma: React.FC<StateCreditProFormaProps> = ({
   onSave,
   title = 'State Credit Pro Forma',
   businessYearId,
+  // Validation rules props
+  validationRules = [],
+  alternativeValidationRules = [],
+  hasAlternativeMethod = false,
+  creditRate,
+  creditType,
+  formReference,
+  notes = [],
 }) => {
   const [formData, setFormData] = useState<Record<string, number>>(initialData);
   const [isSaving, setIsSaving] = useState(false);
@@ -222,6 +239,17 @@ export const StateCreditProForma: React.FC<StateCreditProFormaProps> = ({
           )}
         </div>
       )}
+
+      {/* State Validation Rules */}
+      <StateValidationRules
+        validationRules={validationRules}
+        alternativeValidationRules={alternativeValidationRules}
+        hasAlternativeMethod={hasAlternativeMethod}
+        creditRate={creditRate}
+        creditType={creditType}
+        formReference={formReference}
+        notes={notes}
+      />
     </div>
   );
 }; 

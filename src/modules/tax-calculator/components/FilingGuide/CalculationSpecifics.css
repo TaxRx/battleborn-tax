@@ -1,0 +1,374 @@
+.calculation-specifics-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3in;
+  padding: 0;
+  margin: 0;
+}
+
+.calculation-specifics-table {
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+  margin: 0 0 0.2in 0;
+  padding: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.filing-guide-section-title {
+  font-size: 14pt;
+  font-weight: 600;
+  margin-bottom: 0.15in;
+  color: #1a365d;
+  border-bottom: 2px solid #3182ce;
+  padding-bottom: 0.1in;
+  background: none;
+  text-align: left;
+}
+
+.filing-guide-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0;
+  font-size: 11pt;
+}
+
+.filing-guide-table th {
+  background-color: #f7fafc;
+  border: 1px solid #e2e8f0;
+  padding: 0.1in 0.15in;
+  text-align: left;
+  font-weight: 600;
+  color: #2d3748;
+  font-size: 10pt;
+}
+
+.filing-guide-table td {
+  border: 1px solid #e2e8f0;
+  padding: 0.1in 0.15in;
+  vertical-align: top;
+  font-size: 10pt;
+}
+
+.filing-guide-table .no-data {
+  text-align: center;
+  color: #718096;
+  font-style: italic;
+  padding: 0.2in;
+}
+
+/* Table cell styling */
+.name-cell .primary-name {
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.role-cell {
+  color: #4a5568;
+  font-size: 9pt;
+}
+
+.activities-cell {
+  max-width: 2in;
+}
+
+.activity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.05in;
+}
+
+.activity-chip {
+  display: inline-block;
+  padding: 0.02in 0.08in;
+  border-radius: 0.1in;
+  font-size: 8pt;
+  font-weight: 500;
+  color: white;
+  white-space: nowrap;
+}
+
+.no-activities {
+  color: #718096;
+  font-style: italic;
+  font-size: 9pt;
+}
+
+.subcomponents-cell {
+  text-align: center;
+}
+
+.subcomponent-count-chip {
+  display: inline-block;
+  padding: 0.02in 0.08in;
+  background-color: #e2e8f0;
+  border-radius: 0.1in;
+  font-size: 8pt;
+  font-weight: 500;
+  color: #4a5568;
+}
+
+.no-subcomponents {
+  color: #718096;
+  font-style: italic;
+}
+
+.percentage-cell {
+  width: 1.5in;
+}
+
+.applied-percentage-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.1in;
+}
+
+.bar-container {
+  flex: 1;
+  height: 0.15in;
+  background-color: #f7fafc;
+  border-radius: 0.05in;
+  overflow: hidden;
+  position: relative;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 0.05in;
+  transition: width 0.3s ease;
+}
+
+.bar-fill.high {
+  background-color: #10b981;
+}
+
+.bar-fill.medium {
+  background-color: #f59e0b;
+}
+
+.bar-fill.low {
+  background-color: #ef4444;
+}
+
+.percentage-text {
+  font-size: 9pt;
+  font-weight: 600;
+  color: #2d3748;
+  min-width: 0.4in;
+  text-align: right;
+}
+
+.amount-cell {
+  text-align: right;
+}
+
+.amount-text {
+  font-weight: 600;
+  color: #2d3748;
+}
+
+/* Research Activity Baseline Styling */
+.research-activity-baseline {
+  margin-top: 0.3in;
+}
+
+.baseline-description {
+  margin-bottom: 0.2in;
+  color: #4a5568;
+  font-size: 10pt;
+  line-height: 1.4;
+}
+
+.baseline-section {
+  margin-bottom: 0.3in;
+}
+
+.baseline-subtitle {
+  font-size: 12pt;
+  font-weight: 600;
+  color: #2d3748;
+  margin-bottom: 0.15in;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.05in;
+}
+
+/* Single Horizontal Bar Chart */
+.single-horizontal-bar-container {
+  margin-bottom: 0.2in;
+}
+
+.bar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.1in;
+}
+
+.bar-title {
+  font-weight: 600;
+  color: #2d3748;
+  font-size: 11pt;
+}
+
+.bar-total {
+  font-size: 9pt;
+  color: #4a5568;
+}
+
+.horizontal-bar-chart {
+  display: flex;
+  height: 0.25in;
+  background-color: #f7fafc;
+  border-radius: 0.05in;
+  overflow: hidden;
+  margin-bottom: 0.1in;
+}
+
+.bar-segment {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: width 0.3s ease;
+}
+
+.bar-segment.non-rd {
+  background-color: #94a3b8;
+}
+
+.bar-segment.research-activity {
+  color: white;
+  font-weight: 500;
+  font-size: 8pt;
+}
+
+.segment-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90%;
+  text-align: center;
+}
+
+.activity-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15in;
+  margin-top: 0.1in;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.05in;
+  font-size: 9pt;
+}
+
+.legend-color {
+  width: 0.1in;
+  height: 0.1in;
+  border-radius: 0.02in;
+  flex-shrink: 0;
+}
+
+.legend-color.non-rd {
+  background-color: #94a3b8;
+}
+
+.legend-name {
+  color: #2d3748;
+  font-weight: 500;
+}
+
+/* Subcomponent Sections */
+.subcomponent-section {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.1in;
+  padding: 0.15in;
+  margin-bottom: 0.15in;
+}
+
+.activity-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.1in;
+}
+
+.activity-title {
+  font-size: 11pt;
+  font-weight: 600;
+  color: #2d3748;
+  margin: 0;
+}
+
+.activity-stats {
+  display: flex;
+  gap: 0.2in;
+  font-size: 9pt;
+}
+
+.practice-percent,
+.applied-percent {
+  color: #4a5568;
+  font-weight: 500;
+}
+
+.no-subcomponents-message {
+  color: #718096;
+  font-style: italic;
+  font-size: 9pt;
+  text-align: center;
+  padding: 0.1in;
+}
+
+.subcomponent-bar-chart {
+  margin-top: 0.1in;
+}
+
+.subcomponent-bar-chart .bar-container {
+  height: 0.2in;
+  background-color: #f1f5f9;
+  border-radius: 0.05in;
+  overflow: hidden;
+  display: flex;
+  margin-bottom: 0.1in;
+}
+
+.subcomponent-bar {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: width 0.3s ease;
+  color: white;
+  font-size: 7pt;
+  font-weight: 500;
+}
+
+.subcomponent-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90%;
+  text-align: center;
+}
+
+.subcomponent-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.1in;
+}
+
+.subcomponent-legend .legend-item {
+  font-size: 8pt;
+}
+
+.subcomponent-legend .legend-percent {
+  color: #6b7280;
+  font-size: 7pt;
+} 

@@ -24,6 +24,19 @@ export const vaConfig = {
     'Virginia uses a fixed-base percentage calculation similar to the federal credit.',
     'The credit is 15% of incremental qualified research expenses.',
     'Most taxpayers use a 3% fixed-base percentage unless they qualify for a higher rate.',
-    'Available to corporations and partnerships.'
-  ]
+    'Available to corporations and partnerships.',
+    'Credit can be carried forward for up to 10 years.',
+    'Annual cap of $6 million statewide.'
+  ],
+  validationRules: {
+    maxCredit: 6000000, // $6 million statewide cap
+    carryforwardYears: 10,
+    minIncrementalQRE: 0,
+    maxFixedBasePercent: 0.16, // 16% maximum fixed-base percentage
+    requireIncremental: true
+  },
+  hasAlternativeMethod: false,
+  formReference: 'VA Form 500',
+  creditRate: 0.15,
+  creditType: 'incremental'
 }; 

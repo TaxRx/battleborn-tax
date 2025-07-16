@@ -6,18 +6,24 @@ export interface HistoricalData {
 
 export interface RDBusiness {
   id: string;
+  client_id: string;
   name: string;
   ein: string;
   entity_type: 'LLC' | 'SCORP' | 'CCORP' | 'PARTNERSHIP' | 'SOLEPROP' | 'OTHER';
   start_year: number;
-  address: string;
-  city: string;
-  state: string;
-  zip: string;
-  historical_data: HistoricalData[];
+  domicile_state: string;
+  contact_info: {
+    address: string;
+    city: string;
+    state: string;
+    zip: string;
+  };
+  website?: string;
+  naics_code?: string;
+  image_path?: string;
+  is_controlled_grp: boolean;
   created_at: string;
   updated_at: string;
-  user_id: string;
 }
 
 export interface RDBusinessYear {
@@ -25,6 +31,7 @@ export interface RDBusinessYear {
   business_id: string;
   year: number;
   gross_receipts: number;
+  total_qre: number;
   created_at: string;
   updated_at: string;
 }
@@ -86,6 +93,9 @@ export interface BusinessSetupData {
     city: string;
     state: string;
     zip: string;
+    website?: string;
+    naicsCode?: string;
+    imagePath?: string;
     historicalData: HistoricalData[];
   };
   selectedYear: {

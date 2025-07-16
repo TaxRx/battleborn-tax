@@ -1,100 +1,167 @@
 import { StateCreditBaseData } from '../../services/stateCreditDataService';
 
-export const AZ_PROFORMA_LINES = [
-  // --- Arizona Form 308 - Credit For Increased Research Activities ---
-  { line: '1', label: 'Did you have qualified research expenses for the tax year indicated above?', field: 'hasQualifiedResearchExpenses', editable: true, defaultValue: 1, type: 'yesno' },
-  { line: '2', label: 'Is this credit refundable?', field: 'isRefundable', editable: true, defaultValue: 0, type: 'yesno' },
-  { line: '3', label: 'Are you claiming a pass through of this credit from a partnership?', field: 'isPartnershipPassThrough', editable: true, defaultValue: 0, type: 'yesno' },
-  
-  // Skip lines 4-7 as they're not in the provided spec
-  
-  { line: '8', label: 'Basic research payments paid or incurred to qualified organizations:', field: 'basicResearchPayments', editable: true },
-  { line: '9', label: 'Qualified organization base period amount', field: 'qualifiedOrgBasePeriod', editable: true },
-  { line: '10', label: 'Subtract line 10 from line 9. If less than zero, enter "0"', field: 'line10', editable: false, calc: (data: StateCreditBaseData) => Math.max((data.basicResearchPayments || 0) - (data.qualifiedOrgBasePeriod || 0), 0) },
-  { line: '11', label: 'Wages for qualified services (do not include wages used in figuring the work opportunity credit)', field: 'wages', editable: true },
-  { line: '12', label: 'Cost of supplies', field: 'supplies', editable: true },
-  { line: '13', label: 'Cost to rent or lease computers', field: 'computerLeases', editable: true },
-  { line: '14', label: 'Contract research expenses:', field: 'contractResearch', editable: true },
-  { line: '15', label: 'Total research expenses:', field: 'line15', editable: false, calc: (data: StateCreditBaseData) => (data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0) },
-  { line: '16', label: 'Average annual Arizona gross receipts:', field: 'avgGrossReceipts', editable: true },
-  { line: '17', label: 'Fixed-base percentage, but not more than 16% (0.16)', field: 'fixedBasePercentage', editable: true, defaultValue: 3, type: 'percentage' },
-  { line: '18', label: 'Base amount: Multiply line 16 by the percentage on line 17', field: 'line18', editable: false, calc: (data: StateCreditBaseData) => (data.avgGrossReceipts || 0) * ((data.fixedBasePercentage || 3) / 100) },
-  { line: '19', label: 'Subtract line 18 from line 15. If less than zero, enter "0"', field: 'line19', editable: false, calc: (data: StateCreditBaseData) => Math.max((data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0) - ((data.avgGrossReceipts || 0) * ((data.fixedBasePercentage || 3) / 100)), 0) },
-  { line: '20', label: 'Multiply line 15 by 50% (.50).', field: 'line20', editable: false, calc: (data: StateCreditBaseData) => ((data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0)) * 0.5 },
-  { line: '21', label: 'Enter the lesser of line 19 or line 20', field: 'line21', editable: false, calc: (data: StateCreditBaseData) => {
-    const line19 = Math.max((data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0) - ((data.avgGrossReceipts || 0) * ((data.fixedBasePercentage || 3) / 100)), 0);
-    const line20 = ((data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0)) * 0.5;
-    return Math.min(line19, line20);
-  }},
-  { line: '22', label: 'Add lines 10 and 21.', field: 'line22', editable: false, calc: (data: StateCreditBaseData) => {
-    const line10 = Math.max((data.basicResearchPayments || 0) - (data.qualifiedOrgBasePeriod || 0), 0);
-    const line19 = Math.max((data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0) - ((data.avgGrossReceipts || 0) * ((data.fixedBasePercentage || 3) / 100)), 0);
-    const line20 = ((data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0)) * 0.5;
-    const line21 = Math.min(line19, line20);
-    return line10 + line21;
-  }},
-  { line: '23', label: 'Multiply line 22 by 24% (.24)', field: 'line23', editable: false, calc: (data: StateCreditBaseData) => {
-    const line10 = Math.max((data.basicResearchPayments || 0) - (data.qualifiedOrgBasePeriod || 0), 0);
-    const line19 = Math.max((data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0) - ((data.avgGrossReceipts || 0) * ((data.fixedBasePercentage || 3) / 100)), 0);
-    const line20 = ((data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0)) * 0.5;
-    const line21 = Math.min(line19, line20);
-    const line22 = line10 + line21;
-    return line22 * 0.24;
-  }},
-  { line: '24', label: 'Subtract $2,500,000 from line 22.', field: 'line24', editable: false, calc: (data: StateCreditBaseData) => {
-    const line10 = Math.max((data.basicResearchPayments || 0) - (data.qualifiedOrgBasePeriod || 0), 0);
-    const line19 = Math.max((data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0) - ((data.avgGrossReceipts || 0) * ((data.fixedBasePercentage || 3) / 100)), 0);
-    const line20 = ((data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0)) * 0.5;
-    const line21 = Math.min(line19, line20);
-    const line22 = line10 + line21;
-    return Math.max(line22 - 2500000, 0);
-  }},
-  { line: '25', label: 'Multiply line 24 by 15% (.15)', field: 'line25', editable: false, calc: (data: StateCreditBaseData) => {
-    const line10 = Math.max((data.basicResearchPayments || 0) - (data.qualifiedOrgBasePeriod || 0), 0);
-    const line19 = Math.max((data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0) - ((data.avgGrossReceipts || 0) * ((data.fixedBasePercentage || 3) / 100)), 0);
-    const line20 = ((data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0)) * 0.5;
-    const line21 = Math.min(line19, line20);
-    const line22 = line10 + line21;
-    const line24 = Math.max(line22 - 2500000, 0);
-    return line24 * 0.15;
-  }},
-  { line: '26', label: 'Add $600,000 to line 25', field: 'line26', editable: false, calc: (data: StateCreditBaseData) => {
-    const line10 = Math.max((data.basicResearchPayments || 0) - (data.qualifiedOrgBasePeriod || 0), 0);
-    const line19 = Math.max((data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0) - ((data.avgGrossReceipts || 0) * ((data.fixedBasePercentage || 3) / 100)), 0);
-    const line20 = ((data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0)) * 0.5;
-    const line21 = Math.min(line19, line20);
-    const line22 = line10 + line21;
-    const line24 = Math.max(line22 - 2500000, 0);
-    const line25 = line24 * 0.15;
-    return line25 + 600000;
-  }},
-  { line: '27', label: 'Enter the amount from line 23 or line 26', field: 'line27', editable: false, calc: (data: StateCreditBaseData) => {
-    const line10 = Math.max((data.basicResearchPayments || 0) - (data.qualifiedOrgBasePeriod || 0), 0);
-    const line19 = Math.max((data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0) - ((data.avgGrossReceipts || 0) * ((data.fixedBasePercentage || 3) / 100)), 0);
-    const line20 = ((data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0)) * 0.5;
-    const line21 = Math.min(line19, line20);
-    const line22 = line10 + line21;
-    
-    if (line22 <= 2500000) {
-      // Use line 23 calculation
-      return line22 * 0.24;
-    } else {
-      // Use line 26 calculation
-      const line24 = Math.max(line22 - 2500000, 0);
-      const line25 = line24 * 0.15;
-      return line25 + 600000;
-    }
-  }},
-]; 
+export interface StateProFormaLine {
+  line: string;
+  label: string;
+  field: string;
+  editable: boolean;
+  calc?: (data: Record<string, number>) => number;
+  defaultValue?: number;
+  type?: 'currency' | 'percentage' | 'yesno';
+  description?: string;
+  sort_order?: number;
+}
+
+export const AZ_PROFORMA_LINES: StateProFormaLine[] = [
+  // --- AZ Form 308 - Research and Development Credit ---
+  // Based on actual AZ Form 308 requirements
+  { 
+    line: '1', 
+    label: 'Qualified research expenses for the current year (wages, supplies, contract research)', 
+    field: 'azQRE', 
+    editable: false, 
+    calc: (data: Record<string, number>) => (data.wages || 0) + (data.supplies || 0) + (data.contractResearch || 0),
+    sort_order: 1
+  },
+  { 
+    line: '2', 
+    label: 'Average annual gross receipts for the 4 taxable years preceding the credit year', 
+    field: 'azAvgGrossReceipts', 
+    editable: true, 
+    sort_order: 2
+  },
+  { 
+    line: '3', 
+    label: 'Fixed-base percentage (3% for most taxpayers, 16% maximum)', 
+    field: 'azFixedBasePercent', 
+    editable: true, 
+    defaultValue: 3, 
+    type: 'percentage',
+    sort_order: 3
+  },
+  { 
+    line: '4', 
+    label: 'Base amount (Line 2 × Line 3)', 
+    field: 'azBaseAmount', 
+    editable: false, 
+    calc: (data: Record<string, number>) => (data.azAvgGrossReceipts || 0) * ((data.azFixedBasePercent || 3) / 100),
+    sort_order: 4
+  },
+  { 
+    line: '5', 
+    label: 'Incremental qualified research expenses (Line 1 - Line 4, but not less than zero)', 
+    field: 'azIncrementalQRE', 
+    editable: false, 
+    calc: (data: Record<string, number>) => Math.max((data.azQRE || 0) - (data.azBaseAmount || 0), 0),
+    sort_order: 5
+  },
+  { 
+    line: '6', 
+    label: 'Arizona R&D credit (Line 5 × 24%)', 
+    field: 'azFinalCredit', 
+    editable: false, 
+    calc: (data: Record<string, number>) => (data.azIncrementalQRE || 0) * 0.24,
+    sort_order: 6
+  },
+];
+
+// Alternative calculation method for Arizona (Simplified Method)
+export const AZ_ALTERNATIVE_LINES: StateProFormaLine[] = [
+  {
+    line: '1',
+    label: 'Total qualified research expenses',
+    field: 'azAltQRE',
+    editable: false,
+    calc: (data: Record<string, number>) => (data.wages || 0) + (data.supplies || 0) + (data.contractResearch || 0),
+    sort_order: 1
+  },
+  {
+    line: '2',
+    label: 'Simplified credit (Line 1 × 12%)',
+    field: 'azAltCredit',
+    editable: false,
+    calc: (data: Record<string, number>) => ((data.wages || 0) + (data.supplies || 0) + (data.contractResearch || 0)) * 0.12,
+    sort_order: 2
+  }
+];
 
 export const azConfig = {
-  state: 'AZ',
-  name: 'Arizona',
   forms: {
     standard: {
-      name: 'Arizona Form 308 - Credit For Increased Research Activities',
-      method: 'standard',
-      lines: AZ_PROFORMA_LINES,
+      name: "Form 308",
+      method: "standard",
+      lines: AZ_PROFORMA_LINES
     },
+    alternative: {
+      name: "Form 308 (Alternative)",
+      method: "alternative",
+      lines: AZ_ALTERNATIVE_LINES
+    }
   },
+  hasAlternativeMethod: true,
+  creditRate: 0.24,
+  creditType: "incremental",
+  formReference: "AZ Form 308",
+  validationRules: [
+    {
+      type: "max_credit",
+      value: 75,
+      message: "Credit limited to 75% of the taxpayer's Arizona income tax liability"
+    },
+    {
+      type: "carryforward_limit",
+      value: 5,
+      message: "Unused credits may be carried forward for up to 5 years"
+    },
+    {
+      type: "entity_type_restriction",
+      value: "Corporations only",
+      message: "Available only to corporations subject to Arizona income tax"
+    },
+    {
+      type: "gross_receipts_threshold",
+      value: 500000,
+      message: "Minimum $500,000 in gross receipts in the taxable year to qualify"
+    },
+    {
+      type: "other",
+      value: "Application required",
+      message: "Must file Form 308 and attach Schedule R&D to claim the credit"
+    },
+    {
+      type: "other",
+      value: "Deadline: April 15",
+      message: "Application must be filed by April 15th of the year following the taxable year"
+    },
+    {
+      type: "other",
+      value: "Employment requirement",
+      message: "Must maintain employment levels in Arizona to avoid credit recapture"
+    }
+  ],
+  alternativeValidationRules: [
+    {
+      type: "alternative_method",
+      value: "Available",
+      message: "Alternative calculation method available using 24% of qualified research expenses"
+    },
+    {
+      type: "max_credit",
+      value: 75,
+      message: "Alternative method also limited to 75% of Arizona income tax liability"
+    },
+    {
+      type: "carryforward_limit",
+      value: 5,
+      message: "Unused alternative credits may be carried forward for up to 5 years"
+    }
+  ],
+  notes: [
+    "Credit is non-refundable and may only be used to offset Arizona income tax liability",
+    "Research must be conducted in Arizona to qualify for the credit",
+    "Qualified research expenses must meet the same criteria as the federal credit under IRC Section 41",
+    "Taxpayers must maintain detailed records of qualified research activities and expenses",
+    "The credit is subject to recapture if the taxpayer fails to maintain the required employment levels",
+    "Arizona offers one of the highest R&D credit rates in the nation at 24%"
+  ]
 }; 

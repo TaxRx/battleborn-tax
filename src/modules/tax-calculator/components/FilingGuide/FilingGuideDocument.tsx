@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Form6765 } from './Form6765';
 import { QRESummaryTables } from './QRESummaryTables';
 import { FilingProcessOverview } from './FilingProcessOverview';
-import { ComprehensiveDataSummary } from './ComprehensiveDataSummary';
 import Form6765v2024 from './Form6765v2024';
 import './FilingGuide.css';
 import { StateCreditProForma } from '../StateProForma/StateCreditProForma';
 import { getStateConfig, getAvailableStates, StateConfig } from '../StateProForma';
 import { saveStateProFormaData, loadStateProFormaData, StateCreditDataService } from '../../services/stateCreditDataService';
 import { FederalCreditProForma } from './FederalCreditProForma';
+import { KPICharts } from './KPICharts';
+import { CalculationSpecifics } from './CalculationSpecifics';
 
 interface FilingGuideDocumentProps {
   businessData: any;
@@ -280,6 +281,13 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
       {/* Section 2: Summary Tables and Visuals */}
       <div className="filing-guide-section">
         <h2 className="filing-guide-section-title">Summary Tables and Visuals</h2>
+        <KPICharts 
+          businessData={businessData}
+          selectedYear={selectedYear}
+          calculations={calculations}
+          selectedMethod={selectedMethod}
+          debugData={debugData}
+        />
         <QRESummaryTables 
           businessData={businessData}
           selectedYear={selectedYear}
@@ -299,17 +307,6 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
           clientId={businessData?.client_id || 'demo'}
           userId={businessData?.user_id}
           selectedMethod={selectedMethod}
-        />
-      </div>
-
-      {/* Section 4: Comprehensive Data Summary */}
-      <div className="filing-guide-section">
-        <ComprehensiveDataSummary 
-          businessData={businessData}
-          selectedYear={selectedYear}
-          calculations={calculations}
-          selectedMethod={selectedMethod}
-          debugData={debugData}
         />
       </div>
 
@@ -354,12 +351,31 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
             onSave={handleSaveStateProForma}
             title={`${currentStateConfig.name} (${currentStateConfig.code}) State Credit – ${currentStateConfig.forms?.[method]?.name || currentStateConfig.formName} Pro Forma (${method.charAt(0).toUpperCase() + method.slice(1)})`}
             businessYearId={selectedYear?.id}
+            // Pass validation rules and metadata
+            validationRules={currentStateConfig.validationRules}
+            alternativeValidationRules={currentStateConfig.alternativeValidationRules}
+            hasAlternativeMethod={currentStateConfig.hasAlternativeMethod}
+            creditRate={currentStateConfig.creditRate}
+            creditType={currentStateConfig.creditType}
+            formReference={currentStateConfig.formReference}
+            notes={currentStateConfig.notes}
           />
         ) : (
           <div className="state-proforma-error">
             No state configuration available for {state}
           </div>
         )}
+      </div>
+
+      {/* Section 6: Calculation Specifics */}
+      <div className="filing-guide-section">
+        <CalculationSpecifics
+          businessData={businessData}
+          selectedYear={selectedYear}
+          calculations={calculations}
+          selectedMethod={selectedMethod}
+          debugData={debugData}
+        />
       </div>
     </div>
   );

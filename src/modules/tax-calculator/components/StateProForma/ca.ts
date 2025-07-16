@@ -19,6 +19,31 @@ const get280CPercentage = (entityType?: string): number => {
 };
 
 export const CA_PROFORMA_LINES = [
+  // --- Standard Calculation ---
+  { line: '1', label: 'Basic research payments paid or incurred during the taxable year.', field: 'basicResearchPayments', editable: true, method: 'standard' },
+  { line: '2', label: 'Base period amount.', field: 'basePeriodAmount', editable: true, method: 'standard' },
+  { line: '3', label: 'Subtract line 2 from line 1. If less than zero, enter -0-.', field: 'line3', editable: false, method: 'standard', calc: (data: StateCreditBaseData) => Math.max((data.basicResearchPayments || 0) - (data.basePeriodAmount || 0), 0) },
+  { line: '4', label: 'Multiply line 3 by 24% (.24)', field: 'line4', editable: false, method: 'standard', calc: (data: any) => (data.line3 || 0) * 0.24 },
+  { line: '5', label: 'Wages for qualified services (do not include wages used in figuring the work opportunity credit)', field: 'wages', editable: true, method: 'standard' },
+  { line: '6', label: 'Cost of supplies', field: 'supplies', editable: true, method: 'standard' },
+  { line: '7', label: 'Rental or lease costs of computers', field: 'computerLeases', editable: true, method: 'standard' },
+  { line: '8', label: 'Contract research expenses', field: 'contractResearch', editable: true, method: 'standard' },
+  { line: '9', label: 'Total qualified research expenses', field: 'totalQRE', editable: false, method: 'standard', calc: (data: any) => (data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0) },
+  { line: '10', label: 'Enter fixed-base percentage, but not more than 16% (.16).', field: 'fixedBasePercent', editable: true, method: 'standard', defaultValue: 3 },
+  { line: '11', label: 'Enter average annual gross receipts', field: 'avgGrossReceipts', editable: true, method: 'standard' },
+  { line: '12', label: 'Multiply line 11 by the percentage on line 10', field: 'line12', editable: false, method: 'standard', calc: (data: any) => (data.avgGrossReceipts || 0) * ((data.fixedBasePercent || 3) / 100) },
+  { line: '13', label: 'Subtract line 12 from line 9. If zero or less, enter -0-', field: 'line13', editable: false, method: 'standard', calc: (data: any) => Math.max((data.totalQRE || 0) - (data.line12 || 0), 0) },
+  { line: '14', label: 'Multiply line 9 by 50%', field: 'line14', editable: false, method: 'standard', calc: (data: any) => (data.totalQRE || 0) * 0.5 },
+  { line: '15', label: 'Enter the smaller of line 13 or line 14', field: 'line15', editable: false, method: 'standard', calc: (data: any) => Math.min(data.line13 || 0, data.line14 || 0) },
+  { line: '16', label: 'Multiply line 15 by 15% (.15)', field: 'line16', editable: false, method: 'standard', calc: (data: any) => (data.line15 || 0) * 0.15 },
+  { line: '17a', label: 'Regular credit. Add line 4 and line 16. If you do not elect the reduced credit under IRC Section 280C(c), enter the result here, and see instructions for the schedule to attach.', field: 'line17a', editable: false, method: 'standard', calc: (data: any) => (data.line4 || 0) + (data.line16 || 0) },
+  { line: '17b', label: 'Reduced regular credit under IRC Section 280C(c). Multiply line 17a by the applicable percentage below: • 87.7% (.877) for individuals, estates, and trusts • 91.16% (.9116) for corporations • 98.5% (.985) for S corporations', field: 'line17b', editable: false, method: 'standard', calc: (data: StateCreditBaseData) => {
+    const percentage = get280CPercentage(data.businessEntityType);
+    return (data.line17a || 0) * (percentage / 100);
+  }},
+];
+
+export const CA_ALTERNATIVE_LINES = [
   // --- Alternative Calculation ---
   { line: '18', label: 'Basic research payments paid or incurred during the taxable year.', field: 'basicResearchPayments', editable: true, method: 'alternative' },
   { line: '19', label: 'Base period amount.', field: 'basePeriodAmount', editable: true, method: 'alternative' },
@@ -46,29 +71,6 @@ export const CA_PROFORMA_LINES = [
     const percentage = get280CPercentage(data.businessEntityType);
     return (data.line39a || 0) * (percentage / 100);
   }},
-
-  // --- Standard Calculation ---
-  { line: '1', label: 'Basic research payments paid or incurred during the taxable year.', field: 'basicResearchPayments', editable: true, method: 'standard' },
-  { line: '2', label: 'Base period amount.', field: 'basePeriodAmount', editable: true, method: 'standard' },
-  { line: '3', label: 'Subtract line 2 from line 1. If less than zero, enter -0-.', field: 'line3', editable: false, method: 'standard', calc: (data: StateCreditBaseData) => Math.max((data.basicResearchPayments || 0) - (data.basePeriodAmount || 0), 0) },
-  { line: '4', label: 'Multiply line 3 by 24% (.24)', field: 'line4', editable: false, method: 'standard', calc: (data: any) => (data.line3 || 0) * 0.24 },
-  { line: '5', label: 'Wages for qualified services (do not include wages used in figuring the work opportunity credit)', field: 'wages', editable: true, method: 'standard' },
-  { line: '6', label: 'Cost of supplies', field: 'supplies', editable: true, method: 'standard' },
-  { line: '7', label: 'Rental or lease costs of computers', field: 'computerLeases', editable: true, method: 'standard' },
-  { line: '8', label: 'Contract research expenses', field: 'contractResearch', editable: true, method: 'standard' },
-  { line: '9', label: 'Total qualified research expenses', field: 'totalQRE', editable: false, method: 'standard', calc: (data: any) => (data.wages || 0) + (data.supplies || 0) + (data.computerLeases || 0) + (data.contractResearch || 0) },
-  { line: '10', label: 'Enter fixed-base percentage, but not more than 16% (.16).', field: 'fixedBasePercent', editable: true, method: 'standard', defaultValue: 3 },
-  { line: '11', label: 'Enter average annual gross receipts', field: 'avgGrossReceipts', editable: true, method: 'standard' },
-  { line: '12', label: 'Multiply line 11 by the percentage on line 10', field: 'line12', editable: false, method: 'standard', calc: (data: any) => (data.avgGrossReceipts || 0) * ((data.fixedBasePercent || 3) / 100) },
-  { line: '13', label: 'Subtract line 12 from line 9. If zero or less, enter -0-', field: 'line13', editable: false, method: 'standard', calc: (data: any) => Math.max((data.totalQRE || 0) - (data.line12 || 0), 0) },
-  { line: '14', label: 'Multiply line 9 by 50%', field: 'line14', editable: false, method: 'standard', calc: (data: any) => (data.totalQRE || 0) * 0.5 },
-  { line: '15', label: 'Enter the smaller of line 13 or line 14', field: 'line15', editable: false, method: 'standard', calc: (data: any) => Math.min(data.line13 || 0, data.line14 || 0) },
-  { line: '16', label: 'Multiply line 15 by 15% (.15)', field: 'line16', editable: false, method: 'standard', calc: (data: any) => (data.line15 || 0) * 0.15 },
-  { line: '17a', label: 'Regular credit. Add line 4 and line 16. If you do not elect the reduced credit under IRC Section 280C(c), enter the result here, and see instructions for the schedule to attach.', field: 'line17a', editable: false, method: 'standard', calc: (data: any) => (data.line4 || 0) + (data.line16 || 0) },
-  { line: '17b', label: 'Reduced regular credit under IRC Section 280C(c). Multiply line 17a by the applicable percentage below: • 87.7% (.877) for individuals, estates, and trusts • 91.16% (.9116) for corporations • 98.5% (.985) for S corporations', field: 'line17b', editable: false, method: 'standard', calc: (data: StateCreditBaseData) => {
-    const percentage = get280CPercentage(data.businessEntityType);
-    return (data.line17a || 0) * (percentage / 100);
-  }},
 ];
 
 export const caConfig = {
@@ -76,14 +78,80 @@ export const caConfig = {
   name: 'California',
   forms: {
     standard: {
-      name: 'California Form 3523 - Research Credit',
-      method: 'standard',
+      name: "Form 3526",
+      method: "standard",
       lines: CA_PROFORMA_LINES.filter(line => line.method === 'standard'),
     },
     alternative: {
-      name: 'California Form 3523 - Alternative Research Credit',
-      method: 'alternative',
-      lines: CA_PROFORMA_LINES.filter(line => line.method === 'alternative'),
-    },
+      name: "Form 3526 (Alternative)",
+      method: "alternative",
+      lines: CA_ALTERNATIVE_LINES.filter(line => line.method === 'alternative'),
+    }
   },
+  hasAlternativeMethod: true,
+  creditRate: 0.15,
+  creditType: "incremental",
+  formReference: "CA Form 3526",
+  validationRules: [
+    {
+      type: "max_credit",
+      value: 50,
+      message: "Credit limited to 50% of the taxpayer's California income tax liability"
+    },
+    {
+      type: "carryforward_limit",
+      value: 10,
+      message: "Unused credits may be carried forward for up to 10 years"
+    },
+    {
+      type: "entity_type_restriction",
+      value: "Corporations and partnerships",
+      message: "Available to corporations and partnerships with California source income"
+    },
+    {
+      type: "gross_receipts_threshold",
+      value: 1000000,
+      message: "Minimum $1 million in gross receipts in the taxable year to qualify"
+    },
+    {
+      type: "other",
+      value: "Application required",
+      message: "Must file Form 3526 and attach Schedule R to claim the credit"
+    },
+    {
+      type: "other",
+      value: "Deadline: April 15",
+      message: "Application must be filed by April 15th of the year following the taxable year"
+    },
+    {
+      type: "other",
+      value: "Employment requirement",
+      message: "Must maintain employment levels in California to avoid credit recapture"
+    }
+  ],
+  alternativeValidationRules: [
+    {
+      type: "alternative_method",
+      value: "Available",
+      message: "Alternative calculation method available using 15% of qualified research expenses"
+    },
+    {
+      type: "max_credit",
+      value: 50,
+      message: "Alternative method also limited to 50% of California income tax liability"
+    },
+    {
+      type: "carryforward_limit",
+      value: 10,
+      message: "Unused alternative credits may be carried forward for up to 10 years"
+    }
+  ],
+  notes: [
+    "Credit is non-refundable and may only be used to offset California income tax liability",
+    "Research must be conducted in California to qualify for the credit",
+    "Qualified research expenses must meet the same criteria as the federal credit under IRC Section 41",
+    "Taxpayers must maintain detailed records of qualified research activities and expenses",
+    "The credit is subject to recapture if the taxpayer fails to maintain the required employment levels",
+    "Partnerships must allocate the credit among partners based on their ownership percentages"
+  ]
 }; 

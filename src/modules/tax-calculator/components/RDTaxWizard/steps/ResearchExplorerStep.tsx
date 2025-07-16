@@ -3461,12 +3461,13 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
         .map(role => role.name);
 
       const context: AIGenerationContext = {
-        research_activity_name: activity.activity_name || 'Unknown Activity',
-        practice_percentage: activity.practice_percent,
-        roles_involved: selectedRoleNames,
-        industry_type: activity.activity_category || 'General',
-        category: activity.activity_category,
-        frequency_percent: 100
+        activityName: activity.activity_name || 'Unknown Activity',
+        activityDescription: `Practice: ${activity.practice_percent}%, Category: ${activity.activity_category || 'General'}`,
+        stepName: 'Research Step',
+        stepDescription: 'Research and development activities',
+        subcomponentName: 'Research Subcomponent',
+        subcomponentDescription: `Roles: ${selectedRoleNames.join(', ')}`,
+        industry: activity.activity_category || 'General'
       };
 
       const aiAnswers = await AIService.generateAllAnswers(context);
@@ -3474,8 +3475,8 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
       const updatedGuidelines = {
         ...guidelines,
         hypothesis: aiAnswers.hypothesis,
-        development_steps: aiAnswers.development_steps,
-        data_feedback: aiAnswers.data_feedback
+        development_steps: aiAnswers.developmentSteps,
+        data_feedback: aiAnswers.dataFeedback
       };
       
       setGuidelines(updatedGuidelines);
@@ -3495,12 +3496,13 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
         .map(role => role.name);
 
       const context: AIGenerationContext = {
-        research_activity_name: activity.activity_name || 'Unknown Activity',
-        practice_percentage: activity.practice_percent,
-        roles_involved: selectedRoleNames,
-        industry_type: activity.activity_category || 'General',
-        category: activity.activity_category,
-        frequency_percent: 100
+        activityName: activity.activity_name || 'Unknown Activity',
+        activityDescription: `Practice: ${activity.practice_percent}%, Category: ${activity.activity_category || 'General'}`,
+        stepName: 'Research Step',
+        stepDescription: 'Research and development activities',
+        subcomponentName: 'Research Subcomponent',
+        subcomponentDescription: `Roles: ${selectedRoleNames.join(', ')}`,
+        industry: activity.activity_category || 'General'
       };
 
       let newValue = '';

@@ -16,9 +16,47 @@ export const deConfig = {
       lines: DE_PROFORMA_LINES.filter(line => line.method === 'standard'),
     },
   },
+  hasAlternativeMethod: false,
+  creditRate: 0.05,
+  creditType: "total_qre",
+  formReference: "DE Form 1100",
+  validationRules: [
+    {
+      type: "max_credit",
+      value: 50,
+      message: "Credit limited to 50% of the taxpayer's Delaware income tax liability"
+    },
+    {
+      type: "carryforward_limit",
+      value: 10,
+      message: "Unused credits may be carried forward for up to 10 years"
+    },
+    {
+      type: "entity_type_restriction",
+      value: "Corporations and partnerships",
+      message: "Available to corporations and partnerships with Delaware source income"
+    },
+    {
+      type: "gross_receipts_threshold",
+      value: 100000,
+      message: "Minimum $100,000 in gross receipts in the taxable year to qualify"
+    },
+    {
+      type: "other",
+      value: "Application required",
+      message: "Must file Form 1100 and attach Schedule R&D to claim the credit"
+    },
+    {
+      type: "other",
+      value: "Deadline: March 15",
+      message: "Application must be filed by March 15th of the year following the taxable year"
+    }
+  ],
   notes: [
-    'Delaware offers a simple 5% credit on total qualified research expenses.',
-    'No base calculation is required for Delaware.',
-    'Available to corporations and partnerships.'
+    "Credit is non-refundable and may only be used to offset Delaware income tax liability",
+    "Research must be conducted in Delaware to qualify for the credit",
+    "Qualified research expenses must meet the same criteria as the federal credit under IRC Section 41",
+    "Taxpayers must maintain detailed records of qualified research activities and expenses",
+    "No base calculation is required for Delaware - credit is calculated on total QRE"
   ]
 }; 

@@ -10,6 +10,8 @@ import {
 } from "../../../../../types/researchDesign";
 import SubcomponentCard from './SubcomponentCard';
 import { supabase } from "../../../../../lib/supabase";
+import ResearchReportModal from "../../ResearchReport/ResearchReportModal";
+import { FileText } from "lucide-react";
 
 interface ResearchDesignStepProps {
   selectedActivities: Array<{ 
@@ -134,6 +136,9 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
   // Non-R&D modal state
   const [showNonRdModal, setShowNonRdModal] = useState(false);
   const [selectedStepForNonRd, setSelectedStepForNonRd] = useState<string | null>(null);
+
+  // Research Report modal state
+  const [showResearchReportModal, setShowResearchReportModal] = useState(false);
 
   // Subcomponent state management
   const [subcomponentStates, setSubcomponentStates] = useState<{
@@ -2099,6 +2104,11 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     }
   }, [selectedSubcomponents, selectedActivityYearId]);
 
+  // Debug modal state changes
+  useEffect(() => {
+    console.log('ResearchDesignStep: showResearchReportModal state changed to:', showResearchReportModal);
+  }, [showResearchReportModal]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-64">
@@ -2205,34 +2215,48 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
         <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <div className="flex items-center">
             <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mr-4">Research Activities</h3>
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium text-gray-700">Year:</label>
-              <select
-                value={selectedActivityYearId}
-                onChange={e => {
-                  const newYearId = e.target.value;
-                  setSelectedActivityYearId(newYearId);
-                  setActiveActivityIndex(0); // Reset to first activity on year change
-                  console.log('Year selector changed to:', newYearId);
-                  
-                  // Find the year number for the selected year ID
-                  const selectedYear = availableActivityYears.find(y => y.id === newYearId);
-                  if (selectedYear) {
-                    setSelectedActivityYear(selectedYear.year);
-                  }
-                  
-                  // Trigger data reloading for the new year
-                  setTimeout(() => {
-                    loadSelectedActivities();
-                    loadRolesData();
-                  }, 100);
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <label className="text-sm font-medium text-gray-700">Year:</label>
+                <select
+                  value={selectedActivityYearId}
+                  onChange={e => {
+                    const newYearId = e.target.value;
+                    setSelectedActivityYearId(newYearId);
+                    setActiveActivityIndex(0); // Reset to first activity on year change
+                    console.log('Year selector changed to:', newYearId);
+                    
+                    // Find the year number for the selected year ID
+                    const selectedYear = availableActivityYears.find(y => y.id === newYearId);
+                    if (selectedYear) {
+                      setSelectedActivityYear(selectedYear.year);
+                    }
+                    
+                    // Trigger data reloading for the new year
+                    setTimeout(() => {
+                      loadSelectedActivities();
+                      loadRolesData();
+                    }, 100);
+                  }}
+                  className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {availableActivityYears.map(y => (
+                    <option key={y.id} value={y.id}>{y.year}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={() => {
+                  console.log('%c🚀 Research Report button clicked!', 'color: #ff00ff; font-size: 18px; font-weight: bold;');
+                  console.log('%c📊 BusinessYearId:', 'color: #00ffff; font-weight: bold;', businessYearId);
+                  console.log('%c🔍 Setting modal to true...', 'color: #ffff00; font-weight: bold;');
+                  setShowResearchReportModal(true);
                 }}
-                className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="flex items-center space-x-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white px-4 py-2 rounded-lg hover:from-green-700 hover:to-emerald-700 transition-all duration-200 shadow-md hover:shadow-lg"
               >
-                {availableActivityYears.map(y => (
-                  <option key={y.id} value={y.id}>{y.year}</option>
-                ))}
-              </select>
+                <FileText className="w-4 h-4" />
+                <span className="text-sm font-medium">Research Report</span>
+              </button>
             </div>
           </div>
         </div>
@@ -2876,6 +2900,16 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
         </div>
       )}
 
+      {/* Research Report Modal */}
+      <ResearchReportModal
+        isOpen={showResearchReportModal}
+        onClose={() => {
+          console.log('%c🔒 Research Report Modal closing...', 'color: #ff0000; font-size: 16px; font-weight: bold;');
+          setShowResearchReportModal(false);
+        }}
+        businessYearId={selectedActivityYearId}
+        businessId={businessId}
+      />
 
     </div>
   );

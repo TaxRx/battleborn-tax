@@ -20,10 +20,55 @@ export const njConfig = {
       lines: NJ_PROFORMA_LINES.filter(line => line.method === 'standard'),
     },
   },
+  hasAlternativeMethod: false,
+  creditRate: 0.10,
+  creditType: "incremental",
+  formReference: "NJ Form CBT-100",
+  validationRules: [
+    {
+      type: "max_credit",
+      value: 50,
+      message: "Credit limited to 50% of the taxpayer's New Jersey Corporation Business Tax liability"
+    },
+    {
+      type: "carryforward_limit",
+      value: 20,
+      message: "Unused credits may be carried forward for up to 20 years"
+    },
+    {
+      type: "entity_type_restriction",
+      value: "Corporations only",
+      message: "Available only to corporations subject to New Jersey Corporation Business Tax"
+    },
+    {
+      type: "gross_receipts_threshold",
+      value: 100000,
+      message: "Minimum $100,000 in gross receipts in the taxable year to qualify"
+    },
+    {
+      type: "other",
+      value: "Application required",
+      message: "Must file Form CBT-100 and attach Schedule R&D to claim the credit"
+    },
+    {
+      type: "other",
+      value: "Deadline: March 15",
+      message: "Application must be filed by March 15th of the year following the taxable year"
+    },
+    {
+      type: "other",
+      value: "Alternative calculation available",
+      message: "Alternative calculation available for startup companies with limited gross receipts history"
+    }
+  ],
   notes: [
-    'New Jersey uses a fixed-base percentage calculation similar to the federal credit.',
-    'The credit is 10% of incremental qualified research expenses.',
-    'Most taxpayers use a 3% fixed-base percentage unless they qualify for a higher rate.',
-    'Available only to corporations.'
+    "Credit is non-refundable and may only be used to offset New Jersey Corporation Business Tax liability",
+    "Research must be conducted in New Jersey to qualify for the credit",
+    "Qualified research expenses must meet the same criteria as the federal credit under IRC Section 41",
+    "Taxpayers must maintain detailed records of qualified research activities and expenses",
+    "New Jersey uses a fixed-base percentage calculation similar to the federal credit",
+    "Most taxpayers use a 3% fixed-base percentage unless they qualify for a higher rate",
+    "Credit is 10% of incremental qualified research expenses",
+    "New Jersey offers one of the longest carryforward periods at 20 years"
   ]
 }; 

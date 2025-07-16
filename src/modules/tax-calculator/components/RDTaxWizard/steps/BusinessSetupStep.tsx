@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { RDBusinessService } from '../../../services/rdBusinessService';
 import { BusinessSetupData, HistoricalData } from '../../../types/rdTypes';
+import { supabase } from '../../../../../lib/supabase';
 
 interface BusinessSetupStepProps {
   business: any;
@@ -26,7 +27,10 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
     address: business?.address || '',
     city: business?.city || '',
     state: business?.state || '',
-    zip: business?.zip || ''
+    zip: business?.zip || '',
+    website: business?.website || '',
+    naicsCode: business?.naics_code || '',
+    imagePath: business?.image_path || ''
   });
 
   const [historicalData, setHistoricalData] = useState<HistoricalData[]>(
@@ -38,6 +42,11 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [debounceTimers, setDebounceTimers] = useState<Record<string, NodeJS.Timeout>>({});
+  
+  // Logo upload state
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string>('');
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
   const entityTypes = [
     { value: 'LLC', label: 'Limited Liability Company (LLC)' },
@@ -46,6 +55,18 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
     { value: 'PARTNERSHIP', label: 'Partnership' },
     { value: 'SOLEPROP', label: 'Sole Proprietorship' },
     { value: 'OTHER', label: 'Other' }
+  ];
+
+  // NAICS codes for dental and medical offices
+  const naicsCodes = [
+    { value: '621210', label: 'Dental Office (621210)' },
+    { value: '621111', label: 'Medical Office (621111)' },
+    { value: '621310', label: 'Offices of Chiropractors (621310)' },
+    { value: '621320', label: 'Offices of Optometrists (621320)' },
+    { value: '621330', label: 'Offices of Mental Health Practitioners (621330)' },
+    { value: '621340', label: 'Offices of Physical, Occupational and Speech Therapists (621340)' },
+    { value: '621391', label: 'Offices of Podiatrists (621391)' },
+    { value: '621399', label: 'Offices of All Other Miscellaneous Health Practitioners (621399)' }
   ];
 
   const states = [
@@ -108,6 +129,98 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
     // Parse as number
     const numValue = parseFloat(value);
     return isNaN(numValue) ? 0 : numValue;
+  };
+
+  // Logo upload functions
+  const handleLogoUpload = async (file: File) => {
+    if (!file) return;
+
+    setIsUploadingLogo(true);
+    try {
+      // Create preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setLogoPreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+
+      // Upload to Supabase storage
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${business?.id || 'temp'}_${Date.now()}.${fileExt}`;
+      const filePath = `logos/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('logos')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('logos')
+        .getPublicUrl(filePath);
+
+      // Update form data with the new image path
+      setFormData(prev => ({
+        ...prev,
+        imagePath: publicUrl
+      }));
+
+      // Save to database
+      if (business?.id) {
+        await RDBusinessService.updateBusiness(business.id, {
+          image_path: publicUrl
+        });
+      }
+
+      setLogoFile(file);
+    } catch (error) {
+      console.error('Error uploading logo:', error);
+      setErrors(prev => ({
+        ...prev,
+        logo: 'Failed to upload logo. Please try again.'
+      }));
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  };
+
+  const handleLogoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        setErrors(prev => ({
+          ...prev,
+          logo: 'Please select an image file.'
+        }));
+        return;
+      }
+
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        setErrors(prev => ({
+          ...prev,
+          logo: 'Logo file size must be less than 5MB.'
+        }));
+        return;
+      }
+
+      handleLogoUpload(file);
+    }
+  };
+
+  const removeLogo = () => {
+    setLogoFile(null);
+    setLogoPreview('');
+    setFormData(prev => ({
+      ...prev,
+      imagePath: ''
+    }));
+    setErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors.logo;
+      return newErrors;
+    });
   };
 
   // Generate years for historical data
@@ -174,8 +287,16 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
             address: latestBusiness.contact_info?.address || '',
             city: latestBusiness.contact_info?.city || '',
             state: latestBusiness.contact_info?.state || '',
-            zip: latestBusiness.contact_info?.zip || ''
+            zip: latestBusiness.contact_info?.zip || '',
+            website: latestBusiness.website || '',
+            naicsCode: latestBusiness.naics_code || '',
+            imagePath: latestBusiness.image_path || ''
           }));
+          
+          // Set logo preview if image path exists
+          if (latestBusiness.image_path) {
+            setLogoPreview(latestBusiness.image_path);
+          }
           
           if (latestBusiness.rd_business_years && latestBusiness.rd_business_years.length > 0) {
             console.log('[BusinessSetupStep] Found business years data:', latestBusiness.rd_business_years);
@@ -254,12 +375,17 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
       newErrors.city = 'City is required';
     }
 
-    if (!formData.state.trim()) {
+    if (!formData.state) {
       newErrors.state = 'State is required';
     }
 
     if (!formData.zip.trim()) {
       newErrors.zip = 'ZIP code is required';
+    }
+
+    // Website validation (optional but if provided, must be valid URL)
+    if (formData.website && !/^https?:\/\/.+/.test(formData.website)) {
+      newErrors.website = 'Website must be a valid URL starting with http:// or https://';
     }
 
     setErrors(newErrors);
@@ -268,19 +394,19 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
 
   const validateHistoricalData = () => {
     const newHistoricalErrors: Record<string, Record<string, string>> = {};
-    let isValid = true;
+    let hasErrors = false;
 
-    historicalData.forEach((data, index) => {
+    historicalData.forEach(data => {
       const yearErrors: Record<string, string> = {};
       
       if (data.grossReceipts < 0) {
         yearErrors.grossReceipts = 'Gross receipts cannot be negative';
-        isValid = false;
+        hasErrors = true;
       }
       
       if (data.qre < 0) {
         yearErrors.qre = 'QRE cannot be negative';
-        isValid = false;
+        hasErrors = true;
       }
 
       if (Object.keys(yearErrors).length > 0) {
@@ -289,127 +415,111 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
     });
 
     setHistoricalErrors(newHistoricalErrors);
-    return isValid;
+    return !hasErrors;
   };
 
   const handleSubmit = async () => {
-    if (!validateForm() || !validateHistoricalData()) return;
-    if (!business?.id || !business?.client_id) {
-      console.error('BusinessSetupStep: Missing business.id or business.client_id', { business });
+    if (!validateForm() || !validateHistoricalData()) {
       setErrors(prev => ({
         ...prev,
-        general: 'Missing business or client information. Please select a business.'
+        general: 'Please fix the errors above before continuing.'
       }));
-      setIsSaving(false);
       return;
     }
 
     setIsSaving(true);
     try {
-      console.log('[BusinessSetupStep] Starting business setup save process', { 
-        businessId: business.id, 
-        clientId: business.client_id,
-        historicalData: historicalData
-      });
+      const businessUpdates = {
+        name: formData.businessName,
+        ein: formData.ein,
+        entity_type: formData.entityType,
+        start_year: parseInt(formData.startYear),
+        domicile_state: formData.state,
+        contact_info: {
+          address: formData.address,
+          city: formData.city,
+          state: formData.state,
+          zip: formData.zip
+        },
+        website: formData.website,
+        naics_code: formData.naicsCode,
+        image_path: formData.imagePath
+      };
 
-      // First, ensure the business is enrolled
-      const savedBusiness = await RDBusinessService.enrollBusinessFromExisting(business.id, business.client_id);
-      console.log('[BusinessSetupStep] Business enrolled successfully', savedBusiness);
+      console.log('[BusinessSetupStep] Saving business updates:', businessUpdates);
 
-      // Save historical data to the database
-      for (const historicalItem of historicalData) {
-        console.log('[BusinessSetupStep] Saving historical data for year', historicalItem.year, historicalItem);
-        await RDBusinessService.saveBusinessYear(savedBusiness.id, {
-          year: historicalItem.year,
-          grossReceipts: historicalItem.grossReceipts,
-          qre: historicalItem.qre
+      if (business?.id) {
+        await RDBusinessService.updateBusiness(business.id, businessUpdates);
+      } else {
+        console.error('[BusinessSetupStep] No business ID available for saving');
+        throw new Error('No business ID available');
+      }
+
+      // Save historical data
+      for (const data of historicalData) {
+        await RDBusinessService.saveBusinessYear(business.id, {
+          year: data.year,
+          grossReceipts: data.grossReceipts,
+          qre: data.qre
         });
       }
 
-      console.log('[BusinessSetupStep] All historical data saved successfully');
-      setIsSaving(false);
-      
-      // Update the parent with the business data including state
-      const updatedBusinessData = {
+      onUpdate({
         business: {
-          ...savedBusiness,
-          state: formData.state
-        }
-      };
-      console.log('[BusinessSetupStep] Calling onUpdate with:', updatedBusinessData);
-      onUpdate(updatedBusinessData);
-      
+          ...business,
+          ...businessUpdates
+        },
+        historicalData
+      });
+
       onNext();
     } catch (error) {
-      console.error('[BusinessSetupStep] Error saving business data', error);
-      setErrors(prev => ({ ...prev, general: 'Failed to save business data. Please try again.' }));
+      console.error('[BusinessSetupStep] Error saving business setup:', error);
+      setErrors(prev => ({
+        ...prev,
+        general: 'Failed to save business information. Please try again.'
+      }));
+    } finally {
       setIsSaving(false);
     }
   };
 
   const handleInputChange = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    // Clear error when user starts typing
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+
+    // Clear field-specific error when user starts typing
     if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
-    }
-    if (errors.general) {
-      setErrors(prev => ({ ...prev, general: '' }));
+      setErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
     }
 
-    // If start year changed, update rd_business_years entries
-    if (field === 'startYear' && value && business?.id) {
-      handleStartYearChange(value);
+    // Clear general error when user makes changes
+    if (errors.general) {
+      setErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors.general;
+        return newErrors;
+      });
     }
   };
 
-  // Function to handle start year changes and update rd_business_years
   const handleStartYearChange = async (newStartYear: string) => {
-    if (!business?.id) return;
+    handleInputChange('startYear', newStartYear);
 
-    const startYear = parseInt(newStartYear);
-    const currentYear = new Date().getFullYear();
-    
-    if (isNaN(startYear)) return;
-
-    console.log('[BusinessSetupStep] Start year changed, updating rd_business_years', {
-      businessId: business.id,
-      newStartYear: startYear,
-      currentYear: currentYear
-    });
-
-    try {
-      // Calculate the years we need to create
-      const yearsToCreate = [];
-      const earliestYear = Math.max(startYear, currentYear - 8);
-      
-      for (let year = earliestYear; year <= currentYear; year++) {
-        yearsToCreate.push(year);
-      }
-
-      console.log('[BusinessSetupStep] Years to create/update:', yearsToCreate);
-
-      // Create/update rd_business_years entries
-      const result = await RDBusinessService.createOrUpdateBusinessYears(
-        business.id,
-        yearsToCreate,
-        true // Remove unused years when start year changes
-      );
-
-      console.log('[BusinessSetupStep] Successfully updated rd_business_years:', result);
-
-      // Update the historical data state to reflect the new years
-      const newHistoricalData: HistoricalData[] = yearsToCreate
-        .map(year => {
-          const existing = historicalData.find(h => h.year === year);
-          return existing || { year, grossReceipts: 0, qre: 0 };
+    if (business?.id && newStartYear) {
+      try {
+        await RDBusinessService.updateBusiness(business.id, {
+          start_year: parseInt(newStartYear)
         });
-
-      setHistoricalData(newHistoricalData);
-
-    } catch (error) {
-      console.error('[BusinessSetupStep] Error updating rd_business_years:', error);
-      // Don't show error to user as this is a background operation
+      } catch (error) {
+        console.error('[BusinessSetupStep] Error updating start year:', error);
+      }
     }
   };
 
@@ -420,13 +530,16 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
 
   const handleHistoricalDataChange = async (year: number, field: 'grossReceipts' | 'qre', value: string) => {
     const numValue = parseCurrencyToNumber(value);
+    
     setHistoricalData(prev => 
       prev.map(data => 
-        data.year === year ? { ...data, [field]: numValue } : data
+        data.year === year 
+          ? { ...data, [field]: numValue }
+          : data
       )
     );
 
-    // Clear error when user starts typing
+    // Clear historical errors for this field
     if (historicalErrors[year.toString()]?.[field]) {
       setHistoricalErrors(prev => ({
         ...prev,
@@ -437,38 +550,33 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
       }));
     }
 
-    // Save to database in real-time if business is enrolled (with debounce)
-    if (business?.id) {
-      const timerKey = `${year}-${field}`;
-      
-      // Clear existing timer
-      if (debounceTimers[timerKey]) {
-        clearTimeout(debounceTimers[timerKey]);
-      }
-
-      // Set new timer
-      const newTimer = setTimeout(async () => {
-        try {
-          const currentHistoricalData = historicalData.find(h => h.year === year);
-          const updatedData = {
-            year: year,
-            grossReceipts: field === 'grossReceipts' ? numValue : (currentHistoricalData?.grossReceipts || 0),
-            qre: field === 'qre' ? numValue : (currentHistoricalData?.qre || 0)
-          };
-          
-          console.log('[BusinessSetupStep] Saving historical data in real-time (debounced):', updatedData);
-          await RDBusinessService.saveBusinessYear(business.id, updatedData);
-        } catch (error) {
-          console.error('[BusinessSetupStep] Error saving historical data in real-time:', error);
-          // Don't show error to user as this is a background operation
-        }
-      }, 1000); // 1 second debounce
-
-      setDebounceTimers(prev => ({
-        ...prev,
-        [timerKey]: newTimer
-      }));
+    // Debounced save to database
+    const timerKey = `${year}-${field}`;
+    if (debounceTimers[timerKey]) {
+      clearTimeout(debounceTimers[timerKey]);
     }
+
+    const newTimer = setTimeout(async () => {
+      try {
+        const currentHistoricalData = historicalData.find(h => h.year === year);
+        const updatedData = {
+          year: year,
+          grossReceipts: field === 'grossReceipts' ? numValue : (currentHistoricalData?.grossReceipts || 0),
+          qre: field === 'qre' ? numValue : (currentHistoricalData?.qre || 0)
+        };
+        
+        console.log('[BusinessSetupStep] Saving historical data in real-time (debounced):', updatedData);
+        await RDBusinessService.saveBusinessYear(business.id, updatedData);
+      } catch (error) {
+        console.error('[BusinessSetupStep] Error saving historical data in real-time:', error);
+        // Don't show error to user as this is a background operation
+      }
+    }, 1000); // 1 second debounce
+
+    setDebounceTimers(prev => ({
+      ...prev,
+      [timerKey]: newTimer
+    }));
   };
 
   const currentYear = parseInt(formData.taxYear);
@@ -568,6 +676,40 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
+                NAICS Code
+              </label>
+              <select
+                value={formData.naicsCode}
+                onChange={(e) => handleInputChange('naicsCode', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">Select NAICS Code</option>
+                {naicsCodes.map(code => (
+                  <option key={code.value} value={code.value}>
+                    {code.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Website
+              </label>
+              <input
+                type="url"
+                value={formData.website}
+                onChange={(e) => handleInputChange('website', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="https://www.example.com"
+              />
+              {errors.website && (
+                <p className="text-red-600 text-sm mt-1">{errors.website}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Business Start Year *
               </label>
               <select
@@ -618,6 +760,70 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
                 </p>
               </div>
             )}
+
+            {/* Logo Upload Section */}
+            <div className="space-y-4">
+              <h4 className="text-lg font-semibold text-gray-900 border-b pb-2">Company Logo</h4>
+              
+              <div className="space-y-4">
+                {logoPreview ? (
+                  <div className="flex items-center space-x-4">
+                    <div className="w-20 h-20 border border-gray-300 rounded-lg overflow-hidden bg-gray-50 flex items-center justify-center">
+                      <img 
+                        src={logoPreview} 
+                        alt="Company logo" 
+                        className="max-w-full max-h-full object-contain"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm text-gray-600 mb-2">Current logo</p>
+                      <button
+                        type="button"
+                        onClick={removeLogo}
+                        className="text-sm text-red-600 hover:text-red-800"
+                      >
+                        Remove logo
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                    <div className="space-y-2">
+                      <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                        <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      <div className="text-sm text-gray-600">
+                        <label htmlFor="logo-upload" className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
+                          <span>Upload a logo</span>
+                          <input 
+                            id="logo-upload" 
+                            name="logo-upload" 
+                            type="file" 
+                            className="sr-only" 
+                            accept="image/*"
+                            onChange={handleLogoChange}
+                            disabled={isUploadingLogo}
+                          />
+                        </label>
+                        <p className="pl-1">or drag and drop</p>
+                      </div>
+                      <p className="text-xs text-gray-500">PNG, JPG, GIF up to 5MB</p>
+                    </div>
+                  </div>
+                )}
+                
+                {isUploadingLogo && (
+                  <div className="flex items-center space-x-2 text-sm text-gray-600">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    <span>Uploading logo...</span>
+                  </div>
+                )}
+                
+                {errors.logo && (
+                  <p className="text-red-600 text-sm">{errors.logo}</p>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -766,8 +972,8 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
           </div>
         )}
 
-        {/* Information Boxes */}
-        <div className="mt-6 space-y-4">
+        {/* Information Box */}
+        <div className="mt-6">
           <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
             <div className="flex">
               <div className="flex-shrink-0">
@@ -787,31 +993,6 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
                     <li><strong>Gross Receipts:</strong> All income from all sources for each year</li>
                     <li><strong>QRE:</strong> Qualified Research Expenses if you claimed the credit before</li>
                     <li><strong>Base Period:</strong> Previous 8 years or since business start, whichever is shorter</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-4 bg-green-50 border border-green-200 rounded-md">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-green-800">
-                  Data Requirements & Formatting
-                </h3>
-                <div className="mt-2 text-sm text-green-700">
-                  <ul className="list-disc list-inside space-y-1">
-                    <li>If you've never claimed the R&D credit, leave QRE as $0</li>
-                    <li>Gross receipts should include all business income</li>
-                    <li>Historical data helps establish your base amount for credit calculation</li>
-                    <li><strong>Currency:</strong> Always rounded to the nearest dollar</li>
-                    <li><strong>Percentages:</strong> Always carried to 2 decimal places, no more</li>
-                    <li><strong>EIN:</strong> Automatically formatted as XX-XXXXXXX</li>
                   </ul>
                 </div>
               </div>

@@ -27,6 +27,67 @@ export interface StateCreditBaseData {
   // Add more as needed for other states
 }
 
+// Enhanced interfaces for alternative calculation methods and validation rules
+export interface StateValidationRule {
+  type: 'max_credit' | 'carryforward_limit' | 'apportionment_requirement' | 'entity_type_restriction' | 'gross_receipts_threshold';
+  value: number;
+  message: string;
+  applies_to?: 'standard' | 'alternative' | 'both';
+  condition?: (data: StateCreditBaseData) => boolean;
+}
+
+export interface AlternativeCalculationMethod {
+  name: string;
+  description: string;
+  method: 'simplified' | 'gross_receipts_based' | 'percentage_of_qre' | 'fixed_amount' | 'custom';
+  lines: StateProFormaLine[];
+  validation_rules: StateValidationRule[];
+  is_available: (data: StateCreditBaseData) => boolean;
+}
+
+export interface StateProFormaLine {
+  line: string;
+  label: string;
+  field: string;
+  editable: boolean;
+  method: 'standard' | 'alternative';
+  calc?: (data: StateCreditBaseData) => number;
+  defaultValue?: number;
+  type?: 'percentage' | 'currency' | 'number';
+  line_type: 'input' | 'calculated' | 'total';
+  sort_order: number;
+  validation?: {
+    min?: number;
+    max?: number;
+    required?: boolean;
+    message?: string;
+  };
+}
+
+export interface StateProFormaConfig {
+  state: string;
+  name: string;
+  forms: {
+    standard: {
+      name: string;
+      method: 'standard';
+      lines: StateProFormaLine[];
+    };
+    alternative?: AlternativeCalculationMethod;
+  };
+  notes: string[];
+  form_reference: string;
+  credit_rate: number;
+  max_fixed_base_percentage?: number;
+  validation_rules: StateValidationRule[];
+  alternative_methods?: AlternativeCalculationMethod[];
+  carryforward_years?: number;
+  max_credit_percentage?: number;
+  apportionment_required?: boolean;
+  entity_type_restrictions?: string[];
+  gross_receipts_threshold?: number;
+}
+
 export interface StateProFormaData {
   business_year_id: string;
   state_code: string;

@@ -231,11 +231,27 @@ export class RDBusinessService {
     try {
       // Handle demo mode
       if (this.isDemoMode(userId)) {
-        console.log('Demo mode detected, returning null for getBusinessByUser');
-        return null;
+        return {
+          id: 'demo-business-id',
+          client_id: 'demo-client-id',
+          name: 'Demo Business',
+          ein: '12-3456789',
+          entity_type: 'LLC',
+          start_year: 2020,
+          domicile_state: 'CA',
+          contact_info: {
+            address: '123 Demo St',
+            city: 'Demo City',
+            state: 'CA',
+            zip: '90210'
+          },
+          is_controlled_grp: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
       }
 
-      // First get the client ID for this user
+      // Get client ID for this user
       const { data: client } = await supabase
         .from('clients')
         .select('id')
@@ -246,21 +262,65 @@ export class RDBusinessService {
         return null;
       }
 
-      // Then get the business for this client with related business years
+      // Get business for this client
+      const { data: business } = await supabase
+        .from('rd_businesses')
+        .select('*')
+        .eq('client_id', client.id)
+        .single();
+
+      return business;
+    } catch (error) {
+      console.error('Error getting business by user:', error);
+      return null;
+    }
+  }
+
+  // Update business information
+  static async updateBusiness(businessId: string, updates: Partial<RDBusiness>): Promise<RDBusiness> {
+    try {
+      // Handle demo mode
+      if (this.isDemoMode(businessId)) {
+        console.log('Demo mode detected, returning mock updated business');
+        return {
+          id: 'demo-business-id',
+          client_id: 'demo-client-id',
+          name: updates.name || 'Demo Business',
+          ein: updates.ein || '12-3456789',
+          entity_type: updates.entity_type || 'LLC',
+          start_year: updates.start_year || 2020,
+          domicile_state: updates.domicile_state || 'CA',
+          contact_info: updates.contact_info || {
+            address: '123 Demo St',
+            city: 'Demo City',
+            state: 'CA',
+            zip: '90210'
+          },
+          website: updates.website || '',
+          naics_code: updates.naics_code || '',
+          image_path: updates.image_path || '',
+          is_controlled_grp: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+      }
+
+      // Update the business record
       const { data, error } = await supabase
         .from('rd_businesses')
-        .select(`
-          *,
-          rd_business_years (*)
-        `)
-        .eq('client_id', client.id)
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', businessId)
+        .select()
         .single();
 
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error('Error getting business by user:', error);
-      return null;
+      console.error('Error updating business:', error);
+      throw error;
     }
   }
 

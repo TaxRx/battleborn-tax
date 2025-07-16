@@ -45,7 +45,71 @@ export const ctConfig = {
       lines: CT_PROFORMA_LINES.filter(line => line.method === 'alternative'),
     },
   },
+  hasAlternativeMethod: true,
+  creditRate: 0.06,
+  creditType: "incremental",
+  formReference: "CT Form 1120 RDC",
+  validationRules: [
+    {
+      type: "max_credit",
+      value: 50,
+      message: "Credit limited to 50% of the taxpayer's Connecticut Corporation Business Tax liability"
+    },
+    {
+      type: "carryforward_limit",
+      value: 15,
+      message: "Unused credits may be carried forward for up to 15 years"
+    },
+    {
+      type: "entity_type_restriction",
+      value: "Corporations only",
+      message: "Available only to corporations subject to Connecticut Corporation Business Tax"
+    },
+    {
+      type: "gross_receipts_threshold",
+      value: 100000,
+      message: "Minimum $100,000 in gross receipts in the taxable year to qualify"
+    },
+    {
+      type: "other",
+      value: "Application required",
+      message: "Must file Form 1120 RDC and attach detailed schedule to claim the credit"
+    },
+    {
+      type: "other",
+      value: "Deadline: March 15",
+      message: "Application must be filed by March 15th of the year following the taxable year"
+    },
+    {
+      type: "other",
+      value: "Workforce requirement",
+      message: "Credit reduction applies if workforce is reduced and expenses exceed $200 million"
+    }
+  ],
+  alternativeValidationRules: [
+    {
+      type: "alternative_method",
+      value: "Available",
+      message: "Alternative calculation method available using 20% of incremental research expenses"
+    },
+    {
+      type: "max_credit",
+      value: 50,
+      message: "Alternative method also limited to 50% of Connecticut Corporation Business Tax liability"
+    },
+    {
+      type: "carryforward_limit",
+      value: 15,
+      message: "Unused alternative credits may be carried forward for up to 15 years"
+    }
+  ],
   notes: [
-    '*Qualified Small Business is defined as a company that has gross income for the previous income year that does not exceed $100 million and has not met the gross income test through transactions with a related person, as defined in Conn. Gen. Stat. § 12‐217w.'
+    "Credit is non-refundable and may only be used to offset Connecticut Corporation Business Tax liability",
+    "Research must be conducted in Connecticut to qualify for the credit",
+    "Qualified research expenses must meet the same criteria as the federal credit under IRC Section 41",
+    "Taxpayers must maintain detailed records of qualified research activities and expenses",
+    "Qualified Small Business is defined as a company with gross income not exceeding $100 million",
+    "Enterprise Zone companies with revenues over $3 billion may elect 3.5% rate",
+    "Credit reduction applies if workforce is reduced and expenses exceed $200 million"
   ]
 }; 

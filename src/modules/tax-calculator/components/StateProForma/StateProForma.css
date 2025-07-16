@@ -1,10 +1,10 @@
+/* State Pro Forma Styles */
 .state-proforma-container {
-  margin: 20px 0;
-  padding: 20px;
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  background: white;
   border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  margin: 20px 0;
 }
 
 .state-proforma-title {
@@ -12,46 +12,46 @@
   font-weight: 600;
   color: #1f2937;
   margin-bottom: 20px;
-  padding-bottom: 10px;
-  border-bottom: 2px solid #e5e7eb;
+  text-align: center;
 }
 
 .state-proforma-table {
-  margin-top: 16px;
+  margin-bottom: 20px;
 }
 
 .state-proforma-table table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
+  margin-bottom: 20px;
 }
 
 .state-proforma-table th {
-  background-color: #f8fafc;
-  font-weight: 600;
+  background: #f3f4f6;
+  padding: 12px 8px;
   text-align: left;
-  padding: 12px 16px;
-  border: 1px solid #e2e8f0;
+  font-weight: 600;
   color: #374151;
+  border-bottom: 2px solid #e5e7eb;
 }
 
 .state-proforma-table td {
-  padding: 12px 16px;
-  border: 1px solid #e2e8f0;
+  padding: 10px 8px;
+  border-bottom: 1px solid #f3f4f6;
   vertical-align: top;
 }
 
 .state-proforma-table tr:hover {
-  background-color: #f9fafb;
+  background: #f9fafb;
 }
 
 .state-proforma-table input {
   width: 100%;
-  padding: 8px 12px;
+  padding: 6px 8px;
   border: 1px solid #d1d5db;
   border-radius: 4px;
+  font-family: 'Courier New', monospace;
   font-size: 14px;
-  transition: border-color 0.2s ease;
+  text-align: right;
 }
 
 .state-proforma-table input:focus {
@@ -60,108 +60,153 @@
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
-.state-proforma-table input:disabled {
-  background-color: #f3f4f6;
-  color: #6b7280;
-  cursor: not-allowed;
-}
-
-.state-proforma-table input[type="number"] {
-  text-align: right;
-}
-
-/* Save button styling */
 .state-proforma-save {
-  margin-top: 16px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 15px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
 }
 
-.state-proforma-save button {
-  padding: 8px 16px;
-  background-color: #3b82f6;
-  color: white;
-  border: none;
+.save-message {
+  padding: 8px 12px;
   border-radius: 4px;
   font-size: 14px;
   font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
 }
 
-.state-proforma-save button:hover:not(:disabled) {
-  background-color: #2563eb;
+.save-message.success {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
 }
 
-.state-proforma-save button:disabled {
-  background-color: #9ca3af;
-  cursor: not-allowed;
+.save-message.error {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
 }
 
-.state-proforma-save .save-message {
-  font-size: 14px;
-  font-weight: 500;
+.state-proforma-loading {
+  text-align: center;
+  padding: 40px;
+  color: #6b7280;
+  font-style: italic;
 }
 
-.state-proforma-save .save-message.success {
-  color: #059669;
-}
-
-.state-proforma-save .save-message.error {
+.state-proforma-error {
+  text-align: center;
+  padding: 40px;
   color: #dc2626;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
 }
 
-/* State selector styling */
-.state-selector-container {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 16px;
-  align-items: center;
-  flex-wrap: wrap;
+/* State Validation Rules Styles */
+.state-validation-rules {
+  margin-top: 30px;
+  padding: 20px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
 }
 
-.state-selector-container label {
+.state-validation-rules h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 20px;
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 500;
+}
+
+.validation-rule-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  margin-bottom: 8px;
+}
+
+.validation-rule-item:last-child {
+  margin-bottom: 0;
+}
+
+.validation-rule-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.validation-rule-content {
+  flex: 1;
+}
+
+.validation-rule-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.validation-rule-title {
+  font-weight: 600;
   color: #374151;
-}
-
-.state-selector-container select {
-  padding: 6px 12px;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
   font-size: 14px;
-  background-color: white;
-  cursor: pointer;
 }
 
-.state-selector-container select:focus {
-  outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-.state-selector-container select:disabled {
-  background-color: #f3f4f6;
+.validation-rule-value {
+  font-size: 12px;
+  font-weight: 500;
   color: #6b7280;
-  cursor: not-allowed;
+  background: #f3f4f6;
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
-/* Loading state */
-.state-proforma-loading {
-  text-align: center;
-  padding: 40px 20px;
+.validation-rule-message {
+  font-size: 13px;
   color: #6b7280;
-  font-size: 16px;
+  line-height: 1.4;
 }
 
-/* Error state */
-.state-proforma-error {
-  text-align: center;
-  padding: 40px 20px;
-  color: #dc2626;
-  font-size: 16px;
+.validation-section {
+  margin-bottom: 20px;
+}
+
+.validation-section h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 12px;
+}
+
+.validation-disclaimer {
+  margin-top: 20px;
+  padding: 12px;
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+}
+
+.validation-disclaimer h5 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #92400e;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.validation-disclaimer p {
+  font-size: 12px;
+  color: #92400e;
+  line-height: 1.4;
+  margin: 0;
 } 
