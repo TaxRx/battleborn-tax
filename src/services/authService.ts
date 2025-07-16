@@ -5,9 +5,16 @@ export interface UserProfile {
   email: string;
   full_name?: string;
   role: 'admin' | 'user';
-  is_admin: boolean;
+  is_admin?: boolean;  // Deprecated, use account.type instead
+  account_id: string;
   created_at: string;
   updated_at: string;
+  account?: {
+    id: string;
+    name: string;
+    type: 'admin' | 'platform' | 'affiliate' | 'client' | 'expert';
+    stripe_customer_id?: string;
+  };
 }
 
 export interface ClientUser {
@@ -40,6 +47,9 @@ export interface AuthUser {
   clientUsers: ClientUser[];
   isAdmin: boolean;
   isClientUser: boolean;
+  isPlatformUser: boolean;
+  isAffiliateUser: boolean;
+  isExpertUser: boolean;
   primaryClientRole?: 'owner' | 'member' | 'viewer' | 'accountant';
   permissions: string[];
 }
@@ -58,60 +68,78 @@ class AuthService {
 
   async getCurrentUser(): Promise<AuthUser | null> {
     try {
-      // Get current Supabase user
+      // Get current Supabase user session
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) return null;
 
-      // Get user profile
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
+      // Get current session to extract token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return null;
 
-      if (profileError) {
-        console.error('Error fetching profile:', profileError);
+      // Call user-service get-profile endpoint
+      const response = await fetch('http://localhost:54321/functions/v1/user-service/get-profile', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!response.ok) {
+        console.error('Failed to fetch profile from user-service:', response.status);
         return null;
       }
 
-      // Get client user relationships
-      const { data: clientUsers, error: clientUsersError } = await supabase
-        .from('client_users')
-        .select(`
-          *,
-          client:clients (
-            id,
-            full_name,
-            email,
-            phone,
-            filing_status,
-            home_address,
-            state,
-            dependents,
-            created_at,
-            updated_at
-          )
-        `)
-        .eq('user_id', user.id)
-        .eq('is_active', true);
-
-      if (clientUsersError) {
-        console.error('Error fetching client users:', clientUsersError);
+      const data = await response.json();
+      if (!data.profile) {
+        console.error('Invalid response from user-service:', data);
         return null;
       }
 
-      const isAdmin = profile.role === 'admin' || profile.is_admin;
-      const isClientUser = clientUsers && clientUsers.length > 0;
-      const primaryClientRole = clientUsers && clientUsers.length > 0 ? clientUsers[0].role : undefined;
+      // Transform the user data from service into AuthUser format
+      const profile = data.profile;
+      const clientUsers = data.clientUsers || [];
+      const accountType = profile.account?.type;
 
-      // Generate permissions based on roles
-      const permissions = this.generatePermissions(isAdmin, clientUsers || []);
+      // If account data is missing due to RLS issues, determine type from access_level fallback
+      let determinedAccountType = accountType;
+      if (!accountType && profile.access_level) {
+        // Map old access_level to new account types
+        switch (profile.access_level) {
+          case 'platform': determinedAccountType = 'admin'; break;
+          case 'partner': determinedAccountType = 'platform'; break;
+          case 'affiliate': determinedAccountType = 'affiliate'; break;
+          case 'client': determinedAccountType = 'client'; break;
+          default: determinedAccountType = 'client'; break;
+        }
+      }
+
+      // Determine user types based on account type
+      const isAdmin = determinedAccountType === 'admin';
+      const isPlatformUser = determinedAccountType === 'platform';
+      const isAffiliateUser = determinedAccountType === 'affiliate';
+      const isExpertUser = determinedAccountType === 'expert';
+      const isClientUser = determinedAccountType === 'client' || clientUsers.length > 0;
+      const primaryClientRole = clientUsers.length > 0 ? clientUsers[0].role : undefined;
+
+      // Generate permissions
+      const permissions = this.generatePermissions({
+        isAdmin,
+        isPlatformUser,
+        isAffiliateUser,
+        isExpertUser,
+        isClientUser,
+        accountType: determinedAccountType
+      }, clientUsers);
 
       return {
         profile,
-        clientUsers: clientUsers || [],
+        clientUsers,
         isAdmin,
         isClientUser,
+        isPlatformUser,
+        isAffiliateUser,
+        isExpertUser,
         primaryClientRole,
         permissions
       };
@@ -121,18 +149,58 @@ class AuthService {
     }
   }
 
-  private generatePermissions(isAdmin: boolean, clientUsers: ClientUser[]): string[] {
+  private generatePermissions(userTypes: {
+    isAdmin: boolean;
+    isPlatformUser: boolean;
+    isAffiliateUser: boolean;
+    isExpertUser: boolean;
+    isClientUser: boolean;
+    accountType?: string;
+  }, clientUsers: ClientUser[]): string[] {
     const permissions: string[] = [];
 
-    // Admin permissions
-    if (isAdmin) {
+    // Admin permissions - full platform access
+    if (userTypes.isAdmin) {
       permissions.push(
+        'admin:view_all_accounts',
+        'admin:manage_accounts',
         'admin:view_all_clients',
         'admin:manage_clients',
         'admin:view_all_proposals',
         'admin:manage_proposals',
         'admin:system_settings',
-        'admin:user_management'
+        'admin:user_management',
+        'admin:billing_management'
+      );
+    }
+
+    // Platform user permissions - service fulfillment
+    if (userTypes.isPlatformUser) {
+      permissions.push(
+        'platform:view_clients',
+        'platform:manage_clients',
+        'platform:create_proposals',
+        'platform:view_billing',
+        'platform:manage_affiliates'
+      );
+    }
+
+    // Affiliate user permissions - sales and referrals
+    if (userTypes.isAffiliateUser) {
+      permissions.push(
+        'affiliate:view_clients',
+        'affiliate:refer_clients',
+        'affiliate:view_commissions',
+        'affiliate:create_proposals'
+      );
+    }
+
+    // Expert user permissions - consulting
+    if (userTypes.isExpertUser) {
+      permissions.push(
+        'expert:view_assigned_clients',
+        'expert:provide_consultation',
+        'expert:create_reports'
       );
     }
 
@@ -242,19 +310,86 @@ class AuthService {
 
   async signIn(email: string, password: string): Promise<{ user: AuthUser | null; error: string | null }> {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
+      // Call user-service login endpoint
+      const response = await fetch('http://localhost:54321/functions/v1/user-service/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password })
       });
 
-      if (error) {
-        return { user: null, error: error.message };
+      const data = await response.json();
+
+      if (!response.ok) {
+        return { user: null, error: data.error || 'Login failed' };
       }
 
-      // Get full user data
-      const authUser = await this.getCurrentUser();
+      if (!data.success || !data.session) {
+        return { user: null, error: 'Login failed - invalid response' };
+      }
+
+      // Set the session in Supabase client
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token
+      });
+
+      if (sessionError) {
+        return { user: null, error: 'Failed to set session' };
+      }
+
+      // Transform the user data from service into AuthUser format
+      const profile = data.user.profile;
+      const clientUsers = data.user.clientUsers || [];
+      const accountType = profile.account?.type;
+
+      // If account data is missing due to RLS issues, determine type from access_level fallback
+      let determinedAccountType = accountType;
+      if (!accountType && profile.access_level) {
+        // Map old access_level to new account types
+        switch (profile.access_level) {
+          case 'platform': determinedAccountType = 'admin'; break;
+          case 'partner': determinedAccountType = 'platform'; break;
+          case 'affiliate': determinedAccountType = 'affiliate'; break;
+          case 'client': determinedAccountType = 'client'; break;
+          default: determinedAccountType = 'client'; break;
+        }
+      }
+
+      // Determine user types based on account type
+      const isAdmin = determinedAccountType === 'admin';
+      const isPlatformUser = determinedAccountType === 'platform';
+      const isAffiliateUser = determinedAccountType === 'affiliate';
+      const isExpertUser = determinedAccountType === 'expert';
+      const isClientUser = determinedAccountType === 'client' || clientUsers.length > 0;
+      const primaryClientRole = clientUsers.length > 0 ? clientUsers[0].role : undefined;
+
+      // Generate permissions
+      const permissions = this.generatePermissions({
+        isAdmin,
+        isPlatformUser,
+        isAffiliateUser,
+        isExpertUser,
+        isClientUser,
+        accountType: determinedAccountType
+      }, clientUsers);
+
+      const authUser: AuthUser = {
+        profile,
+        clientUsers,
+        isAdmin,
+        isClientUser,
+        isPlatformUser,
+        isAffiliateUser,
+        isExpertUser,
+        primaryClientRole,
+        permissions
+      };
+
       return { user: authUser, error: null };
     } catch (error) {
+      console.error('Login error:', error);
       return { user: null, error: 'Login failed' };
     }
   }
@@ -275,13 +410,35 @@ class AuthService {
       return '/admin';
     }
     
+    // Platform users go to partner dashboard
+    if (user.isPlatformUser) {
+      return '/partner';
+    }
+    
+    // Affiliate users go to affiliate dashboard
+    if (user.isAffiliateUser) {
+      return '/affiliate';
+    }
+    
+    // Expert users go to expert dashboard
+    if (user.isExpertUser) {
+      return '/expert';
+    }
+    
     // Client users go to client dashboard
     if (user.isClientUser && user.clientUsers.length > 0) {
       return '/client';
     }
     
-    // Default fallback
-    return '/dashboard';
+    // Default fallback based on account type
+    const accountType = user.profile.account?.type;
+    switch (accountType) {
+      case 'platform': return '/partner';
+      case 'affiliate': return '/affiliate';
+      case 'expert': return '/expert';
+      case 'client': return '/client';
+      default: return '/dashboard';
+    }
   }
 
   // Helper method to get user display name

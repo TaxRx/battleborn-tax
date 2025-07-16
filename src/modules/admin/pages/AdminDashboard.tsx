@@ -46,7 +46,9 @@ import {
   PieChart,
   Building,
   CreditCard,
-  FileText as FileTextIcon
+  FileText as FileTextIcon,
+  Activity,
+  Database
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import CreateClientModal from '../components/CreateClientModal';
@@ -54,6 +56,8 @@ import { useUser } from '../../../context/UserContext';
 import useAuthStore from '../../../store/authStore';
 import RDClientManagement from '../../../components/RDClientManagement';
 import PartnersList from '../components/PartnersList'; // Import the new component
+import AccountManagement from '../components/AccountManagement';
+import BulkActivityOperations from '../components/BulkActivityOperations';
 
 const proposalService = ProposalService.getInstance();
 
@@ -144,6 +148,8 @@ const AdminDashboard: React.FC = () => {
 
   const navigationItems = [
     { name: 'Dashboard', href: '/admin', icon: Home, current: location.pathname === '/admin' },
+    { name: 'Account Management', href: '/admin/accounts', icon: Users, current: location.pathname === '/admin/accounts' },
+    { name: 'Activity Analytics', href: '/admin/activity-analytics', icon: Activity, current: location.pathname === '/admin/activity-analytics' },
     { name: 'Client Management', href: '/admin/clients', icon: Users, current: location.pathname === '/admin/clients' },
     { name: 'R&D Clients', href: '/admin/rd-clients', icon: Zap, current: location.pathname === '/admin/rd-clients' },
     { name: 'Proposals', href: '/admin/proposals', icon: FileText, current: location.pathname.includes('/admin/proposals') },
@@ -152,7 +158,6 @@ const AdminDashboard: React.FC = () => {
     { name: 'Client Retention', href: '/admin/retention', icon: Shield, current: location.pathname === '/admin/retention' },
     { name: 'Commission', href: '/admin/commission', icon: DollarSign, current: location.pathname === '/admin/commission' },
     { name: 'Experts', href: '/admin/experts', icon: UserCheck, current: location.pathname === '/admin/experts' },
-    { name: 'Users', href: '/admin/users', icon: Users, current: location.pathname === '/admin/users' },
     { name: 'Reports', href: '/admin/reports', icon: BarChart3, current: location.pathname === '/admin/reports' },
     { name: 'Settings', href: '/admin/settings', icon: Settings, current: location.pathname === '/admin/settings' },
     { name: 'Partners', href: '/admin/partners', icon: Briefcase, current: location.pathname === '/admin/partners' },
@@ -332,6 +337,8 @@ const AdminDashboard: React.FC = () => {
                 />
               } 
             />
+            <Route path="/accounts" element={<AccountManagement />} />
+            <Route path="/activity-analytics" element={<BulkActivityOperations />} />
             <Route path="/clients" element={<UnifiedClientDashboard />} />
             <Route path="/rd-clients" element={<RDClientManagement />} />
             <Route path="/proposals" element={<ProposalsTable proposals={proposals} onViewProposal={handleViewProposal} onApproveProposal={handleApproveProposal} onRejectProposal={handleRejectProposal} />} />
@@ -344,7 +351,6 @@ const AdminDashboard: React.FC = () => {
             <Route path="/retention" element={<ClientRetentionDashboard />} />
             <Route path="/commission" element={<CommissionDashboard />} />
             <Route path="/experts" element={<ExpertManagement />} />
-            <Route path="/users" element={<div className="p-8"><h1 className="text-2xl font-bold">Users Management</h1><p>Coming soon...</p></div>} />
             <Route path="/reports" element={<div className="p-8"><h1 className="text-2xl font-bold">Reports</h1><p>Coming soon...</p></div>} />
             <Route path="/settings" element={<div className="p-8"><h1 className="text-2xl font-bold">Settings</h1><p>Coming soon...</p></div>} />
             <Route path="/partners" element={<PartnersList />} />

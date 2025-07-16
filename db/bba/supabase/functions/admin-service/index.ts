@@ -1,6 +1,9 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import Stripe from 'https://esm.sh/stripe@14.21.0'
+import { handleActivityOperations } from './activity-handler.ts'
+import { handleAccountOperations } from './account-handler.ts'
 
 // CORS headers to allow requests from the browser
 const corsHeaders = {
@@ -9,19 +12,22 @@ const corsHeaders = {
 }
 
 // Helper function to check for admin privileges
-const isAdmin = async (supabaseClient) => {
+const isAdmin = async (supabaseClient, supabaseServiceClient) => {
   const { data: { user } } = await supabaseClient.auth.getUser();
   if (!user) return false;
 
-  const { data, error } = await supabaseClient
+  // Use service role client to bypass RLS and avoid circular dependency
+  const { data, error } = await supabaseServiceClient
     .from('profiles')
-    .select('access_level')
+    .select(`
+      account:accounts!inner(type)
+    `)
     .eq('id', user.id)
     .single();
 
   if (error || !data) return false;
 
-  return data.access_level === 'platform';
+  return data.account?.type === 'admin';
 }
 
 serve(async (req) => {
@@ -38,8 +44,14 @@ serve(async (req) => {
       { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
     )
 
+    // Create a service role client for admin operations (bypasses RLS)
+    const supabaseServiceClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    )
+
     // Check if the user is a platform admin before proceeding
-    const isPlatformAdmin = await isAdmin(supabaseClient);
+    const isPlatformAdmin = await isAdmin(supabaseClient, supabaseServiceClient);
     if (!isPlatformAdmin) {
       return new Response(JSON.stringify({ error: 'Forbidden: Not an admin' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -50,6 +62,16 @@ serve(async (req) => {
     // Get the request body to check for pathname
     const body = await req.json();
     const pathname = body.pathname || new URL(req.url).pathname;
+
+    // Handle activity operations (must be before other routes to catch activity endpoints)
+    if (pathname.includes('/activities') || pathname.includes('/activity-summary') || pathname.includes('/recent-activities')) {
+      return await handleActivityOperations(req, supabaseServiceClient, corsHeaders);
+    }
+
+    // Handle account CRUD operations (must be before legacy partner routes)
+    if (pathname.includes('/accounts')) {
+      return await handleAccountOperations(req, supabaseServiceClient, corsHeaders);
+    }
 
     // Routing logic for admin-specific actions
     if (pathname === '/admin-service/create-partner') {
@@ -62,53 +84,69 @@ serve(async (req) => {
         email: contactEmail,
       })
 
-      // 2. Create a new record in the public.partners table
-      const { data: partner, error: partnerError } = await supabaseClient
-        .from('partners')
+      // 2. Create a new record in the public.accounts table
+      const { data: account, error: accountError } = await supabaseServiceClient
+        .from('accounts')
         .insert({
-          company_name: companyName,
+          name: companyName,
+          type: 'platform',
           logo_url: logoUrl,
-          primary_contact_email: contactEmail,
           stripe_customer_id: stripeCustomer.id,
         })
         .select()
         .single()
 
-      if (partnerError) {
+      if (accountError) {
         // If this fails, we should ideally delete the Stripe customer to avoid orphans
         await stripe.customers.del(stripeCustomer.id)
-        return new Response(JSON.stringify({ error: partnerError.message }), { status: 500 })
+        return new Response(JSON.stringify({ error: accountError.message }), { status: 500 })
       }
 
       // 3. Send an invitation to the primary contact email
       // This calls our other Edge Function to handle the invitation logic
+      const { data: { user } } = await supabaseClient.auth.getUser();
       const inviteResponse = await supabaseClient.functions.invoke('user-service', {
         body: {
           pathname: '/user-service/send-invitation',
           inviterId: user.id, // The admin is the inviter
           inviteeEmail: contactEmail,
-          role: 'partner_admin', // Assigning the primary contact as a partner admin
-          partnerId: partner.id,
+          role: 'account_admin', // Assigning the primary contact as account admin
+          accountId: account.id,
         },
       })
 
       if (inviteResponse.error) {
-        // If invite fails, clean up partner and stripe customer
-        await supabaseClient.from('partners').delete().eq('id', partner.id)
+        // If invite fails, clean up account and stripe customer
+        await supabaseServiceClient.from('accounts').delete().eq('id', account.id)
         await stripe.customers.del(stripeCustomer.id)
         return new Response(JSON.stringify({ error: `Failed to send invitation: ${inviteResponse.error.message}` }), { status: 500 })
       }
 
-      return new Response(JSON.stringify({ message: "Partner created and invitation sent successfully", partner }), {
+      return new Response(JSON.stringify({ message: "Account created and invitation sent successfully", account }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       })
     } else if (pathname === '/admin-service/list-partners') {
-      // TODO: Implement logic to list all partners
-      // 1. Query the public.partners table
-      const { data, error } = await supabaseClient.from('partners').select('*')
+      // Query the public.accounts table for platform accounts
+      const { data, error } = await supabaseServiceClient
+        .from('accounts')
+        .select('*')
+        .eq('type', 'platform')
       if (error) throw error;
-      return new Response(JSON.stringify(data), {
+      
+      // Transform data to match frontend expectations
+      const transformedData = data.map(account => ({
+        id: account.id,
+        company_name: account.name,
+        logo_url: account.logo_url,
+        status: 'active', // Default status for accounts
+        stripe_customer_id: account.stripe_customer_id,
+        primary_contact_email: null, // Will need to be fetched from profiles if needed
+        created_at: account.created_at,
+        updated_at: account.updated_at,
+      }))
+      
+      return new Response(JSON.stringify(transformedData), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       })
@@ -121,12 +159,35 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       })
-    } else if (pathname === '/admin-service/update-partner-subscriptions') {
-      // TODO: Implement logic to update a partner's tool subscriptions
-      // 1. Get partner_id and a list of tool subscriptions from request body
-      // 2. Upsert records into the public.partner_tool_subscriptions table
-      // ... implementation needed
-      return new Response(JSON.stringify({ message: "Partner subscriptions updated" }), {
+    } else if (pathname === '/admin-service/update-account-tool-access') {
+      // Update account tool access permissions
+      const { accountId, toolAccess } = body
+      
+      // Delete existing access records for this account
+      await supabaseServiceClient
+        .from('account_tool_access')
+        .delete()
+        .eq('account_id', accountId)
+      
+      // Insert new access records
+      if (toolAccess && toolAccess.length > 0) {
+        const { data: { user } } = await supabaseClient.auth.getUser();
+        const accessRecords = toolAccess.map(access => ({
+          account_id: accountId,
+          tool_id: access.tool_id,
+          access_level: access.access_level,
+          affiliate_id: access.affiliate_id || null,
+          granted_by: user.id,
+        }))
+        
+        const { error } = await supabaseServiceClient
+          .from('account_tool_access')
+          .insert(accessRecords)
+          
+        if (error) throw error;
+      }
+      
+      return new Response(JSON.stringify({ message: "Account tool access updated" }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       })

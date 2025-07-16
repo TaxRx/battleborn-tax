@@ -3,7 +3,7 @@
 **Project**: TaxApp B2B SaaS Platform
 **Author**: BMad Architect
 **Version**: 2.0
-**Last Updated**: 2025-07-14
+**Last Updated**: 2025-07-15
 
 ## 1. System Overview
 
@@ -19,21 +19,56 @@ This document outlines the technical architecture for the TaxApp B2B SaaS platfo
 
 ## 3. Database Architecture
 
-The database is designed with a multi-layered hierarchy to support platform admins, partners, affiliates, and clients.
+The database is designed with a unified accounts-centric architecture that consolidates all entities (admins, platforms, affiliates, clients, experts) into a single, normalized structure.
 
-### 3.1. Key Tables
+### 3.1. Core Architecture Principles
 
-*   **`partners`**: Stores partner organizations (our customers).
-*   **`tools`**: Defines the suite of tax tools offered.
-*   **`partner_tool_subscriptions`**: Maps which tools a partner is subscribed to.
-*   **`affiliate_tool_permissions`**: Maps which tools a partner's affiliates can access.
-*   **`transactions`**: Logs each billable use of a tool.
-*   **`invoices`**: Aggregates transactions for partner billing.
-*   **`profiles`**: Stores user data, with `access_level` and `role` fields to manage permissions.
-*   **`clients`**: Stores end-user data, linked to a partner and an affiliate.
-*   **`client_users`**: A junction table to enable multiple user logins for a single client account.
+The new architecture follows these key principles:
+- **Single Source of Truth**: All entities are represented in the `accounts` table
+- **Type-Based Extensions**: Specialized data is stored in extension tables based on account type
+- **Unified Access Control**: All permissions and tool access are managed consistently
+- **Account-Level Billing**: All transactions and invoicing happen at the account level
 
-*(For the complete schema, refer to the `20250714120000_create_partner_platform_schema.sql` migration file.)*
+### 3.2. Key Tables
+
+#### Central Tables
+*   **`accounts`**: Central table for all entities with types: admin, platform, affiliate, client, expert
+*   **`profiles`**: User login accounts linked to a single account (many profiles can belong to one account)
+*   **`account_tool_access`**: Unified tool access permissions with granular levels and affiliate overrides
+
+#### Extension Tables
+*   **`affiliates`**: Extension data for affiliate accounts (commission rates, territories, etc.)
+*   **`clients`**: Extension data for client accounts (tax-specific information)
+*   **`experts`**: External consultants (may optionally have accounts for login access)
+
+#### Supporting Tables
+*   **`tools`**: Defines the suite of tax tools offered
+*   **`client_users`**: Junction table for multiple user logins per client account
+*   **`transactions`**: Logs billable tool usage (now account-based)
+*   **`invoices`**: Account-level billing aggregation
+*   **`invitations`**: User invitation management system
+
+### 3.3. Key Relationships
+
+```
+auth.users → profiles → accounts
+                     ↓
+            account_tool_access → tools
+                     ↓
+              affiliate overrides
+                     ↓
+              clients.primary_affiliate_id
+```
+
+### 3.4. Account Types & Access Levels
+
+- **admin**: Single super-admin account managing the entire platform
+- **platform**: Service fulfillment accounts (former partners) with full tool access
+- **affiliate**: Sales/referral partners with limited tool access
+- **client**: End customers with client-level tool access
+- **expert**: External consultants with expert-level tool access
+
+*(For the complete schema, refer to the `20250715200000_consolidate_accounts_schema.sql` migration file.)*
 
 ## 4. API Layer: Supabase Edge Functions
 

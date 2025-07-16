@@ -26,6 +26,8 @@ serve(async (req) => {
     // --- ROUTING --- //
     if (pathname === '/user-service/register') {
       return await handleRegistration(req, supabaseAdmin)
+    } else if (pathname === '/user-service/login') {
+      return await handleLogin(req, supabaseAdmin)
     } else if (pathname === '/user-service/send-invitation') {
       return await handleSendInvitation(req, supabaseAdmin)
     } else if (pathname === '/user-service/get-profile') {
@@ -78,20 +80,128 @@ async function handleRegistration(req, supabaseAdmin) {
   })
 }
 
+// --- Handler for User Login --- //
+async function handleLogin(req, supabaseAdmin) {
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
+  }
+
+  const { email, password } = await req.json()
+
+  // Validate input
+  if (!email?.trim() || !password?.trim()) {
+    return new Response(JSON.stringify({ error: 'Email and password are required' }), { status: 400 })
+  }
+
+  try {
+    // Sign in user using Supabase auth
+    const { data: authData, error: authError } = await supabaseAdmin.auth.signInWithPassword({
+      email: email.trim(),
+      password: password
+    })
+
+    if (authError) {
+      return new Response(JSON.stringify({ error: authError.message }), { status: 401 })
+    }
+
+    if (!authData.user) {
+      return new Response(JSON.stringify({ error: 'Login failed - no user data' }), { status: 401 })
+    }
+
+    // Get user profile first
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('id', authData.user.id)
+      .single()
+
+    if (profileError) {
+      console.error('Error fetching profile:', profileError)
+      return new Response(JSON.stringify({ error: 'Failed to get user profile' }), { status: 500 })
+    }
+
+    // Get account information separately to avoid RLS issues
+    const { data: account, error: accountError } = await supabaseAdmin
+      .from('accounts')
+      .select('id, name, type, stripe_customer_id')
+      .eq('id', profile.account_id)
+      .single()
+
+    if (accountError) {
+      console.error('Error fetching account:', accountError)
+      // Don't fail login for this, just continue without account info
+    }
+
+    // Attach account to profile
+    profile.account = account
+
+    // Get client user relationships
+    const { data: clientUsers, error: clientUsersError } = await supabaseAdmin
+      .from('client_users')
+      .select(`
+        *,
+        client:clients (
+          id,
+          full_name,
+          email,
+          phone,
+          filing_status,
+          home_address,
+          state,
+          dependents,
+          created_at,
+          updated_at
+        )
+      `)
+      .eq('user_id', authData.user.id)
+      .eq('is_active', true)
+
+    if (clientUsersError) {
+      console.error('Error fetching client users:', clientUsersError)
+      // Don't fail login for this, just log and continue
+    }
+
+    // Return login response with session token and user data
+    return new Response(JSON.stringify({
+      success: true,
+      session: authData.session,
+      user: {
+        profile,
+        clientUsers: clientUsers || [],
+        accountType: profile.account?.type
+      }
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
+    })
+
+  } catch (error) {
+    console.error('Login error:', error)
+    return new Response(JSON.stringify({ error: 'Login failed' }), { status: 500 })
+  }
+}
+
 // --- Handler for Sending Invitations --- //
 async function handleSendInvitation(req, supabaseAdmin) {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
   }
 
-  const { inviterId, inviteeEmail, role, partnerId, clientId } = await req.json()
+  const { inviterId, inviteeEmail, role, accountId, clientId } = await req.json()
 
   // TODO: Add permission check to ensure inviterId has authority to invite
 
   // Generate invitation token and record
+  // Note: Using partner_id column for backward compatibility, but it now stores account_id
   const { data: invitation, error } = await supabaseAdmin
     .from('invitations')
-    .insert({ invited_by: inviterId, email: inviteeEmail, role, partner_id: partnerId, client_id: clientId })
+    .insert({ 
+      invited_by: inviterId, 
+      email: inviteeEmail, 
+      role, 
+      partner_id: accountId,  // Note: keeping column name for now
+      client_id: clientId 
+    })
     .select()
     .single()
 
@@ -100,7 +210,7 @@ async function handleSendInvitation(req, supabaseAdmin) {
   }
 
   // TODO: Integrate with Resend to send a branded email
-  console.log(`Sending invitation to ${inviteeEmail} with token ${invitation.token}`)
+  console.log(`Sending invitation to ${inviteeEmail} for account ${accountId} with token ${invitation.token}`)
 
   return new Response(JSON.stringify({ success: true, message: 'Invitation sent.' }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -120,11 +230,66 @@ async function handleGetProfile(req, supabaseAdmin) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
     }
 
-    const { data, error } = await supabaseAdmin.from('profiles').select('*').eq('id', user.id).single()
-    if (error) {
-        return new Response(JSON.stringify({ error: error.message }), { status: 500 })
+    // Get user profile first
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError) {
+      return new Response(JSON.stringify({ error: profileError.message }), { status: 500 })
     }
-    return new Response(JSON.stringify(data), {
+
+    // Get account information separately to avoid RLS issues
+    const { data: account, error: accountError } = await supabaseAdmin
+      .from('accounts')
+      .select('id, name, type, stripe_customer_id')
+      .eq('id', profile.account_id)
+      .single()
+
+    if (accountError) {
+      console.error('Error fetching account:', accountError)
+      // Don't fail request for this, just continue without account info
+    }
+
+    // Get client user relationships
+    const { data: clientUsers, error: clientUsersError } = await supabaseAdmin
+      .from('client_users')
+      .select(`
+        *,
+        client:clients (
+          id,
+          full_name,
+          email,
+          phone,
+          filing_status,
+          home_address,
+          state,
+          dependents,
+          created_at,
+          updated_at
+        )
+      `)
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+
+    if (clientUsersError) {
+      console.error('Error fetching client users:', clientUsersError)
+      // Don't fail request for this, just continue without client users
+    }
+
+    // Attach account to profile
+    profile.account = account
+
+    // Return complete user data
+    const userData = {
+      profile,
+      clientUsers: clientUsers || [],
+      accountType: account?.type
+    }
+      
+    return new Response(JSON.stringify(userData), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
     })
