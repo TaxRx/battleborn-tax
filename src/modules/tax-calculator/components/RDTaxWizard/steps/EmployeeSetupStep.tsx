@@ -1427,6 +1427,27 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     employeesLength: employees?.length
   });
 
+  // CRITICAL: Clear state when business context changes to prevent data leakage
+  useEffect(() => {
+    console.log('🔄 Employee Setup: Business context changed, clearing state for new business year:', { businessYearId });
+    
+    // Clear all local state to prevent data leakage between businesses
+    setEmployeesWithData([]);
+    setContractorsWithData([]);
+    setExpenses([]);
+    setRoles([]);
+    setSupplies([]);
+    setSelectedEmployee(null);
+    setSelectedContractor(null);
+    setShowEmployeeDetailModal(false);
+    setShowContractorDetailModal(false);
+    setShowAllocationReport(false);
+    setCsvFile(null);
+    setCsvError(null);
+    
+    console.log('✅ Employee Setup state cleared for new business context');
+  }, [businessYearId]); // Reset when business year changes
+
   const loadData = async () => {
     console.log('🔄 EmployeeSetupStep - loadData started');
     setLoading(true);

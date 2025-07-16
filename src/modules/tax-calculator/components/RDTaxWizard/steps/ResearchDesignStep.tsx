@@ -179,6 +179,26 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
   // IMPORTANT: Always use the selected year ID, fall back to businessYearId only if no year is selected
   const effectiveBusinessYearId = selectedActivityYearId || businessYearId;
 
+  // CRITICAL: Clear state when business context changes to prevent data leakage
+  useEffect(() => {
+    console.log('🔄 Research Design: Business context changed, clearing state for new business year:', { selectedActivityYearId, businessYearId });
+    
+    // Clear all local state to prevent data leakage between businesses
+    setSelectedActivities([]);
+    setActivitiesWithSteps([]);
+    setSelectedSteps([]);
+    setSelectedSubcomponents([]);
+    setSubcomponentStates({});
+    setResearchSteps([]);
+    setRoles([]);
+    setActiveActivityIndex(0);
+    setActiveStepIndex(0);
+    setNonRdPercentage(0);
+    setShowStepAllocation(false);
+    
+    console.log('✅ Research Design state cleared for new business context');
+  }, [selectedActivityYearId, businessYearId]); // Reset when business year changes
+
   // Helper functions to handle both old and new data structures
   const getActivityName = (activity: any) => {
     return activity.activity_name || activity.name || 'Unknown Activity';

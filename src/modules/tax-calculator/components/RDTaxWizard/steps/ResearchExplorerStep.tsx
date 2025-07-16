@@ -939,6 +939,28 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
   // State for expanded activities (fixes React Hooks error)
   const [expandedActivities, setExpandedActivities] = useState<{ [key: string]: boolean }>({});
 
+  // CRITICAL: Clear state when business context changes to prevent data leakage
+  useEffect(() => {
+    console.log('🔄 Business context changed, clearing research explorer state');
+    
+    // Clear all local state to prevent data leakage between businesses
+    setSelectedActivitiesState([]);
+    setExpandedActivities({});
+    setPracticePercentageConfig({
+      nonRndTime: 10,
+      activities: {}
+    });
+    setSelectedCategories([]);
+    setSelectedAreas([]);
+    setSelectedFocuses([]);
+    
+    // Reset business year selection
+    setSelectedBusinessYearId('');
+    setCurrentBusinessId('');
+    
+    console.log('✅ Research explorer state cleared for new business context');
+  }, [selectedBusinessYearId]); // Reset when business year changes
+
   // Helper function to toggle expanded state
   const toggleExpanded = (activityId: string) => {
     setExpandedActivities(prev => ({
@@ -1996,9 +2018,9 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       if (data && data.length > 0) {
         const mappedActivities = data.map(activity => {
           // Get the related focus, area, and category names
-          const focusObj = (focuses as { id: string; name: string; area_id: string }[]).find((f) => f.id === activity.rd_research_activities?.focus_id);
-          const area = focusObj ? (areas as { id: string; name: string; category_id: string }[]).find((a) => a.id === focusObj.area_id) : null;
-          const category = area ? (categories as { id: string; name: string }[]).find((c) => c.id === area.category_id) : null;
+          const focusObj = focuses.find((f: any) => f.id === activity.rd_research_activities?.focus_id);
+          const area = focusObj ? areas.find((a: any) => a.id === focusObj.area_id) : null;
+          const category = area ? categories.find((c: any) => c.id === area.category_id) : null;
 
           return {
             id: activity.id,

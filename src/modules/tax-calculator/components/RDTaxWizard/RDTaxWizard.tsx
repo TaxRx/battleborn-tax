@@ -86,6 +86,30 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
   const [userId, setUserId] = useState<string | null>(null);
   const [isFilingGuideOpen, setIsFilingGuideOpen] = useState(false);
 
+  // CRITICAL: Reset wizard state when businessId changes to prevent data leakage
+  useEffect(() => {
+    console.log('🔄 Business ID changed, resetting wizard state:', { businessId });
+    
+    // Reset wizard state to initial state when businessId changes
+    setWizardState({
+      currentStep: startStep,
+      business: null,
+      selectedYear: null,
+      selectedActivities: [],
+      employees: [],
+      supplies: [],
+      contractors: [],
+      calculations: null,
+      isComplete: false
+    });
+    
+    // Clear any error states
+    setError(null);
+    setLoading(false);
+    
+    console.log('✅ Wizard state reset for new business');
+  }, [businessId, startStep]);
+
   // Get current user ID on component mount
   useEffect(() => {
     const getCurrentUser = async () => {
