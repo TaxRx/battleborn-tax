@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { AIService, AIGenerationContext } from '../../../../services/aiService';
+import { aiService, AIGenerationContext } from '../../../../services/aiService';
 import { SectionGQREService } from '../../services/sectionGQREService';
 
 // Note: OpenAI API key should be configured in environment variables (VITE_OPENAI_API_KEY)

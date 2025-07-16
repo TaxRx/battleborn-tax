@@ -7,6 +7,8 @@ import 'react-toastify/dist/ReactToastify.css';
 import AdminDashboard from './modules/admin/pages/AdminDashboard';
 import { UserProvider } from './context/UserContext';
 import useAuthStore from './store/authStore';
+import ClientPortal from './pages/ClientPortal';
+import LandingPage from './pages/LandingPage';
 
 const BattleBornApp: React.FC = () => {
   const location = useLocation();
@@ -62,6 +64,10 @@ const BattleBornApp: React.FC = () => {
           <Route 
             path="/login" 
             element={<div className="p-8 text-center">Login Page (Coming Soon)</div>} 
+          />
+          <Route 
+            path="/client-portal/:businessId/:token" 
+            element={<ClientPortal />} 
           />
 
           {/* Protected Routes */}

@@ -6,6 +6,7 @@ import ResearchDesignStep from './steps/ResearchDesignStep';
 import EmployeeSetupStep from './steps/EmployeeSetupStep';
 import CalculationStep from './steps/CalculationStep';
 import ReportStep from './steps/ReportStep';
+import ReportsStep from './steps/ReportsStep';
 import { toast } from 'react-hot-toast';
 import { RDBusinessService } from '../../services/rdBusinessService';
 import { FilingGuideModal } from '../FilingGuide/FilingGuideModal';
@@ -60,8 +61,8 @@ const steps = [
     description: 'Review and calculate your R&D tax credit'
   },
   {
-    title: 'Report',
-    description: 'Generate your final R&D tax credit report'
+    title: 'Reports',
+    description: 'Generate reports and manage document delivery'
   }
 ];
 
@@ -336,7 +337,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
         );
       case 5:
         return (
-          <ReportStep
+          <ReportsStep
             wizardState={wizardState}
             onComplete={onClose}
             onPrevious={handlePrevious}

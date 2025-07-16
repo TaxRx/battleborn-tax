@@ -3,6 +3,7 @@ import { X, Download, FileText, Printer, Eye, EyeOff } from 'lucide-react';
 import { FilingGuideDocument } from './FilingGuideDocument';
 import { FilingGuideService } from './FilingGuideService';
 import './FilingGuide.css';
+import { rdReportService } from '../../services/rdReportService';
 
 interface FilingGuideModalProps {
   isOpen: boolean;
@@ -27,6 +28,36 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
   const [exportFormat, setExportFormat] = useState<'pdf' | 'html'>('pdf');
   const [showPreview, setShowPreview] = useState(true);
   const [activeSection, setActiveSection] = useState('cover');
+  const [cachedReport, setCachedReport] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Load cached report on mount
+  useEffect(() => {
+    const loadCachedReport = async () => {
+      if (!businessData?.id || !selectedYear?.id) return;
+
+      setIsLoading(true);
+      try {
+        const cached = await rdReportService.getReport(
+          businessData.id,
+          selectedYear.id,
+          'FILING_GUIDE'
+        );
+        if (cached?.filing_guide) {
+          setCachedReport(cached);
+          console.log('📄 [Filing Guide] Loaded cached report');
+        }
+      } catch (error) {
+        console.error('Error loading cached filing guide:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (isOpen) {
+      loadCachedReport();
+    }
+  }, [isOpen, businessData?.id, selectedYear?.id]);
 
   // Table of Contents structure
   const tocSections = [
@@ -123,7 +154,185 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
     }
   };
 
+  const generateAndSaveReport = async () => {
+    if (!businessData || !selectedYear || !calculations) {
+      console.error('Missing required data for filing guide generation');
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      // Generate HTML content
+      const htmlContent = generateFilingGuideHTML();
+      
+      // Save to database
+      await rdReportService.saveReport({
+        business_id: businessData.id,
+        business_year_id: selectedYear.id,
+        type: 'FILING_GUIDE',
+        generated_text: 'Filing Guide Report',
+        ai_version: '1.0',
+        filing_guide: htmlContent
+      });
+
+      // Update cached report
+      const newReport = await rdReportService.getReport(
+        businessData.id,
+        selectedYear.id,
+        'FILING_GUIDE'
+      );
+      setCachedReport(newReport);
+      
+      console.log('📄 [Filing Guide] Report generated and saved');
+      
+    } catch (error) {
+      console.error('Error generating filing guide:', error);
+      throw error;
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const generateFilingGuideHTML = (): string => {
+    const documentElement = document.querySelector('.filing-guide-document');
+    if (!documentElement) {
+      console.error('Filing guide document not found');
+      return '';
+    }
+
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    return `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Federal Filing Guide - ${businessData?.name || 'Client'}</title>
+        <style>
+          ${getFilingGuideStyles()}
+        </style>
+      </head>
+      <body>
+        <div class="filing-guide-wrapper">
+          <div class="filing-guide-header">
+            <h1>Federal R&D Credit Filing Guide</h1>
+            <div class="filing-guide-meta">
+              <div>Client: ${businessData?.name || 'N/A'}</div>
+              <div>Tax Year: ${selectedYear?.year || 'N/A'}</div>
+              <div>Generated: ${currentDate}</div>
+            </div>
+          </div>
+          ${documentElement.outerHTML}
+        </div>
+      </body>
+      </html>
+    `;
+  };
+
+  const getFilingGuideStyles = (): string => {
+    return `
+      @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+      
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      body {
+        font-family: 'Plus Jakarta Sans', Helvetica, Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.6;
+        color: #333;
+        background: #f8fafc;
+      }
+      
+      .filing-guide-wrapper {
+        max-width: 1200px;
+        margin: 0 auto;
+        background: white;
+        min-height: 100vh;
+      }
+      
+      .filing-guide-header {
+        background: linear-gradient(135deg, #1e3a8a 0%, #3730a3 50%, #6366f1 100%);
+        color: white;
+        padding: 40px;
+        text-align: center;
+      }
+      
+      .filing-guide-header h1 {
+        font-size: 32px;
+        font-weight: 700;
+        margin-bottom: 20px;
+      }
+      
+      .filing-guide-meta {
+        display: flex;
+        justify-content: center;
+        gap: 40px;
+        font-size: 16px;
+      }
+      
+      .filing-guide-document {
+        padding: 40px;
+      }
+      
+      .filing-guide-section {
+        margin-bottom: 40px;
+        padding: 30px;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      }
+      
+      .filing-guide-section-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 24px;
+        gap: 16px;
+      }
+      
+      .filing-guide-section-icon {
+        font-size: 24px;
+      }
+      
+      .filing-guide-section-title {
+        font-size: 24px;
+        font-weight: 600;
+        color: #1f2937;
+      }
+      
+      .filing-guide-section-subtitle {
+        color: #6b7280;
+        font-size: 16px;
+        margin-top: 4px;
+      }
+      
+      @media print {
+        .filing-guide-wrapper {
+          box-shadow: none;
+        }
+        
+        .filing-guide-section {
+          page-break-inside: avoid;
+          break-inside: avoid;
+        }
+      }
+    `;
+  };
+
   const handleExport = async () => {
+    // First generate and save report if needed
+    if (!cachedReport) {
+      await generateAndSaveReport();
+    }
+
     if (!businessData || !selectedYear || !calculations) {
       console.error('Missing required data for filing guide generation');
       return;
@@ -160,22 +369,15 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
   };
 
   const handleDownload = () => {
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Federal Filing Guide - ${businessData?.name || 'Client'}</title>
-        <style>
-          ${document.querySelector('style[data-filing-guide]')?.textContent || ''}
-        </style>
-      </head>
-      <body>
-        ${document.querySelector('.filing-guide-document')?.outerHTML || ''}
-      </body>
-      </html>
-    `;
+    let htmlContent = '';
+    
+    if (cachedReport?.filing_guide) {
+      // Use cached HTML
+      htmlContent = cachedReport.filing_guide;
+    } else {
+      // Generate HTML on the fly
+      htmlContent = generateFilingGuideHTML();
+    }
     
     const blob = new Blob([htmlContent], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
@@ -188,7 +390,46 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  const handleRegenerateReport = async () => {
+    setIsGenerating(true);
+    try {
+      // Delete existing cached report
+      if (cachedReport) {
+        await rdReportService.deleteReport(cachedReport.id);
+      }
+      
+      // Generate new report
+      await generateAndSaveReport();
+      
+      console.log('📄 [Filing Guide] Report regenerated successfully');
+    } catch (error) {
+      console.error('Error regenerating filing guide:', error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   if (!isOpen) return null;
+
+  if (isLoading) {
+    return (
+      <div className="filing-guide-modal-overlay">
+        <div className="filing-guide-modal">
+          <div className="filing-guide-modal-header">
+            <h2 className="filing-guide-modal-title">
+              <FileText className="filing-guide-icon" />
+              Loading Filing Guide...
+            </h2>
+          </div>
+          <div className="filing-guide-modal-content">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '400px' }}>
+              <div>Loading cached report...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="filing-guide-modal-overlay">
@@ -197,6 +438,11 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
           <h2 className="filing-guide-modal-title">
             <FileText className="filing-guide-icon" />
             Federal R&D Credit Filing Guide
+            {cachedReport && (
+              <span style={{ fontSize: '14px', fontWeight: '400', marginLeft: '12px', opacity: '0.8' }}>
+                (Cached)
+              </span>
+            )}
           </h2>
           <button
             onClick={onClose}
@@ -214,33 +460,27 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
               <div className="filing-guide-toc-sidebar">
                 <h3 className="filing-guide-toc-title">Table of Contents</h3>
                 
-                <div className="filing-guide-toc-section">
-                  <div className="filing-guide-toc-section-title">Document Sections</div>
-                  {tocSections.map((section) => (
-                    <div key={section.id}>
+                {tocSections.map((section) => (
+                  <div key={section.id} className="filing-guide-toc-section">
+                    <button
+                      className={`filing-guide-toc-item ${activeSection === section.id ? 'active' : ''}`}
+                      onClick={() => scrollToSection(section.id)}
+                    >
+                      <span style={{ marginRight: '8px' }}>{section.icon}</span>
+                      {section.title}
+                    </button>
+                    
+                    {section.subsections?.map((subsection) => (
                       <button
-                        className={`filing-guide-toc-item ${activeSection === section.id ? 'active' : ''}`}
-                        onClick={() => scrollToSection(section.id)}
+                        key={subsection.id}
+                        className={`filing-guide-toc-item filing-guide-toc-sub-item ${activeSection === subsection.id ? 'active' : ''}`}
+                        onClick={() => scrollToSection(subsection.id)}
                       >
-                        <span style={{ marginRight: '8px' }}>{section.icon}</span>
-                        {section.title}
+                        {subsection.title}
                       </button>
-                      {section.subsections && (
-                        <div>
-                          {section.subsections.map((subsection) => (
-                            <button
-                              key={subsection.id}
-                              className={`filing-guide-toc-item filing-guide-toc-sub-item ${activeSection === subsection.id ? 'active' : ''}`}
-                              onClick={() => scrollToSection(subsection.id)}
-                            >
-                              {subsection.title}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ))}
                 
                 <div className="filing-guide-toc-section">
                   <div className="filing-guide-toc-section-title">Quick Actions</div>
@@ -258,6 +498,16 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
                     <Download size={14} style={{ marginRight: '8px' }} />
                     Download HTML
                   </button>
+                  {cachedReport && (
+                    <button
+                      className="filing-guide-toc-item"
+                      onClick={handleRegenerateReport}
+                      disabled={isGenerating}
+                    >
+                      <FileText size={14} style={{ marginRight: '8px' }} />
+                      {isGenerating ? 'Regenerating...' : 'Regenerate Report'}
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -375,6 +625,19 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
                 <EyeOff size={16} />
                 Back to Summary
               </button>
+              
+              {!cachedReport && (
+                <button
+                  onClick={generateAndSaveReport}
+                  disabled={isGenerating}
+                  className="filing-guide-export-btn"
+                  style={{ marginRight: '12px' }}
+                >
+                  <FileText size={16} />
+                  {isGenerating ? 'Generating...' : 'Generate & Save Report'}
+                </button>
+              )}
+              
               <select
                 value={exportFormat}
                 onChange={(e) => setExportFormat(e.target.value as 'pdf' | 'html')}

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../../../../lib/supabase';
 import { Plus, ChevronDown, ChevronRight, Edit, Trash2, MoveUp, MoveDown, UserPlus, Sparkles, RotateCcw } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { AIService, AIGenerationContext } from '../../../../../services/aiService';
+import { aiService, AIGenerationContext } from '../../../../../services/aiService';
 
 interface ResearchExplorerStepProps {
   selectedActivities: any[];
@@ -3461,16 +3461,21 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
         .map(role => role.name);
 
       const context: AIGenerationContext = {
-        activityName: activity.activity_name || 'Unknown Activity',
-        activityDescription: `Practice: ${activity.practice_percent}%, Category: ${activity.activity_category || 'General'}`,
-        stepName: 'Research Step',
-        stepDescription: 'Research and development activities',
-        subcomponentName: 'Research Subcomponent',
-        subcomponentDescription: `Roles: ${selectedRoleNames.join(', ')}`,
-        industry: activity.activity_category || 'General'
+        businessProfile: { name: activity.activity_name || 'Unknown Activity' },
+        selectedActivities: [activity],
+        selectedSteps: [],
+        selectedSubcomponents: []
       };
 
-      const aiAnswers = await AIService.generateAllAnswers(context);
+      const hypothesis = await aiService.generateContent(`Generate a research hypothesis for: ${activity.activity_name || 'Unknown Activity'}`);
+      const developmentSteps = await aiService.generateContent(`Generate development steps for: ${activity.activity_name || 'Unknown Activity'}`);
+      const dataFeedback = await aiService.generateContent(`Generate data feedback approach for: ${activity.activity_name || 'Unknown Activity'}`);
+      
+      const aiAnswers = {
+        hypothesis,
+        developmentSteps,
+        dataFeedback
+      };
       
       const updatedGuidelines = {
         ...guidelines,
@@ -3495,26 +3500,16 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
         .filter(role => activity.selected_roles.includes(role.id))
         .map(role => role.name);
 
-      const context: AIGenerationContext = {
-        activityName: activity.activity_name || 'Unknown Activity',
-        activityDescription: `Practice: ${activity.practice_percent}%, Category: ${activity.activity_category || 'General'}`,
-        stepName: 'Research Step',
-        stepDescription: 'Research and development activities',
-        subcomponentName: 'Research Subcomponent',
-        subcomponentDescription: `Roles: ${selectedRoleNames.join(', ')}`,
-        industry: activity.activity_category || 'General'
-      };
-
       let newValue = '';
       switch (field) {
         case 'hypothesis':
-          newValue = await AIService.generateHypothesis(context);
+          newValue = await aiService.generateContent(`Generate a research hypothesis for: ${activity.activity_name || 'Unknown Activity'}`);
           break;
         case 'development_steps':
-          newValue = await AIService.generateDevelopmentSteps(context);
+          newValue = await aiService.generateContent(`Generate development steps for: ${activity.activity_name || 'Unknown Activity'}`);
           break;
         case 'data_feedback':
-          newValue = await AIService.generateDataFeedback(context);
+          newValue = await aiService.generateContent(`Generate data feedback approach for: ${activity.activity_name || 'Unknown Activity'}`);
           break;
       }
 

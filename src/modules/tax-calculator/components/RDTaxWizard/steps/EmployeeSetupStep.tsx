@@ -10,6 +10,7 @@ import Papa from 'papaparse';
 import { toast } from 'react-toastify';
 import { SupplyManagementService, QuickSupplyEntry } from '../../../services/supplyManagementService';
 import ContractorAllocationsModal from './ContractorAllocationsModal';
+import AllocationReportModal from '../../AllocationReport/AllocationReportModal';
 
 // Extend RDSupply to include calculated_qre for local use
 interface RDSupply extends RDSupplyBase {
@@ -1417,6 +1418,8 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
   const [csvImporting, setCsvImporting] = useState(false);
   const [csvError, setCsvError] = useState<string | null>(null);
   const [csvFile, setCsvFile] = useState<File | null>(null);
+  // Allocation Report Modal State
+  const [showAllocationReport, setShowAllocationReport] = useState(false);
 
   console.log('🔍 EmployeeSetupStep - Component props:', {
     businessYearId,
@@ -2604,22 +2607,36 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                 </div>
               </div>
               <div className="flex flex-col md:items-end mt-4 md:mt-0">
-                <label className="text-xs font-medium text-blue-100 mb-1">Business Year</label>
-                <div className="flex items-center space-x-2">
-                  <Calendar className="w-5 h-5 text-blue-200" />
-                  <select
-                    value={selectedYear}
-                    onChange={(e) => {
-                      setSelectedYear(e.target.value);
-                    }}
-                    className="px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white/10 text-white placeholder-blue-200 min-w-[100px]"
+                <div className="flex items-center space-x-4">
+                  {/* Allocation Report Button */}
+                  <button
+                    onClick={() => setShowAllocationReport(true)}
+                    className="flex items-center px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-md"
                   >
-                    {availableYears.map((year) => (
-                      <option key={year.id} value={year.id} className="text-gray-900">
-                        {year.year}
-                      </option>
-                    ))}
-                  </select>
+                    <Users className="w-4 h-4 mr-2" />
+                    Allocation Report
+                  </button>
+                  
+                  {/* Business Year Selector */}
+                  <div className="flex flex-col items-end">
+                    <label className="text-xs font-medium text-blue-100 mb-1">Business Year</label>
+                    <div className="flex items-center space-x-2">
+                      <Calendar className="w-5 h-5 text-blue-200" />
+                      <select
+                        value={selectedYear}
+                        onChange={(e) => {
+                          setSelectedYear(e.target.value);
+                        }}
+                        className="px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white/10 text-white placeholder-blue-200 min-w-[100px]"
+                      >
+                        {availableYears.map((year) => (
+                          <option key={year.id} value={year.id} className="text-gray-900">
+                            {year.year}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -3114,6 +3131,15 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           onUpdate={loadData}
         />
       )}
+
+      {/* Allocation Report Modal */}
+      <AllocationReportModal
+        isOpen={showAllocationReport}
+        onClose={() => setShowAllocationReport(false)}
+        businessData={{ id: businessId }}
+        selectedYear={{ id: selectedYear, year: availableYears.find(y => y.id === selectedYear)?.year || new Date().getFullYear() }}
+        calculations={null}
+      />
     </div>
   );
 };

@@ -4,6 +4,7 @@ import { supabase } from '../../../../../lib/supabase';
 import { EmployeeManagementService } from '../../../../../services/employeeManagementService';
 import { EmployeeWithSubcomponents, EmployeeSubcomponent } from '../../../../../types/researchDesign';
 
+
 interface EmployeeManagementStepProps {
   businessId: string;
   businessYearId: string;
@@ -312,6 +313,7 @@ const EmployeeManagementStep: React.FC<EmployeeManagementStepProps> = ({
   const [loading, setLoading] = useState(true);
   const [showAddEmployeeModal, setShowAddEmployeeModal] = useState(false);
   const [showSubcomponentModal, setShowSubcomponentModal] = useState(false);
+
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeWithSubcomponents | null>(null);
 
   useEffect(() => {
@@ -460,13 +462,15 @@ const EmployeeManagementStep: React.FC<EmployeeManagementStepProps> = ({
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-900">Employee Management</h2>
-        <button
-          onClick={() => setShowAddEmployeeModal(true)}
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Employee
-        </button>
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={() => setShowAddEmployeeModal(true)}
+            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Employee
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-lg shadow">
@@ -561,6 +565,8 @@ const EmployeeManagementStep: React.FC<EmployeeManagementStepProps> = ({
         businessYearId={businessYearId}
         onUpdate={loadData}
       />
+
+
     </div>
   );
 };
