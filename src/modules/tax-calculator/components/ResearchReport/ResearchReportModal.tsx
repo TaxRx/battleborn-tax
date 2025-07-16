@@ -15,8 +15,10 @@ import {
   generateActivitySection,
   generateComplianceSummary,
   generateDocumentationChecklist,
+  formatAIContent,
   ReportData
 } from './reportGenerator';
+import { rdReportService } from '../../services/rdReportService';
 
 interface ResearchReportModalProps {
   isOpen: boolean;
@@ -129,6 +131,12 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
   const [selectedSubcomponents, setSelectedSubcomponents] = useState<SelectedSubcomponent[]>([]);
   const [generatedReport, setGeneratedReport] = useState<string>('');
   const [showPreview, setShowPreview] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState<string>('Loading research data...');
+  const [cachedReport, setCachedReport] = useState<any>(null);
+  const [businessRoles, setBusinessRoles] = useState<Array<{id: string, name: string}>>([]);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingSubcomponentId, setEditingSubcomponentId] = useState<string>('');
+  const [editPrompt, setEditPrompt] = useState<string>('');
 
   useEffect(() => {
     if (isOpen && businessYearId) {
@@ -136,12 +144,35 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
     }
   }, [isOpen, businessYearId]);
 
+  // Set up window functions for iframe communication
+  useEffect(() => {
+    if (showPreview) {
+      (window as any).regenerateAISection = regenerateAISection;
+      (window as any).editAIPrompt = editAIPrompt;
+    }
+    return () => {
+      delete (window as any).regenerateAISection;
+      delete (window as any).editAIPrompt;
+    };
+  }, [showPreview]);
+
   const loadData = async () => {
     try {
       setIsLoading(true);
       setError(null);
       
       console.log('🔍 Loading data for businessYearId:', businessYearId);
+
+      // Check for cached report first
+      setLoadingMessage('Checking for existing report...');
+      const existingReport = await rdReportService.getReport(businessYearId);
+      if (existingReport && existingReport.generated_html) {
+        console.log('✅ Found cached report, loading preview');
+        setCachedReport(existingReport);
+        setGeneratedReport(existingReport.generated_html);
+        setShowPreview(true);
+        setLoadingMessage('Report loaded from cache');
+      }
 
       // Load business profile
       const { data: yearData, error: yearError } = await supabase
@@ -244,6 +275,35 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
       setSelectedSubcomponents(subcomponentsData || []);
       console.log('✅ Selected subcomponents loaded:', subcomponentsData?.length || 0);
 
+      // Load business roles - need to get business_id first
+      setLoadingMessage('Loading business roles...');
+      
+      // Get business_id from the business year
+      const businessId = yearData?.business?.id || yearData?.business_id;
+      
+      if (businessId) {
+        const { data: rolesData, error: rolesError } = await supabase
+          .from('rd_roles')
+          .select('id, name')
+          .eq('business_id', businessId)
+          .order('name');
+
+        if (rolesError) {
+          console.error('❌ Business roles error:', rolesError);
+          // Continue without roles
+        } else {
+          setBusinessRoles(rolesData || []);
+          console.log('✅ Business roles loaded:', rolesData?.length || 0);
+        }
+      } else {
+        console.warn('⚠️ No business ID found, using default roles');
+        setBusinessRoles([
+          { id: '1', name: 'Medical Staff' },
+          { id: '2', name: 'Administrative Staff' },
+          { id: '3', name: 'Research Coordinators' }
+        ]);
+      }
+
     } catch (err) {
       console.error('❌ Data loading error:', err);
       setError('Failed to load data');
@@ -252,11 +312,15 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
     }
   };
 
-  const generateReport = () => {
+  const generateReport = async () => {
     if (!businessProfile || selectedActivities.length === 0) {
       setError('No data available to generate report');
       return;
     }
+
+    setIsLoading(true);
+    setError(null);
+    setLoadingMessage('Generating comprehensive report with AI insights...');
 
     // Get the current year for the report
     const currentYear = new Date().getFullYear();
@@ -373,9 +437,11 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
         </div>
       </section>
 
-      ${Array.from(activitiesMap.entries()).map(([activityId, data], index) => 
-        generateActivitySection(activityId, data, index)
-      ).join('')}
+      ${(await Promise.all(
+        Array.from(activitiesMap.entries()).map(([activityId, data], index) => {
+          return generateActivitySection(activityId, data, index, businessRoles);
+        })
+      )).join('')}
 
       ${generateComplianceSummary()}
       ${generateDocumentationChecklist()}
@@ -395,13 +461,172 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
       <span class="footer-confidential">CONFIDENTIAL - DO NOT REPRODUCE WITHOUT PERMISSION</span>
     </div>
   </div>
+
+  <script>
+    // AI Section Regeneration Functions
+    function regenerateAISection(subcomponentId) {
+      if (window.parent && window.parent.regenerateAISection) {
+        window.parent.regenerateAISection(subcomponentId);
+      } else {
+        alert('Regeneration functionality requires parent window context');
+      }
+    }
+
+    function editAIPrompt(subcomponentId) {
+      if (window.parent && window.parent.editAIPrompt) {
+        window.parent.editAIPrompt(subcomponentId);
+      } else {
+        alert('Edit functionality requires parent window context');
+      }
+    }
+
+    // Scroll spy for navigation
+    function updateActiveNavItem() {
+      const sections = document.querySelectorAll('[id]');
+      const navItems = document.querySelectorAll('.toc-item');
+      
+      let current = '';
+      sections.forEach(section => {
+        const sectionTop = section.offsetTop;
+        const sectionHeight = section.clientHeight;
+        if (window.scrollY >= sectionTop - 100) {
+          current = section.getAttribute('id');
+        }
+      });
+
+      navItems.forEach(item => {
+        item.classList.remove('active');
+        if (item.getAttribute('href') === '#' + current) {
+          item.classList.add('active');
+        }
+      });
+    }
+
+    // Enhanced scroll function
+    function scrollToSection(sectionId) {
+      const element = document.getElementById(sectionId);
+      if (element) {
+        element.scrollIntoView({ 
+          behavior: 'smooth',
+          block: 'start',
+          inline: 'nearest'
+        });
+      }
+    }
+
+    // Add scroll listener for spy functionality
+    window.addEventListener('scroll', updateActiveNavItem);
+    window.addEventListener('load', updateActiveNavItem);
+  </script>
 </body>
 </html>
     `;
 
-    setGeneratedReport(report);
-    setShowPreview(true);
+    try {
+      setGeneratedReport(report);
+      setShowPreview(true);
+
+      // Save the report to the database
+      setLoadingMessage('Saving report to database...');
+      const savedReport = await rdReportService.saveReport(businessYearId, report);
+      setCachedReport(savedReport);
+      console.log('✅ Report saved to database with ID:', savedReport.id);
+      
+    } catch (err) {
+      console.error('Error generating report:', err);
+      setError('Failed to generate report. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  const regenerateAISection = async (subcomponentId: string) => {
+    try {
+      setLoadingMessage('Regenerating AI content...');
+      setIsLoading(true);
+
+      // Find the subcomponent
+      const subcomponent = selectedSubcomponents.find(sub => sub.id === subcomponentId);
+      if (!subcomponent) return;
+
+      const subData = subcomponent.rd_research_subcomponents || subcomponent;
+      
+      // Generate new AI content
+      const newContent = await aiService.generateSubcomponentBestPractices(
+        subData.name || subData.general_description || 'Subcomponent',
+        subData.general_description || subData.description || '',
+        businessRoles
+      );
+
+      // Update the HTML with new content
+      const updatedHTML = generatedReport.replace(
+        new RegExp(`<div class="best-practices-content">.*?</div>`, 's'),
+        `<div class="best-practices-content">${formatAIContent(newContent)}</div>`
+      );
+
+      setGeneratedReport(updatedHTML);
+
+      // Save updated report
+      await rdReportService.saveReport(businessYearId, updatedHTML);
+      
+    } catch (error) {
+      console.error('Failed to regenerate AI section:', error);
+      setError('Failed to regenerate content. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const editAIPrompt = (subcomponentId: string) => {
+    const subcomponent = selectedSubcomponents.find(sub => sub.id === subcomponentId);
+    if (!subcomponent) return;
+
+    const subData = subcomponent.rd_research_subcomponents || subcomponent;
+    setEditingSubcomponentId(subcomponentId);
+    setEditPrompt(`Generate professional clinical practice guidelines for implementing "${subData.name || 'this subcomponent'}" in a healthcare setting.
+
+Subcomponent Description: ${subData.general_description || subData.description || ''}
+
+Available Staff Roles: ${businessRoles.map(role => role.name).join(', ')}
+
+Please provide:
+1. Step-by-step implementation guidelines with clear headings
+2. For each step, specify which staff roles should be involved
+3. Use professional medical/clinical language
+4. Format with proper markdown headings
+5. Include bullet points for role assignments under each step`);
+    setShowEditModal(true);
+  };
+
+  const handleCustomPromptGeneration = async () => {
+    try {
+      setLoadingMessage('Generating content with custom prompt...');
+      setIsLoading(true);
+      setShowEditModal(false);
+
+      const newContent = await aiService.generateContent(editPrompt);
+
+      // Update the HTML with new content for the specific subcomponent
+      const subcomponentElement = `id="${editingSubcomponentId}"`;
+      const updatedHTML = generatedReport.replace(
+        new RegExp(`<div class="best-practices-content">.*?</div>`, 's'),
+        `<div class="best-practices-content">${formatAIContent(newContent)}</div>`
+      );
+
+      setGeneratedReport(updatedHTML);
+
+      // Save updated report
+      await rdReportService.saveReport(businessYearId, updatedHTML);
+      
+    } catch (error) {
+      console.error('Failed to generate custom content:', error);
+      setError('Failed to generate content. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
 
   const handlePrint = () => {
     const printWindow = window.open('', '_blank');
@@ -777,7 +1002,7 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
           {isLoading ? (
             <div className="loading-container">
               <div className="loading-spinner"></div>
-              <p className="loading-text">Loading research data...</p>
+              <p className="loading-text">{loadingMessage}</p>
             </div>
           ) : error ? (
             <div className="error-container">
@@ -908,7 +1133,7 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
               style={{ minWidth: '200px' }}
             >
               <FileText />
-              Generate Comprehensive Report
+              {cachedReport ? 'Regenerate Report' : 'Generate Comprehensive Report'}
             </button>
           )}
           
@@ -933,6 +1158,50 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* Edit AI Prompt Modal */}
+      {showEditModal && (
+        <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Edit AI Prompt</h3>
+              <button 
+                onClick={() => setShowEditModal(false)}
+                className="modal-close-btn"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <label className="modal-label">
+                Custom Prompt for AI Generation:
+              </label>
+              <textarea
+                value={editPrompt}
+                onChange={(e) => setEditPrompt(e.target.value)}
+                className="modal-textarea"
+                rows={12}
+                placeholder="Enter your custom prompt for AI content generation..."
+              />
+            </div>
+            <div className="modal-footer">
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="modal-btn modal-btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCustomPromptGeneration}
+                className="modal-btn modal-btn-primary"
+                disabled={!editPrompt.trim()}
+              >
+                Generate Content
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

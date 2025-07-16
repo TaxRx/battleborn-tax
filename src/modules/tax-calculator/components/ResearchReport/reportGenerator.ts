@@ -1,4 +1,5 @@
 // Report Generator Helper Functions for Clinical Practice Guideline Report
+import { aiService } from '../../../../services/aiService';
 
 export interface ReportData {
   businessProfile: any;
@@ -14,19 +15,19 @@ export const generateTableOfContents = (activitiesMap: Map<string, any>): string
       
       <div class="toc-section">
         <div class="toc-section-title">Overview</div>
-        <a href="#executive-summary" class="toc-item">Executive Summary</a>
-        <a href="#business-profile" class="toc-item">Business Profile</a>
-        <a href="#research-overview" class="toc-item">Research Overview</a>
+        <a href="#executive-summary" class="toc-item" onclick="scrollToSection('executive-summary'); return false;">Executive Summary</a>
+        <a href="#business-profile" class="toc-item" onclick="scrollToSection('business-profile'); return false;">Business Profile</a>
+        <a href="#research-overview" class="toc-item" onclick="scrollToSection('research-overview'); return false;">Research Overview</a>
       </div>
 
       <div class="toc-section">
         <div class="toc-section-title">Research Activities</div>
         ${Array.from(activitiesMap.entries()).map(([activityId, data], index) => `
-          <a href="#activity-${activityId}" class="toc-item">
+          <a href="#activity-${activityId}" class="toc-item" onclick="scrollToSection('activity-${activityId}'); return false;">
             ${index + 1}. ${data.activity.activity?.title || 'Research Activity'}
           </a>
           ${data.steps.map((step: any) => `
-            <a href="#step-${step.id}" class="toc-item toc-sub-item">
+            <a href="#step-${step.id}" class="toc-item toc-sub-item" onclick="scrollToSection('step-${step.id}'); return false;">
               ${step.step?.name || 'Research Step'}
             </a>
           `).join('')}
@@ -35,10 +36,44 @@ export const generateTableOfContents = (activitiesMap: Map<string, any>): string
 
       <div class="toc-section">
         <div class="toc-section-title">Appendices</div>
-        <a href="#compliance-summary" class="toc-item">Compliance Summary</a>
-        <a href="#documentation-checklist" class="toc-item">Documentation Checklist</a>
+        <a href="#compliance-summary" class="toc-item" onclick="scrollToSection('compliance-summary'); return false;">Compliance Summary</a>
+        <a href="#documentation-checklist" class="toc-item" onclick="scrollToSection('documentation-checklist'); return false;">Documentation Checklist</a>
       </div>
     </nav>
+
+    <script>
+      function scrollToSection(sectionId) {
+        const element = document.getElementById(sectionId);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          
+          // Update active states
+          document.querySelectorAll('.toc-item').forEach(item => item.classList.remove('active'));
+          event.target.classList.add('active');
+        }
+      }
+
+      // Add scroll spy functionality
+      window.addEventListener('scroll', function() {
+        const sections = document.querySelectorAll('.report-section[id]');
+        const tocItems = document.querySelectorAll('.toc-item');
+        
+        let current = '';
+        sections.forEach(section => {
+          const sectionTop = section.offsetTop - 100;
+          if (window.pageYOffset >= sectionTop) {
+            current = section.getAttribute('id');
+          }
+        });
+
+        tocItems.forEach(item => {
+          item.classList.remove('active');
+          if (item.getAttribute('onclick')?.includes(current)) {
+            item.classList.add('active');
+          }
+        });
+      });
+    </script>
   `;
 };
 
@@ -187,13 +222,16 @@ export const generateBusinessProfile = (businessProfile: any): string => {
   `;
 };
 
-export const generateActivitySection = (
+export const generateActivitySection = async (
   activityId: string,
   data: any,
-  activityIndex: number
-): string => {
+  activityIndex: number,
+  businessRoles: Array<{id: string, name: string}> = []
+): Promise<string> => {
   const { activity, steps, subcomponents } = data;
   const activityTitle = activity.activity?.title || `Research Activity ${activityIndex + 1}`;
+
+  const subcomponentGuidelines = await generateSubcomponentGuidelines(subcomponents, steps, businessRoles);
 
   return `
     <section id="activity-${activityId}" class="report-section">
@@ -213,7 +251,7 @@ export const generateActivitySection = (
 
       ${generateHierarchyTree(activityTitle, activity, steps, subcomponents)}
       ${generateStepsTable(steps, subcomponents)}
-      ${generateSubcomponentGuidelines(subcomponents, steps)}
+      ${subcomponentGuidelines}
     </section>
   `;
 };
@@ -314,14 +352,47 @@ export const generateStepsTable = (steps: any[], subcomponents: any[]): string =
   `;
 };
 
-export const generateSubcomponentGuidelines = (subcomponents: any[], steps: any[]): string => {
+export const generateSubcomponentGuidelines = async (
+  subcomponents: any[], 
+  steps: any[], 
+  businessRoles: Array<{id: string, name: string}> = []
+): Promise<string> => {
   if (subcomponents.length === 0) return '';
+
+  // Ensure businessRoles is always an array with fallback values
+  const safeBusinessRoles = businessRoles && businessRoles.length > 0 
+    ? businessRoles 
+    : [
+        { id: 'default-1', name: 'Medical Staff' },
+        { id: 'default-2', name: 'Administrative Staff' },
+        { id: 'default-3', name: 'Research Coordinators' }
+      ];
+
+  // Generate AI-powered best practices for each subcomponent (sequentially to avoid rate limits)
+  const subcomponentSummaries = [];
+  
+  for (const sub of subcomponents) {
+    const subData = sub.rd_research_subcomponents || sub;
+    try {
+      console.log(`🤖 Generating AI best practices for: ${subData.name || 'Unknown Component'}`);
+      const bestPractices = await aiService.generateSubcomponentBestPractices(
+        subData.name || subData.general_description || 'Subcomponent',
+        subData.general_description || subData.description || '',
+        safeBusinessRoles
+      );
+      subcomponentSummaries.push({ ...sub, aiGeneratedBestPractices: bestPractices });
+      console.log(`✅ AI content generated successfully for: ${subData.name || 'Unknown Component'}`);
+    } catch (error) {
+      console.warn('Failed to generate AI content for subcomponent:', error);
+      subcomponentSummaries.push({ ...sub, aiGeneratedBestPractices: null });
+    }
+  }
 
   return `
     <div class="guidelines-section">
       <h3>Clinical Practice Guidelines</h3>
       
-      ${subcomponents.map((sub, index) => {
+      ${subcomponentSummaries.map((sub, index) => {
         const step = steps.find(s => s.step_id === sub.step_id);
         const subData = sub.rd_research_subcomponents || sub;
         
@@ -335,6 +406,30 @@ export const generateSubcomponentGuidelines = (subcomponents: any[], steps: any[
                 <span class="chip chip-success">Year Coverage: ${sub.year_percentage}%</span>
               </div>
             </div>
+
+            ${sub.aiGeneratedBestPractices ? `
+              <div class="ai-best-practices">
+                <div class="ai-header">
+                  <h5>🧬 Practice Guideline</h5>
+                  <div class="ai-controls">
+                    <button class="ai-control-btn" onclick="regenerateAISection('${sub.id}')" title="Regenerate">
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2v1z"/>
+                        <path d="M8 4.466V.534a.25.25 0 0 0-.41-.192L5.23 2.308a.25.25 0 0 0 0 .384l2.36 1.966A.25.25 0 0 0 8 4.466z"/>
+                      </svg>
+                    </button>
+                    <button class="ai-control-btn" onclick="editAIPrompt('${sub.id}')" title="Edit Prompt">
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="best-practices-content">
+                  ${formatAIContent(sub.aiGeneratedBestPractices)}
+                </div>
+              </div>
+            ` : ''}
 
             <div class="guideline-sections">
               ${generateGuidelineSection('General Description', subData.general_description || sub.general_description, '📋')}
@@ -383,6 +478,26 @@ export const generateSubcomponentGuidelines = (subcomponents: any[], steps: any[
       }).join('')}
     </div>
   `;
+};
+
+// Helper function to format AI-generated content with proper markdown support
+export const formatAIContent = (content: string): string => {
+  if (!content) return '';
+  
+  // Convert markdown headings to proper HTML
+  let formatted = content
+    .replace(/^### (.+)$/gm, '<h3 class="ai-section-heading">$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2 class="ai-main-heading">$1</h2>')
+    .replace(/^\*\*(.+)\*\*:$/gm, '<h4 class="ai-step-title">$1:</h4>')
+    .replace(/^\*\*(.+)\*\*$/gm, '<strong>$1</strong>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/^([^<\n].+)$/gm, '<p>$1</p>');
+
+  // Wrap consecutive <li> elements in <ul>
+  formatted = formatted.replace(/(<li>.*?<\/li>)(?:\s*<li>.*?<\/li>)*/gs, '<ul>$&</ul>');
+  
+  return formatted;
 };
 
 export const generateGuidelineSection = (title: string, content: string | null, icon: string): string => {

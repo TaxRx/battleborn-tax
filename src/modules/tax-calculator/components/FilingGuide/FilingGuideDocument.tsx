@@ -145,79 +145,63 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
           )}
         </div>
       )}
+      
       {/* Cover Page */}
-      <div className="filing-guide-cover-page">
-        <div className="filing-guide-logo">
-          <img 
-            src="/images/Direct Research_horizontal advisors logo.png" 
-            alt="Direct Research Logo"
-            className="filing-guide-logo-img"
-          />
-        </div>
-        
-        <div className="filing-guide-cover-content">
-          <h1 className="filing-guide-main-title">Federal R&D Credit Filing Guide</h1>
-          <h2 className="filing-guide-subtitle">Prepared by Direct Research</h2>
+      <div id="filing-guide-section-cover" className="filing-guide-section">
+        <div className="filing-guide-cover-page">
+          <div className="filing-guide-logo">
+            <img 
+              src="/images/Direct Research_horizontal advisors logo.png" 
+              alt="Direct Research Logo"
+              className="filing-guide-logo-img"
+            />
+          </div>
           
-          <div className="filing-guide-cover-details">
-            <div className="filing-guide-detail-row">
-              <span className="filing-guide-detail-label">Tax Year:</span>
-              <span className="filing-guide-detail-value">{selectedYear?.year || 'N/A'}</span>
-            </div>
-            <div className="filing-guide-detail-row">
-              <span className="filing-guide-detail-label">Client Name:</span>
-              <span className="filing-guide-detail-value">{businessData?.name || 'N/A'}</span>
-            </div>
-            <div className="filing-guide-detail-row">
-              <span className="filing-guide-detail-label">Date Generated:</span>
-              <span className="filing-guide-detail-value">{currentDate}</span>
+          <div className="filing-guide-cover-content">
+            <h1 className="filing-guide-main-title">Federal R&D Credit Filing Guide</h1>
+            <h2 className="filing-guide-subtitle">Prepared by Direct Research</h2>
+            
+            <div className="filing-guide-cover-details">
+              <div className="filing-guide-detail-row">
+                <span className="filing-guide-detail-label">Tax Year:</span>
+                <span className="filing-guide-detail-value">{selectedYear?.year || 'N/A'}</span>
+              </div>
+              <div className="filing-guide-detail-row">
+                <span className="filing-guide-detail-label">Client Name:</span>
+                <span className="filing-guide-detail-value">{businessData?.name || 'N/A'}</span>
+              </div>
+              <div className="filing-guide-detail-row">
+                <span className="filing-guide-detail-label">Date Generated:</span>
+                <span className="filing-guide-detail-value">{currentDate}</span>
+              </div>
             </div>
           </div>
-        </div>
-        
-        <div className="filing-guide-footer">
-          Direct Research | Federal Filing Guide – {selectedYear?.year || 'N/A'}
+          
+          <div className="filing-guide-footer">
+            Direct Research | Federal Filing Guide – {selectedYear?.year || 'N/A'}
+          </div>
         </div>
       </div>
 
       {/* About Direct Research Section */}
-      <div className="filing-guide-section">
-        <h2 className="filing-guide-section-title">About Direct Research</h2>
-        
-        <div className="about-direct-research-content">
-          <div className="about-direct-research-intro">
-            <p>
-              Direct Research is a specialized consulting firm dedicated to helping businesses maximize their 
-              Research & Development (R&D) tax credit opportunities. Our team of experienced tax professionals, 
-              engineers, and industry experts work collaboratively to identify, document, and substantiate 
-              qualifying R&D activities that often go unrecognized.
-            </p>
+      <div id="filing-guide-section-about" className="filing-guide-section">
+        <div className="filing-guide-section-header">
+          <div className="filing-guide-section-icon">🏢</div>
+          <div>
+            <h2 className="filing-guide-section-title">About Direct Research</h2>
+            <p className="filing-guide-section-subtitle">Your trusted partner in R&D tax credit optimization</p>
           </div>
-          
-          <div className="about-direct-research-expertise">
-            <h3 className="filing-guide-section-title">Our Expertise</h3>
-            <div className="expertise-grid">
-              <div className="expertise-item">
-                <div className="expertise-icon">🔬</div>
-                <h4>Technical Analysis</h4>
-                <p>Deep technical review of your R&D activities to identify qualifying expenses and activities</p>
-              </div>
-              <div className="expertise-item">
-                <div className="expertise-icon">📊</div>
-                <h4>Financial Optimization</h4>
-                <p>Strategic analysis to maximize your credit while ensuring full compliance with IRS regulations</p>
-              </div>
-              <div className="expertise-item">
-                <div className="expertise-icon">📋</div>
-                <h4>Documentation Excellence</h4>
-                <p>Comprehensive documentation and substantiation to support your claim in case of audit</p>
-              </div>
-              <div className="expertise-item">
-                <div className="expertise-icon">🛡️</div>
-                <h4>Audit Support</h4>
-                <p>Full support throughout the audit process with detailed documentation and expert testimony</p>
-              </div>
-            </div>
+        </div>
+        
+        <div className="about-direct-research">
+          <div className="about-direct-research-overview">
+            <h3 className="filing-guide-section-title">Company Overview</h3>
+            <p>
+              Direct Research is a leading specialist in research and development tax credit consulting, 
+              providing comprehensive services to help businesses maximize their R&D investments through 
+              strategic tax credit optimization. Our team of experts combines deep technical knowledge 
+              with extensive tax expertise to deliver exceptional results for our clients.
+            </p>
           </div>
           
           <div className="about-direct-research-process">
@@ -268,7 +252,15 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
       </div>
 
       {/* Section 1: Filing Process Overview */}
-      <div className="filing-guide-section">
+      <div id="filing-guide-section-process" className="filing-guide-section">
+        <div className="filing-guide-section-header">
+          <div className="filing-guide-section-icon">📋</div>
+          <div>
+            <h2 className="filing-guide-section-title">Filing Process Overview</h2>
+            <p className="filing-guide-section-subtitle">Step-by-step guidance for your R&D credit filing</p>
+          </div>
+        </div>
+        
         <FilingProcessOverview 
           calculations={calculations}
           businessData={businessData}
@@ -279,26 +271,46 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
       </div>
 
       {/* Section 2: Summary Tables and Visuals */}
-      <div className="filing-guide-section">
-        <h2 className="filing-guide-section-title">Summary Tables and Visuals</h2>
-        <KPICharts 
-          businessData={businessData}
-          selectedYear={selectedYear}
-          calculations={calculations}
-          selectedMethod={selectedMethod}
-          debugData={debugData}
-        />
-        <QRESummaryTables 
-          businessData={businessData}
-          selectedYear={selectedYear}
-          calculations={calculations}
-          selectedMethod={selectedMethod}
-          debugData={debugData}
-        />
+      <div id="filing-guide-section-summary" className="filing-guide-section">
+        <div className="filing-guide-section-header">
+          <div className="filing-guide-section-icon">📊</div>
+          <div>
+            <h2 className="filing-guide-section-title">Summary Tables and Visuals</h2>
+            <p className="filing-guide-section-subtitle">Visual analysis of your R&D credit calculations</p>
+          </div>
+        </div>
+        
+        <div id="filing-guide-section-charts">
+          <KPICharts 
+            businessData={businessData}
+            selectedYear={selectedYear}
+            calculations={calculations}
+            selectedMethod={selectedMethod}
+            debugData={debugData}
+          />
+        </div>
+        
+        <div id="filing-guide-section-qre-tables">
+          <QRESummaryTables 
+            businessData={businessData}
+            selectedYear={selectedYear}
+            calculations={calculations}
+            selectedMethod={selectedMethod}
+            debugData={debugData}
+          />
+        </div>
       </div>
 
       {/* Section 3: Form 6765 Pro Forma */}
-      <div className="filing-guide-section">
+      <div id="filing-guide-section-federal" className="filing-guide-section">
+        <div className="filing-guide-section-header">
+          <div className="filing-guide-section-icon">📝</div>
+          <div>
+            <h2 className="filing-guide-section-title">Federal Form 6765 Pro Forma</h2>
+            <p className="filing-guide-section-subtitle">IRS Form 6765 calculation worksheet</p>
+          </div>
+        </div>
+        
         {/* Render new FederalCreditProForma with selectors and unified UI */}
         <FederalCreditProForma
           businessData={businessData}
@@ -311,8 +323,15 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
       </div>
 
       {/* Section 5: State Credits (with selectors) */}
-      <div className="filing-guide-section">
-        <h2 className="filing-guide-section-title">State Credits</h2>
+      <div id="filing-guide-section-state" className="filing-guide-section">
+        <div className="filing-guide-section-header">
+          <div className="filing-guide-section-icon">🏛️</div>
+          <div>
+            <h2 className="filing-guide-section-title">State Credits</h2>
+            <p className="filing-guide-section-subtitle">State-specific R&D credit calculations</p>
+          </div>
+        </div>
+        
         <div className="state-selector-container">
           <label>
             State:
@@ -368,7 +387,15 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
       </div>
 
       {/* Section 6: Calculation Specifics */}
-      <div className="filing-guide-section">
+      <div id="filing-guide-section-calculations" className="filing-guide-section">
+        <div className="filing-guide-section-header">
+          <div className="filing-guide-section-icon">🧮</div>
+          <div>
+            <h2 className="filing-guide-section-title">Calculation Specifics</h2>
+            <p className="filing-guide-section-subtitle">Detailed breakdown of credit calculations</p>
+          </div>
+        </div>
+        
         <CalculationSpecifics
           businessData={businessData}
           selectedYear={selectedYear}
