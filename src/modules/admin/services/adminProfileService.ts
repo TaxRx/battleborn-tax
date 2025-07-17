@@ -1,7 +1,7 @@
-// Epic 3 Sprint 3 Day 1: Admin Profile Service
+// Epic 3 Sprint 3 + 4: Admin Profile Service with Billing
 // File: adminProfileService.ts
-// Purpose: Comprehensive profile management with CRUD operations, auth sync, and role management
-// Story: 3.1 - Profile Management CRUD Operations
+// Purpose: Comprehensive profile management with CRUD operations, auth sync, role management, and billing
+// Stories: 3.1-3.5 (Profile Management) + 4.1 (Billing Management System)
 
 import { supabase } from '../../../lib/supabase';
 
@@ -275,6 +275,214 @@ export interface BulkOperationTargetResult {
   errorCode: string | null;
   retryCount: number;
   rolledBack: boolean;
+}
+
+export interface ActivitySummary {
+  totalActivities: number;
+  successfulActivities: number;
+  failedActivities: number;
+  successRate: number;
+  uniqueProfiles: number;
+  activityTypes: Record<string, number>;
+  activityCategories: Record<string, number>;
+  riskDistribution: Record<string, number>;
+  peakActivityHour: number | null;
+  mostActiveProfile: {
+    profileId: string;
+    profileName: string;
+    profileEmail: string;
+    activityCount: number;
+  } | null;
+}
+
+// ========= EPIC 4 SPRINT 4: BILLING MANAGEMENT INTERFACES =========
+
+export interface SubscriptionPlan {
+  id: string;
+  planCode: string;
+  planName: string;
+  description: string | null;
+  planType: 'one_time' | 'recurring' | 'usage_based';
+  billingInterval: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  intervalCount: number;
+  priceCents: number;
+  currency: string;
+  trialPeriodDays: number;
+  maxUsers: number | null;
+  maxTools: number | null;
+  features: Record<string, any>;
+  isActive: boolean;
+  stripePriceId: string | null;
+  squareCatalogId: string | null;
+  metadata: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AccountSubscription {
+  id: string;
+  accountId: string;
+  planId: string;
+  status: 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid' | 'paused';
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+  trialStart: string | null;
+  trialEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  canceledAt: string | null;
+  endedAt: string | null;
+  stripeSubscriptionId: string | null;
+  squareSubscriptionId: string | null;
+  paymentMethodId: string | null;
+  billingContactProfileId: string | null;
+  quantity: number;
+  discountPercent: number;
+  metadata: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+  plan: {
+    planCode: string;
+    planName: string;
+    description: string | null;
+    priceCents: number;
+    currency: string;
+    billingInterval: string;
+  } | null;
+  paymentMethod: {
+    methodType: string;
+    lastFour: string | null;
+    brand: string | null;
+    expMonth: number | null;
+    expYear: number | null;
+  } | null;
+}
+
+export interface AccountInvoice {
+  id: string;
+  accountId: string;
+  subscriptionId: string | null;
+  invoiceNumber: string;
+  status: 'draft' | 'open' | 'paid' | 'void' | 'uncollectible';
+  subtotalCents: number;
+  taxCents: number;
+  discountCents: number;
+  totalCents: number;
+  currency: string;
+  dueDate: string | null;
+  paidAt: string | null;
+  billingPeriodStart: string | null;
+  billingPeriodEnd: string | null;
+  billingAddress: Record<string, any>;
+  notes: string | null;
+  pdfUrl: string | null;
+  stripeInvoiceId: string | null;
+  squareInvoiceId: string | null;
+  metadata: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+  subscription: {
+    id: string;
+    status: string;
+    planId: string;
+  } | null;
+  lineItems: InvoiceLineItem[];
+}
+
+export interface InvoiceLineItem {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPriceCents: number;
+  totalCents: number;
+  periodStart: string | null;
+  periodEnd: string | null;
+}
+
+export interface PaymentHistory {
+  id: string;
+  accountId: string;
+  subscriptionId: string | null;
+  invoiceId: string | null;
+  paymentMethodId: string | null;
+  amountCents: number;
+  currency: string;
+  status: 'pending' | 'processing' | 'succeeded' | 'failed' | 'canceled' | 'refunded' | 'partially_refunded';
+  paymentType: 'subscription' | 'invoice' | 'one_time' | 'setup' | 'refund';
+  description: string | null;
+  stripePaymentIntentId: string | null;
+  stripeChargeId: string | null;
+  squarePaymentId: string | null;
+  gatewayResponse: Record<string, any>;
+  failureReason: string | null;
+  processedAt: string | null;
+  refundedAt: string | null;
+  refundAmountCents: number;
+  metadata: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+  paymentMethod: {
+    methodType: string;
+    lastFour: string | null;
+    brand: string | null;
+  } | null;
+  subscription: {
+    id: string;
+    status: string;
+  } | null;
+}
+
+export interface BillingEvent {
+  id: string;
+  accountId: string;
+  eventType: string;
+  eventData: Record<string, any>;
+  subscriptionId: string | null;
+  paymentId: string | null;
+  invoiceId: string | null;
+  gatewayEventId: string | null;
+  processed: boolean;
+  processedAt: string | null;
+  errorMessage: string | null;
+  retryCount: number;
+  createdAt: string;
+}
+
+export interface ActivityTimelineEntry {
+  id: string;
+  activityType: string;
+  activityCategory: string;
+  targetType: string;
+  targetId: string | null;
+  description: string;
+  resultStatus: string;
+  riskLevel: string;
+  durationMs: number | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  sessionId: string | null;
+  metadata: Record<string, any>;
+  createdAt: string;
+  timeAgo: string;
+}
+
+export interface SuspiciousActivity {
+  profileId: string;
+  profileName: string;
+  profileEmail: string;
+  suspiciousPattern: string;
+  activityCount: number;
+  riskScore: number;
+  details: Record<string, any>;
+  detectedAt: string;
+}
+
+export interface ActivityTrend {
+  timeBucket: string;
+  totalActivities: number;
+  successfulActivities: number;
+  failedActivities: number;
+  uniqueProfiles: number;
+  highRiskActivities: number;
 }
 
 export interface ProfileListResponse {
@@ -1547,6 +1755,197 @@ class AdminProfileService {
     }
   }
 
+  // ========= ACTIVITY MONITORING =========
+
+  async getActivitySummary(
+    startDate?: string, 
+    endDate?: string, 
+    profileId?: string
+  ): Promise<ActivitySummary> {
+    try {
+      const { data, error } = await supabase.rpc('get_profile_activity_summary', {
+        p_start_date: startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+        p_end_date: endDate || new Date().toISOString(),
+        p_profile_id: profileId || null
+      });
+
+      if (error) throw error;
+
+      const summary = data[0];
+      return {
+        totalActivities: summary.total_activities,
+        successfulActivities: summary.successful_activities,
+        failedActivities: summary.failed_activities,
+        successRate: summary.success_rate,
+        uniqueProfiles: summary.unique_profiles,
+        activityTypes: summary.activity_types || {},
+        activityCategories: summary.activity_categories || {},
+        riskDistribution: summary.risk_distribution || {},
+        peakActivityHour: summary.peak_activity_hour,
+        mostActiveProfile: summary.most_active_profile?.profile_id ? {
+          profileId: summary.most_active_profile.profile_id,
+          profileName: summary.most_active_profile.profile_name,
+          profileEmail: summary.most_active_profile.profile_email,
+          activityCount: summary.most_active_profile.activity_count
+        } : null
+      };
+    } catch (error) {
+      console.error('Error fetching activity summary:', error);
+      throw error;
+    }
+  }
+
+  async getActivityTimeline(
+    profileId: string, 
+    limit: number = 50, 
+    offset: number = 0
+  ): Promise<ActivityTimelineEntry[]> {
+    try {
+      const { data: timeline, error } = await supabase.rpc('get_profile_activity_timeline', {
+        p_profile_id: profileId,
+        p_limit: limit,
+        p_offset: offset
+      });
+
+      if (error) throw error;
+
+      return (timeline || []).map(entry => ({
+        id: entry.id,
+        activityType: entry.activity_type,
+        activityCategory: entry.activity_category,
+        targetType: entry.target_type,
+        targetId: entry.target_id,
+        description: entry.description,
+        resultStatus: entry.result_status,
+        riskLevel: entry.risk_level,
+        durationMs: entry.duration_ms,
+        ipAddress: entry.ip_address,
+        userAgent: entry.user_agent,
+        sessionId: entry.session_id,
+        metadata: entry.metadata || {},
+        createdAt: entry.created_at,
+        timeAgo: entry.time_ago
+      }));
+    } catch (error) {
+      console.error('Error fetching activity timeline:', error);
+      throw error;
+    }
+  }
+
+  async detectSuspiciousActivity(
+    lookbackHours: number = 24, 
+    minThreshold: number = 10
+  ): Promise<SuspiciousActivity[]> {
+    try {
+      const { data: suspicious, error } = await supabase.rpc('detect_suspicious_activity', {
+        p_lookback_hours: lookbackHours,
+        p_min_threshold: minThreshold
+      });
+
+      if (error) throw error;
+
+      return (suspicious || []).map(activity => ({
+        profileId: activity.profile_id,
+        profileName: activity.profile_name,
+        profileEmail: activity.profile_email,
+        suspiciousPattern: activity.suspicious_pattern,
+        activityCount: activity.activity_count,
+        riskScore: activity.risk_score,
+        details: activity.details || {},
+        detectedAt: activity.detected_at
+      }));
+    } catch (error) {
+      console.error('Error detecting suspicious activity:', error);
+      throw error;
+    }
+  }
+
+  async getActivityTrends(
+    days: number = 7, 
+    granularity: 'hourly' | 'daily' | 'weekly' = 'daily'
+  ): Promise<ActivityTrend[]> {
+    try {
+      const { data: trends, error } = await supabase.rpc('get_activity_trends', {
+        p_days: days,
+        p_granularity: granularity
+      });
+
+      if (error) throw error;
+
+      return (trends || []).map(trend => ({
+        timeBucket: trend.time_bucket,
+        totalActivities: trend.total_activities,
+        successfulActivities: trend.successful_activities,
+        failedActivities: trend.failed_activities,
+        uniqueProfiles: trend.unique_profiles,
+        highRiskActivities: trend.high_risk_activities
+      }));
+    } catch (error) {
+      console.error('Error fetching activity trends:', error);
+      throw error;
+    }
+  }
+
+  async createActivityAlert(
+    profileId: string,
+    alertType: string,
+    severity: 'low' | 'medium' | 'high' | 'critical',
+    title: string,
+    description: string,
+    metadata: Record<string, any> = {}
+  ): Promise<string> {
+    try {
+      const { data: alertId, error } = await supabase.rpc('create_activity_alert', {
+        p_profile_id: profileId,
+        p_alert_type: alertType,
+        p_severity: severity,
+        p_title: title,
+        p_description: description,
+        p_metadata: metadata
+      });
+
+      if (error) throw error;
+
+      return alertId;
+    } catch (error) {
+      console.error('Error creating activity alert:', error);
+      throw error;
+    }
+  }
+
+  async getRecentActivities(limit: number = 20): Promise<ActivityTimelineEntry[]> {
+    try {
+      const { data: activities, error } = await supabase
+        .from('profile_activity_monitoring')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (error) throw error;
+
+      return (activities || []).map(activity => ({
+        id: activity.id,
+        activityType: activity.activity_type,
+        activityCategory: activity.activity_category,
+        targetType: activity.target_type,
+        targetId: activity.target_id,
+        description: activity.description,
+        resultStatus: activity.result_status,
+        riskLevel: activity.risk_level,
+        durationMs: activity.duration_ms,
+        ipAddress: activity.ip_address,
+        userAgent: activity.user_agent,
+        sessionId: activity.session_id,
+        metadata: activity.metadata || {},
+        createdAt: activity.created_at,
+        timeAgo: activity.time_category
+      }));
+    } catch (error) {
+      console.error('Error fetching recent activities:', error);
+      throw error;
+    }
+  }
+
   private async logProfileActivity(activityData: {
     profileId: string;
     activityType: string;
@@ -1568,6 +1967,482 @@ class AdminProfileService {
       console.error('Error logging profile activity:', error);
       // Don't throw here to avoid breaking the main operation
     }
+  }
+
+  // ========= EPIC 4 SPRINT 4: BILLING MANAGEMENT METHODS =========
+
+  // Billing Management - Story 4.1
+  async createSubscription(accountId: string, planId: string, options?: {
+    paymentMethodId?: string;
+    trialDays?: number;
+    billingContactProfileId?: string;
+  }): Promise<{ subscriptionId: string; success: boolean; message: string }> {
+    try {
+      const { data, error } = await supabase.rpc('create_subscription', {
+        p_account_id: accountId,
+        p_plan_id: planId,
+        p_payment_method_id: options?.paymentMethodId || null,
+        p_trial_days: options?.trialDays || null,
+        p_billing_contact_profile_id: options?.billingContactProfileId || null
+      });
+
+      if (error) throw error;
+
+      const result = data[0];
+      await this.logProfileActivity({
+        profileId: this.getCurrentProfileId(),
+        activityType: 'subscription_created',
+        targetType: 'subscription',
+        targetId: result.subscription_id,
+        description: `Created subscription for account ${accountId}`,
+        metadata: { planId, ...options }
+      });
+
+      return {
+        subscriptionId: result.subscription_id,
+        success: result.success,
+        message: result.message
+      };
+    } catch (error) {
+      console.error('Error creating subscription:', error);
+      throw error;
+    }
+  }
+
+  async getSubscriptionPlans(activeOnly: boolean = true): Promise<SubscriptionPlan[]> {
+    try {
+      let query = supabase
+        .from('subscription_plans')
+        .select('*')
+        .order('plan_name');
+
+      if (activeOnly) {
+        query = query.eq('is_active', true);
+      }
+
+      const { data: plans, error } = await query;
+
+      if (error) throw error;
+
+      return (plans || []).map(plan => ({
+        id: plan.id,
+        planCode: plan.plan_code,
+        planName: plan.plan_name,
+        description: plan.description,
+        planType: plan.plan_type,
+        billingInterval: plan.billing_interval,
+        intervalCount: plan.interval_count,
+        priceCents: plan.price_cents,
+        currency: plan.currency,
+        trialPeriodDays: plan.trial_period_days,
+        maxUsers: plan.max_users,
+        maxTools: plan.max_tools,
+        features: plan.features || {},
+        isActive: plan.is_active,
+        stripePriceId: plan.stripe_price_id,
+        squareCatalogId: plan.square_catalog_id,
+        metadata: plan.metadata || {},
+        createdAt: plan.created_at,
+        updatedAt: plan.updated_at
+      }));
+    } catch (error) {
+      console.error('Error fetching subscription plans:', error);
+      throw error;
+    }
+  }
+
+  async getAccountSubscriptions(accountId: string): Promise<AccountSubscription[]> {
+    try {
+      const { data: subscriptions, error } = await supabase
+        .from('subscriptions')
+        .select(`
+          *,
+          subscription_plans:plan_id (
+            plan_code,
+            plan_name,
+            description,
+            price_cents,
+            currency,
+            billing_interval
+          ),
+          payment_methods:payment_method_id (
+            method_type,
+            last_four,
+            brand,
+            exp_month,
+            exp_year
+          )
+        `)
+        .eq('account_id', accountId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      return (subscriptions || []).map(sub => ({
+        id: sub.id,
+        accountId: sub.account_id,
+        planId: sub.plan_id,
+        status: sub.status,
+        currentPeriodStart: sub.current_period_start,
+        currentPeriodEnd: sub.current_period_end,
+        trialStart: sub.trial_start,
+        trialEnd: sub.trial_end,
+        cancelAtPeriodEnd: sub.cancel_at_period_end,
+        canceledAt: sub.canceled_at,
+        endedAt: sub.ended_at,
+        stripeSubscriptionId: sub.stripe_subscription_id,
+        squareSubscriptionId: sub.square_subscription_id,
+        paymentMethodId: sub.payment_method_id,
+        billingContactProfileId: sub.billing_contact_profile_id,
+        quantity: sub.quantity,
+        discountPercent: sub.discount_percent,
+        metadata: sub.metadata || {},
+        createdAt: sub.created_at,
+        updatedAt: sub.updated_at,
+        plan: sub.subscription_plans ? {
+          planCode: sub.subscription_plans.plan_code,
+          planName: sub.subscription_plans.plan_name,
+          description: sub.subscription_plans.description,
+          priceCents: sub.subscription_plans.price_cents,
+          currency: sub.subscription_plans.currency,
+          billingInterval: sub.subscription_plans.billing_interval
+        } : null,
+        paymentMethod: sub.payment_methods ? {
+          methodType: sub.payment_methods.method_type,
+          lastFour: sub.payment_methods.last_four,
+          brand: sub.payment_methods.brand,
+          expMonth: sub.payment_methods.exp_month,
+          expYear: sub.payment_methods.exp_year
+        } : null
+      }));
+    } catch (error) {
+      console.error('Error fetching account subscriptions:', error);
+      throw error;
+    }
+  }
+
+  async processPayment(accountId: string, amount: number, options?: {
+    currency?: string;
+    paymentMethodId?: string;
+    subscriptionId?: string;
+    description?: string;
+  }): Promise<{ paymentId: string; success: boolean; message: string }> {
+    try {
+      const { data, error } = await supabase.rpc('process_payment', {
+        p_account_id: accountId,
+        p_amount_cents: Math.round(amount * 100), // Convert to cents
+        p_currency: options?.currency || 'USD',
+        p_payment_method_id: options?.paymentMethodId || null,
+        p_subscription_id: options?.subscriptionId || null,
+        p_description: options?.description || null
+      });
+
+      if (error) throw error;
+
+      const result = data[0];
+      await this.logProfileActivity({
+        profileId: this.getCurrentProfileId(),
+        activityType: 'payment_processed',
+        targetType: 'payment',
+        targetId: result.payment_id,
+        description: `Processed payment for account ${accountId}: $${amount}`,
+        metadata: { amount, ...options }
+      });
+
+      return {
+        paymentId: result.payment_id,
+        success: result.success,
+        message: result.message
+      };
+    } catch (error) {
+      console.error('Error processing payment:', error);
+      throw error;
+    }
+  }
+
+  async generateInvoice(subscriptionId: string, options?: {
+    billingPeriodStart?: string;
+    billingPeriodEnd?: string;
+  }): Promise<{ invoiceId: string; success: boolean; message: string }> {
+    try {
+      const { data, error } = await supabase.rpc('generate_invoice', {
+        p_subscription_id: subscriptionId,
+        p_billing_period_start: options?.billingPeriodStart || null,
+        p_billing_period_end: options?.billingPeriodEnd || null
+      });
+
+      if (error) throw error;
+
+      const result = data[0];
+      await this.logProfileActivity({
+        profileId: this.getCurrentProfileId(),
+        activityType: 'invoice_generated',
+        targetType: 'invoice',
+        targetId: result.invoice_id,
+        description: `Generated invoice for subscription ${subscriptionId}`,
+        metadata: { subscriptionId, ...options }
+      });
+
+      return {
+        invoiceId: result.invoice_id,
+        success: result.success,
+        message: result.message
+      };
+    } catch (error) {
+      console.error('Error generating invoice:', error);
+      throw error;
+    }
+  }
+
+  async getAccountInvoices(accountId: string, options?: {
+    limit?: number;
+    status?: string;
+  }): Promise<AccountInvoice[]> {
+    try {
+      let query = supabase
+        .from('billing_invoices')
+        .select(`
+          *,
+          subscriptions:subscription_id (
+            id,
+            status,
+            plan_id
+          ),
+          invoice_line_items (
+            id,
+            description,
+            quantity,
+            unit_price_cents,
+            total_cents,
+            period_start,
+            period_end
+          )
+        `)
+        .eq('account_id', accountId)
+        .order('created_at', { ascending: false });
+
+      if (options?.status) {
+        query = query.eq('status', options.status);
+      }
+
+      if (options?.limit) {
+        query = query.limit(options.limit);
+      }
+
+      const { data: invoices, error } = await query;
+
+      if (error) throw error;
+
+      return (invoices || []).map(invoice => ({
+        id: invoice.id,
+        accountId: invoice.account_id,
+        subscriptionId: invoice.subscription_id,
+        invoiceNumber: invoice.invoice_number,
+        status: invoice.status,
+        subtotalCents: invoice.subtotal_cents,
+        taxCents: invoice.tax_cents,
+        discountCents: invoice.discount_cents,
+        totalCents: invoice.total_cents,
+        currency: invoice.currency,
+        dueDate: invoice.due_date,
+        paidAt: invoice.paid_at,
+        billingPeriodStart: invoice.billing_period_start,
+        billingPeriodEnd: invoice.billing_period_end,
+        billingAddress: invoice.billing_address || {},
+        notes: invoice.notes,
+        pdfUrl: invoice.pdf_url,
+        stripeInvoiceId: invoice.stripe_invoice_id,
+        squareInvoiceId: invoice.square_invoice_id,
+        metadata: invoice.metadata || {},
+        createdAt: invoice.created_at,
+        updatedAt: invoice.updated_at,
+        subscription: invoice.subscriptions ? {
+          id: invoice.subscriptions.id,
+          status: invoice.subscriptions.status,
+          planId: invoice.subscriptions.plan_id
+        } : null,
+        lineItems: (invoice.invoice_line_items || []).map((item: any) => ({
+          id: item.id,
+          description: item.description,
+          quantity: item.quantity,
+          unitPriceCents: item.unit_price_cents,
+          totalCents: item.total_cents,
+          periodStart: item.period_start,
+          periodEnd: item.period_end
+        }))
+      }));
+    } catch (error) {
+      console.error('Error fetching account invoices:', error);
+      throw error;
+    }
+  }
+
+  async getPaymentHistory(accountId: string, options?: {
+    limit?: number;
+    status?: string;
+    subscriptionId?: string;
+  }): Promise<PaymentHistory[]> {
+    try {
+      let query = supabase
+        .from('payments')
+        .select(`
+          *,
+          payment_methods:payment_method_id (
+            method_type,
+            last_four,
+            brand
+          ),
+          subscriptions:subscription_id (
+            id,
+            status
+          )
+        `)
+        .eq('account_id', accountId)
+        .order('created_at', { ascending: false });
+
+      if (options?.status) {
+        query = query.eq('status', options.status);
+      }
+
+      if (options?.subscriptionId) {
+        query = query.eq('subscription_id', options.subscriptionId);
+      }
+
+      if (options?.limit) {
+        query = query.limit(options.limit);
+      }
+
+      const { data: payments, error } = await query;
+
+      if (error) throw error;
+
+      return (payments || []).map(payment => ({
+        id: payment.id,
+        accountId: payment.account_id,
+        subscriptionId: payment.subscription_id,
+        invoiceId: payment.invoice_id,
+        paymentMethodId: payment.payment_method_id,
+        amountCents: payment.amount_cents,
+        currency: payment.currency,
+        status: payment.status,
+        paymentType: payment.payment_type,
+        description: payment.description,
+        stripePaymentIntentId: payment.stripe_payment_intent_id,
+        stripeChargeId: payment.stripe_charge_id,
+        squarePaymentId: payment.square_payment_id,
+        gatewayResponse: payment.gateway_response || {},
+        failureReason: payment.failure_reason,
+        processedAt: payment.processed_at,
+        refundedAt: payment.refunded_at,
+        refundAmountCents: payment.refund_amount_cents,
+        metadata: payment.metadata || {},
+        createdAt: payment.created_at,
+        updatedAt: payment.updated_at,
+        paymentMethod: payment.payment_methods ? {
+          methodType: payment.payment_methods.method_type,
+          lastFour: payment.payment_methods.last_four,
+          brand: payment.payment_methods.brand
+        } : null,
+        subscription: payment.subscriptions ? {
+          id: payment.subscriptions.id,
+          status: payment.subscriptions.status
+        } : null
+      }));
+    } catch (error) {
+      console.error('Error fetching payment history:', error);
+      throw error;
+    }
+  }
+
+  async getBillingEvents(accountId: string, options?: {
+    limit?: number;
+    eventType?: string;
+    processed?: boolean;
+  }): Promise<BillingEvent[]> {
+    try {
+      let query = supabase
+        .from('billing_events')
+        .select('*')
+        .eq('account_id', accountId)
+        .order('created_at', { ascending: false });
+
+      if (options?.eventType) {
+        query = query.eq('event_type', options.eventType);
+      }
+
+      if (options?.processed !== undefined) {
+        query = query.eq('processed', options.processed);
+      }
+
+      if (options?.limit) {
+        query = query.limit(options.limit);
+      }
+
+      const { data: events, error } = await query;
+
+      if (error) throw error;
+
+      return (events || []).map(event => ({
+        id: event.id,
+        accountId: event.account_id,
+        eventType: event.event_type,
+        eventData: event.event_data || {},
+        subscriptionId: event.subscription_id,
+        paymentId: event.payment_id,
+        invoiceId: event.invoice_id,
+        gatewayEventId: event.gateway_event_id,
+        processed: event.processed,
+        processedAt: event.processed_at,
+        errorMessage: event.error_message,
+        retryCount: event.retry_count,
+        createdAt: event.created_at
+      }));
+    } catch (error) {
+      console.error('Error fetching billing events:', error);
+      throw error;
+    }
+  }
+
+  async updateSubscription(subscriptionId: string, updates: {
+    status?: string;
+    quantity?: number;
+    cancelAtPeriodEnd?: boolean;
+    metadata?: Record<string, any>;
+  }): Promise<{ success: boolean; message: string }> {
+    try {
+      const { error } = await supabase
+        .from('subscriptions')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', subscriptionId);
+
+      if (error) throw error;
+
+      await this.logProfileActivity({
+        profileId: this.getCurrentProfileId(),
+        activityType: 'subscription_updated',
+        targetType: 'subscription',
+        targetId: subscriptionId,
+        description: `Updated subscription ${subscriptionId}`,
+        metadata: updates
+      });
+
+      return {
+        success: true,
+        message: 'Subscription updated successfully'
+      };
+    } catch (error) {
+      console.error('Error updating subscription:', error);
+      throw error;
+    }
+  }
+
+  private getCurrentProfileId(): string {
+    // This would typically get the current user's profile ID from authentication context
+    // For now, return a placeholder - this should be implemented based on your auth system
+    return 'current-user-profile-id';
   }
 }
 
