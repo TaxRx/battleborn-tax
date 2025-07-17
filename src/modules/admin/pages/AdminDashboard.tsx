@@ -48,7 +48,8 @@ import {
   CreditCard,
   FileText as FileTextIcon,
   Activity,
-  Database
+  Database,
+  Cog
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import CreateClientModal from '../components/CreateClientModal';
@@ -58,6 +59,7 @@ import RDClientManagement from '../../../components/RDClientManagement';
 import PartnersList from '../components/PartnersList'; // Import the new component
 import AccountManagement from '../components/AccountManagement';
 import BulkActivityOperations from '../components/BulkActivityOperations';
+import ToolManagement from '../components/tools/ToolManagement';
 
 const proposalService = ProposalService.getInstance();
 
@@ -149,6 +151,7 @@ const AdminDashboard: React.FC = () => {
   const navigationItems = [
     { name: 'Dashboard', href: '/admin', icon: Home, current: location.pathname === '/admin' },
     { name: 'Account Management', href: '/admin/accounts', icon: Users, current: location.pathname === '/admin/accounts' },
+    { name: 'Tool Management', href: '/admin/tool-management', icon: Cog, current: location.pathname === '/admin/tool-management' },
     { name: 'Activity Analytics', href: '/admin/activity-analytics', icon: Activity, current: location.pathname === '/admin/activity-analytics' },
     { name: 'Client Management', href: '/admin/clients', icon: Users, current: location.pathname === '/admin/clients' },
     { name: 'R&D Clients', href: '/admin/rd-clients', icon: Zap, current: location.pathname === '/admin/rd-clients' },
@@ -338,6 +341,7 @@ const AdminDashboard: React.FC = () => {
               } 
             />
             <Route path="/accounts" element={<AccountManagement />} />
+            <Route path="/tool-management" element={<ToolManagement />} />
             <Route path="/activity-analytics" element={<BulkActivityOperations />} />
             <Route path="/clients" element={<UnifiedClientDashboard />} />
             <Route path="/rd-clients" element={<RDClientManagement />} />

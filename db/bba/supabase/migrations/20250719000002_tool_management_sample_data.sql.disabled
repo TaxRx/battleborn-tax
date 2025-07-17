@@ -1,0 +1,310 @@
+-- Epic 3 Sprint 2: Tool Management Sample Data and Validation
+-- File: 20250719000002_tool_management_sample_data.sql
+-- Purpose: Create sample data for testing tool management system and validate schema
+-- Sprint 2 Day 1: Schema validation and performance testing
+
+BEGIN;
+
+-- ========= PART 1: CREATE SAMPLE TOOLS =========
+
+-- Insert sample tools if they don't exist
+INSERT INTO public.tools (id, name, slug, description, status) VALUES
+    ('00000000-0000-4000-8000-000000000001', 'Tax Calculator Pro', 'tax-calculator-pro', 'Advanced tax calculation engine with multi-state support', 'active'),
+    ('00000000-0000-4000-8000-000000000002', 'R&D Credit Wizard', 'rd-credit-wizard', 'Research and development tax credit calculation tool', 'active'),
+    ('00000000-0000-4000-8000-000000000003', 'Augusta Rule Calculator', 'augusta-rule-calculator', 'Home office rental deduction calculator', 'active'),
+    ('00000000-0000-4000-8000-000000000004', 'Cost Segregation Tool', 'cost-segregation-tool', 'Depreciation acceleration analysis platform', 'active'),
+    ('00000000-0000-4000-8000-000000000005', 'FMC Strategy Planner', 'fmc-strategy-planner', 'Family management company structure planning', 'active'),
+    ('00000000-0000-4000-8000-000000000006', 'Document Center', 'document-center', 'Secure document storage and collaboration platform', 'active')
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    description = EXCLUDED.description,
+    status = EXCLUDED.status;
+
+-- ========= PART 2: CREATE SAMPLE ACCOUNTS =========
+
+-- Insert sample accounts for testing (if they don't exist)
+INSERT INTO public.accounts (id, name, type, created_at) VALUES
+    ('10000000-0000-4000-8000-000000000001', 'Battle Born Admin', 'admin', NOW()),
+    ('10000000-0000-4000-8000-000000000002', 'Premium Partners LLC', 'affiliate', NOW()),
+    ('10000000-0000-4000-8000-000000000003', 'Tech Solutions Group', 'affiliate', NOW()),
+    ('10000000-0000-4000-8000-000000000004', 'Enterprise Client Corp', 'client', NOW()),
+    ('10000000-0000-4000-8000-000000000005', 'Small Business Inc', 'client', NOW()),
+    ('10000000-0000-4000-8000-000000000006', 'Tax Expert Services', 'expert', NOW())
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    type = EXCLUDED.type;
+
+-- ========= PART 3: CREATE SAMPLE TOOL ASSIGNMENTS =========
+
+-- Create diverse tool assignments for testing
+INSERT INTO public.account_tool_access (
+    account_id, 
+    tool_id, 
+    access_level, 
+    subscription_level, 
+    expires_at, 
+    notes, 
+    status,
+    features_enabled,
+    usage_limits
+) VALUES
+    -- Admin account gets full access to all tools
+    ('10000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'full', 'enterprise', NULL, 'Admin access', 'active', '{"all_features": true}', '{"unlimited": true}'),
+    ('10000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002', 'full', 'enterprise', NULL, 'Admin access', 'active', '{"all_features": true}', '{"unlimited": true}'),
+    ('10000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000003', 'full', 'enterprise', NULL, 'Admin access', 'active', '{"all_features": true}', '{"unlimited": true}'),
+    ('10000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000004', 'full', 'enterprise', NULL, 'Admin access', 'active', '{"all_features": true}', '{"unlimited": true}'),
+    ('10000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000005', 'full', 'enterprise', NULL, 'Admin access', 'active', '{"all_features": true}', '{"unlimited": true}'),
+    ('10000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000006', 'full', 'enterprise', NULL, 'Admin access', 'active', '{"all_features": true}', '{"unlimited": true}'),
+    
+    -- Premium partner gets premium access to most tools
+    ('10000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001', 'full', 'premium', NOW() + INTERVAL '1 year', 'Premium partner subscription', 'active', '{"advanced_features": true, "api_access": true}', '{"monthly_calculations": 1000, "exports": 100}'),
+    ('10000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000002', 'full', 'premium', NOW() + INTERVAL '1 year', 'Premium partner subscription', 'active', '{"advanced_features": true, "bulk_operations": true}', '{"monthly_calculations": 500}'),
+    ('10000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000003', 'limited', 'basic', NOW() + INTERVAL '6 months', 'Limited access trial', 'active', '{"basic_calculations": true}', '{"monthly_calculations": 50}'),
+    ('10000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000006', 'full', 'premium', NOW() + INTERVAL '1 year', 'Document collaboration', 'active', '{"storage_limit_gb": 100, "collaboration": true}', '{"monthly_uploads": 500}'),
+    
+    -- Regular affiliate with basic access
+    ('10000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000001', 'limited', 'basic', NOW() + INTERVAL '6 months', 'Basic affiliate access', 'active', '{"basic_calculations": true}', '{"monthly_calculations": 100}'),
+    ('10000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000002', 'limited', 'basic', NOW() + INTERVAL '6 months', 'Trial access', 'active', '{"basic_features": true}', '{"monthly_calculations": 25}'),
+    ('10000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000006', 'limited', 'basic', NOW() + INTERVAL '3 months', 'Basic document access', 'active', '{"storage_limit_gb": 10}', '{"monthly_uploads": 50}'),
+    
+    -- Enterprise client with custom setup
+    ('10000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-000000000001', 'full', 'enterprise', NOW() + INTERVAL '2 years', 'Enterprise client contract', 'active', '{"all_features": true, "custom_branding": true, "priority_support": true}', '{"unlimited": true}'),
+    ('10000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-000000000004', 'full', 'enterprise', NOW() + INTERVAL '2 years', 'Cost segregation analysis', 'active', '{"advanced_analytics": true, "custom_reports": true}', '{"unlimited": true}'),
+    ('10000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-000000000006', 'full', 'enterprise', NOW() + INTERVAL '2 years', 'Enterprise document management', 'active', '{"unlimited_storage": true, "advanced_security": true}', '{"unlimited": true}'),
+    
+    -- Small business with trial access
+    ('10000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000001', 'limited', 'trial', NOW() + INTERVAL '30 days', '30-day trial period', 'active', '{"basic_calculations": true}', '{"trial_calculations": 10}'),
+    ('10000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000003', 'limited', 'trial', NOW() + INTERVAL '30 days', 'Augusta rule trial', 'active', '{"basic_features": true}', '{"trial_calculations": 5}'),
+    
+    -- Expert account with specialized access
+    ('10000000-0000-4000-8000-000000000006', '00000000-0000-4000-8000-000000000001', 'full', 'premium', NOW() + INTERVAL '1 year', 'Expert consultant access', 'active', '{"expert_mode": true, "advanced_analytics": true}', '{"monthly_calculations": 2000}'),
+    ('10000000-0000-4000-8000-000000000006', '00000000-0000-4000-8000-000000000002', 'full', 'premium', NOW() + INTERVAL '1 year', 'R&D expert analysis', 'active', '{"expert_mode": true, "detailed_reporting": true}', '{"monthly_calculations": 1000}'),
+    ('10000000-0000-4000-8000-000000000006', '00000000-0000-4000-8000-000000000004', 'full', 'premium', NOW() + INTERVAL '1 year', 'Cost segregation expertise', 'active', '{"expert_mode": true, "custom_analysis": true}', '{"monthly_calculations": 500}'),
+    
+    -- Some expired access for testing
+    ('10000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000003', 'limited', 'basic', NOW() - INTERVAL '7 days', 'Expired trial access', 'expired', '{"basic_features": true}', '{"monthly_calculations": 25}'),
+    ('10000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000002', 'limited', 'trial', NOW() - INTERVAL '5 days', 'Expired R&D trial', 'expired', '{"basic_features": true}', '{"trial_calculations": 5}')
+ON CONFLICT (account_id, tool_id) DO UPDATE SET
+    access_level = EXCLUDED.access_level,
+    subscription_level = EXCLUDED.subscription_level,
+    expires_at = EXCLUDED.expires_at,
+    notes = EXCLUDED.notes,
+    status = EXCLUDED.status,
+    features_enabled = EXCLUDED.features_enabled,
+    usage_limits = EXCLUDED.usage_limits;
+
+-- ========= PART 4: CREATE SAMPLE USAGE DATA =========
+
+-- Function to generate realistic usage data
+CREATE OR REPLACE FUNCTION generate_sample_usage_data() RETURNS void AS $$
+DECLARE
+    account_rec RECORD;
+    tool_rec RECORD;
+    day_offset INTEGER;
+    usage_count INTEGER;
+    i INTEGER;
+    random_action TEXT;
+    random_feature TEXT;
+    random_duration INTEGER;
+    random_success BOOLEAN;
+    actions TEXT[] := ARRAY['tool_access', 'feature_use', 'calculation_run', 'data_export', 'document_upload', 'report_generation'];
+    features TEXT[] := ARRAY['basic_calc', 'advanced_calc', 'bulk_upload', 'export_pdf', 'export_excel', 'collaboration', 'api_access'];
+BEGIN
+    -- Generate usage data for the last 30 days
+    FOR day_offset IN 1..30 LOOP
+        -- For each active tool assignment
+        FOR account_rec IN 
+            SELECT DISTINCT account_id 
+            FROM public.account_tool_access 
+            WHERE status = 'active'
+        LOOP
+            FOR tool_rec IN 
+                SELECT tool_id 
+                FROM public.account_tool_access 
+                WHERE account_id = account_rec.account_id AND status = 'active'
+            LOOP
+                -- Generate 0-5 usage events per day per tool
+                usage_count := floor(random() * 6)::integer;
+                
+                FOR i IN 1..usage_count LOOP
+                    -- Random usage properties
+                    random_action := actions[floor(random() * array_length(actions, 1) + 1)];
+                    random_feature := features[floor(random() * array_length(features, 1) + 1)];
+                    random_duration := floor(random() * 3600)::integer; -- 0-1 hour
+                    random_success := random() > 0.1; -- 90% success rate
+                    
+                    INSERT INTO public.tool_usage_logs (
+                        account_id,
+                        tool_id,
+                        action,
+                        feature_used,
+                        duration_seconds,
+                        data_volume_mb,
+                        success,
+                        error_code,
+                        metadata,
+                        created_at
+                    ) VALUES (
+                        account_rec.account_id,
+                        tool_rec.tool_id,
+                        random_action,
+                        random_feature,
+                        random_duration,
+                        CASE WHEN random_action = 'data_export' THEN random() * 50 ELSE NULL END,
+                        random_success,
+                        CASE WHEN NOT random_success THEN 'ERR_' || floor(random() * 1000)::text ELSE NULL END,
+                        jsonb_build_object(
+                            'generated', true,
+                            'sample_data', true,
+                            'day_offset', day_offset
+                        ),
+                        NOW() - (day_offset || ' days')::interval + (random() * interval '23 hours')
+                    );
+                END LOOP;
+            END LOOP;
+        END LOOP;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Generate the sample usage data
+SELECT generate_sample_usage_data();
+
+-- Clean up the temporary function
+DROP FUNCTION generate_sample_usage_data();
+
+-- ========= PART 5: VALIDATION QUERIES =========
+
+-- Create validation view to check data integrity
+CREATE OR REPLACE VIEW tool_management_validation AS
+SELECT 
+    'Tool Assignments' as category,
+    COUNT(*) as total_count,
+    COUNT(*) FILTER (WHERE status = 'active') as active_count,
+    COUNT(*) FILTER (WHERE status = 'expired') as expired_count,
+    COUNT(*) FILTER (WHERE expires_at IS NOT NULL AND expires_at <= NOW()) as should_be_expired_count,
+    COUNT(*) FILTER (WHERE subscription_level = 'enterprise') as enterprise_count,
+    COUNT(*) FILTER (WHERE subscription_level = 'premium') as premium_count,
+    COUNT(*) FILTER (WHERE subscription_level = 'basic') as basic_count,
+    COUNT(*) FILTER (WHERE subscription_level = 'trial') as trial_count
+FROM public.account_tool_access
+
+UNION ALL
+
+SELECT 
+    'Usage Logs' as category,
+    COUNT(*) as total_count,
+    COUNT(*) FILTER (WHERE success = true) as active_count,
+    COUNT(*) FILTER (WHERE success = false) as expired_count,
+    COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '24 hours') as should_be_expired_count,
+    COUNT(*) FILTER (WHERE action = 'tool_access') as enterprise_count,
+    COUNT(*) FILTER (WHERE action = 'calculation_run') as premium_count,
+    COUNT(*) FILTER (WHERE action = 'data_export') as basic_count,
+    COUNT(*) FILTER (WHERE data_volume_mb > 0) as trial_count
+FROM public.tool_usage_logs
+
+UNION ALL
+
+SELECT 
+    'Tools' as category,
+    COUNT(*) as total_count,
+    COUNT(*) FILTER (WHERE status = 'active') as active_count,
+    COUNT(*) FILTER (WHERE status = 'deprecated') as expired_count,
+    0 as should_be_expired_count,
+    0 as enterprise_count,
+    0 as premium_count,
+    0 as basic_count,
+    0 as trial_count
+FROM public.tools
+
+UNION ALL
+
+SELECT 
+    'Accounts' as category,
+    COUNT(*) as total_count,
+    COUNT(*) FILTER (WHERE type = 'admin') as active_count,
+    COUNT(*) FILTER (WHERE type = 'affiliate') as expired_count,
+    COUNT(*) FILTER (WHERE type = 'client') as should_be_expired_count,
+    COUNT(*) FILTER (WHERE type = 'expert') as enterprise_count,
+    0 as premium_count,
+    0 as basic_count,
+    0 as trial_count
+FROM public.accounts;
+
+COMMENT ON VIEW tool_management_validation IS 'Validation summary of tool management system data';
+
+-- ========= PART 6: PERFORMANCE TEST QUERIES =========
+
+-- Test query performance for common operations
+CREATE OR REPLACE FUNCTION test_tool_management_performance() RETURNS TABLE(
+    test_name TEXT,
+    execution_time_ms NUMERIC,
+    row_count BIGINT
+) AS $$
+DECLARE
+    start_time TIMESTAMP;
+    end_time TIMESTAMP;
+    result_count BIGINT;
+BEGIN
+    -- Test 1: Tool assignment matrix query
+    start_time := clock_timestamp();
+    SELECT COUNT(*) INTO result_count FROM active_tool_assignments;
+    end_time := clock_timestamp();
+    test_name := 'Active Tool Assignments View';
+    execution_time_ms := EXTRACT(EPOCH FROM (end_time - start_time)) * 1000;
+    row_count := result_count;
+    RETURN NEXT;
+    
+    -- Test 2: Usage analytics query
+    start_time := clock_timestamp();
+    SELECT COUNT(*) INTO result_count FROM tool_usage_summary;
+    end_time := clock_timestamp();
+    test_name := 'Tool Usage Summary View';
+    execution_time_ms := EXTRACT(EPOCH FROM (end_time - start_time)) * 1000;
+    row_count := result_count;
+    RETURN NEXT;
+    
+    -- Test 3: Account-specific usage logs
+    start_time := clock_timestamp();
+    SELECT COUNT(*) INTO result_count 
+    FROM tool_usage_logs 
+    WHERE account_id = '10000000-0000-4000-8000-000000000002'
+      AND created_at >= NOW() - INTERVAL '30 days';
+    end_time := clock_timestamp();
+    test_name := 'Account Usage Logs (30 days)';
+    execution_time_ms := EXTRACT(EPOCH FROM (end_time - start_time)) * 1000;
+    row_count := result_count;
+    RETURN NEXT;
+    
+    -- Test 4: Expiring tool access
+    start_time := clock_timestamp();
+    SELECT COUNT(*) INTO result_count 
+    FROM account_tool_access 
+    WHERE expires_at IS NOT NULL 
+      AND expires_at <= NOW() + INTERVAL '7 days'
+      AND status = 'active';
+    end_time := clock_timestamp();
+    test_name := 'Expiring Tool Access (7 days)';
+    execution_time_ms := EXTRACT(EPOCH FROM (end_time - start_time)) * 1000;
+    row_count := result_count;
+    RETURN NEXT;
+    
+    -- Test 5: Tool usage by action type
+    start_time := clock_timestamp();
+    SELECT COUNT(*) INTO result_count 
+    FROM tool_usage_logs 
+    WHERE action = 'calculation_run' 
+      AND created_at >= NOW() - INTERVAL '7 days';
+    end_time := clock_timestamp();
+    test_name := 'Usage by Action Type (7 days)';
+    execution_time_ms := EXTRACT(EPOCH FROM (end_time - start_time)) * 1000;
+    row_count := result_count;
+    RETURN NEXT;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Grant permissions
+GRANT SELECT ON tool_management_validation TO authenticated;
+GRANT EXECUTE ON FUNCTION test_tool_management_performance() TO authenticated;
+
+COMMIT;

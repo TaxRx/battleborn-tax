@@ -5,6 +5,7 @@ import Stripe from 'https://esm.sh/stripe@14.21.0'
 import { handleActivityOperations } from './activity-handler.ts'
 import { handleAccountOperations } from './account-handler.ts'
 import { handleSecurityOperations } from './security-handler.ts'
+import { handleProfileOperations } from './profile-handler.ts'
 
 // CORS headers to allow requests from the browser
 const corsHeaders = {
@@ -72,6 +73,11 @@ serve(async (req) => {
     // Handle activity operations (must be before other routes to catch activity endpoints)
     if (pathname.includes('/activities') || pathname.includes('/activity-summary') || pathname.includes('/recent-activities')) {
       return await handleActivityOperations(req, supabaseServiceClient, corsHeaders);
+    }
+
+    // Handle profile CRUD operations (must be before account routes to catch profile endpoints)
+    if (pathname.includes('/profiles')) {
+      return await handleProfileOperations(req, supabaseServiceClient, corsHeaders);
     }
 
     // Handle account CRUD operations (must be before legacy partner routes)

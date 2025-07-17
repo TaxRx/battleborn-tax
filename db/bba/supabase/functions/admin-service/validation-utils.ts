@@ -1,7 +1,7 @@
 // Epic 3: Admin Service Validation Utilities
 // File: validation-utils.ts
-// Purpose: Comprehensive validation and data integrity checks for account operations
-// Story: 1.2 - Account CRUD Operations
+// Purpose: Comprehensive validation and data integrity checks for account and profile operations
+// Story: 1.2 - Account CRUD Operations, 3.1 - Profile Management CRUD Operations
 
 export interface ValidationResult {
   isValid: boolean;
@@ -352,4 +352,300 @@ export function validateSortParams(sortBy?: string, sortOrder?: string): { sortB
   }
 
   return { sortBy: validSortBy, sortOrder: validSortOrder, errors };
+}
+
+// ========= PROFILE VALIDATION FUNCTIONS =========
+
+export interface ProfileValidationContext {
+  isUpdate?: boolean;
+  existingProfile?: any;
+  checkUniqueness?: boolean;
+  supabase?: any;
+}
+
+/**
+ * Comprehensive profile data validation
+ */
+export function validateProfileData(
+  data: any, 
+  context: ProfileValidationContext = {}
+): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  // Required field validation for creation
+  if (!context.isUpdate) {
+    if (!data.email || typeof data.email !== 'string' || data.email.trim().length === 0) {
+      errors.push('Email is required');
+    } else if (!isValidEmail(data.email)) {
+      errors.push('Invalid email format');
+    } else if (data.email.length > 254) {
+      errors.push('Email must be 254 characters or less');
+    }
+
+    if (!data.full_name || typeof data.full_name !== 'string' || data.full_name.trim().length === 0) {
+      errors.push('Full name is required');
+    } else if (data.full_name.trim().length > 255) {
+      errors.push('Full name must be 255 characters or less');
+    } else if (data.full_name.trim().length < 2) {
+      errors.push('Full name must be at least 2 characters long');
+    }
+
+    if (!data.role || typeof data.role !== 'string') {
+      errors.push('Role is required');
+    } else if (!isValidProfileRole(data.role)) {
+      errors.push('Invalid role. Must be either "admin" or "affiliate"');
+    }
+  }
+
+  // Field validation for updates or when provided
+  if (data.email !== undefined) {
+    if (typeof data.email !== 'string' || data.email.trim().length === 0) {
+      errors.push('Email cannot be empty');
+    } else if (!isValidEmail(data.email)) {
+      errors.push('Invalid email format');
+    } else if (data.email.length > 254) {
+      errors.push('Email must be 254 characters or less');
+    }
+  }
+
+  if (data.full_name !== undefined) {
+    if (typeof data.full_name !== 'string' || data.full_name.trim().length === 0) {
+      errors.push('Full name cannot be empty');
+    } else if (data.full_name.trim().length > 255) {
+      errors.push('Full name must be 255 characters or less');
+    } else if (data.full_name.trim().length < 2) {
+      errors.push('Full name must be at least 2 characters long');
+    }
+  }
+
+  if (data.role !== undefined) {
+    if (!isValidProfileRole(data.role)) {
+      errors.push('Invalid role. Must be either "admin" or "affiliate"');
+    }
+  }
+
+  if (data.status !== undefined) {
+    if (!isValidProfileStatus(data.status)) {
+      errors.push('Invalid status. Must be one of: active, inactive, suspended, pending, locked');
+    }
+  }
+
+  if (data.phone !== undefined && data.phone !== null) {
+    if (typeof data.phone !== 'string') {
+      errors.push('Phone must be a string');
+    } else if (data.phone.length > 0 && !isValidPhoneNumber(data.phone)) {
+      warnings.push('Phone number format may not be valid');
+    } else if (data.phone.length > 20) {
+      errors.push('Phone number must be 20 characters or less');
+    }
+  }
+
+  if (data.timezone !== undefined && data.timezone !== null) {
+    if (typeof data.timezone !== 'string') {
+      errors.push('Timezone must be a string');
+    } else if (data.timezone.length > 50) {
+      errors.push('Timezone must be 50 characters or less');
+    } else if (!isValidTimezone(data.timezone)) {
+      warnings.push('Timezone may not be a valid timezone identifier');
+    }
+  }
+
+  if (data.admin_notes !== undefined && data.admin_notes !== null) {
+    if (typeof data.admin_notes !== 'string') {
+      errors.push('Admin notes must be a string');
+    } else if (data.admin_notes.length > 2000) {
+      errors.push('Admin notes must be 2000 characters or less');
+    }
+  }
+
+  if (data.account_id !== undefined && data.account_id !== null) {
+    if (!isValidUUID(data.account_id)) {
+      errors.push('Account ID must be a valid UUID');
+    }
+  }
+
+  if (data.metadata !== undefined && data.metadata !== null) {
+    if (typeof data.metadata !== 'object' || Array.isArray(data.metadata)) {
+      errors.push('Metadata must be an object');
+    }
+  }
+
+  if (data.preferences !== undefined && data.preferences !== null) {
+    if (typeof data.preferences !== 'object' || Array.isArray(data.preferences)) {
+      errors.push('Preferences must be an object');
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    warnings: warnings.length > 0 ? warnings : undefined
+  };
+}
+
+/**
+ * Validate profile update data
+ */
+export function validateProfileUpdate(
+  data: any,
+  existingProfile: any
+): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  // Basic data validation
+  const basicValidation = validateProfileData(data, { 
+    isUpdate: true, 
+    existingProfile 
+  });
+  
+  errors.push(...basicValidation.errors);
+  if (basicValidation.warnings) {
+    warnings.push(...basicValidation.warnings);
+  }
+
+  // Check for critical status changes
+  if (data.status !== undefined && existingProfile.status !== data.status) {
+    if (existingProfile.role === 'admin' && data.status === 'suspended') {
+      warnings.push('Suspending an admin profile may affect system administration');
+    }
+    
+    if (existingProfile.status === 'locked' && data.status === 'active') {
+      warnings.push('Activating a previously locked profile - ensure security review is complete');
+    }
+  }
+
+  // Check for role changes
+  if (data.role !== undefined && existingProfile.role !== data.role) {
+    if (existingProfile.role === 'admin' && data.role === 'affiliate') {
+      warnings.push('Changing admin to affiliate will remove administrative privileges');
+    }
+    
+    if (existingProfile.role === 'affiliate' && data.role === 'admin') {
+      warnings.push('Changing affiliate to admin will grant administrative privileges');
+    }
+  }
+
+  // Check for email changes
+  if (data.email !== undefined && existingProfile.email !== data.email) {
+    warnings.push('Email change may require re-verification and auth sync');
+    
+    if (data.is_verified === undefined || data.is_verified === true) {
+      warnings.push('Consider setting is_verified to false when changing email');
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    warnings: warnings.length > 0 ? warnings : undefined
+  };
+}
+
+/**
+ * Validate bulk profile operation
+ */
+export function validateBulkProfileOperation(
+  operation: any
+): ValidationResult {
+  const errors: string[] = [];
+
+  if (!operation || typeof operation !== 'object') {
+    errors.push('Bulk operation data is required');
+    return { isValid: false, errors };
+  }
+
+  if (!operation.profileIds || !Array.isArray(operation.profileIds)) {
+    errors.push('Profile IDs array is required');
+  } else {
+    if (operation.profileIds.length === 0) {
+      errors.push('At least one profile ID is required');
+    } else if (operation.profileIds.length > 100) {
+      errors.push('Maximum 100 profiles can be processed in a single bulk operation');
+    }
+
+    // Validate each profile ID
+    for (const profileId of operation.profileIds) {
+      if (!isValidUUID(profileId)) {
+        errors.push(`Invalid profile ID: ${profileId}`);
+        break; // Stop after first invalid ID to avoid spam
+      }
+    }
+  }
+
+  if (!operation.operation || typeof operation.operation !== 'string') {
+    errors.push('Operation type is required');
+  } else {
+    const validOperations = [
+      'update_status', 'assign_role', 'remove_role', 
+      'sync_auth', 'reset_password', 'verify_email'
+    ];
+    
+    if (!validOperations.includes(operation.operation)) {
+      errors.push(`Invalid operation. Must be one of: ${validOperations.join(', ')}`);
+    }
+  }
+
+  // Validate operation-specific data
+  if (operation.operation === 'update_status') {
+    if (!operation.data || !operation.data.status) {
+      errors.push('Status is required for update_status operation');
+    } else if (!isValidProfileStatus(operation.data.status)) {
+      errors.push('Invalid status value');
+    }
+  }
+
+  if (operation.operation === 'assign_role') {
+    if (!operation.data || !operation.data.role_name) {
+      errors.push('Role name is required for assign_role operation');
+    }
+  }
+
+  if (operation.operation === 'remove_role') {
+    if (!operation.data || !operation.data.roleId) {
+      errors.push('Role ID is required for remove_role operation');
+    } else if (!isValidUUID(operation.data.roleId)) {
+      errors.push('Invalid role ID format');
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
+/**
+ * Helper function to validate profile role
+ */
+function isValidProfileRole(role: string): boolean {
+  const validRoles = ['admin', 'affiliate'];
+  return validRoles.includes(role);
+}
+
+/**
+ * Helper function to validate profile status
+ */
+function isValidProfileStatus(status: string): boolean {
+  const validStatuses = ['active', 'inactive', 'suspended', 'pending', 'locked'];
+  return validStatuses.includes(status);
+}
+
+/**
+ * Helper function to validate phone number (basic validation)
+ */
+function isValidPhoneNumber(phone: string): boolean {
+  // Basic phone validation - digits, spaces, hyphens, parentheses, plus sign
+  const phoneRegex = /^[\+]?[1-9][\d\s\-\(\)]{8,20}$/;
+  return phoneRegex.test(phone.replace(/\s/g, ''));
+}
+
+/**
+ * Helper function to validate timezone
+ */
+function isValidTimezone(timezone: string): boolean {
+  // Basic timezone validation - common timezone formats
+  const timezoneRegex = /^[A-Za-z][A-Za-z\/\_\-\+0-9]*$/;
+  return timezoneRegex.test(timezone) && timezone.length <= 50;
 }
