@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ResearchDesignService } from "../../../../../services/researchDesignService";
 import { RolesService, Role } from "../../../../../services/rolesService";
 import {
@@ -179,36 +179,8 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
   // IMPORTANT: Always use the selected year ID, fall back to businessYearId only if no year is selected
   const effectiveBusinessYearId = selectedActivityYearId || businessYearId;
 
-  // CRITICAL: Clear state when business context changes to prevent data leakage
-  // Use a ref to track the last business year ID to prevent infinite loops
-  const lastBusinessYearRef = useRef<string>('');
-  
-  useEffect(() => {
-    const currentYearId = selectedActivityYearId || businessYearId;
-    
-    // Only clear state if the business year actually changed (not just initial load)
-    if (lastBusinessYearRef.current && currentYearId !== lastBusinessYearRef.current) {
-      console.log('🔄 Research Design: Business context changed, clearing state for new business year:', { selectedActivityYearId, businessYearId });
-      
-      // Clear all local state to prevent data leakage between businesses
-      setSelectedActivities([]);
-      setActivitiesWithSteps([]);
-      setSelectedSteps([]);
-      setSelectedSubcomponents([]);
-      setSubcomponentStates({});
-      setResearchSteps([]);
-      setRoles([]);
-      setActiveActivityIndex(0);
-      setActiveStepIndex(0);
-      setNonRdPercentage(0);
-      setShowStepAllocation(false);
-      
-      console.log('✅ Research Design state cleared for new business context');
-    }
-    
-    // Update the ref to track the current business year
-    lastBusinessYearRef.current = currentYearId;
-  }, [selectedActivityYearId, businessYearId]); // Reset when business year changes
+  // Note: Data isolation is now handled by parent component via key prop
+  // which forces complete component remount when switching businesses
 
   // Helper functions to handle both old and new data structures
   const getActivityName = (activity: any) => {

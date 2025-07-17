@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Users, Settings, ChevronDown, ChevronRight, Check, X, Download, Calculator, Calendar, Briefcase, Package } from 'lucide-react';
 import { supabase } from '../../../../../lib/supabase';
 import { EmployeeManagementService } from '../../../../../services/employeeManagementService';
@@ -1427,35 +1427,8 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     employeesLength: employees?.length
   });
 
-  // CRITICAL: Clear state when business context changes to prevent data leakage
-  // Use a ref to track the last business year ID to prevent infinite loops
-  const lastBusinessYearRef = useRef<string>('');
-  
-  useEffect(() => {
-    // Only clear state if the business year actually changed (not just initial load)
-    if (lastBusinessYearRef.current && businessYearId !== lastBusinessYearRef.current) {
-      console.log('🔄 Employee Setup: Business context changed, clearing state for new business year:', { businessYearId });
-      
-      // Clear all local state to prevent data leakage between businesses
-      setEmployeesWithData([]);
-      setContractorsWithData([]);
-      setExpenses([]);
-      setRoles([]);
-      setSupplies([]);
-      setSelectedEmployee(null);
-      setSelectedContractor(null);
-      setShowEmployeeDetailModal(false);
-      setShowContractorDetailModal(false);
-      setShowAllocationReport(false);
-      setCsvFile(null);
-      setCsvError(null);
-      
-      console.log('✅ Employee Setup state cleared for new business context');
-    }
-    
-    // Update the ref to track the current business year
-    lastBusinessYearRef.current = businessYearId;
-  }, [businessYearId]); // Reset when business year changes
+  // Note: Data isolation is now handled by parent component via key prop
+  // which forces complete component remount when switching businesses
 
   const loadData = async () => {
     console.log('🔄 EmployeeSetupStep - loadData started');
