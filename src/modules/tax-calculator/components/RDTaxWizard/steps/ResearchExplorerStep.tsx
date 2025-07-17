@@ -9,6 +9,8 @@ interface ResearchExplorerStepProps {
   onUpdate: (updates: any) => void;
   onNext: () => void;
   onPrevious: () => void;
+  businessId?: string;
+  businessYearId?: string;
 }
 
 interface ResearchCategory {
@@ -882,7 +884,9 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
   selectedActivities: selectedActivitiesProp,
   onUpdate,
   onNext,
-  onPrevious
+  onPrevious,
+  businessId,
+  businessYearId
 }) => {
   const [activeTab, setActiveTab] = useState<'roles' | 'activities' | 'design'>('roles');
   const [loading, setLoading] = useState(true);
@@ -1055,28 +1059,19 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
   // Load available business years for the current business
   const loadAvailableBusinessYears = async () => {
     try {
-      console.log('Loading available business years...');
+      console.log('Loading available business years for business ID:', businessId);
       
-      // Get the current business ID from the wizard context or URL params
-      // For now, we'll get the first business (this should be passed from the wizard)
-      const { data: businesses, error: businessError } = await supabase
-        .from('rd_businesses')
-        .select('id')
-        .limit(1);
-
-      console.log('Businesses query result:', { businesses, businessError });
-
-      if (businessError || !businesses || businesses.length === 0) {
-        console.warn('No business found');
+      // Use the business ID passed from parent component
+      if (!businessId) {
+        console.warn('No business ID provided from parent component');
         setAvailableBusinessYears([]);
         setSelectedBusinessYearId('');
         setSelectedYear(2025);
         return;
       }
 
-      const businessId = businesses[0].id;
-      console.log('Found business ID:', businessId);
-      setCurrentBusinessId(businessId); // Add this line to store the business ID
+      console.log('Using business ID from props:', businessId);
+      setCurrentBusinessId(businessId);
 
       // First, let's see ALL business years in the database to debug
       const { data: allBusinessYears, error: allYearsError } = await supabase
