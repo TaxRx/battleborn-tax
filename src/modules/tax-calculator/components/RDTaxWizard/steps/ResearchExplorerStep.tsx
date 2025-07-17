@@ -59,6 +59,7 @@ interface ResearchRole {
   parent_id?: string;
   business_id?: string;
   is_default?: boolean;
+  type?: string | null; // NULL = Direct Participant, "supervisor" = Supervisor, "admin" = Admin
   created_at?: string;
   updated_at?: string;
 }
@@ -307,6 +308,7 @@ const AddRoleModal: React.FC<AddRoleModalProps> = ({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [parentId, setParentId] = useState<string>('');
+  const [roleType, setRoleType] = useState<string | null>(null); // Default: Direct Participant
 
   const handleSave = () => {
     if (!name.trim()) {
@@ -317,13 +319,15 @@ const AddRoleModal: React.FC<AddRoleModalProps> = ({
     onSave({
       name: name.trim(),
       description: description.trim() || undefined,
-      parent_id: parentId || undefined
+      parent_id: parentId || undefined,
+      type: roleType // null for Direct Participant, "supervisor" or "admin"
     });
 
     // Reset form
     setName('');
     setDescription('');
     setParentId('');
+    setRoleType(null);
     onClose();
   };
 
@@ -385,6 +389,57 @@ const AddRoleModal: React.FC<AddRoleModalProps> = ({
               placeholder="Brief description of responsibilities and qualifications..."
               rows={4}
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3 flex items-center">
+              <span className="w-2 h-2 bg-purple-500 rounded-full mr-2"></span>
+              Role Type
+            </label>
+            <div className="flex space-x-3">
+              <button
+                type="button"
+                onClick={() => setRoleType(null)}
+                className={`flex-1 px-4 py-3 rounded-xl border-2 transition-all duration-200 ${
+                  roleType === null
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                }`}
+              >
+                <div className="text-center">
+                  <div className="font-medium">Direct Participant</div>
+                  <div className="text-xs mt-1 opacity-80">Hands-on research work</div>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoleType('supervisor')}
+                className={`flex-1 px-4 py-3 rounded-xl border-2 transition-all duration-200 ${
+                  roleType === 'supervisor'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                }`}
+              >
+                <div className="text-center">
+                  <div className="font-medium">Supervisor</div>
+                  <div className="text-xs mt-1 opacity-80">Manages research team</div>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoleType('admin')}
+                className={`flex-1 px-4 py-3 rounded-xl border-2 transition-all duration-200 ${
+                  roleType === 'admin'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                }`}
+              >
+                <div className="text-center">
+                  <div className="font-medium">Admin</div>
+                  <div className="text-xs mt-1 opacity-80">Administrative support</div>
+                </div>
+              </button>
+            </div>
           </div>
           
           <div>
@@ -1406,8 +1461,10 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       // Prepare the role data
       const roleData: any = {
         name: role.name,
+        description: role.description || null,
         parent_id: validatedParentId,
         is_default: role.is_default || false,
+        type: role.type || null, // null = Direct Participant, "supervisor" or "admin"
         business_year_id: selectedBusinessYearId,
         business_id: currentBusinessId
       };
