@@ -4,7 +4,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // CORS headers to allow requests from the browser
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-requested-with, accept, origin, referer, user-agent, x-client-site',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
+  'Access-Control-Expose-Headers': 'content-length, x-json',
+  'Access-Control-Max-Age': '86400',
 }
 
 // --- Main Server --- //
@@ -23,6 +26,8 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
+    console.log('path',pathname, url)
+
     // --- ROUTING --- //
     if (pathname === '/user-service/register') {
       return await handleRegistration(req, supabaseAdmin)
@@ -32,6 +37,8 @@ serve(async (req) => {
       return await handleSendInvitation(req, supabaseAdmin)
     } else if (pathname === '/user-service/get-profile') {
       return await handleGetProfile(req, supabaseAdmin)
+    } else if (pathname === '/user-service/reset-password') {
+      return await handlePasswordReset(req, supabaseAdmin)
     }
 
     return new Response(JSON.stringify({ error: 'Not Found' }), {
@@ -61,20 +68,111 @@ async function handleRegistration(req, supabaseAdmin) {
     return new Response(JSON.stringify({ error: 'Validation failed', details: validation.errors }), { status: 400 })
   }
 
-  // Create the user and all related records in a single transaction
-  const { data, error } = await supabaseAdmin.rpc('create_user_with_profile_and_business', { 
-      p_email: registrationData.email,
-      p_password: registrationData.password,
-      p_full_name: registrationData.fullName,
-      p_personal_info: registrationData.personalInfo,
-      p_business_info: registrationData.businessInfo
-  })
+  // Determine account type - default to 'client' if not 'affiliate'
+  const accountType = ['affiliate','expert','admin','operator','client'].includes(registrationData.type) ? registrationData.type : 'client';
 
-  if (error) {
-    return new Response(JSON.stringify({ error: `Registration failed: ${error.message}` }), { status: 400 })
+  // Create the user using Supabase auth
+  const { data: authData, error: authError } = await supabaseAdmin.auth.signUp({
+    email: registrationData.email,
+    password: registrationData.password,
+    options: {
+      data: {
+        full_name: registrationData.fullName,
+        personal_info: registrationData.personalInfo,
+        business_info: registrationData.businessInfo,
+        account_type: accountType
+      }
+    }
+  })
+  if (authError) {
+    console.error('Auth signUp failed:', JSON.stringify(authError, null, 2))
+    console.error('Registration data:', JSON.stringify(registrationData, null, 2))
+    return new Response(JSON.stringify({ 
+      error: `Registration failed: ${authError.message}`,
+      details: authError 
+    }), { status: 400 })
   }
 
-  return new Response(JSON.stringify({ success: true, data, message: 'Registration successful. Please check email for verification.' }), {
+  if (!authData.user) {
+    return new Response(JSON.stringify({ error: 'Registration failed - no user created' }), { status: 400 })
+  }
+
+  // Since the trigger approach doesn't work, manually create account and profile
+  try {
+    // Create account
+    const accountName = registrationData.businessInfo?.businessName || registrationData.fullName || authData.user.email;
+    const { data: accountData, error: accountError } = await supabaseAdmin
+      .from('accounts')
+      .insert({
+        name: accountName,
+        type: accountType
+      })
+      .select()
+      .single();
+
+    if (accountError) {
+      console.error('Error creating account:', accountError);
+      throw accountError;
+    }
+
+    // Create profile
+    const { error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .insert({
+        id: authData.user.id,
+        email: registrationData.email,
+        full_name: registrationData.fullName,
+        role: 'admin',
+        account_id: accountData.id
+      });
+
+    if (profileError) {
+      console.error('Error creating profile:', profileError);
+      throw profileError;
+    }
+
+    // Create corresponding record based on account type
+    if (accountType === 'affiliate') {
+      const { error: affiliateError } = await supabaseAdmin
+        .from('affiliates')
+        .insert({
+          account_id: accountData.id
+        });
+
+      if (affiliateError) {
+        console.error('Error creating affiliate:', affiliateError);
+        // Don't fail registration for this
+      }
+    } else if (accountType === 'client') {
+      const { error: clientError } = await supabaseAdmin
+        .from('clients')
+        .insert({
+          full_name: registrationData.fullName,
+          email: registrationData.email,
+          account_id: accountData.id,
+          user_id: authData.user.id,
+          created_by: authData.user.id
+        });
+
+      if (clientError) {
+        console.error('Error creating client:', clientError);
+        // Don't fail registration for this
+      }
+    }
+    // For admin/operator/expert types, we just create the account and profile, no additional records
+
+  } catch (error) {
+    console.error('Error in manual account/profile creation:', error);
+    // Don't fail the registration, just log the error
+  }
+
+  return new Response(JSON.stringify({ 
+    success: true, 
+    data: { 
+      user: authData.user
+    }, 
+    message: 'Registration successful. Please check email for verification.' 
+  }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     status: 200,
   })
@@ -94,13 +192,18 @@ async function handleLogin(req, supabaseAdmin) {
   }
 
   try {
+    console.log('Attempting login for:', email.trim())
+    
     // Sign in user using Supabase auth
     const { data: authData, error: authError } = await supabaseAdmin.auth.signInWithPassword({
       email: email.trim(),
       password: password
     })
 
+    console.log('Auth result:', { authData: !!authData, authError })
+    
     if (authError) {
+      console.log('Auth error details:', authError)
       return new Response(JSON.stringify({ error: authError.message }), { status: 401 })
     }
 
@@ -293,6 +396,48 @@ async function handleGetProfile(req, supabaseAdmin) {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
     })
+}
+
+// --- Handler for Password Reset --- //
+async function handlePasswordReset(req, supabaseAdmin) {
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
+  }
+
+  const { email } = await req.json()
+
+  // Validate input
+  if (!email?.trim()) {
+    return new Response(JSON.stringify({ error: 'Email is required' }), { status: 400 })
+  }
+
+  try {
+    console.log('Requesting password reset for:', email.trim())
+    
+    // Send password reset email using Supabase auth
+    const { data, error } = await supabaseAdmin.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${Deno.env.get('SITE_URL') || 'http://localhost:5174'}/reset-password`,
+    })
+
+    if (error) {
+      console.error('Password reset error:', error)
+      return new Response(JSON.stringify({ error: error.message }), { status: 400 })
+    }
+
+    console.log('Password reset email sent successfully for:', email.trim(), data)
+    
+    return new Response(JSON.stringify({ 
+      success: true, 
+      message: 'Password reset email sent successfully' 
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
+    })
+
+  } catch (error) {
+    console.error('Password reset request error:', error)
+    return new Response(JSON.stringify({ error: 'Failed to send password reset email' }), { status: 500 })
+  }
 }
 
 // --- Validation Logic (reused from original function) --- //

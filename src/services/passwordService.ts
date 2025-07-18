@@ -35,13 +35,23 @@ class PasswordService {
         };
       }
 
-      // Send password reset email
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+      // Send password reset email via user-service
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/user-service/reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email })
       });
 
-      if (error) {
-        return { success: false, error: error.message };
+      if (!response.ok) {
+        const errorData = await response.json();
+        return { success: false, error: errorData.error || 'Failed to send password reset email' };
+      }
+
+      const result = await response.json();
+      if (!result.success) {
+        return { success: false, error: result.error || 'Failed to send password reset email' };
       }
 
       // Track the reset attempt

@@ -134,7 +134,6 @@ SELECT
     p.*,
     au.email as auth_email,
     au.created_at as auth_created_at,
-    au.email_confirmed_at,
     au.last_sign_in_at
 FROM profiles p
 JOIN auth.users au ON p.id = au.id;

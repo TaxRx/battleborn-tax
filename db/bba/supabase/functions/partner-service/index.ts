@@ -5,7 +5,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // CORS headers to allow requests from the browser
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-client-site',
 }
 
 // Helper function to get the user's profile and account info
@@ -50,7 +50,7 @@ serve(async (req) => {
 
     // Get the user's profile and verify they belong to a platform account
     const userProfile = await getUserProfile(supabaseClient, supabaseServiceClient);
-    if (!userProfile || !userProfile.account_id || userProfile.account?.type !== 'platform') {
+    if (!userProfile || !userProfile.account_id || userProfile.account?.type !== 'operator') {
       return new Response(JSON.stringify({ error: 'Forbidden: User is not part of a platform organization' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 403,

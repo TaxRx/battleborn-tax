@@ -132,18 +132,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'active':
-        return <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">Active</span>;
-      case 'inactive':
-        return <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">Inactive</span>;
-      case 'suspended':
-        return <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">Suspended</span>;
-      default:
-        return <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">{status}</span>;
-    }
-  };
+  // Note: Status badge removed since status is in profiles table, not accounts table
 
   const getTypeBadge = (type: string) => {
     const colors = {
@@ -151,6 +140,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
       client: 'bg-blue-100 text-blue-800',
       affiliate: 'bg-green-100 text-green-800',
       expert: 'bg-orange-100 text-orange-800',
+      operator: 'bg-indigo-100 text-indigo-800',
     };
     
     return (
@@ -277,22 +267,14 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
                   onChange={(e) => handleFilterChange({ type: e.target.value || undefined })}
                 >
                   <option value="">All Types</option>
-                  <option value="client">Client</option>
-                  <option value="affiliate">Affiliate</option>
-                  <option value="expert">Expert</option>
                   <option value="admin">Admin</option>
+                  <option value="affiliate">Affiliate</option>
+                  <option value="client">Client</option>
+                  <option value="expert">Expert</option>
+                  <option value="operator">Operator</option>
                 </select>
 
-                <select
-                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={filters.status || ''}
-                  onChange={(e) => handleFilterChange({ status: e.target.value || undefined })}
-                >
-                  <option value="">All Statuses</option>
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                  <option value="suspended">Suspended</option>
-                </select>
+                {/* Status filtering not available at account level - would need to query profiles */}
 
                 <select
                   className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -307,7 +289,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
                   <option value="name_asc">Name A-Z</option>
                   <option value="name_desc">Name Z-A</option>
                   <option value="type_asc">Type A-Z</option>
-                  <option value="status_asc">Status A-Z</option>
+                  {/* Status sorting not available at account level */}
                 </select>
               </div>
             </div>
@@ -381,14 +363,16 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
                           <div className="text-sm font-medium text-gray-900">{account.name}</div>
-                          <div className="text-sm text-gray-500">{account.email}</div>
+                          <div className="text-sm text-gray-500">{account.type}</div>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {getTypeBadge(account.type)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        {getStatusBadge(account.status)}
+                        <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                          Active
+                        </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {account.profiles?.[0]?.count || 0}

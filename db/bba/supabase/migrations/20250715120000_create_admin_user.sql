@@ -12,14 +12,10 @@ BEGIN
             instance_id,
             email,
             encrypted_password,
-            email_confirmed_at,
             created_at,
             updated_at,
             role,
-            aud,
-            confirmation_token,
-            email_change_token_new,
-            recovery_token
+            aud
         ) VALUES (
             '12345678-1234-1234-1234-123456789012',
             '00000000-0000-0000-0000-000000000000',
@@ -27,12 +23,8 @@ BEGIN
             '$2a$10$5jkOHKrW/gTqjEJ7z3sOVeHPbLp/VfC6XK2hYSaG3a3Ql4uuEYvLy', -- 'testpass123' hashed
             NOW(),
             NOW(),
-            NOW(),
             'authenticated',
-            'authenticated',
-            '',
-            '',
-            ''
+            'authenticated'
         );
     END IF;
 END $$;
@@ -69,14 +61,10 @@ BEGIN
             instance_id,
             email,
             encrypted_password,
-            email_confirmed_at,
             created_at,
             updated_at,
             role,
-            aud,
-            confirmation_token,
-            email_change_token_new,
-            recovery_token
+            aud
         ) VALUES (
             '12345678-1234-1234-1234-123456789013',
             '00000000-0000-0000-0000-000000000000',
@@ -84,12 +72,8 @@ BEGIN
             '$2a$10$5jkOHKrW/gTqjEJ7z3sOVeHPbLp/VfC6XK2hYSaG3a3Ql4uuEYvLy', -- 'testpass123' hashed
             NOW(),
             NOW(),
-            NOW(),
             'authenticated',
-            'authenticated',
-            '',
-            '',
-            ''
+            'authenticated'
         );
     END IF;
     
@@ -100,14 +84,10 @@ BEGIN
             instance_id,
             email,
             encrypted_password,
-            email_confirmed_at,
             created_at,
             updated_at,
             role,
-            aud,
-            confirmation_token,
-            email_change_token_new,
-            recovery_token
+            aud
         ) VALUES (
             '12345678-1234-1234-1234-123456789014',
             '00000000-0000-0000-0000-000000000000',
@@ -115,12 +95,8 @@ BEGIN
             '$2a$10$5jkOHKrW/gTqjEJ7z3sOVeHPbLp/VfC6XK2hYSaG3a3Ql4uuEYvLy', -- 'testpass123' hashed
             NOW(),
             NOW(),
-            NOW(),
             'authenticated',
-            'authenticated',
-            '',
-            '',
-            ''
+            'authenticated'
         );
     END IF;
 END $$;

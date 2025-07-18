@@ -36,7 +36,7 @@ import {
 
 interface AccountRequest {
   name: string;
-  type: 'admin' | 'platform' | 'affiliate' | 'client' | 'expert';
+  type: 'admin' | 'operator' | 'affiliate' | 'client' | 'expert';
   address?: string;
   logo_url?: string;
   website_url?: string;
@@ -184,7 +184,7 @@ async function getAccounts(
         if (search) {
           query = query.or(`name.ilike.%${search}%,address.ilike.%${search}%`);
         }
-        if (type && ['admin', 'platform', 'affiliate', 'client', 'expert'].includes(type)) {
+        if (type && ['admin', 'operator', 'affiliate', 'client', 'expert'].includes(type)) {
           query = query.eq('type', type);
         }
 

@@ -159,7 +159,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 COMMENT ON FUNCTION aggregate_daily_usage_metrics IS 'Aggregate daily platform usage metrics';
 
 -- Function to get usage trends
-CREATE OR REPLACE FUNCTION get_usage_trends(
+CREATE OR REPLACE FUNCTION get_platform_usage_trends(
     p_metric_type VARCHAR,
     p_days INTEGER DEFAULT 30,
     p_account_id UUID DEFAULT NULL
@@ -209,7 +209,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-COMMENT ON FUNCTION get_usage_trends IS 'Get usage trends with percentage changes';
+COMMENT ON FUNCTION get_platform_usage_trends IS 'Get platform usage trends with percentage changes';
 
 -- Function to track feature usage
 CREATE OR REPLACE FUNCTION track_feature_usage(
@@ -436,7 +436,7 @@ CREATE POLICY "Admins can view performance metrics" ON public.performance_metric
 
 -- Grant execute permissions
 GRANT EXECUTE ON FUNCTION aggregate_daily_usage_metrics(DATE) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_usage_trends(VARCHAR, INTEGER, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_platform_usage_trends(VARCHAR, INTEGER, UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION track_feature_usage(UUID, VARCHAR, VARCHAR, JSONB) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_feature_adoption_stats(VARCHAR, INTEGER) TO authenticated;
 GRANT EXECUTE ON FUNCTION analyze_performance_metrics(INTEGER, INTEGER) TO authenticated;

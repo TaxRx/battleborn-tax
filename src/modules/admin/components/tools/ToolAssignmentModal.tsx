@@ -79,9 +79,11 @@ const subscriptionLevels = [
 ] as const;
 
 const accessLevels = [
-  { value: 'read', label: 'Read Only', description: 'View data and reports only' },
-  { value: 'write', label: 'Read/Write', description: 'Create and modify data' },
-  { value: 'admin', label: 'Admin Access', description: 'Full access including settings' }
+  { value: 'reporting', label: 'Reporting Only', description: 'View data and reports only' },
+  { value: 'limited', label: 'Limited Access', description: 'Basic functionality access' },
+  { value: 'full', label: 'Full Access', description: 'Complete access to all features' },
+  { value: 'client', label: 'Client Access', description: 'Client-specific features' },
+  { value: 'expert', label: 'Expert Access', description: 'Expert-level functionality' }
 ] as const;
 
 export const ToolAssignmentModal: React.FC<ToolAssignmentModalProps> = ({

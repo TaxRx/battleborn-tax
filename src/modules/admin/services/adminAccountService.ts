@@ -55,12 +55,11 @@ export interface ActivitySummary {
 export interface Account {
   id: string;
   name: string;
-  email: string;
-  phone?: string;
   type: string;
-  status: string;
-  address?: Record<string, any>;
-  metadata?: Record<string, any>;
+  address?: string;
+  logo_url?: string;
+  website_url?: string;
+  stripe_customer_id?: string;
   created_at: string;
   updated_at: string;
   profiles?: { count: number }[];
@@ -69,7 +68,7 @@ export interface Account {
 export interface AccountFilters {
   search?: string;
   type?: string;
-  status?: string;
+  // Note: status filtering would need to be done via profiles table
   page?: number;
   limit?: number;
   sortBy?: string;
@@ -112,20 +111,7 @@ class AdminAccountService {
       if (filters.sortBy) params.append('sortBy', filters.sortBy);
       if (filters.sortOrder) params.append('sortOrder', filters.sortOrder);
 
-      const { data, error } = await supabase.functions.invoke('admin-service', {
-        body: null,
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (error) throw error;
-
-      // Simulate the API call structure since we need to handle the path
-      const url = `${this.baseUrl}/accounts/${accountId}/activities?${params.toString()}`;
-      
-      // For now, let's query directly from Supabase
+      // Query directly from Supabase for account activities
       let query = supabase
         .from('account_activities')
         .select(`
@@ -263,12 +249,11 @@ class AdminAccountService {
         .select(`
           id,
           name,
-          email,
-          phone,
           type,
-          status,
           address,
-          metadata,
+          logo_url,
+          website_url,
+          stripe_customer_id,
           created_at,
           updated_at,
           profiles(count)
@@ -276,29 +261,42 @@ class AdminAccountService {
 
       // Apply filters
       if (filters.search) {
-        query = query.or(`name.ilike.%${filters.search}%,email.ilike.%${filters.search}%`);
+        query = query.or(`name.ilike.%${filters.search}%`);
       }
       if (filters.type) {
         query = query.eq('type', filters.type);
       }
-      if (filters.status) {
-        query = query.eq('status', filters.status);
-      }
+      // Note: status field is in profiles table, not accounts table
+      // if (filters.status) {
+      //   query = query.eq('status', filters.status);
+      // }
 
-      // Apply sorting
+      // Apply sorting - validate sort field to prevent SQL errors
+      let sortField = filters.sortBy || 'created_at';
+      const validSortFields = ['name', 'type', 'created_at', 'updated_at'];
+      
+      // Ensure the sort field is valid
+      if (!validSortFields.includes(sortField)) {
+        console.warn(`Invalid sort field '${sortField}', defaulting to 'created_at'`);
+        sortField = 'created_at';
+      }
+      
       const ascending = filters.sortOrder === 'asc';
-      query = query.order(filters.sortBy || 'created_at', { ascending });
+      query = query.order(sortField, { ascending });
 
       // Apply pagination
       const page = filters.page || 1;
-      const limit = filters.limit || 50;
+      const limit = filters.limit || 25; // Match the frontend default
       const from = (page - 1) * limit;
       const to = from + limit - 1;
       query = query.range(from, to);
 
       const { data: accounts, error, count } = await query;
 
-      if (error) throw error;
+      if (error) {
+        console.error('Database error in getAccounts:', error);
+        throw error;
+      }
 
       return {
         accounts: accounts || [],
@@ -322,12 +320,11 @@ class AdminAccountService {
         .select(`
           id,
           name,
-          email,
-          phone,
           type,
-          status,
           address,
-          metadata,
+          logo_url,
+          website_url,
+          stripe_customer_id,
           created_at,
           updated_at,
           profiles(count)

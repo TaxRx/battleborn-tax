@@ -298,7 +298,7 @@ describe('Profile Management Integration Tests', () => {
         },
         profiles_by_account_type: {
           admin: 5,
-          platform: 20,
+          operator: 20,
           affiliate: 50,
           client: 25
         }

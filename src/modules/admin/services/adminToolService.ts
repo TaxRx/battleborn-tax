@@ -342,11 +342,11 @@ class AdminToolService {
       const [accountsResult, toolsResult] = await Promise.all([
         accountIds.length > 0 ? supabase
           .from('accounts')
-          .select('id, name, email, type, status, created_at')
+          .select('id, name, type, created_at')
           .in('id', accountIds) : { data: [], error: null },
         toolIds.length > 0 ? supabase
           .from('tools')
-          .select('id, name, slug, category, description, status')
+          .select('id, name, slug, description, status')
           .in('id', toolIds) : { data: [], error: null }
       ]);
 
@@ -384,9 +384,6 @@ class AdminToolService {
           notes: assignment.notes || null,
           features_enabled: assignment.featuresEnabled || {},
           usage_limits: assignment.usageLimits || {},
-          notification_settings: assignment.notificationSettings || {},
-          auto_renewal: assignment.autoRenewal || false,
-          renewal_period: assignment.renewalPeriod || null,
           status: 'active',
           granted_at: new Date().toISOString()
         })
@@ -398,7 +395,7 @@ class AdminToolService {
       // Log the assignment activity with enhanced details
       await this.logToolActivity({
         accountId: assignment.accountId,
-        activityType: 'tool_access_granted',
+        activityType: 'admin_action',
         targetType: 'tool',
         targetId: assignment.toolId,
         description: `Tool access granted with ${assignment.subscriptionLevel} subscription${assignment.expiresAt ? ` until ${assignment.expiresAt}` : ' (permanent)'}`,
@@ -408,10 +405,7 @@ class AdminToolService {
           access_level: assignment.accessLevel,
           expires_at: assignment.expiresAt,
           features_enabled: assignment.featuresEnabled,
-          usage_limits: assignment.usageLimits,
-          auto_renewal: assignment.autoRenewal,
-          renewal_period: assignment.renewalPeriod,
-          notification_settings: assignment.notificationSettings
+          usage_limits: assignment.usageLimits
         }
       });
 
@@ -453,7 +447,7 @@ class AdminToolService {
       // Log the unassignment activity
       await this.logToolActivity({
         accountId,
-        activityType: 'tool_access_removed',
+        activityType: 'admin_action',
         targetType: 'tool',
         targetId: toolId,
         description: `Tool access removed (was ${currentAssignment?.subscription_level} subscription)`,
@@ -502,7 +496,7 @@ class AdminToolService {
 
       await this.logToolActivity({
         accountId,
-        activityType: 'tool_access_modified',
+        activityType: 'admin_action',
         targetType: 'tool',
         targetId: toolId,
         description: `Tool access updated: ${Object.keys(changes).join(', ')}`,
@@ -561,7 +555,7 @@ class AdminToolService {
       // Log bulk operation
       await this.logToolActivity({
         accountId: assignments[0]?.accountId, // Use first account for activity logging
-        activityType: 'bulk_tool_assignment',
+        activityType: 'admin_action',
         targetType: 'tool',
         targetId: 'bulk_operation',
         description: `Bulk tool assignment: ${processed} successful, ${failed} failed`,
@@ -659,7 +653,7 @@ class AdminToolService {
     try {
       const { data, error } = await supabase
         .from('tools')
-        .select('id, name, slug, category, description, status')
+        .select('id, name, slug, description, status')
         .eq('status', 'active')
         .order('name');
 
@@ -676,11 +670,10 @@ class AdminToolService {
     try {
       let query = supabase
         .from('accounts')
-        .select('id, name, email, type, status, created_at')
-        .eq('status', 'active');
+        .select('id, name, type, created_at');
 
       if (filters.search) {
-        query = query.or(`name.ilike.%${filters.search}%,email.ilike.%${filters.search}%`);
+        query = query.or(`name.ilike.%${filters.search}%`);
       }
       if (filters.type) {
         query = query.eq('type', filters.type);
@@ -968,7 +961,7 @@ class AdminToolService {
       // Log the tool creation activity
       await this.logToolActivity({
         accountId: '', // System activity - no specific account
-        activityType: 'tool_created',
+        activityType: 'admin_action',
         targetType: 'tool',
         targetId: data.id,
         description: `Tool created: ${toolData.name} (${toolData.slug})`,
@@ -1038,7 +1031,7 @@ class AdminToolService {
 
       await this.logToolActivity({
         accountId: '', // System activity
-        activityType: 'tool_modified',
+        activityType: 'admin_action',
         targetType: 'tool',
         targetId: toolId,
         description: `Tool updated: ${currentTool.name} - ${Object.keys(changes).join(', ')}`,
@@ -1093,7 +1086,7 @@ class AdminToolService {
       // Log the tool deletion activity
       await this.logToolActivity({
         accountId: '', // System activity
-        activityType: 'tool_deleted',
+        activityType: 'admin_action',
         targetType: 'tool',
         targetId: toolId,
         description: `Tool deleted: ${tool.name} (${tool.slug})`,
@@ -1242,16 +1235,8 @@ class AdminToolService {
   // Category management
   async getToolCategories(): Promise<string[]> {
     try {
-      const { data, error } = await supabase
-        .from('tools')
-        .select('category')
-        .order('category');
-
-      if (error) throw error;
-
-      // Return unique categories
-      const categories = [...new Set(data?.map(t => t.category) || [])];
-      return categories.sort();
+      // Categories not needed - return empty array
+      return [];
     } catch (error) {
       console.error('Error fetching tool categories:', error);
       throw error;
@@ -1260,10 +1245,10 @@ class AdminToolService {
 
   async getToolsByCategory(category: string): Promise<Tool[]> {
     try {
+      // Category filtering not needed - return all tools
       const { data, error } = await supabase
         .from('tools')
         .select('*')
-        .eq('category', category)
         .order('name');
 
       if (error) throw error;

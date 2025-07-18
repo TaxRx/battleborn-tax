@@ -6167,7 +6167,7 @@ on "public"."strategy_details"
 as permissive
 for insert
 to public
-with check (((auth.jwt() ->> 'role'::text) = 'admin'::text));
+with check ((EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')));
 
 
 create policy "Admins can update strategy details"
@@ -6175,7 +6175,7 @@ on "public"."strategy_details"
 as permissive
 for update
 to public
-using (((auth.jwt() ->> 'role'::text) = 'admin'::text));
+using ((EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')));
 
 
 create policy "Admins can view all strategy details"
@@ -6183,7 +6183,7 @@ on "public"."strategy_details"
 as permissive
 for select
 to public
-using (((auth.jwt() ->> 'role'::text) = 'admin'::text));
+using ((EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')));
 
 
 create policy "Users can insert their own strategy details"
@@ -6295,7 +6295,7 @@ on "public"."tax_proposals"
 as permissive
 for select
 to public
-using (((auth.jwt() ->> 'role'::text) = 'admin'::text));
+using ((EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin')));
 
 
 create policy "Allow all delete for dev"

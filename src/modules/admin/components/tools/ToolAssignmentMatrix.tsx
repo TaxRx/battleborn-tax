@@ -244,7 +244,7 @@ export const ToolAssignmentMatrix: React.FC<ToolAssignmentMatrixProps> = ({
           accountId,
           toolId,
           subscriptionLevel: 'basic',
-          accessLevel: 'read'
+          accessLevel: 'limited'
         });
         onAssignmentChange?.(accountId, toolId, 'assign');
       }
@@ -488,6 +488,7 @@ export const ToolAssignmentMatrix: React.FC<ToolAssignmentMatrixProps> = ({
           columnCount={columnCount}
           columnWidth={columnWidth}
           height={Math.min(600, rowHeight * Math.min(rowCount, 10))} // Max height with scrolling
+          width={Math.min(1200, columnWidth * columnCount)} // Max width with horizontal scrolling
           rowCount={rowCount}
           rowHeight={rowHeight}
           itemData={gridData}

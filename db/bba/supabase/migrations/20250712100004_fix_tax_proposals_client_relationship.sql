@@ -93,13 +93,13 @@ CREATE POLICY "Client users can update tax proposals" ON tax_proposals
 
 -- Admin policies
 CREATE POLICY "Admins can view all tax proposals" ON tax_proposals
-  FOR SELECT USING (auth.jwt() ->> 'role' = 'admin');
+  FOR SELECT USING (EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
 
 CREATE POLICY "Admins can insert tax proposals" ON tax_proposals
-  FOR INSERT WITH CHECK (auth.jwt() ->> 'role' = 'admin');
+  FOR INSERT WITH CHECK (EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
 
 CREATE POLICY "Admins can update tax proposals" ON tax_proposals
-  FOR UPDATE USING (auth.jwt() ->> 'role' = 'admin');
+  FOR UPDATE USING (EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'));
 
 -- 8. Create a view to get tax proposals with client and affiliate information
 CREATE OR REPLACE VIEW tax_proposals_with_client_info AS

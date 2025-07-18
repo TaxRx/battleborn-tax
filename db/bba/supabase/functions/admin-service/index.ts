@@ -10,7 +10,10 @@ import { handleProfileOperations } from './profile-handler.ts'
 // CORS headers to allow requests from the browser
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-requested-with, accept, origin, referer, user-agent, x-client-site',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
+  'Access-Control-Expose-Headers': 'content-length, x-json',
+  'Access-Control-Max-Age': '86400',
 }
 
 // Helper function to check for admin privileges
@@ -61,8 +64,16 @@ serve(async (req) => {
       })
     }
 
-    // Get the request body to check for pathname
-    const body = await req.json();
+    // Get the request body to check for pathname (only for POST/PUT/PATCH requests)
+    let body = {};
+    try {
+      if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.headers.get('content-length') !== '0') {
+        body = await req.json();
+      }
+    } catch (error) {
+      console.warn('Failed to parse request body:', error);
+      // Continue with empty body object
+    }
     const pathname = body.pathname || new URL(req.url).pathname;
 
     // Handle security operations (highest priority for authentication/authorization)
@@ -101,7 +112,7 @@ serve(async (req) => {
         .from('accounts')
         .insert({
           name: companyName,
-          type: 'platform',
+          type: 'operator',
           logo_url: logoUrl,
           stripe_customer_id: stripeCustomer.id,
         })
@@ -139,11 +150,11 @@ serve(async (req) => {
         status: 200,
       })
     } else if (pathname === '/admin-service/list-partners') {
-      // Query the public.accounts table for platform accounts
+      // Query the public.accounts table for operator accounts
       const { data, error } = await supabaseServiceClient
         .from('accounts')
         .select('*')
-        .eq('type', 'platform')
+        .eq('type', 'operator')
       if (error) throw error;
       
       // Transform data to match frontend expectations

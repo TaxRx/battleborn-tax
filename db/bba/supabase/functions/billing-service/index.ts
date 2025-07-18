@@ -6,7 +6,7 @@ import Stripe from "https://esm.sh/stripe@11.1.0?target=deno"
 // CORS headers to allow requests from the browser
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-client-site',
 }
 
 // Helper function to get the user's profile and account info
@@ -70,7 +70,7 @@ serve(async (req) => {
     if (pathname === '/billing-service/create-billable-transaction') {
       // This endpoint can be called by a platform account after using a tool.
       // Security is implicit: the transaction will be logged for the user's own account_id.
-      if (!userProfile.account_id || userProfile.account?.type !== 'platform') {
+      if (!userProfile.account_id || userProfile.account?.type !== 'operator') {
         return new Response(JSON.stringify({ error: 'Forbidden: User is not part of a platform organization' }), { status: 403 })
       }
       
@@ -103,7 +103,7 @@ serve(async (req) => {
       })
     } else if (pathname === '/billing-service/list-invoices') {
       // This endpoint is for platform accounts to view their own invoices.
-      if (!userProfile.account_id || userProfile.account?.type !== 'platform') {
+      if (!userProfile.account_id || userProfile.account?.type !== 'operator') {
         return new Response(JSON.stringify({ error: 'Forbidden: User is not part of a platform organization' }), { status: 403 })
       }
 
@@ -119,7 +119,7 @@ serve(async (req) => {
       })
     } else if (pathname === '/billing-service/create-stripe-checkout') {
       // This endpoint is for platform accounts to pay an invoice.
-      if (!userProfile.account_id || userProfile.account?.type !== 'platform') {
+      if (!userProfile.account_id || userProfile.account?.type !== 'operator') {
         return new Response(JSON.stringify({ error: 'Forbidden: User is not part of a platform organization' }), { status: 403 })
       }
 

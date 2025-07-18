@@ -206,24 +206,12 @@ export default function LandingPage() {
 
   const handleDemoLogin = async (email: string) => {
     try {
-      console.log('Attempting demo login for:', email);
+      console.log('Redirecting to login for:', email);
       
-      // Use local auth store for demo logins instead of Supabase
-      const { enableDemoMode } = useAuthStore.getState();
-      const userType = email === 'admin@taxrxgroup.com' ? 'admin' : 'client';
-      
-      enableDemoMode(userType);
-      console.log('Demo login successful:', { email, userType });
-      
-      // Navigate to appropriate dashboard
-      if (userType === 'admin') {
-        navigate('/admin');
-      } else {
-        navigate('/dashboard');
-      }
+      // Demo mode removed - redirect to login page
+      navigate('/login');
     } catch (error) {
-      console.error('Demo login error:', error);
-      alert('Login failed. Please check the console for details.');
+      console.error('Navigation error:', error);
     }
   };
 

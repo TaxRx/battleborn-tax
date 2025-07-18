@@ -41,7 +41,7 @@ export function validateAccountData(
     if (!data.type || typeof data.type !== 'string') {
       errors.push('Account type is required');
     } else if (!isValidAccountType(data.type)) {
-      errors.push('Invalid account type. Must be one of: admin, platform, affiliate, client, expert');
+      errors.push('Invalid account type. Must be one of: admin, operator, affiliate, client, expert');
     }
   }
 
@@ -85,8 +85,8 @@ export function validateAccountData(
     warnings.push('Converting account to admin type requires careful consideration');
   }
 
-  if (data.type !== 'platform' && data.stripe_customer_id) {
-    warnings.push('Stripe customer ID is typically only needed for platform accounts');
+  if (data.type !== 'operator' && data.stripe_customer_id) {
+    warnings.push('Stripe customer ID is typically only needed for operator accounts');
   }
 
   return {
@@ -111,9 +111,9 @@ export function validateAccountTypeTransition(
     errors.push('Admin accounts cannot be converted to other types');
   }
 
-  // Platform accounts with active integrations should be handled carefully
-  if (fromType === 'platform' && toType !== 'platform') {
-    warnings.push('Converting platform accounts may affect active integrations and tool access');
+  // Operator accounts with active integrations should be handled carefully
+  if (fromType === 'operator' && toType !== 'operator') {
+    warnings.push('Converting operator accounts may affect active integrations and tool access');
   }
 
   // Affiliate to client conversion considerations
@@ -257,7 +257,7 @@ export function validateRequestRate(
 // Helper Functions
 
 export function isValidAccountType(type: string): boolean {
-  return ['admin', 'platform', 'affiliate', 'client', 'expert'].includes(type);
+  return ['admin', 'operator', 'affiliate', 'client', 'expert'].includes(type);
 }
 
 export function isValidUUID(uuid: string): boolean {

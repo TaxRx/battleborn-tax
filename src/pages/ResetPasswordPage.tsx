@@ -17,33 +17,46 @@ export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  // Check if we have the required tokens
+  // Check if we have tokens from URL (query params or fragment) or if user is already authenticated
   useEffect(() => {
-    const accessToken = searchParams.get('access_token');
-    const refreshToken = searchParams.get('refresh_token');
+    // First check query parameters
+    let accessToken = searchParams.get('access_token');
+    let refreshToken = searchParams.get('refresh_token');
     
+    // If not found in query params, check URL fragment (hash)
     if (!accessToken || !refreshToken) {
-      setError('Invalid or expired reset link. Please request a new password reset.');
-      return;
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      accessToken = hashParams.get('access_token');
+      refreshToken = hashParams.get('refresh_token');
     }
-
-    // Set the session with the tokens from the URL
-    const setSession = async () => {
-      try {
-        const { error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken
-        });
-        
-        if (error) {
+    
+    if (accessToken && refreshToken) {
+      // Set the session with the tokens from the URL
+      const setSession = async () => {
+        try {
+          const { error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          });
+          
+          if (error) {
+            setError('Invalid or expired reset link. Please request a new password reset.');
+          }
+        } catch (err) {
           setError('Invalid or expired reset link. Please request a new password reset.');
         }
-      } catch (err) {
-        setError('Invalid or expired reset link. Please request a new password reset.');
-      }
-    };
-
-    setSession();
+      };
+      setSession();
+    } else {
+      // Check if user is already authenticated (for development/testing)
+      const checkAuth = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setError('Invalid or expired reset link. Please request a new password reset.');
+        }
+      };
+      checkAuth();
+    }
   }, [searchParams]);
 
   const handlePasswordStrengthChange = (strength: number, isValid: boolean) => {

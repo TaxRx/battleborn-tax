@@ -49,7 +49,7 @@ const ProfileFiltersPanel: React.FC<ProfileFiltersPanelProps> = ({
   const accountTypeOptions = [
     { value: '', label: 'All Account Types' },
     { value: 'admin', label: 'Admin' },
-    { value: 'platform', label: 'Platform' },
+    { value: 'operator', label: 'Operator' },
     { value: 'affiliate', label: 'Affiliate' },
     { value: 'client', label: 'Client' },
     { value: 'expert', label: 'Expert' }

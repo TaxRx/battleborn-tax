@@ -63,6 +63,33 @@ export default function LoginPage() {
     }
   };
 
+  const quickLogin = async (email: string, password: string) => {
+    setEmail(email);
+    setPassword(password);
+    setError('');
+    setIsLoading(true);
+
+    try {
+      const { user, error: signInError } = await authService.signIn(email, password);
+
+      if (signInError) {
+        throw new Error(signInError);
+      }
+
+      if (!user) {
+        throw new Error('Login failed - no user data received');
+      }
+
+      const redirectPath = authService.getRedirectPath(user);
+      navigate(redirectPath);
+    } catch (err) {
+      console.error('Quick login error:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
@@ -166,14 +193,44 @@ export default function LoginPage() {
 
         {/* Development Info */}
         <div className="mt-8 p-4 bg-gray-100 rounded-md">
-          <h3 className="text-sm font-medium text-gray-900 mb-2">Development Login Info:</h3>
-          <div className="text-xs text-gray-600 space-y-1">
-            <p><strong>Admin:</strong> admin@taxrxgroup.com / testpass123 (platform administration)</p>
-            <p><strong>Platform:</strong> platform@example.com / testpass123 (service fulfillment)</p>
-            <p><strong>Affiliate:</strong> affiliate@example.com / testpass123 (sales partner)</p>
-            <p><strong>Client:</strong> dan@fellars.com / testpass123 (end customer)</p>
-            <p><strong>Expert:</strong> expert@example.com / testpass123 (consultant)</p>
-            <p>Each account type has different access levels and permissions</p>
+          <h3 className="text-sm font-medium text-gray-900 mb-2">Quick Login (Click to login):</h3>
+          <div className="text-xs space-y-2">
+            <button
+              onClick={() => quickLogin('admin@example.com', 'testpass123')}
+              disabled={isLoading}
+              className="block w-full text-left p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              <span className="font-medium text-gray-900">Admin:</span> admin@example.com (platform administration)
+            </button>
+            <button
+              onClick={() => quickLogin('operator@example.com', 'testpass123')}
+              disabled={isLoading}
+              className="block w-full text-left p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              <span className="font-medium text-gray-900">Operator:</span> operator@example.com (service fulfillment)
+            </button>
+            <button
+              onClick={() => quickLogin('affiliate@example.com', 'testpass123')}
+              disabled={isLoading}
+              className="block w-full text-left p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
+            >
+              <span className="font-medium text-gray-900">Affiliate:</span> affiliate@example.com (sales partner)
+            </button>
+            <button
+              onClick={() => quickLogin('client@example.com', 'testpass123')}
+              disabled={isLoading}
+              className="block w-full text-left p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
+            >
+              <span className="font-medium text-gray-900">Client:</span> client@example.com (end customer)
+            </button>
+            <button
+              onClick={() => quickLogin('expert@example.com', 'testpass123')}
+              disabled={isLoading}
+              className="block w-full text-left p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
+            >
+              <span className="font-medium text-gray-900">Expert:</span> expert@example.com (consultant)
+            </button>
+            <p className="text-gray-500 mt-2 italic">Click any account above to instantly login</p>
           </div>
         </div>
       </div>

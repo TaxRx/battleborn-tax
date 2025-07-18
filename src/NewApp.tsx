@@ -19,10 +19,7 @@ import PartnerDashboard from './modules/partner/pages/PartnerDashboard'; // Impo
 
 const BattleBornApp: React.FC = () => {
   const location = useLocation();
-  const { demoMode, isAuthenticated: demoAuth, enableDemoMode } = useAuthStore();
-
-  // // Check authentication
-  const isAuthenticated = demoMode || demoAuth;
+  const { isAuthenticated } = useAuthStore();
 
   // // Public routes
   const isPublicRoute = ['/', '/login', '/signup', '/register', '/verify-email', '/accept-invitation', '/forgot-password', '/reset-password'].includes(location.pathname);
@@ -77,7 +74,7 @@ const BattleBornApp: React.FC = () => {
                 element={
                   // TODO: Replace with actual role-based logic from user profile
                   // const { accessLevel } = useProfileStore();
-                  // if (accessLevel === 'platform') return <Navigate to="/admin" replace />;
+                  // if (accessLevel === 'operator') return <Navigate to="/admin" replace />;
                   // if (accessLevel === 'partner') return <Navigate to="/partner" replace />;
                   // if (accessLevel === 'client') return <Navigate to="/client" replace />;
                   <Navigate to="/admin" replace /> // Default fallback

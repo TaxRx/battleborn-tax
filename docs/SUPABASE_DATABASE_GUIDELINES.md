@@ -92,6 +92,25 @@ CREATE TABLE IF NOT EXISTS document_files (
 - Use `TEXT[]` for arrays of strings
 - Use `BIGINT` for file sizes and large numbers
 
+### UUID Usage Rules
+**CRITICAL**: Always use proper UUID format when inserting into database:
+- ✅ **CORRECT**: Use `uuid_generate_v4()` or `gen_random_uuid()` for new UUIDs
+- ✅ **CORRECT**: Use proper format like `'12345678-1234-1234-1234-123456789012'::uuid`
+- ❌ **WRONG**: Never use invalid formats like `'test-uuid-123456789012345678901234'::uuid`
+- ❌ **WRONG**: Never use strings longer than 32 characters between dashes
+
+**Examples**:
+```sql
+-- ✅ Good UUID usage
+INSERT INTO table_name (id) VALUES (uuid_generate_v4());
+INSERT INTO table_name (id) VALUES (gen_random_uuid());
+INSERT INTO table_name (id) VALUES ('550e8400-e29b-41d4-a716-446655440000'::uuid);
+
+-- ❌ Bad UUID usage  
+INSERT INTO table_name (id) VALUES ('invalid-uuid-format'::uuid);
+INSERT INTO table_name (id) VALUES ('test-uuid-123456789012345678901234'::uuid);
+```
+
 ### Audit Fields Standard
 Always include these fields in user-facing tables:
 ```sql

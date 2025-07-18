@@ -19,7 +19,6 @@ BEGIN
       role,
       email,
       encrypted_password,
-      email_confirmed_at,
       confirmation_sent_at,
       recovery_sent_at,
       email_change_sent_at,
@@ -27,8 +26,7 @@ BEGIN
       raw_user_meta_data,
       is_super_admin,
       created_at,
-      updated_at,
-      email_change_confirm_status
+      updated_at
     ) VALUES (
       '00000000-0000-0000-0000-000000000000',
       gen_random_uuid(),
@@ -39,13 +37,12 @@ BEGIN
       NOW(),
       NOW(),
       NOW(),
-      NOW(),
       '{"provider": "email", "providers": ["email"]}',
       '{"name": "Admin User"}',
       FALSE,
       NOW(),
-      NOW(),
-      0
+      NOW()
+      
     ) RETURNING id INTO admin_user_id;
 
     
@@ -78,7 +75,6 @@ BEGIN
       role,
       email,
       encrypted_password,
-      email_confirmed_at,
       confirmation_sent_at,
       recovery_sent_at,
       email_change_sent_at,
@@ -86,8 +82,7 @@ BEGIN
       raw_user_meta_data,
       is_super_admin,
       created_at,
-      updated_at,
-      email_change_confirm_status
+      updated_at
     ) VALUES (
       '00000000-0000-0000-0000-000000000000',
       gen_random_uuid(),
@@ -98,13 +93,11 @@ BEGIN
       NOW(),
       NOW(),
       NOW(),
-      NOW(),
       '{"provider": "email", "providers": ["email"]}',
       '{"name": "Ben Affiliate"}',
       FALSE,
       NOW(),
-      NOW(),
-      0
+      NOW()
     ) RETURNING id INTO affiliate_user_id;
 
     

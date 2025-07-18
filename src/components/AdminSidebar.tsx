@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -11,9 +11,11 @@ import {
   History, 
   Heart, 
   Settings,
-  LogOut
+  LogOut,
+  User
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import AdminProfileService from '../modules/admin/services/adminProfileService';
 
 const menuItems = [
   {
@@ -77,11 +79,78 @@ export default function AdminSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const [hovered, setHovered] = useState(false);
+  const [currentProfile, setCurrentProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const adminProfileService = AdminProfileService.getInstance();
+
+  useEffect(() => {
+    const fetchCurrentProfile = async () => {
+      try {
+        // Get current authenticated user
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        
+        if (userError || !user) {
+          console.error('Error getting current user:', userError);
+          setLoading(false);
+          return;
+        }
+
+        console.log('Fetching profile for user:', user.id);
+
+        // Try to get profile directly from profiles table first
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select(`
+            id,
+            full_name,
+            email,
+            role,
+            account_id,
+            account:accounts(id, name, type)
+          `)
+          .eq('id', user.id)
+          .single();
+
+        if (profileError) {
+          console.error('Profile query error:', profileError);
+          throw profileError;
+        }
+
+        if (profile) {
+          console.log('Profile found:', profile);
+          setCurrentProfile({
+            ...profile,
+            account_type: profile.account?.type
+          });
+        } else {
+          console.log('No profile found, using fallback');
+          throw new Error('Profile not found');
+        }
+      } catch (error) {
+        console.error('Error fetching current profile:', error);
+        
+        // Get user again for fallback
+        const { data: { user: fallbackUser } } = await supabase.auth.getUser();
+        
+        // Only use fallback data as last resort
+        setCurrentProfile({
+          full_name: fallbackUser?.user_metadata?.full_name || 'Admin User',
+          role: 'admin',
+          account_type: 'admin',
+          email: fallbackUser?.email || ''
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCurrentProfile();
+  }, []);
 
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
-      window.location.href = '/login';
+      navigate('/login');
     } catch (error) {
       console.error('Error signing out:', error);
     }
@@ -94,8 +163,30 @@ export default function AdminSidebar() {
       onMouseLeave={() => setHovered(false)}
     >
       <div>
-        <div className={`flex items-center ${hovered ? 'px-8 py-8' : 'px-4 py-8'} border-b transition-all`}>
-          <span className={`text-2xl font-extrabold text-blue-700 tracking-tight transition-all ${hovered ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>TaxRx Admin</span>
+        {/* Dynamic Profile Header */}
+        <div className={`flex items-center ${hovered ? 'px-8 py-6' : 'px-4 py-6'} border-b transition-all`}>
+          <div className="flex items-center w-full">
+            <div className={`flex items-center justify-center h-10 w-10 rounded-full bg-blue-100 ${!hovered ? 'mr-0' : 'mr-3'} transition-all`}>
+              <User className="w-6 h-6 text-blue-600" />
+            </div>
+            <div className={`transition-all ${hovered ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'}`}>
+              {loading ? (
+                <div className="animate-pulse">
+                  <div className="h-4 bg-gray-200 rounded w-32 mb-1"></div>
+                  <div className="h-3 bg-gray-200 rounded w-24"></div>
+                </div>
+              ) : (
+                <div>
+                  <div className="text-sm font-semibold text-gray-900 truncate">
+                    {currentProfile?.full_name || 'Admin User'}
+                  </div>
+                  <div className="text-xs text-gray-500 capitalize">
+                    {currentProfile?.role || 'admin'} {currentProfile?.account_type && currentProfile.account_type !== currentProfile.role ? `• ${currentProfile.account_type}` : ''}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
         <nav className="mt-6 space-y-1">
           {menuItems.map((item) => {

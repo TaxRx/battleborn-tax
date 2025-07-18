@@ -32,7 +32,7 @@ export function validateImplementation(): ValidationResults {
   try {
     const validAccount = {
       name: 'Test Account',
-      type: 'platform' as const,
+      type: 'operator' as const,
       address: '123 Test Street',
       website_url: 'https://example.com',
       logo_url: 'https://example.com/logo.png'
@@ -125,7 +125,7 @@ export function validateImplementation(): ValidationResults {
 
   // Test 4: Account type validation
   try {
-    const validTypes = ['admin', 'platform', 'affiliate', 'client', 'expert'];
+    const validTypes = ['admin', 'operator', 'affiliate', 'client', 'expert'];
     const invalidTypes = ['invalid', 'unknown', '', null];
 
     for (const type of validTypes) {

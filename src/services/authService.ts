@@ -12,7 +12,7 @@ export interface UserProfile {
   account?: {
     id: string;
     name: string;
-    type: 'admin' | 'platform' | 'affiliate' | 'client' | 'expert';
+    type: 'admin' | 'operator' | 'affiliate' | 'client' | 'expert';
     stripe_customer_id?: string;
   };
 }
@@ -106,8 +106,8 @@ class AuthService {
       if (!accountType && profile.access_level) {
         // Map old access_level to new account types
         switch (profile.access_level) {
-          case 'platform': determinedAccountType = 'admin'; break;
-          case 'partner': determinedAccountType = 'platform'; break;
+          case 'operator': determinedAccountType = 'admin'; break;
+          case 'partner': determinedAccountType = 'operator'; break;
           case 'affiliate': determinedAccountType = 'affiliate'; break;
           case 'client': determinedAccountType = 'client'; break;
           default: determinedAccountType = 'client'; break;
@@ -116,7 +116,7 @@ class AuthService {
 
       // Determine user types based on account type
       const isAdmin = determinedAccountType === 'admin';
-      const isPlatformUser = determinedAccountType === 'platform';
+      const isPlatformUser = determinedAccountType === 'operator';
       const isAffiliateUser = determinedAccountType === 'affiliate';
       const isExpertUser = determinedAccountType === 'expert';
       const isClientUser = determinedAccountType === 'client' || clientUsers.length > 0;
@@ -177,11 +177,11 @@ class AuthService {
     // Platform user permissions - service fulfillment
     if (userTypes.isPlatformUser) {
       permissions.push(
-        'platform:view_clients',
-        'platform:manage_clients',
-        'platform:create_proposals',
-        'platform:view_billing',
-        'platform:manage_affiliates'
+        'operator:view_clients',
+        'operator:manage_clients',
+        'operator:create_proposals',
+        'operator:view_billing',
+        'operator:manage_affiliates'
       );
     }
 
@@ -349,8 +349,8 @@ class AuthService {
       if (!accountType && profile.access_level) {
         // Map old access_level to new account types
         switch (profile.access_level) {
-          case 'platform': determinedAccountType = 'admin'; break;
-          case 'partner': determinedAccountType = 'platform'; break;
+          case 'operator': determinedAccountType = 'admin'; break;
+          case 'partner': determinedAccountType = 'operator'; break;
           case 'affiliate': determinedAccountType = 'affiliate'; break;
           case 'client': determinedAccountType = 'client'; break;
           default: determinedAccountType = 'client'; break;
@@ -359,7 +359,7 @@ class AuthService {
 
       // Determine user types based on account type
       const isAdmin = determinedAccountType === 'admin';
-      const isPlatformUser = determinedAccountType === 'platform';
+      const isPlatformUser = determinedAccountType === 'operator';
       const isAffiliateUser = determinedAccountType === 'affiliate';
       const isExpertUser = determinedAccountType === 'expert';
       const isClientUser = determinedAccountType === 'client' || clientUsers.length > 0;
@@ -433,7 +433,7 @@ class AuthService {
     // Default fallback based on account type
     const accountType = user.profile.account?.type;
     switch (accountType) {
-      case 'platform': return '/partner';
+      case 'operator': return '/partner';
       case 'affiliate': return '/affiliate';
       case 'expert': return '/expert';
       case 'client': return '/client';

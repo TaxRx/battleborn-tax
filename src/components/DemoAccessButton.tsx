@@ -14,11 +14,10 @@ const DemoAccessButton: React.FC<DemoAccessButtonProps> = ({
   className = ''
 }) => {
   const navigate = useNavigate();
-  const enableDemoMode = useAuthStore(state => state.enableDemoMode);
 
   const handleClick = () => {
-    enableDemoMode(userType);
-    navigate(userType === 'admin' ? '/admin' : '/client');
+    // Demo mode removed - redirect to login instead
+    navigate('/login');
   };
 
   return (
@@ -26,7 +25,7 @@ const DemoAccessButton: React.FC<DemoAccessButtonProps> = ({
       onClick={handleClick}
       className={`px-4 py-2 text-sm font-medium text-white bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors ${className}`}
     >
-      {label}
+      Login
     </button>
   );
 };

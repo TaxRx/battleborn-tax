@@ -65,7 +65,6 @@ const proposalService = ProposalService.getInstance();
 
 const AdminDashboard: React.FC = () => {
   const { user } = useUser();
-  const { demoMode } = useAuthStore();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [proposals, setProposals] = useState<TaxProposal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,13 +76,8 @@ const AdminDashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Create a mock user for demo mode or use the actual user
-  const effectiveUser = demoMode ? {
-    id: 'demo-admin',
-    email: 'admin@taxrxgroup.com',
-    full_name: 'Demo Administrator',
-    role: 'admin'
-  } : user ? {
+  // Use the actual user data
+  const effectiveUser = user ? {
     id: user.id,
     email: user.email || 'admin@taxrxgroup.com',
     full_name: user.user_metadata?.full_name || 'Administrator',
@@ -145,6 +139,15 @@ const AdminDashboard: React.FC = () => {
       } catch (error) {
         console.error("Error deleting proposal:", error);
       }
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      navigate('/login');
+    } catch (error) {
+      console.error('Error signing out:', error);
     }
   };
 
@@ -316,7 +319,10 @@ const AdminDashboard: React.FC = () => {
                 <Bell className="h-5 w-5" />
               </button>
               <div className="h-6 w-px bg-slate-200"></div>
-              <button className="flex items-center space-x-2 p-2 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+              <button 
+                onClick={handleLogout}
+                className="flex items-center space-x-2 p-2 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
                 <LogOut className="h-5 w-5" />
                 <span className="text-sm font-medium">Logout</span>
               </button>

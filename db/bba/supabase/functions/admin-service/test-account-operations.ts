@@ -99,7 +99,7 @@ export class AccountOperationsTest {
     await this.runTest(suite, 'Create valid platform account', async () => {
       const response = await this.makeRequest('/admin-service/accounts', 'POST', {
         name: 'Test Platform Account',
-        type: 'platform',
+        type: 'operator',
         address: '123 Test Street',
         website_url: 'https://test.example.com',
         logo_url: 'https://test.example.com/logo.png'
@@ -194,7 +194,7 @@ export class AccountOperationsTest {
       
       // Check that all returned accounts are platform type
       for (const account of data.accounts) {
-        if (account.type !== 'platform') {
+        if (account.type !== 'operator') {
           throw new Error('Filter by type not working correctly');
         }
       }
