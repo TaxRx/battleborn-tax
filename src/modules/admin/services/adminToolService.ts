@@ -373,6 +373,10 @@ class AdminToolService {
   // Individual Assignment Operations
   async assignTool(assignment: ToolAssignmentData): Promise<ToolAssignment> {
     try {
+      // Get current user ID for created_by field
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+
       const { data, error } = await supabase
         .from('account_tool_access')
         .insert({
@@ -385,7 +389,9 @@ class AdminToolService {
           features_enabled: assignment.featuresEnabled || {},
           usage_limits: assignment.usageLimits || {},
           status: 'active',
-          granted_at: new Date().toISOString()
+          granted_at: new Date().toISOString(),
+          created_by: userData.user?.id,
+          granted_by: userData.user?.id
         })
         .select()
         .single();
@@ -473,11 +479,16 @@ class AdminToolService {
         .eq('tool_id', toolId)
         .single();
 
+      // Get current user ID for updated_by field
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+
       const { data, error } = await supabase
         .from('account_tool_access')
         .update({
           ...updates,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          updated_by: userData.user?.id
         })
         .eq('account_id', accountId)
         .eq('tool_id', toolId)
