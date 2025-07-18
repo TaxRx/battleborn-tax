@@ -8,6 +8,7 @@ interface ClientRegistrationFormProps {
   onClose: () => void;
   invitationToken?: string;
   affiliateId?: string;
+  accountType?: 'client' | 'affiliate' | 'expert';
 }
 
 interface FormData {
@@ -30,6 +31,7 @@ interface FormData {
   // Optional fields
   invitationToken?: string;
   affiliateId?: string;
+  accountType?: 'client' | 'affiliate' | 'expert';
 }
 
 interface FormErrors {
@@ -50,7 +52,8 @@ export default function ClientRegistrationForm({
   onRegistrationSuccess, 
   onClose,
   invitationToken,
-  affiliateId 
+  affiliateId,
+  accountType = 'client'
 }: ClientRegistrationFormProps) {
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -71,7 +74,8 @@ export default function ClientRegistrationForm({
     password: '',
     confirmPassword: '',
     invitationToken: invitationToken || '',
-    affiliateId: affiliateId || ''
+    affiliateId: affiliateId || '',
+    accountType: accountType
   });
 
   const [passwordStrength, setPasswordStrength] = useState({
@@ -227,20 +231,28 @@ export default function ClientRegistrationForm({
     setLoading(true);
 
     try {
-      // Call the client registration Edge Function
-      const { data, error } = await supabase.functions.invoke('client-registration', {
+      // Call the user registration Edge Function
+      const { data, error } = await supabase.functions.invoke('user-service', {
         body: {
-          businessName: formData.businessName,
-          businessEmail: formData.businessEmail,
-          businessPhone: formData.businessPhone,
-          businessAddress: formData.businessAddress,
-          taxId: formData.taxId,
-          businessType: formData.businessType,
-          ownerFirstName: formData.ownerFirstName,
-          ownerLastName: formData.ownerLastName,
-          ownerEmail: formData.ownerEmail,
-          ownerPhone: formData.ownerPhone,
+          pathname: '/user-service/register',
+          email: formData.ownerEmail,
           password: formData.password,
+          fullName: `${formData.ownerFirstName} ${formData.ownerLastName}`,
+          type: formData.accountType,
+          personalInfo: {
+            firstName: formData.ownerFirstName,
+            lastName: formData.ownerLastName,
+            phone: formData.ownerPhone,
+            email: formData.ownerEmail
+          },
+          businessInfo: {
+            businessName: formData.businessName,
+            businessEmail: formData.businessEmail,
+            businessPhone: formData.businessPhone,
+            businessAddress: formData.businessAddress,
+            taxId: formData.taxId,
+            businessType: formData.businessType
+          },
           invitationToken: formData.invitationToken,
           affiliateId: formData.affiliateId
         }
@@ -277,14 +289,24 @@ export default function ClientRegistrationForm({
     <div className="space-y-6">
       <div className="text-center mb-8">
         <Building className="w-16 h-16 text-blue-600 mx-auto mb-4" />
-        <h2 className="text-2xl font-bold text-gray-900">Business Information</h2>
-        <p className="text-gray-600">Tell us about your business</p>
+        <h2 className="text-2xl font-bold text-gray-900">
+          {accountType === 'client' ? 'Business Information' : 
+           accountType === 'affiliate' ? 'Firm Information' : 
+           'Practice Information'}
+        </h2>
+        <p className="text-gray-600">
+          {accountType === 'client' ? 'Tell us about your business' : 
+           accountType === 'affiliate' ? 'Tell us about your firm' : 
+           'Tell us about your practice'}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="md:col-span-2">
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Business Name <span className="text-red-500">*</span>
+            {accountType === 'client' ? 'Business Name' : 
+             accountType === 'affiliate' ? 'Firm Name' : 
+             'Practice Name'} <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
@@ -293,7 +315,9 @@ export default function ClientRegistrationForm({
             className={`w-full px-4 py-3 bg-white border rounded-lg text-lg font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
               errors.businessName ? 'border-red-500' : 'border-gray-200'
             }`}
-            placeholder="Enter your business name"
+            placeholder={accountType === 'client' ? 'Enter your business name' : 
+                        accountType === 'affiliate' ? 'Enter your firm name' : 
+                        'Enter your practice name'}
           />
           {errors.businessName && (
             <p className="text-red-600 text-sm mt-1 flex items-center">
@@ -305,7 +329,9 @@ export default function ClientRegistrationForm({
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Business Email <span className="text-red-500">*</span>
+            {accountType === 'client' ? 'Business Email' : 
+             accountType === 'affiliate' ? 'Firm Email' : 
+             'Practice Email'} <span className="text-red-500">*</span>
           </label>
           <div className="relative">
             <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -329,7 +355,9 @@ export default function ClientRegistrationForm({
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Business Phone <span className="text-red-500">*</span>
+            {accountType === 'client' ? 'Business Phone' : 
+             accountType === 'affiliate' ? 'Firm Phone' : 
+             'Practice Phone'} <span className="text-red-500">*</span>
           </label>
           <div className="relative">
             <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -353,7 +381,9 @@ export default function ClientRegistrationForm({
 
         <div className="md:col-span-2">
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Business Address <span className="text-red-500">*</span>
+            {accountType === 'client' ? 'Business Address' : 
+             accountType === 'affiliate' ? 'Firm Address' : 
+             'Practice Address'} <span className="text-red-500">*</span>
           </label>
           <div className="relative">
             <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -402,7 +432,9 @@ export default function ClientRegistrationForm({
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Business Type <span className="text-red-500">*</span>
+            {accountType === 'client' ? 'Business Type' : 
+             accountType === 'affiliate' ? 'Firm Type' : 
+             'Practice Type'} <span className="text-red-500">*</span>
           </label>
           <select
             value={formData.businessType}
@@ -411,7 +443,11 @@ export default function ClientRegistrationForm({
               errors.businessType ? 'border-red-500' : 'border-gray-200'
             }`}
           >
-            <option value="">Select business type</option>
+            <option value="">
+              {accountType === 'client' ? 'Select business type' : 
+               accountType === 'affiliate' ? 'Select firm type' : 
+               'Select practice type'}
+            </option>
             {businessTypes.map(type => (
               <option key={type} value={type}>{type}</option>
             ))}
@@ -629,7 +665,11 @@ export default function ClientRegistrationForm({
         {/* Header */}
         <div className="flex justify-between items-center p-6 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-purple-600 text-white">
           <div>
-            <h1 className="text-2xl font-bold">Client Registration</h1>
+            <h1 className="text-2xl font-bold">
+              {accountType === 'client' ? 'Client Registration' : 
+               accountType === 'affiliate' ? 'Affiliate Registration' : 
+               'Expert Registration'}
+            </h1>
             <p className="text-blue-100">Step {currentStep} of 2</p>
           </div>
           <button 
@@ -650,7 +690,11 @@ export default function ClientRegistrationForm({
               />
             </div>
             <span className="ml-4 text-sm font-medium text-gray-600">
-              {currentStep === 1 ? 'Business Information' : 'Owner Information'}
+              {currentStep === 1 ? 
+                (accountType === 'client' ? 'Business Information' : 
+                 accountType === 'affiliate' ? 'Firm Information' : 
+                 'Practice Information') : 
+                'Owner Information'}
             </span>
           </div>
         </div>

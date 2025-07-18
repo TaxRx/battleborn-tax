@@ -2,9 +2,13 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ClientRegistrationForm from '../components/ClientRegistrationForm';
 import { toast } from 'react-hot-toast';
+import { UserCheck, Briefcase, Users } from 'lucide-react';
+
+type AccountType = 'client' | 'affiliate' | 'expert';
 
 export default function ClientRegistration() {
   const [showForm, setShowForm] = useState(false);
+  const [selectedAccountType, setSelectedAccountType] = useState<AccountType>('client');
   const navigate = useNavigate();
 
   const handleRegistrationSuccess = (data: { clientId: string; userId: string }) => {
@@ -40,19 +44,73 @@ export default function ClientRegistration() {
           <div className="space-y-6">
             <div className="text-center">
               <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-                Get Started
+                Choose Your Account Type
               </h2>
               <p className="text-gray-600">
-                Register your business and create your account
+                Select the option that best describes your role
               </p>
             </div>
 
             <div className="space-y-4">
+              {/* Account Type Selection */}
+              <div className="grid grid-cols-1 gap-4">
+                <div
+                  onClick={() => setSelectedAccountType('client')}
+                  className={`p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 ${
+                    selectedAccountType === 'client'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <UserCheck className={`h-6 w-6 ${selectedAccountType === 'client' ? 'text-blue-600' : 'text-gray-400'}`} />
+                    <div>
+                      <h3 className="font-medium text-gray-900">Client</h3>
+                      <p className="text-sm text-gray-600">Business owner seeking tax planning services</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setSelectedAccountType('affiliate')}
+                  className={`p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 ${
+                    selectedAccountType === 'affiliate'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <Briefcase className={`h-6 w-6 ${selectedAccountType === 'affiliate' ? 'text-blue-600' : 'text-gray-400'}`} />
+                    <div>
+                      <h3 className="font-medium text-gray-900">Affiliate</h3>
+                      <p className="text-sm text-gray-600">CPA firm, wealth management firm, or tax professional</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setSelectedAccountType('expert')}
+                  className={`p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 ${
+                    selectedAccountType === 'expert'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <Users className={`h-6 w-6 ${selectedAccountType === 'expert' ? 'text-blue-600' : 'text-gray-400'}`} />
+                    <div>
+                      <h3 className="font-medium text-gray-900">Expert</h3>
+                      <p className="text-sm text-gray-600">Lawyer, advisor, or consultant providing professional services</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <button
                 onClick={() => setShowForm(true)}
                 className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-4 px-6 rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl text-lg"
               >
-                Register Your Business
+                Continue Registration
               </button>
 
               <div className="text-center">
@@ -114,6 +172,7 @@ export default function ClientRegistration() {
         <ClientRegistrationForm
           onRegistrationSuccess={handleRegistrationSuccess}
           onClose={handleClose}
+          accountType={selectedAccountType}
         />
       )}
     </div>
