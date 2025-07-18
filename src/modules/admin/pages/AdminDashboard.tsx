@@ -56,7 +56,7 @@ import CreateClientModal from '../components/CreateClientModal';
 import { useUser } from '../../../context/UserContext';
 import useAuthStore from '../../../store/authStore';
 import RDClientManagement from '../../../components/RDClientManagement';
-import PartnersList from '../components/PartnersList'; // Import the new component
+import OperatorsList from '../components/OperatorsList'; // Import the new component
 import AccountManagement from '../components/AccountManagement';
 import BulkActivityOperations from '../components/BulkActivityOperations';
 import ToolManagement from '../components/tools/ToolManagement';
@@ -166,7 +166,7 @@ const AdminDashboard: React.FC = () => {
     { name: 'Experts', href: '/admin/experts', icon: UserCheck, current: location.pathname === '/admin/experts' },
     { name: 'Reports', href: '/admin/reports', icon: BarChart3, current: location.pathname === '/admin/reports' },
     { name: 'Settings', href: '/admin/settings', icon: Settings, current: location.pathname === '/admin/settings' },
-    { name: 'Partners', href: '/admin/partners', icon: Briefcase, current: location.pathname === '/admin/partners' },
+    { name: 'Operators', href: '/admin/operators', icon: Briefcase, current: location.pathname === '/admin/operators' },
   ];
 
   const getPageTitle = () => {
@@ -363,7 +363,7 @@ const AdminDashboard: React.FC = () => {
             <Route path="/experts" element={<ExpertManagement />} />
             <Route path="/reports" element={<div className="p-8"><h1 className="text-2xl font-bold">Reports</h1><p>Coming soon...</p></div>} />
             <Route path="/settings" element={<div className="p-8"><h1 className="text-2xl font-bold">Settings</h1><p>Coming soon...</p></div>} />
-            <Route path="/partners" element={<PartnersList />} />
+            <Route path="/operators" element={<OperatorsList />} />
             <Route path="*" element={<Navigate to="/admin" replace />} />
           </Routes>
         </main>

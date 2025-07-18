@@ -2,13 +2,13 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-interface CreatePartnerModalProps {
+interface CreateOperatorModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onPartnerCreated: () => void;
+  onOperatorCreated: () => void;
 }
 
-const CreatePartnerModal: React.FC<CreatePartnerModalProps> = ({ isOpen, onClose, onPartnerCreated }) => {
+const CreateOperatorModal: React.FC<CreateOperatorModalProps> = ({ isOpen, onClose, onOperatorCreated }) => {
   const [companyName, setCompanyName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
@@ -52,10 +52,10 @@ const CreatePartnerModal: React.FC<CreatePartnerModalProps> = ({ isOpen, onClose
 
       if (error) throw error;
 
-      onPartnerCreated();
+      onOperatorCreated();
       onClose();
     } catch (err: any) {
-      setErrors({ form: `Failed to create partner: ${err.message}` });
+      setErrors({ form: `Failed to create operator: ${err.message}` });
     } finally {
       setIsSubmitting(false);
     }
@@ -66,7 +66,7 @@ const CreatePartnerModal: React.FC<CreatePartnerModalProps> = ({ isOpen, onClose
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
       <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md">
-        <h2 className="text-2xl font-bold mb-6">Create New Partner</h2>
+        <h2 className="text-2xl font-bold mb-6">Create New Operator</h2>
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
             <label htmlFor="companyName" className="block text-sm font-medium text-gray-700">Company Name</label>
@@ -106,7 +106,7 @@ const CreatePartnerModal: React.FC<CreatePartnerModalProps> = ({ isOpen, onClose
               Cancel
             </button>
             <button type="submit" disabled={isSubmitting || Object.keys(errors).length > 0} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-300">
-              {isSubmitting ? 'Creating...' : 'Create Partner'}
+              {isSubmitting ? 'Creating...' : 'Create Operator'}
             </button>
           </div>
         </form>
@@ -115,4 +115,4 @@ const CreatePartnerModal: React.FC<CreatePartnerModalProps> = ({ isOpen, onClose
   );
 };
 
-export default CreatePartnerModal;
+export default CreateOperatorModal;
