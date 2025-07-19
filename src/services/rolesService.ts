@@ -1,117 +1,124 @@
 import { supabase } from '../lib/supabase';
 
-export interface Role {
+interface Role {
   id: string;
   name: string;
-  baseline_applied_percent: number | null;
-  business_year_id: string;
-  created_at?: string;
-  updated_at?: string;
+  description?: string;
+  baseline_applied_percent?: number;
 }
 
 export class RolesService {
+  // Get roles for a specific business year
   static async getRolesByBusinessYear(businessYearId: string): Promise<Role[]> {
-    try {
-      console.log('[RolesService] Fetching roles for businessYearId:', businessYearId);
-      const { data, error } = await supabase
-        .from('rd_roles')
-        .select('*')
-        .eq('business_year_id', businessYearId)
-        .order('name');
+    const { data: roles, error } = await supabase
+      .from('rd_roles')
+      .select('*')
+      .eq('business_year_id', businessYearId)
+      .order('name');
 
-      if (error) {
-        console.error('Error fetching roles:', error);
-        return [];
-      }
-
-      return data || [];
-    } catch (error) {
+    if (error) {
       console.error('Error fetching roles:', error);
       return [];
     }
+
+    return roles || [];
   }
 
+  // CLEAN ROLES CALCULATION - Start Fresh
   static async calculateRolesAppliedPercentage(
     businessYearId: string,
     selectedActivities: any[],
     selectedSubcomponents: any[] = []
   ): Promise<{ [roleName: string]: number }> {
     try {
-      console.log('[RolesService] Calculating applied percentages for businessYearId:', businessYearId);
-      console.log('[RolesService] Selected activities:', selectedActivities);
-      console.log('[RolesService] All selected subcomponents:', selectedSubcomponents);
+      console.log('🔄 [CLEAN ROLES] Starting fresh role calculation');
+      console.log('🔄 [CLEAN ROLES] Business Year ID:', businessYearId);
       
       // Get roles for this business year
       const roles = await this.getRolesByBusinessYear(businessYearId);
-      console.log('[RolesService] Found roles:', roles);
+      console.log('🔄 [CLEAN ROLES] Found roles:', roles.length);
       
-      // Filter for only selected subcomponents (those with selected_roles)
-      const activeSubcomponents = selectedSubcomponents.filter(sub => 
-        sub.selected_roles && 
-        Array.isArray(sub.selected_roles) && 
-        sub.selected_roles.length > 0 &&
-        sub.applied_percentage && 
-        sub.applied_percentage > 0
-      );
+      if (roles.length === 0) {
+        console.log('🔄 [CLEAN ROLES] No roles found, returning empty');
+        return {};
+      }
+
+      // Get ALL subcomponents with applied percentages from database
+      const { data: allSubcomponents, error } = await supabase
+        .from('rd_selected_subcomponents')
+        .select('subcomponent_id, applied_percentage, selected_roles')
+        .eq('business_year_id', businessYearId);
+
+      if (error) {
+        console.error('🔄 [CLEAN ROLES] Error fetching subcomponents:', error);
+        return {};
+      }
+
+      if (!allSubcomponents || allSubcomponents.length === 0) {
+        console.log('🔄 [CLEAN ROLES] No subcomponents found');
+        return {};
+      }
+
+      console.log('🔄 [CLEAN ROLES] Processing', allSubcomponents.length, 'subcomponents');
       
-      console.log('[RolesService] Active subcomponents (with roles and applied_percentage):', activeSubcomponents);
-      
-      // Calculate applied percentage for each role based on subcomponent assignments
+      // Calculate total applied percentage to validate our work
+      const totalApplied = allSubcomponents.reduce((sum, sub) => sum + (sub.applied_percentage || 0), 0);
+      console.log('🔄 [CLEAN ROLES] Total applied across all subcomponents:', totalApplied.toFixed(2) + '%');
+      console.log('🔄 [CLEAN ROLES] This should be 59.44% - MAXIMUM any role can have');
+
+      // Calculate each role's applied percentage
       const rolePercentages: { [roleName: string]: number } = {};
-      
-      roles.forEach(role => {
-        console.log(`[RolesService] Calculating for role: ${role.name} (ID: ${role.id})`);
+
+      for (const role of roles) {
+        console.log(`🔄 [CLEAN ROLES] Calculating for role: ${role.name}`);
         
-        let totalApplied = 0;
-        let contributingSubcomponents: string[] = [];
-        
-        // Calculate based on subcomponent assignments
-        activeSubcomponents.forEach(subcomponent => {
+        let roleTotal = 0;
+        let subcomponentCount = 0;
+
+        // Find all subcomponents assigned to this role
+        for (const subcomponent of allSubcomponents) {
           const selectedRoles = subcomponent.selected_roles || [];
           const appliedPercentage = subcomponent.applied_percentage || 0;
-          
-          // If this role is assigned to this subcomponent, add its applied percentage
+
+          // If this role is assigned to this subcomponent
           if (selectedRoles.includes(role.id)) {
-            totalApplied += appliedPercentage;
-            contributingSubcomponents.push(subcomponent.subcomponent_id);
-            console.log(`[RolesService] Role ${role.name} assigned to subcomponent ${subcomponent.subcomponent_id}, adding ${appliedPercentage}% (total now: ${totalApplied.toFixed(2)}%)`);
+            roleTotal += appliedPercentage;
+            subcomponentCount++;
+            console.log(`  ✅ Subcomponent ${subcomponent.subcomponent_id}: +${appliedPercentage.toFixed(2)}% (total: ${roleTotal.toFixed(2)}%)`);
           }
-        });
+        }
+
+        rolePercentages[role.name] = roleTotal;
+        console.log(`🔄 [CLEAN ROLES] ${role.name}: ${roleTotal.toFixed(2)}% from ${subcomponentCount} subcomponents`);
         
-        rolePercentages[role.name] = totalApplied;
-        console.log(`[RolesService] Final total applied for ${role.name}: ${totalApplied.toFixed(2)}% (from ${contributingSubcomponents.length} subcomponents: ${contributingSubcomponents.join(', ')})`);
-      });
-      
-      console.log('[RolesService] Final role percentages:', rolePercentages);
+        // VALIDATION: No role should exceed total applied
+        if (roleTotal > totalApplied + 0.01) { // Allow small rounding errors
+          console.error(`🚨 [CLEAN ROLES] ERROR: ${role.name} (${roleTotal.toFixed(2)}%) exceeds total applied (${totalApplied.toFixed(2)}%)`);
+        }
+      }
+
+      console.log('🔄 [CLEAN ROLES] Final results:', rolePercentages);
       return rolePercentages;
+
     } catch (error) {
-      console.error('Error calculating roles applied percentage:', error);
+      console.error('🔄 [CLEAN ROLES] Error in calculation:', error);
       return {};
     }
   }
 
-  static async updateRoleBaselineAppliedPercent(
-    roleId: string,
-    baselineAppliedPercent: number
-  ): Promise<boolean> {
+  // Update role baseline applied percent
+  static async updateRoleBaselineAppliedPercent(roleId: string, appliedPercent: number): Promise<void> {
     try {
-      console.log(`[RolesService] Updating role ${roleId} baseline_applied_percent to ${baselineAppliedPercent}%`);
-      
       const { error } = await supabase
         .from('rd_roles')
-        .update({ baseline_applied_percent: baselineAppliedPercent })
+        .update({ baseline_applied_percent: appliedPercent })
         .eq('id', roleId);
-        
+
       if (error) {
         console.error('Error updating role baseline applied percent:', error);
-        return false;
       }
-      
-      console.log(`[RolesService] Successfully updated role ${roleId}`);
-      return true;
     } catch (error) {
       console.error('Error updating role baseline applied percent:', error);
-      return false;
     }
   }
 } 

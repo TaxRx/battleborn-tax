@@ -10,6 +10,8 @@ import ReportsStep from './steps/ReportsStep';
 import { toast } from 'react-hot-toast';
 import { RDBusinessService } from '../../services/rdBusinessService';
 import { FilingGuideModal } from '../FilingGuide/FilingGuideModal';
+import ResearchReportModal from '../ResearchReport/ResearchReportModal';
+import AllocationReportModal from '../AllocationReport/AllocationReportModal';
 
 // Helper function to get URL parameters
 const getUrlParams = () => {
@@ -85,6 +87,8 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [isFilingGuideOpen, setIsFilingGuideOpen] = useState(false);
+  const [isResearchReportOpen, setIsResearchReportOpen] = useState(false);
+  const [isAllocationReportOpen, setIsAllocationReportOpen] = useState(false);
 
   // CRITICAL: Use a key to force component remount when business changes
   // This ensures complete isolation between different business files
@@ -342,7 +346,8 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
             onNext={handleNext}
             onPrevious={handlePrevious}
             businessId={businessId}
-            businessYearId={wizardState.selectedYear}
+            businessYearId={wizardState.selectedYear?.id}
+            parentSelectedYear={wizardState.selectedYear?.year}
           />
         );
       case 2:
@@ -405,8 +410,8 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
         className={isModal ? "bg-white rounded-lg shadow-xl w-[95vw] h-[98vh] flex flex-col overflow-hidden" : "bg-white h-full flex flex-col overflow-hidden"}
         style={isModal ? { minHeight: '90vh', minWidth: '90vw' } : {}}
       >
-        {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 flex-shrink-0">
+        {/* Header - Updated to match Dark Blue Gradient */}
+        <div className="bg-gradient-to-r from-[#1a1a3f] to-[#2d2d67] text-white p-6 flex-shrink-0">
           <div className="flex justify-between items-center">
             <div>
               <h2 className="text-2xl font-bold">R&D Tax Credit Wizard</h2>
@@ -414,20 +419,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
                 Step {wizardState.currentStep + 1} of {steps.length}: {steps[wizardState.currentStep].title}
               </p>
             </div>
-            <div className="flex items-center gap-4">
-              {/* Filing Guide Button */}
-              {/* {wizardState.calculations && (
-                <button
-                  onClick={() => setIsFilingGuideOpen(true)}
-                  className="flex items-center gap-2 px-3 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded-lg transition-all duration-200 text-sm font-medium"
-                  title="Generate Filing Guide"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  Filing Guide
-                </button>
-              )} */}
+            {isModal && (
               <button
                 onClick={onClose}
                 className="text-white hover:text-blue-200 transition-colors"
@@ -436,24 +428,31 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
-            </div>
+            )}
           </div>
           
-          {/* Progress Bar */}
+          {/* Clickable Progress Steps */}
           <div className="mt-4">
             <div className="flex justify-between text-sm text-blue-100 mb-2">
               {steps.map((step, index) => (
-                <span
+                <button
                   key={index}
-                  className={`${
+                  onClick={() => {
+                    setWizardState(prev => ({
+                      ...prev,
+                      currentStep: index
+                    }));
+                  }}
+                  className={`hover:text-white transition-colors cursor-pointer text-left ${
                     index <= wizardState.currentStep ? 'text-white' : 'text-blue-200'
                   } ${index === wizardState.currentStep ? 'font-semibold' : ''}`}
+                  title={`Go to ${step.title}`}
                 >
                   {step.title}
-                </span>
+                </button>
               ))}
             </div>
-            <div className="w-full bg-blue-200 rounded-full h-2">
+            <div className="w-full bg-blue-200/20 rounded-full h-2">
               <div
                 className="bg-white h-2 rounded-full transition-all duration-300"
                 style={{ width: `${((wizardState.currentStep + 1) / steps.length) * 100}%` }}
@@ -488,17 +487,195 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
           )}
         </div>
 
-        {/* Footer Navigation */}
-        <div className="border-t bg-gray-50 px-6 py-4 flex-shrink-0">
+        {/* Footer Navigation - Updated to match Tax Calculator Dark Bar */}
+        <div className="bg-gradient-to-r from-[#1a1a3f] to-[#2d2d67] px-6 py-4 flex-shrink-0 text-white">
           <div className="flex justify-between items-center">
-            <div className="text-sm text-gray-600">
-              {steps[wizardState.currentStep].description}
+            {/* Left side - Practice Name, State, and Report Buttons */}
+            <div className="flex items-center space-x-6">
+              <div className="flex items-center space-x-2">
+                <span className="text-xl font-bold">
+                  {wizardState.business?.name || 'Business Setup'}
+                </span>
+                {wizardState.business?.contact_info?.state && (
+                  <>
+                    <span className="text-gray-300">|</span>
+                    <span className="text-gray-300">
+                      {wizardState.business.contact_info.state}
+                    </span>
+                  </>
+                )}
+              </div>
+              
+              {/* Subtle Report Buttons */}
+              <div className="flex items-center space-x-2">
+                {/* Research Report Button (Steps 2-3 - Research Explorer & Research Design) */}
+                {(wizardState.currentStep === 1 || wizardState.currentStep === 2) && (
+                  <button
+                    onClick={() => setIsResearchReportOpen(true)}
+                    className="px-3 py-1.5 text-xs bg-white/10 text-blue-200 rounded-md hover:bg-white/20 hover:text-white transition-colors border border-white/20"
+                    title="Generate Research Report"
+                  >
+                    Research Report
+                  </button>
+                )}
+                
+                {/* Allocation Report & Export CSV Button (Step 4 - Expense Management) */}
+                {wizardState.currentStep === 3 && (
+                  <>
+                    <button
+                      onClick={() => setIsAllocationReportOpen(true)}
+                      className="px-3 py-1.5 text-xs bg-white/10 text-blue-200 rounded-md hover:bg-white/20 hover:text-white transition-colors border border-white/20"
+                      title="Generate Allocation Report"
+                    >
+                      Allocation Report
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const { ExpenseManagementService } = await import('../../../../services/expenseManagementService');
+                          const csvData = await ExpenseManagementService.exportExpensesToCSV(wizardState.selectedYear?.id);
+                          const blob = new Blob([csvData], { type: 'text/csv' });
+                          const url = window.URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `rd_expenses_${wizardState.selectedYear?.year || new Date().getFullYear()}.csv`;
+                          a.click();
+                          window.URL.revokeObjectURL(url);
+                        } catch (error) {
+                          console.error('Error exporting CSV:', error);
+                        }
+                      }}
+                      className="px-3 py-1.5 text-xs bg-white/10 text-blue-200 rounded-md hover:bg-white/20 hover:text-white transition-colors border border-white/20"
+                      title="Export CSV"
+                    >
+                      Export CSV
+                    </button>
+                  </>
+                )}
+                
+                {/* Filing Guide Button (Step 5 - Reports) */}
+                {wizardState.currentStep === 5 && wizardState.calculations && (
+                  <button
+                    onClick={() => setIsFilingGuideOpen(true)}
+                    className="px-3 py-1.5 text-xs bg-white/10 text-blue-200 rounded-md hover:bg-white/20 hover:text-white transition-colors border border-white/20"
+                    title="Generate Filing Guide"
+                  >
+                    Filing Guide
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="flex space-x-3">
+
+            {/* Center - Empty space for balanced layout */}
+            <div className="flex items-center">
+            </div>
+
+            {/* Right side - Credits Display, Year Dropdown and Navigation buttons */}
+            <div className="flex items-center space-x-3">
+              {/* Credits Display (from Employee Management onward) */}
+              {(wizardState.currentStep >= 3) && (
+                                  <div className="flex items-center space-x-2 bg-white/10 rounded-md px-3 py-2">
+                    {wizardState.calculations ? (
+                      <>
+                        <div className="flex items-center space-x-4">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs font-medium text-blue-200">ASC:</span>
+                            <span className="text-sm font-bold text-green-300">
+                              ${Math.round(wizardState.calculations.federalCredits?.asc?.adjustedCredit || wizardState.calculations.federalCredits?.asc?.credit || 0)?.toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs font-medium text-blue-200">State:</span>
+                            <span className="text-sm font-bold text-purple-300">
+                              ${Math.round(wizardState.calculations.totalStateCredits || 0)?.toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="border-l border-white/20 pl-4 ml-2">
+                          <div className="flex items-center space-x-2">
+                            <div className="text-xs text-blue-200">Total:</div>
+                            <div className="text-lg font-bold text-yellow-300">
+                              ${Math.round((wizardState.calculations.federalCredits?.asc?.adjustedCredit || wizardState.calculations.federalCredits?.asc?.credit || 0) + (wizardState.calculations.totalStateCredits || 0))?.toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex items-center space-x-2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-300"></div>
+                        <span className="text-sm text-blue-200">Calculating credits...</span>
+                      </div>
+                    )}
+                  </div>
+              )}
+
+              {/* Year Dropdown (when applicable) */}
+              {(wizardState.currentStep === 1 || wizardState.currentStep === 2 || wizardState.currentStep === 3 || wizardState.currentStep === 4) && wizardState.selectedYear && (
+                <div className="flex items-center space-x-2">
+                  <label className="text-sm font-medium text-blue-100">Year:</label>
+                  <select
+                    value={wizardState.selectedYear.year || new Date().getFullYear()}
+                    onChange={async (e) => {
+                      const year = parseInt(e.target.value);
+                      // Find existing business year or create new one
+                      let businessYearData = wizardState.selectedYear;
+                      
+                      // Check if this year already exists
+                      const { data: existingYear } = await supabase
+                        .from('rd_business_years')
+                        .select('id, year')
+                        .eq('business_id', businessId)
+                        .eq('year', year)
+                        .single();
+                      
+                      if (existingYear) {
+                        businessYearData = { id: existingYear.id, year: existingYear.year };
+                      } else if (businessId) {
+                        // Create new business year
+                        const { data: newYear } = await supabase
+                          .from('rd_business_years')
+                          .insert({
+                            business_id: businessId,
+                            year: year,
+                            gross_receipts: 0
+                          })
+                          .select('id, year')
+                          .single();
+                        
+                        if (newYear) {
+                          businessYearData = { id: newYear.id, year: newYear.year };
+                        }
+                      }
+                      
+                      // Update wizard state with new year
+                      setWizardState(prev => ({
+                        ...prev,
+                        selectedYear: businessYearData
+                      }));
+                    }}
+                    className="rounded-md border-none bg-white/10 text-white shadow-sm focus:ring-2 focus:ring-blue-400 px-3 py-1 text-sm"
+                  >
+                    {/* Generate year options from business start year to current + 1 */}
+                    {(() => {
+                      const currentYear = new Date().getFullYear();
+                      const startYear = wizardState.business?.start_year || currentYear - 5;
+                      const years = [];
+                      for (let year = startYear; year <= currentYear + 1; year++) {
+                        years.push(year);
+                      }
+                      return years.map(year => (
+                        <option key={year} value={year}>{year}</option>
+                      ));
+                    })()}
+                  </select>
+                </div>
+              )}
+              
+              {/* Navigation buttons */}
               {wizardState.currentStep > 0 && (
                 <button
                   onClick={handlePrevious}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                  className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors border border-white/20"
                 >
                   Previous
                 </button>
@@ -506,9 +683,17 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
               {wizardState.currentStep < steps.length - 1 && (
                 <button
                   onClick={handleNext}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors shadow-md"
                 >
                   Next
+                </button>
+              )}
+              {wizardState.currentStep === steps.length - 1 && (
+                <button
+                  onClick={onClose}
+                  className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors shadow-md"
+                >
+                  Complete
                 </button>
               )}
             </div>
@@ -521,6 +706,27 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
         <FilingGuideModal
           isOpen={isFilingGuideOpen}
           onClose={() => setIsFilingGuideOpen(false)}
+          businessData={wizardState.business}
+          selectedYear={wizardState.selectedYear}
+          calculations={wizardState.calculations}
+        />
+      )}
+
+      {/* Research Report Modal */}
+      {isResearchReportOpen && wizardState.selectedYear && (
+        <ResearchReportModal
+          isOpen={isResearchReportOpen}
+          onClose={() => setIsResearchReportOpen(false)}
+          businessYearId={wizardState.selectedYear.id}
+          businessId={wizardState.business?.id}
+        />
+      )}
+
+      {/* Allocation Report Modal */}
+      {isAllocationReportOpen && (
+        <AllocationReportModal
+          isOpen={isAllocationReportOpen}
+          onClose={() => setIsAllocationReportOpen(false)}
           businessData={wizardState.business}
           selectedYear={wizardState.selectedYear}
           calculations={wizardState.calculations}

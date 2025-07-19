@@ -231,7 +231,7 @@ export class EmployeeManagementService {
         const practice_percentage = subcomponent.practice_percent || 0;
         const year_percentage = subcomponent.year_percentage || 0;
         const frequency_percentage = subcomponent.frequency_percentage || 0;
-        const applied_percentage = (practice_percentage * time_percentage * year_percentage * frequency_percentage) / 1000000;
+        const applied_percentage = (practice_percentage / 100) * (time_percentage / 100) * (year_percentage / 100) * (frequency_percentage / 100) * 100;
         const baseline_applied_percent = subcomponent.applied_percentage || applied_percentage;
         const baseline_time_percentage = time_percentage;
         const baseline_practice_percentage = practice_percentage;

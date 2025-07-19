@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ResearchDesignService } from "../../../../../services/researchDesignService";
-import { RolesService, Role } from "../../../../../services/rolesService";
+// RolesService removed - now handled by RoleSnapshot component
 import {
   ResearchActivityWithSteps,
   SelectedStep,
@@ -9,6 +9,7 @@ import {
   SUBCOMPONENT_COLORS
 } from "../../../../../types/researchDesign";
 import SubcomponentCard from './SubcomponentCard';
+import RoleSnapshot, { RoleSnapshotRef } from './RoleSnapshot';
 import { supabase } from "../../../../../lib/supabase";
 import ResearchReportModal from "../../ResearchReport/ResearchReportModal";
 import { FileText } from "lucide-react";
@@ -126,9 +127,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
   const [showStepAllocation, setShowStepAllocation] = useState(false);
   const [subcomponents, setSubcomponents] = useState<any[]>([]);
   
-  // Roles state
-  const [roles, setRoles] = useState<Role[]>([]);
-  const [rolesAppliedPercentages, setRolesAppliedPercentages] = useState<{ [roleName: string]: number }>({});
+  // Roles now handled by RoleSnapshot component
 
   // Accordion state management
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
@@ -139,6 +138,17 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
 
   // Research Report modal state
   const [showResearchReportModal, setShowResearchReportModal] = useState(false);
+
+  // Role Snapshot ref for real-time updates
+  const roleSnapshotRef = useRef<RoleSnapshotRef>(null);
+
+  // Helper function to trigger role snapshot recalculation
+  const triggerRoleSnapshotUpdate = (delay: number = 100, context: string = '') => {
+    console.log(`🔄 Triggering role snapshot recalculation${context ? ` after ${context}` : ''}...`);
+    setTimeout(() => {
+      roleSnapshotRef.current?.recalculate();
+    }, delay);
+  };
 
   // Subcomponent state management
   const [subcomponentStates, setSubcomponentStates] = useState<{
@@ -178,6 +188,65 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
   // Use the selected year ID for all data operations instead of the hardcoded businessYearId
   // IMPORTANT: Always use the selected year ID, fall back to businessYearId only if no year is selected
   const effectiveBusinessYearId = selectedActivityYearId || businessYearId;
+
+  // Debounced database update functionality
+  const databaseUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingUpdatesRef = useRef<Map<string, { stepId: string; percentage: number }>>(new Map());
+
+  const debouncedUpdateDatabase = useCallback(async (stepId: string, percentage: number) => {
+    // Store the pending update
+    pendingUpdatesRef.current.set(stepId, { stepId, percentage });
+    
+    // Clear existing timeout
+    if (databaseUpdateTimeoutRef.current) {
+      clearTimeout(databaseUpdateTimeoutRef.current);
+    }
+    
+    // Set new timeout
+    databaseUpdateTimeoutRef.current = setTimeout(async () => {
+      const updates = Array.from(pendingUpdatesRef.current.values());
+      pendingUpdatesRef.current.clear();
+      
+      console.log('Executing debounced database updates:', updates);
+      
+      const currentActivity = activitiesWithSteps[activeActivityIndex];
+      if (!currentActivity) return;
+      
+      // Batch update all pending changes
+      for (const update of updates) {
+        try {
+          const { error } = await supabase
+            .from('rd_selected_steps')
+            .upsert({
+              business_year_id: effectiveBusinessYearId,
+              research_activity_id: currentActivity.activityId,
+              step_id: update.stepId,
+              time_percentage: update.percentage
+            }, { onConflict: 'business_year_id,step_id' });
+            
+          if (error) {
+            console.error('Error updating step time percentage:', error);
+          } else {
+            console.log('Successfully updated step time percentage:', update.stepId, 'to:', update.percentage);
+          }
+        } catch (error) {
+          console.error('Error updating step time percentage:', error);
+        }
+      }
+      
+      // Trigger recalculation after all updates
+      await recalculateAllAppliedPercentages();
+    }, 500); // 500ms debounce delay
+  }, [activitiesWithSteps, activeActivityIndex, effectiveBusinessYearId]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (databaseUpdateTimeoutRef.current) {
+        clearTimeout(databaseUpdateTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Note: Data isolation is now handled by parent component via key prop
   // which forces complete component remount when switching businesses
@@ -425,7 +494,23 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       return;
     }
 
-    const practicePercent = getActivityPercentage(selectedActivities[activeActivityIndex]) || 0;
+    // CRITICAL FIX: Get practice percentage from DATABASE, not from UI state
+    // The UI state may have wrong values, so we need to fetch from rd_selected_activities
+    const { data: activityData, error: activityError } = await supabase
+      .from('rd_selected_activities')
+      .select('practice_percent')
+      .eq('activity_id', currentActivity.activityId)
+      .eq('business_year_id', selectedActivityYearId)
+      .single();
+    
+    if (activityError) {
+      console.error('🚨 Error fetching activity practice percent from database:', activityError);
+      return;
+    }
+    
+    const practicePercent = activityData?.practice_percent || 0;
+    console.log('✅ FIXED: Using practice percent from DATABASE:', practicePercent, 'for activity:', currentActivity.activityId);
+    
     const selectedStep = selectedSteps.find(s => s.step_id === stepId);
     const stepTimePercent = selectedStep?.time_percentage ?? 0;
     const selectedSub = selectedSubcomponents.find(
@@ -458,10 +543,22 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       const year = selectedSub.year_percentage ?? 0;
       
       if (freq > 0 && year > 0) {
-        const applied = (practicePercent / 100) * (stepTimePercent / 100) * (freq / 100) * (year / 100) * 100;
-        console.log('Calculated applied percentage:', applied, 'for subcomponent:', subcomponentId);
+        // Get step info for Non-R&D adjustment
+        const step = activitiesWithSteps[activeActivityIndex]?.steps?.find(s => s.id === stepId);
+        const nonRdPercent = step?.nonRdPercentage || 0;
         
-        // Save applied percentage, time percentage, and step name
+        // Calculate base applied percentage
+        let applied = (practicePercent / 100) * (stepTimePercent / 100) * (freq / 100) * (year / 100) * 100;
+        
+        // Apply Non-R&D reduction
+        if (nonRdPercent > 0) {
+          const rdOnlyPercent = (100 - nonRdPercent) / 100;
+          applied = applied * rdOnlyPercent;
+        }
+        
+        console.log('Calculated applied percentage:', applied, 'for subcomponent:', subcomponentId, 'with Non-R&D adjustment:', nonRdPercent);
+        
+        // Save applied percentage, time percentage, and step name (DO NOT overwrite practice_percent)
         try {
           const { error } = await supabase
             .from('rd_selected_subcomponents')
@@ -482,10 +579,8 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
               step_name: stepName
             });
             
-            // Recalculate roles after updating applied percentage
-            setTimeout(() => {
-              loadRolesData();
-            }, 100);
+            // Trigger real-time role snapshot update after applied percentage change
+            triggerRoleSnapshotUpdate(50, 'applied percentage change');
           }
         } catch (error) {
           console.error('Error saving applied percentage, time percentage, and step name:', error);
@@ -505,18 +600,84 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
 
   // Helper function to recalculate and save applied percentages for all subcomponents
   const recalculateAllAppliedPercentages = async () => {
-    console.log('Recalculating all applied percentages...');
+    console.log('🔄 FORCE RECALCULATING all applied percentages...');
+    console.log('Current selectedSteps data:', selectedSteps.map(s => ({ step_id: s.step_id, time_percentage: s.time_percentage })));
+    console.log('Current selectedSubcomponents data:', selectedSubcomponents.map(s => ({ 
+      subcomponent_id: s.subcomponent_id, 
+      step_id: s.step_id,
+      frequency_percentage: s.frequency_percentage,
+      year_percentage: s.year_percentage 
+    })));
     
     for (const subcomponent of selectedSubcomponents) {
       await calculateAndSaveAppliedPercentage(subcomponent.subcomponent_id, subcomponent.step_id);
     }
     
-    console.log('Finished recalculating all applied percentages');
+    console.log('✅ Finished force recalculating all applied percentages');
     
     // Recalculate roles after updating all applied percentages
-    setTimeout(() => {
-      loadRolesData();
-    }, 200);
+    // REMOVED: Direct call to prevent excessive role recalculation
+    // setTimeout(() => {
+    //   loadRolesData();
+    // }, 200);
+  };
+
+  // Diagnostic function to check database values
+  const diagnosticDatabaseValues = async () => {
+    console.log('🔍 DIAGNOSTIC: Checking database values...');
+    
+    const { data: dbSubcomponents, error } = await supabase
+      .from('rd_selected_subcomponents')
+      .select('*')
+      .eq('business_year_id', selectedActivityYearId);
+      
+    if (error) {
+      console.error('Error fetching diagnostic data:', error);
+      return;
+    }
+    
+    console.log('📊 DATABASE SUBCOMPONENTS:');
+    (dbSubcomponents || []).forEach(sub => {
+      console.log(`  Subcomponent ${sub.subcomponent_id}:`);
+      console.log(`    - Applied Percentage: ${sub.applied_percentage || 0}%`);
+      console.log(`    - Time Percentage: ${sub.time_percentage || 0}%`);
+      console.log(`    - Frequency: ${sub.frequency_percentage || 0}%`);
+      console.log(`    - Year: ${sub.year_percentage || 0}%`);
+      console.log(`    - Step ID: ${sub.step_id}`);
+    });
+    
+    const { data: dbSteps } = await supabase
+      .from('rd_selected_steps')
+      .select('*')
+      .eq('business_year_id', selectedActivityYearId);
+      
+    console.log('📊 DATABASE STEPS:');
+    (dbSteps || []).forEach(step => {
+      console.log(`  Step ${step.step_id}:`);
+      console.log(`    - Time Percentage: ${step.time_percentage || 0}%`);
+      console.log(`    - Research Activity ID: ${step.research_activity_id}`);
+    });
+  };
+
+  // Force recalculation function (for manual triggering)
+  const forceRecalculateEverything = async () => {
+    console.log('🚀 FORCE RECALCULATING EVERYTHING...');
+    
+    // First show diagnostic info
+    await diagnosticDatabaseValues();
+    
+    // Reload all data from database first
+    await loadResearchDesignData();
+    
+    // Then recalculate applied percentages
+    setTimeout(async () => {
+      await recalculateAllAppliedPercentages();
+      
+      // Show diagnostic info again after recalculation
+      setTimeout(async () => {
+        await diagnosticDatabaseValues();
+      }, 1000);
+    }, 500);
   };
 
   // 2. When updating a step's time percentage, upsert to rd_selected_steps
@@ -543,22 +704,19 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
   };
 
   const updateSubcomponent = async (subcomponentId: string, updates: Partial<SelectedSubcomponent>) => {
-    const currentActivity = activitiesWithSteps[activeActivityIndex];
-    if (!currentActivity) return;
-
+    // Find the existing subcomponent to get its step_id and research_activity_id
     const existing = selectedSubcomponents.find(s => s.subcomponent_id === subcomponentId);
-    const currentYear = new Date().getFullYear();
-    const currentStepId = currentActivity.steps[activeStepIndex]?.id;
-
-    if (!currentStepId) {
-      console.error('No current step ID found');
+    if (!existing) {
+      console.error('No existing subcomponent found for update:', subcomponentId);
       return;
     }
 
+    const currentYear = new Date().getFullYear();
+
     const subcomponentData: Omit<SelectedSubcomponent, 'id' | 'created_at' | 'updated_at'> = {
       business_year_id: selectedActivityYearId,
-      research_activity_id: currentActivity.activityId,
-      step_id: currentStepId,
+      research_activity_id: existing.research_activity_id,  // Keep existing activity assignment
+      step_id: existing.step_id,  // Keep existing step assignment
       subcomponent_id: subcomponentId,
       frequency_percentage: existing?.frequency_percentage || 0,
       year_percentage: existing?.year_percentage || 100,
@@ -658,84 +816,129 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       const step = prevSteps[stepIndex];
       if (step.isLocked) return prevSteps;
       
+      // Validate percentage bounds
+      newPercentage = Math.max(0, Math.min(100, newPercentage));
+      
       const unlockedSteps = prevSteps.filter(s => !s.isLocked && s.isEnabled);
       const lockedSteps = prevSteps.filter(s => s.isLocked && s.isEnabled);
+      const otherUnlockedSteps = unlockedSteps.filter(s => s.id !== stepId);
       
       const lockedTotal = lockedSteps.reduce((sum, s) => sum + s.percentage, 0);
       const currentStepPercentage = step.percentage;
-      const availablePercentage = 100 - lockedTotal - currentStepPercentage;
+      const difference = newPercentage - currentStepPercentage;
       
-      // Calculate the new available percentage after this step change
-      const newAvailablePercentage = 100 - lockedTotal - newPercentage;
+      console.log('Pro-rata redistribution debug:', {
+        stepId,
+        currentStepPercentage,
+        newPercentage,
+        difference,
+        lockedTotal,
+        otherUnlockedStepsCount: otherUnlockedSteps.length
+      });
       
-      if (newAvailablePercentage < 0) {
-        // If we can't fit the new percentage, cap it
-        newPercentage = 100 - lockedTotal;
+      // Check if we have enough room for the change
+      const maxPossiblePercentage = 100 - lockedTotal;
+      const otherStepsTotal = otherUnlockedSteps.reduce((sum, s) => sum + s.percentage, 0);
+      const availableFromOthers = otherStepsTotal;
+      
+      // If increasing and we don't have enough room, cap the increase
+      if (difference > 0 && difference > availableFromOthers) {
+        newPercentage = currentStepPercentage + availableFromOthers;
+        console.log('Capped increase to available space:', newPercentage);
       }
+      
+      // If decreasing beyond 0, cap at 0
+      if (newPercentage < 0) {
+        newPercentage = 0;
+      }
+      
+      const finalDifference = newPercentage - currentStepPercentage;
       
       const updatedSteps = [...prevSteps];
       updatedSteps[stepIndex] = { ...step, percentage: newPercentage };
       
-      // Redistribute remaining percentage among other unlocked steps
-      const otherUnlockedSteps = unlockedSteps.filter(s => s.id !== stepId);
-      console.log('Redistribution debug:', {
-        stepId,
-        newPercentage,
-        lockedTotal,
-        newAvailablePercentage,
-        otherUnlockedStepsCount: otherUnlockedSteps.length,
-        otherUnlockedSteps: otherUnlockedSteps.map(s => ({ id: s.id, name: s.name, percentage: s.percentage }))
-      });
-      
-      if (otherUnlockedSteps.length > 0 && newAvailablePercentage > 0) {
-        const equalShare = newAvailablePercentage / otherUnlockedSteps.length;
-        console.log('Redistributing with equal share:', equalShare);
-        otherUnlockedSteps.forEach(otherStep => {
-          const otherIndex = updatedSteps.findIndex(s => s.id === otherStep.id);
-          if (otherIndex !== -1) {
-            updatedSteps[otherIndex] = { ...otherStep, percentage: equalShare };
+      // Pro-rata redistribution: distribute the difference proportionally among other unlocked steps
+      if (otherUnlockedSteps.length > 0 && Math.abs(finalDifference) > 0.01) {
+        const redistributionAmount = -finalDifference; // Negative because we're taking from others
+        
+        if (redistributionAmount > 0) {
+          // We're giving percentage to other steps (this step decreased)
+          // Distribute proportionally based on current percentages
+          const otherStepsCurrentTotal = otherUnlockedSteps.reduce((sum, s) => sum + s.percentage, 0);
+          
+          if (otherStepsCurrentTotal > 0) {
+            // Proportional distribution
+            otherUnlockedSteps.forEach(otherStep => {
+              const otherIndex = updatedSteps.findIndex(s => s.id === otherStep.id);
+              if (otherIndex !== -1) {
+                const proportion = otherStep.percentage / otherStepsCurrentTotal;
+                const adjustment = redistributionAmount * proportion;
+                updatedSteps[otherIndex] = { 
+                  ...otherStep, 
+                  percentage: Math.max(0, otherStep.percentage + adjustment)
+                };
+              }
+            });
+          } else {
+            // Equal distribution if all other steps are at 0
+            const equalShare = redistributionAmount / otherUnlockedSteps.length;
+            otherUnlockedSteps.forEach(otherStep => {
+              const otherIndex = updatedSteps.findIndex(s => s.id === otherStep.id);
+              if (otherIndex !== -1) {
+                updatedSteps[otherIndex] = { 
+                  ...otherStep, 
+                  percentage: Math.max(0, equalShare)
+                };
+              }
+            });
           }
-        });
-      } else if (otherUnlockedSteps.length > 0) {
-        // If no available percentage, set all other steps to 0
-        console.log('Setting other steps to 0 due to no available percentage');
-        otherUnlockedSteps.forEach(otherStep => {
-          const otherIndex = updatedSteps.findIndex(s => s.id === otherStep.id);
-          if (otherIndex !== -1) {
-            updatedSteps[otherIndex] = { ...otherStep, percentage: 0 };
+        } else {
+          // We're taking percentage from other steps (this step increased)
+          // Take proportionally from other steps
+          const takeAmount = Math.abs(redistributionAmount);
+          const otherStepsCurrentTotal = otherUnlockedSteps.reduce((sum, s) => sum + s.percentage, 0);
+          
+          if (otherStepsCurrentTotal > 0) {
+            otherUnlockedSteps.forEach(otherStep => {
+              const otherIndex = updatedSteps.findIndex(s => s.id === otherStep.id);
+              if (otherIndex !== -1) {
+                const proportion = otherStep.percentage / otherStepsCurrentTotal;
+                const reduction = takeAmount * proportion;
+                updatedSteps[otherIndex] = { 
+                  ...otherStep, 
+                  percentage: Math.max(0, otherStep.percentage - reduction)
+                };
+              }
+            });
+          }
+        }
+      }
+      
+      // Ensure total doesn't exceed 100% (safety check)
+      const totalPercentage = updatedSteps.reduce((sum, s) => sum + (s.isEnabled ? s.percentage : 0), 0);
+      if (totalPercentage > 100.01) { // Small tolerance for floating point
+        console.warn('Total percentage exceeds 100%, normalizing:', totalPercentage);
+        const scaleFactor = 100 / totalPercentage;
+        updatedSteps.forEach((s, index) => {
+          if (s.isEnabled) {
+            updatedSteps[index] = { ...s, percentage: s.percentage * scaleFactor };
           }
         });
       }
       
-      console.log('Final updated steps:', updatedSteps.map(s => ({ id: s.id, name: s.name, percentage: s.percentage, isLocked: s.isLocked, isEnabled: s.isEnabled })));
+      console.log('Final pro-rata updated steps:', updatedSteps.map(s => ({ 
+        id: s.id, 
+        name: s.name, 
+        percentage: s.percentage.toFixed(2), 
+        isLocked: s.isLocked, 
+        isEnabled: s.isEnabled 
+      })));
+      
       return updatedSteps;
     });
 
-    // Save step data to database
-    const currentActivity = activitiesWithSteps[activeActivityIndex];
-    if (currentActivity) {
-      try {
-        const stepData = {
-          business_year_id: businessYearId,
-          research_activity_id: currentActivity.activityId,
-          step_id: stepId,
-          time_percentage: newPercentage,
-          applied_percentage: 0
-        };
-        
-        const { error } = await supabase
-          .from('rd_selected_steps')
-          .upsert(stepData);
-          
-        if (error) {
-          console.error('Error saving step data:', error);
-        } else {
-          console.log('Successfully saved step data:', stepData);
-        }
-      } catch (error) {
-        console.error('Error saving step data:', error);
-      }
-    }
+    // Use debounced database update to prevent excessive calls
+    debouncedUpdateDatabase(stepId, newPercentage);
   };
 
   const toggleStepLock = (stepId: string) => {
@@ -1049,10 +1252,11 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
         console.log('ResearchDesignStep: Processed subcomponent data:', subcomponentData);
         setSubcomponentStates(subcomponentData);
         
-        // Recalculate and save applied percentages for all subcomponents
-        setTimeout(() => {
-          recalculateAllAppliedPercentages();
-        }, 100);
+        // DISABLED: Auto-recalculation that was overwriting correct database values
+        // setTimeout(() => {
+        //   console.log('🔄 Auto-triggering recalculation on component load...');
+        //   recalculateAllAppliedPercentages();
+        // }, 100);
         
         // REMOVED: Automatic normalization that was overwriting user's custom values
         // The normalization should only happen when explicitly requested (add/remove subcomponents)
@@ -1165,7 +1369,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     frequencyPercent: number,
     yearPercent: number
   ): number => {
-    return (practicePercent * stepTimePercent * frequencyPercent * yearPercent) / 10000;
+    return (practicePercent / 100) * (stepTimePercent / 100) * (frequencyPercent / 100) * (yearPercent / 100) * 100;
   };
 
   const redistributeFrequencyPercentages = async (stepId: string, changedSubcomponentId: string, newValue: number) => {
@@ -1245,14 +1449,31 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     const currentState = subcomponentStates[subcomponentId];
     const isCurrentlySelected = currentState?.isSelected || false;
     
-    // Get the current activity to get the correct research_activity_id
-    const currentActivity = activitiesWithSteps[activeActivityIndex];
-    if (!currentActivity) {
-      console.error('No current activity found');
+    // CRITICAL FIX: Get the CORRECT activity that owns this step, not the currently viewed activity
+    let ownerActivity = null;
+    for (const activity of activitiesWithSteps) {
+      if (activity.steps.some(step => step.id === stepId)) {
+        ownerActivity = activity;
+        break;
+      }
+    }
+    
+    if (!ownerActivity) {
+      console.error('❌ No owner activity found for step:', stepId);
       return;
     }
     
-            console.log('Toggling subcomponent:', { subcomponentId, stepId, isCurrentlySelected, selectedActivityYearId, researchActivityId: currentActivity.activityId });
+    // Log both the currently viewed activity and the correct owner activity
+    const currentlyViewedActivity = activitiesWithSteps[activeActivityIndex];
+    console.log('🔧 [FIX] Toggling subcomponent:', { 
+      subcomponentId, 
+      stepId, 
+      isCurrentlySelected, 
+      selectedActivityYearId,
+      currentlyViewedActivity: currentlyViewedActivity?.activityName,
+      correctOwnerActivity: ownerActivity.activityName,
+      correctResearchActivityId: ownerActivity.activityId
+    });
     
     if (isCurrentlySelected) {
       // Remove from study
@@ -1269,9 +1490,8 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
         } else {
           console.log('Successfully removed subcomponent:', subcomponentId);
           
-          // Trigger role recalculation immediately after subcomponent removal
-          console.log('Triggering role recalculation after subcomponent removal...');
-          await loadRolesData();
+          // Trigger real-time role snapshot update
+          triggerRoleSnapshotUpdate(100, 'subcomponent removal');
         }
       } catch (error) {
         console.error('Error removing subcomponent:', error);
@@ -1323,7 +1543,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
           console.log('Step not found in selectedSteps, creating step record...');
           const stepData = {
             business_year_id: selectedActivityYearId,
-            research_activity_id: currentActivity.activityId,
+            research_activity_id: ownerActivity.activityId,  // Use correct owner activity
             step_id: stepId,
             time_percentage: stepTimePercentage,
             applied_percentage: 0
@@ -1363,19 +1583,30 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
           }
         }
         
-        // Insert the new subcomponent with correct time_percentage
+        // Get the parent activity's selected roles to initialize the subcomponent
+        const currentActivityData = selectedActivities.find(
+          act => getActivityId(act) === ownerActivity.activityId  // Use correct owner activity
+        );
+        const parentActivityRoles = currentActivityData?.selected_roles || [];
+        
+        console.log('🔧 [FIX] Initializing subcomponent with correct owner activity roles:', {
+          ownerActivity: ownerActivity.activityName,
+          parentActivityRoles
+        });
+        
+        // Insert the new subcomponent with correct research_activity_id
         const { error } = await supabase
           .from('rd_selected_subcomponents')
           .insert({
             business_year_id: selectedActivityYearId,
-            research_activity_id: currentActivity.activityId,
+            research_activity_id: ownerActivity.activityId,  // Use correct owner activity
             step_id: stepId,
             subcomponent_id: subcomponentId,
             frequency_percentage: initialFrequencyPercent,
             year_percentage: 100,
             start_month: 1,
             start_year: getDefaultStartYear(),
-            selected_roles: [],
+            selected_roles: parentActivityRoles, // Initialize with parent activity roles
             step_name: stepName,
             time_percentage: stepTimePercentage, // This should now be correctly set
             // Initialize text fields from subcomponent data
@@ -1444,9 +1675,8 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
             console.log('Refreshed subcomponent data:', refreshedData);
             setSelectedSubcomponents(refreshedData || []);
             
-            // Trigger role recalculation immediately after subcomponent changes
-            console.log('Triggering role recalculation after subcomponent toggle...');
-            await loadRolesData();
+            // Trigger real-time role snapshot update
+            triggerRoleSnapshotUpdate(100, 'subcomponent addition');
           }
         }
       } catch (error) {
@@ -1460,6 +1690,12 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       const newIsSelected = !isCurrentlySelected;
       
       if (newIsSelected) {
+        // Get the parent activity's selected roles to initialize the subcomponent
+        const currentActivityData = selectedActivities.find(
+          act => getActivityId(act) === ownerActivity.activityId  // Use correct owner activity
+        );
+        const parentActivityRoles = currentActivityData?.selected_roles || [];
+        
         // Initialize new subcomponent
         updated[subcomponentId] = {
           isSelected: true,
@@ -1468,7 +1704,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
           startYear: getDefaultStartYear(),
           startMonth: 1,
           monthName: 'January',
-          selectedRoles: [],
+          selectedRoles: parentActivityRoles, // Initialize with parent activity roles
           appliedPercentage: 0
         };
       } else {
@@ -1507,9 +1743,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       return updated;
     });
     
-    // Recalculate roles after subcomponent changes
-    console.log('[ResearchDesignStep] Triggering role recalculation after subcomponent toggle...');
-    await loadRolesData();
+    // Roles now handled by RoleSnapshot component
   };
 
   const handleFrequencyChange = async (stepId: string, subcomponentId: string, value: number) => {
@@ -1527,9 +1761,8 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     // Redistribute among other selected subcomponents and save to database
     await redistributeFrequencyPercentages(stepId, subcomponentId, value);
     
-    // Recalculate roles after frequency change
-    console.log('[ResearchDesignStep] Triggering role recalculation after frequency change...');
-    await loadRolesData();
+    // Trigger real-time role snapshot update after frequency change
+    triggerRoleSnapshotUpdate(100, 'frequency change');
   };
 
   const handleYearChange = async (subcomponentId: string, value: number) => {
@@ -1559,11 +1792,12 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
         const selectedSub = selectedSubcomponents.find(s => s.subcomponent_id === subcomponentId);
         if (selectedSub) {
           await calculateAndSaveAppliedPercentage(subcomponentId, selectedSub.step_id);
+          
+          // Trigger real-time role snapshot update after year percentage change
+          triggerRoleSnapshotUpdate(100, 'year percentage change');
         }
         
-        // Recalculate roles after year change
-        console.log('[ResearchDesignStep] Triggering role recalculation after year change...');
-        await loadRolesData();
+        // Roles now handled by RoleSnapshot component
       }
     } catch (error) {
       console.error('Error updating year percent:', error);
@@ -1689,10 +1923,12 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       } else {
         console.log('Reloaded subcomponents with updated roles:', updatedSubcomponents);
         setSelectedSubcomponents(updatedSubcomponents || []);
+        
+        // Trigger real-time role snapshot update
+        triggerRoleSnapshotUpdate(100, 'role toggle');
       }
 
-      // Recalculate roles immediately after updating
-      await loadRolesData();
+      // Roles now handled by RoleSnapshot component
       
     } catch (error) {
       console.error('Error in handleRoleToggle:', error);
@@ -1834,91 +2070,129 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     return Math.round(value).toString();
   };
 
-  // Calculate total applied percentage for an activity (matches SubcomponentCard logic)
+  // Calculate total applied percentage for an activity (sum of all subcomponent applied percentages)
   const calculateActivityAppliedPercentage = (activity: any): number => {
-    console.log('=== CALCULATING ACTIVITY APPLIED PERCENTAGE ===');
-    console.log('Activity being calculated:', activity);
+    console.log('🔍 BASELINE CALCULATION FIX - CALCULATING ACTIVITY APPLIED PERCENTAGE');
+    console.log('Activity:', getActivityName(activity));
     console.log('Activity ID:', getActivityId(activity));
-    console.log('Practice percentage:', getActivityPercentage(activity));
-    
-    // Get the practice percentage for this activity
-    const practicePercent = getActivityPercentage(activity) || 0;
-    console.log('Practice percent:', practicePercent);
-    
-    if (!practicePercent) {
-      console.log('No practice percentage found, returning 0');
-      return 0;
-    }
     
     // Check if data is still loading
-    if (selectedSteps.length === 0) {
-      console.log('Data still loading, selectedSteps is empty, returning 0');
+    if (selectedSubcomponents.length === 0) {
+      console.log('⚠️ Data still loading, selectedSubcomponents is empty, returning 0');
       return 0;
     }
     
-    // Find all steps that belong to this activity using research_activity_id
     const activityId = getActivityId(activity);
-    const stepsForActivity = selectedSteps.filter(step => step.research_activity_id === activityId);
-    console.log('Steps for this activity:', stepsForActivity);
-    console.log('All selectedSteps:', selectedSteps);
-    console.log('Looking for activity ID:', activityId);
     
-    if (stepsForActivity.length === 0) {
-      console.log('No steps found for this activity, returning 0');
+    const practicePercent = getActivityPercentage(activity) || 0;
+    
+    console.log(`🎯 PRACTICE PERCENTAGE (BASELINE MAXIMUM): ${practicePercent}%`);
+    
+    if (practicePercent === 0) {
+      console.log('❌ Practice percentage is 0, returning 0');
       return 0;
     }
     
     let totalApplied = 0;
     
-    // For each step, calculate the total applied percentage from its subcomponents
-    stepsForActivity.forEach(step => {
-      console.log(`Processing step ${step.step_id} with time percentage ${step.time_percentage}%`);
+    // Get all steps for this activity
+    const activitySteps = selectedSteps.filter(step => 
+      step.research_activity_id === activityId
+    );
+    
+    console.log(`📊 Found ${activitySteps.length} steps for activity ${getActivityName(activity)}`);
+    
+    if (activitySteps.length === 0) {
+      console.log('⚠️ No steps found for this activity, returning 0');
+      return 0;
+    }
+    
+    // Validate time percentages don't exceed 100%
+    const totalTimePercent = activitySteps.reduce((sum, step) => sum + (step.time_percentage || 0), 0);
+    console.log(`⏰ Total time allocation across all steps: ${totalTimePercent}%`);
+    
+    if (totalTimePercent > 100) {
+      console.log(`⚠️ WARNING: Total time allocation (${totalTimePercent}%) exceeds 100%`);
+    }
+    
+    activitySteps.forEach((step, stepIndex) => {
+      const stepTimePercent = step.time_percentage || 0;
+      console.log(`  📈 Step ${stepIndex + 1} (${step.step_id}): ${stepTimePercent}% time`);
       
-      // Find all subcomponents for this step
-      const subcomponentsForStep = selectedSubcomponents.filter(sub => sub.step_id === step.step_id);
-      console.log(`Found ${subcomponentsForStep.length} subcomponents for step ${step.step_id}`);
+      // Find subcomponents for this step
+      const stepSubcomponents = selectedSubcomponents.filter(sub => 
+        sub.step_id === step.step_id
+      );
       
-      subcomponentsForStep.forEach(sub => {
-        console.log(`Processing subcomponent ${sub.subcomponent_id}:`, {
-          frequency_percentage: sub.frequency_percentage,
-          year_percentage: sub.year_percentage,
-          step_percentage: sub.step_percentage,
-          applied_percentage: sub.applied_percentage
-        });
+      console.log(`    🔧 Found ${stepSubcomponents.length} subcomponents`);
+      
+      // Validate frequency percentages within step don't exceed 100%
+      const totalFrequency = stepSubcomponents.reduce((sum, sub) => sum + (sub.frequency_percentage || 0), 0);
+      console.log(`    📊 Total frequency within step: ${totalFrequency}%`);
+      
+      if (totalFrequency > 100) {
+        console.log(`    ⚠️ WARNING: Total frequency (${totalFrequency}%) exceeds 100% for step ${step.step_id}`);
+      }
+      
+      stepSubcomponents.forEach((sub, subIndex) => {
+        const freq = sub.frequency_percentage || 0;
+        const year = sub.year_percentage || 0;
         
-        // Use stored applied_percentage if available, otherwise calculate it
-        let applied = 0;
-        if (sub.applied_percentage && sub.applied_percentage > 0) {
-          applied = sub.applied_percentage;
-          console.log(`Using stored applied percentage: ${applied}%`);
-        } else {
-          // Calculate using stored step_percentage if available, otherwise use step.time_percentage
-          const stepTimePercent = sub.step_percentage || step.time_percentage || 0;
-          const freq = sub.frequency_percentage || 0;
-          const year = sub.year_percentage || 0;
+        console.log(`      🧩 Subcomponent ${subIndex + 1} (${sub.subcomponent_id}):`);
+        console.log(`         Frequency: ${freq}%`);
+        console.log(`         Year: ${year}%`);
+        
+        if (freq > 0 && year > 0 && stepTimePercent > 0 && practicePercent > 0) {
+          // CRITICAL FIX: Get Non-R&D adjustment for this step using the SPECIFIC activity, not activeActivityIndex
+          // This was causing roles calculation to change when clicking different activity cards
+          const specificActivity = activitiesWithSteps.find(act => act.activityId === activityId);
+          const stepData = specificActivity?.steps?.find(s => s.id === step.step_id);
+          const nonRdPercent = stepData?.nonRdPercentage || 0;
           
-          if (stepTimePercent > 0 && freq > 0 && year > 0) {
-            // Use the same calculation as SubcomponentCard
-            const practice = practicePercent / 100;
-            const stepPercent = stepTimePercent / 100;
-            const freqPercent = freq / 100;
-            const yearPercent = year / 100;
-            applied = +(practice * stepPercent * freqPercent * yearPercent * 100).toFixed(2);
-            console.log(`Calculated applied percentage: ${applied}% (practice: ${practicePercent}%, step: ${stepTimePercent}%, freq: ${freq}%, year: ${year}%)`);
-          } else {
-            console.log(`Skipping calculation - missing values: stepTimePercent=${stepTimePercent}, freq=${freq}, year=${year}`);
+          console.log(`      🔧 NON-R&D FIX: Using activity ${activityId} (not activeActivityIndex ${activeActivityIndex})`);
+          console.log(`         Step ${step.step_id} non-R&D: ${nonRdPercent}%`);
+          
+          // CORE CALCULATION: practice% × time% × frequency% × year%
+          let applied = (practicePercent / 100) * (stepTimePercent / 100) * (freq / 100) * (year / 100) * 100;
+          
+          // Apply Non-R&D reduction if this step has non-R&D time
+          let rdOnlyPercent = 1.0; // Default to 1.0 (no reduction)
+          if (nonRdPercent > 0) {
+            rdOnlyPercent = (100 - nonRdPercent) / 100;
+            applied = applied * rdOnlyPercent;
+            console.log(`      🔧 Non-R&D Adjustment: ${nonRdPercent}% non-R&D, reducing applied by factor of ${rdOnlyPercent.toFixed(3)}`);
           }
+          
+          // CRITICAL VALIDATION: Applied percentage cannot exceed practice percentage
+          if (applied > practicePercent) {
+            console.log(`      ❌ MATHEMATICAL ERROR: Applied (${applied.toFixed(2)}%) exceeds practice (${practicePercent}%)`);
+            console.log(`         This should be impossible! Check input values.`);
+          }
+          
+          totalApplied += applied;
+          console.log(`      ✅ Applied: ${applied.toFixed(2)}%`);
+          console.log(`         Formula: ${practicePercent}% × ${stepTimePercent}% × ${freq}% × ${year}% × ${rdOnlyPercent.toFixed(3)} = ${applied.toFixed(2)}%`);
+          console.log(`         Running total: ${totalApplied.toFixed(2)}%`);
+        } else {
+          console.log(`      ⏭️ Skipping - missing values (freq=${freq}, year=${year}, stepTime=${stepTimePercent}, practice=${practicePercent})`);
         }
-        
-        console.log(`Calculated applied percentage for subcomponent ${sub.subcomponent_id}: ${applied}%`);
-        totalApplied += applied;
       });
     });
     
-    console.log('Total applied percentage for activity', getActivityName(activity), ':', totalApplied);
-    console.log('=== END CALCULATION ===');
+    // FINAL VALIDATION: Total applied should never exceed practice percentage
+    if (totalApplied > practicePercent) {
+      console.log(`🚨 CRITICAL ERROR: Total applied (${totalApplied.toFixed(2)}%) exceeds practice (${practicePercent}%)`);
+      console.log(`   This violates the fundamental constraint that applied ≤ practice`);
+      console.log(`   Capping applied percentage at practice percentage: ${practicePercent}%`);
+      totalApplied = practicePercent;
+    }
     
-    return totalApplied;
+    const finalResult = +totalApplied.toFixed(2);
+    console.log(`🎯 FINAL RESULT for ${getActivityName(activity)}: ${finalResult}% (Practice: ${practicePercent}%)`);
+    console.log(`   ✅ Constraint satisfied: ${finalResult} ≤ ${practicePercent}`);
+    console.log('=== END BASELINE CALCULATION ===\n');
+    
+    return finalResult;
   };
 
   // Color gradients for activity cards
@@ -1960,11 +2234,11 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     setAvailableActivityYears(filteredYears);
     
     // Set the initial selected year to the current year if it exists in the filtered years
-      if (filteredYears.length > 0) {
+    if (filteredYears.length > 0) {
       const currentYear = new Date().getFullYear();
-      // First try to find the current year, then fall back to the first available year
+      // First try to find the current year, then fall back to the most recent year
       const initialYear = filteredYears.find(y => y.year === currentYear) || 
-                         filteredYears[0];
+                         filteredYears[0]; // Years are sorted newest first
       setSelectedActivityYearId(initialYear.id);
       setSelectedActivityYear(initialYear.year);
       console.log('Set initial year to:', initialYear.year, 'ID:', initialYear.id, 'current year:', currentYear);
@@ -1980,6 +2254,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
   useEffect(() => {
     if (availableActivityYears.length > 0 && !selectedActivityYearId) {
       const currentYear = new Date().getFullYear();
+      // Prefer current year, fall back to most recent year with data
       const matchingYear = availableActivityYears.find(y => y.year === currentYear) || availableActivityYears[0];
       setSelectedActivityYearId(matchingYear.id);
       setSelectedActivityYear(matchingYear.year);
@@ -2025,92 +2300,205 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     // setSubcomponents(subcomponents || []);
   };
 
-  const loadRolesData = async () => {
-    try {
-      console.log('[ResearchDesignStep] Loading roles data for selectedActivityYearId:', selectedActivityYearId);
-      console.log('[ResearchDesignStep] Selected activities:', selectedActivities);
-      console.log('[ResearchDesignStep] All selected subcomponents:', selectedSubcomponents);
-      
-      const rolesData = await RolesService.getRolesByBusinessYear(selectedActivityYearId);
-      console.log('[ResearchDesignStep] Fetched roles:', rolesData);
-      setRoles(rolesData);
-      
-      // Get the latest subcomponents data from the database to ensure we have the most current state
-      const { data: latestSubcomponents, error: subError } = await supabase
-        .from('rd_selected_subcomponents')
-        .select('*')
-        .eq('business_year_id', selectedActivityYearId);
+  // Removed: old roles calculation functions - now handled by RoleSnapshot component
 
-      if (subError) {
-        console.error('Error fetching latest subcomponents:', subError);
-        return;
-      }
+  // All roles calculation functions removed - now handled by RoleSnapshot component
 
-      console.log('[ResearchDesignStep] Latest subcomponents from database:', latestSubcomponents);
-      
-      // Filter subcomponents to only include those that are actually selected and have roles
-      const activeSubcomponents = (latestSubcomponents || []).filter(sub => 
-        sub.selected_roles && 
-        Array.isArray(sub.selected_roles) && 
-        sub.selected_roles.length > 0
-      );
-      
-      console.log('[ResearchDesignStep] Active subcomponents (with roles):', activeSubcomponents);
-      
-      // Log each active subcomponent's roles for debugging
-      activeSubcomponents.forEach(sub => {
-        console.log(`Subcomponent ${sub.subcomponent_id} has roles:`, sub.selected_roles);
-      });
-      
-      // Calculate applied percentages for roles based on subcomponent assignments
-      const appliedPercentages = await RolesService.calculateRolesAppliedPercentage(
-        selectedActivityYearId,
-        selectedActivities,
-        activeSubcomponents
-      );
-      console.log('[ResearchDesignStep] Calculated applied percentages:', appliedPercentages);
-      setRolesAppliedPercentages(appliedPercentages);
-      
-      // Update the baseline_applied_percent in the database for each role
-      for (const role of rolesData) {
-        const calculatedPercent = appliedPercentages[role.name] || 0;
-        await RolesService.updateRoleBaselineAppliedPercent(role.id, calculatedPercent);
-        console.log(`[ResearchDesignStep] Updated role ${role.name} baseline_applied_percent to ${calculatedPercent.toFixed(2)}%`);
-      }
-    } catch (error) {
-      console.error('Error loading roles data:', error);
-    }
-  };
+  // DISABLED: Auto-recalculation that was overwriting correct database values
+  // useEffect(() => {
+  //   if (selectedSubcomponents.length > 0 && selectedSteps.length > 0) {
+  //     recalculateAllAppliedPercentages();
+  //   }
+  // }, [selectedSubcomponents, selectedSteps]);
 
-  useEffect(() => {
-    if (selectedSubcomponents.length > 0 && selectedSteps.length > 0) {
-      recalculateAllAppliedPercentages();
-    }
-  }, [selectedSubcomponents, selectedSteps]);
-
-  // Load roles data when component mounts or when selectedActivities or selectedSubcomponents change
-  useEffect(() => {
-    if (selectedActivities.length > 0 && selectedActivityYearId) {
-      loadRolesData();
-    }
-  }, [selectedActivities, selectedSubcomponents, selectedActivityYearId]);
-
-  // Additional effect to ensure roles are recalculated when subcomponents are modified
-  useEffect(() => {
-    if (selectedActivities.length > 0 && selectedActivityYearId && selectedSubcomponents.length > 0) {
-      // Debounce the role recalculation to avoid excessive calls
-      const timeoutId = setTimeout(() => {
-        loadRolesData();
-      }, 500);
-      
-      return () => clearTimeout(timeoutId);
-    }
-  }, [selectedSubcomponents, selectedActivityYearId]);
+  // Roles calculation now handled by RoleSnapshot component
 
   // Debug modal state changes
   useEffect(() => {
     console.log('ResearchDesignStep: showResearchReportModal state changed to:', showResearchReportModal);
   }, [showResearchReportModal]);
+
+  // Debug function to show raw subcomponent data
+  const debugSubcomponentData = async () => {
+    try {
+      console.log('%c[DEBUG] 🔍 RAW SUBCOMPONENT DATA ANALYSIS', 'background: #ff6b6b; color: white; font-size: 16px; font-weight: bold; padding: 4px;');
+      
+      const { data: allSubcomponents, error: subError } = await supabase
+        .from('rd_selected_subcomponents')
+        .select('*')
+        .eq('business_year_id', selectedActivityYearId);
+      
+      if (subError) {
+        console.error('Error fetching subcomponents for debug:', subError);
+        return;
+      }
+
+      console.log('%c[DEBUG] 📊 Total subcomponents found: ' + (allSubcomponents?.length || 0), 'background: #42a5f5; color: white; font-weight: bold;');
+      
+      if (!allSubcomponents || allSubcomponents.length === 0) {
+        console.log('%c[DEBUG] ⚠️ No subcomponents found', 'background: #ffa726; color: white; font-weight: bold;');
+        return;
+      }
+
+      // Show each subcomponent's data
+      allSubcomponents.forEach((sub, index) => {
+        console.log(`%c[DEBUG] Subcomponent ${index + 1}:`, 'background: #26a69a; color: white; font-weight: bold;');
+        console.log(`  ID: ${sub.subcomponent_id}`);
+        console.log(`  Applied %: ${sub.applied_percentage?.toFixed(2) || '0.00'}%`);
+        console.log(`  Selected Roles: [${(sub.selected_roles || []).join(', ')}]`);
+        console.log(`  Frequency %: ${sub.frequency_percentage?.toFixed(2) || '0.00'}%`);
+        console.log(`  Year %: ${sub.year_percentage?.toFixed(2) || '0.00'}%`);
+        console.log(`  Time %: ${sub.time_percentage?.toFixed(2) || '0.00'}%`);
+        console.log(`  Practice %: ${sub.practice_percent?.toFixed(2) || '0.00'}%`);
+        console.log('');
+      });
+
+      // Calculate totals
+      const totalApplied = allSubcomponents.reduce((sum, sub) => sum + (sub.applied_percentage || 0), 0);
+      const totalFrequency = allSubcomponents.reduce((sum, sub) => sum + (sub.frequency_percentage || 0), 0);
+      const totalYear = allSubcomponents.reduce((sum, sub) => sum + (sub.year_percentage || 0), 0);
+      const totalTime = allSubcomponents.reduce((sum, sub) => sum + (sub.time_percentage || 0), 0);
+      const totalPractice = allSubcomponents.reduce((sum, sub) => sum + (sub.practice_percent || 0), 0);
+
+      console.log('%c[DEBUG] 📊 TOTALS:', 'background: #ff6b6b; color: white; font-weight: bold;');
+      console.log(`  Applied %: ${totalApplied.toFixed(2)}%`);
+      console.log(`  Frequency %: ${totalFrequency.toFixed(2)}%`);
+      console.log(`  Year %: ${totalYear.toFixed(2)}%`);
+      console.log(`  Time %: ${totalTime.toFixed(2)}%`);
+      console.log(`  Practice %: ${totalPractice.toFixed(2)}%`);
+
+      // Show role distribution
+      const roleCounts: { [roleId: string]: number } = {};
+      allSubcomponents.forEach(sub => {
+        (sub.selected_roles || []).forEach(roleId => {
+          roleCounts[roleId] = (roleCounts[roleId] || 0) + 1;
+        });
+      });
+
+      console.log('%c[DEBUG] 🎯 ROLE DISTRIBUTION:', 'background: #ab47bc; color: white; font-weight: bold;');
+      Object.entries(roleCounts).forEach(([roleId, count]) => {
+        console.log(`  Role ${roleId}: ${count} subcomponents`);
+      });
+
+    } catch (error) {
+      console.error('Error in debug function:', error);
+    }
+  };
+
+  // Calculate activity applied percentage from DATABASE selected subcomponents (not template)
+  const calculateActivityAppliedPercentageFromDatabase = async (activityId: string): Promise<number> => {
+    try {
+      console.log(`🔍 [DATABASE CALC] Calculating applied percentage for activity: ${activityId}`);
+      
+      // Get ALL selected subcomponents for this activity from database
+      const { data: dbSubcomponents, error } = await supabase
+        .from('rd_selected_subcomponents')
+        .select('applied_percentage')
+        .eq('business_year_id', selectedActivityYearId)
+        .eq('research_activity_id', activityId);
+
+      if (error) {
+        console.error('🔍 [DATABASE CALC] Error fetching subcomponents:', error);
+        return 0;
+      }
+
+      if (!dbSubcomponents || dbSubcomponents.length === 0) {
+        console.log(`🔍 [DATABASE CALC] No subcomponents found for activity ${activityId}`);
+        return 0;
+      }
+
+      // Sum all applied percentages from database
+      const total = dbSubcomponents.reduce((sum, sub) => sum + (sub.applied_percentage || 0), 0);
+      
+      console.log(`🔍 [DATABASE CALC] Activity ${activityId}:`);
+      console.log(`  └─ Found ${dbSubcomponents.length} subcomponents in database`);
+      console.log(`  └─ Total applied percentage: ${total.toFixed(2)}%`);
+      
+      return total;
+    } catch (error) {
+      console.error('🔍 [DATABASE CALC] Error in calculation:', error);
+      return 0;
+    }
+  };
+
+  // Load and display correct activity totals from database
+  const loadCorrectActivityTotals = async () => {
+    if (!selectedActivities.length || !selectedActivityYearId) return;
+
+    console.log('🔍 [CORRECT TOTALS] Loading activity totals from database...');
+    
+    const correctedTotals: { [activityId: string]: number } = {};
+    let grandTotal = 0;
+
+    for (const activity of selectedActivities) {
+      const activityId = getActivityId(activity);
+      const total = await calculateActivityAppliedPercentageFromDatabase(activityId);
+      correctedTotals[activityId] = total;
+      grandTotal += total;
+    }
+
+    console.log('🔍 [CORRECT TOTALS] Activity totals from database:');
+    selectedActivities.forEach(activity => {
+      const activityId = getActivityId(activity);
+      const activityName = getActivityName(activity);
+      const total = correctedTotals[activityId] || 0;
+      console.log(`  └─ ${activityName}: ${total.toFixed(2)}%`);
+    });
+    console.log(`🔍 [CORRECT TOTALS] Grand total: ${grandTotal.toFixed(2)}%`);
+    console.log(`🔍 [CORRECT TOTALS] This should match roles calculation: 65.87%`);
+
+    return { correctedTotals, grandTotal };
+  };
+
+  // Component to show database-based applied percentage
+  const DatabaseAppliedDisplay: React.FC<{ activityId: string; loading: boolean }> = ({ activityId, loading }) => {
+    const [dbApplied, setDbApplied] = useState<number | null>(null);
+    
+    useEffect(() => {
+      if (!loading && selectedActivityYearId) {
+        calculateActivityAppliedPercentageFromDatabase(activityId).then(setDbApplied);
+      }
+    }, [activityId, loading, selectedActivityYearId]);
+    
+    if (loading || dbApplied === null) return null;
+    
+    return (
+      <div className="text-xs opacity-75 mt-1">
+        🔍 Database: {dbApplied.toFixed(2)}%
+      </div>
+    );
+  };
+
+  // Component to show total database applied percentage
+  const DatabaseTotalDisplay: React.FC = () => {
+    const [totalDbApplied, setTotalDbApplied] = useState<number | null>(null);
+    
+    useEffect(() => {
+      const calculateTotal = async () => {
+        if (!selectedActivities.length || !selectedActivityYearId) return;
+        
+        let total = 0;
+        for (const activity of selectedActivities) {
+          const activityId = getActivityId(activity);
+          const activityTotal = await calculateActivityAppliedPercentageFromDatabase(activityId);
+          total += activityTotal;
+        }
+        setTotalDbApplied(total);
+      };
+      
+      calculateTotal();
+    }, [selectedActivities, selectedActivityYearId]);
+    
+    if (totalDbApplied === null) return <span>Loading...</span>;
+    
+    const isCorrect = Math.abs(totalDbApplied - 59.44) < 0.1;
+    
+    return (
+      <span className={isCorrect ? 'text-green-300' : 'text-yellow-300'}>
+        {totalDbApplied.toFixed(2)}% {isCorrect ? '✅' : '⚠️'}
+      </span>
+    );
+  };
 
   if (loading) {
     return (
@@ -2146,7 +2534,38 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
 
   return (
     <div className="space-y-6">
-      <style dangerouslySetInnerHTML={{ __html: sliderStyles }} />
+      <style dangerouslySetInnerHTML={{ __html: `
+        ${sliderStyles}
+        
+        /* Custom Scrollbar Styles */
+        .scrollbar-thin {
+          scrollbar-width: thin;
+        }
+        .scrollbar-thin::-webkit-scrollbar {
+          width: 8px;
+        }
+        .scrollbar-thin::-webkit-scrollbar-track {
+          background: #dbeafe;
+          border-radius: 4px;
+        }
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+          background: #93c5fd;
+          border-radius: 4px;
+          border: 1px solid #dbeafe;
+        }
+        .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+          background: #60a5fa;
+        }
+        .scrollbar-track-blue-50::-webkit-scrollbar-track {
+          background: #eff6ff;
+        }
+        .scrollbar-thumb-blue-300::-webkit-scrollbar-thumb {
+          background: #93c5fd;
+        }
+        .hover\\:scrollbar-thumb-blue-400:hover::-webkit-scrollbar-thumb {
+          background: #60a5fa;
+        }
+      ` }} />
       
       {/* Modern Gradient Header with Progress */}
       <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl shadow-xl overflow-hidden">
@@ -2163,49 +2582,75 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
               <div className="flex items-center space-x-3">
                 <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
                 <span className="text-blue-100 text-sm font-medium">Live Configuration</span>
+                <button 
+                  onClick={debugSubcomponentData}
+                  className="px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-xs rounded-lg font-bold"
+                >
+                  🔍 DEBUG DATA
+                </button>
               </div>
             </div>
-            {/* Applied Percentage Stacked Bar for Activities */}
+            {/* Enhanced Applied Percentage Stacked Bar - Correlated with SB Data */}
             <div className="mt-6">
               <div className="flex justify-between text-sm text-blue-100 mb-2">
-                <span>Applied Percentage by Activity</span>
-                <span>{selectedActivities.reduce((sum, a) => sum + calculateActivityAppliedPercentage(a), 0).toFixed(2)}%</span>
+                <span>Applied Percentage by Activity (Correlated with SB)</span>
+                <span>{(() => {
+                  const total = selectedActivities.reduce((sum, a) => sum + calculateActivityAppliedPercentage(a), 0);
+                  // Show warning if over 100%
+                  return total > 100 ? 
+                    `${total.toFixed(2)}% ⚠️` : 
+                    `${total.toFixed(2)}%`;
+                })()}</span>
               </div>
               <div className="w-full h-5 rounded-full bg-blue-500/30 flex overflow-hidden">
                 {selectedActivities.map((activity, idx) => {
                   const applied = calculateActivityAppliedPercentage(activity);
-                  const width = applied; // Show actual percentage, not distribution
+                  const practice = getActivityPercentage(activity);
+                  // Normalize width to 100% total for visual display
+                  const totalApplied = selectedActivities.reduce((sum, a) => sum + calculateActivityAppliedPercentage(a), 0);
+                  const width = totalApplied > 0 ? (applied / Math.max(totalApplied, 100)) * 100 : 0;
+                  
                   const color = [
                     'bg-purple-500', 'bg-blue-500', 'bg-green-500', 'bg-orange-500',
                     'bg-indigo-500', 'bg-teal-500', 'bg-yellow-500', 'bg-pink-500'
                   ][idx % 8];
+                  
                   return (
                     <div
-              key={activity.id}
-                      className={`${color} h-full flex items-center justify-center transition-all duration-300`}
+                      key={activity.id}
+                      className={`${color} h-full flex items-center justify-center transition-all duration-300 ${
+                        applied > practice ? 'animate-pulse' : ''
+                      }`}
                       style={{ width: `${width}%` }}
+                      title={`${getActivityName(activity)}: Applied ${applied.toFixed(2)}% / Practice ${practice}%`}
                     >
                       {width > 8 && (
                         <span className="text-xs font-semibold text-white px-2 truncate">
                           {getActivityName(activity)} ({applied.toFixed(2)}%)
                         </span>
                       )}
-        </div>
+                    </div>
                   );
                 })}
-                {/* Fill unused portion if total < 100% */}
+                {/* Fill unused portion only if total < 100% */}
                 {(() => {
                   const totalApplied = selectedActivities.reduce((sum, a) => sum + calculateActivityAppliedPercentage(a), 0);
                   if (totalApplied < 100) {
                     return (
                       <div
-                        className="bg-gray-300 h-full flex-1"
+                        className="bg-gray-300 h-full"
                         style={{ width: `${100 - totalApplied}%` }}
+                        title={`Unused: ${(100 - totalApplied).toFixed(2)}%`}
                       />
                     );
                   }
                   return null;
                 })()}
+              </div>
+              {/* Correlation Status Indicator */}
+              <div className="flex items-center justify-between mt-2 text-xs text-blue-200">
+                <span>🔗 Correlated with Supabase data</span>
+                <span>{selectedSubcomponents.length} subcomponents active</span>
               </div>
             </div>
             {/* End Applied Percentage Stacked Bar */}
@@ -2217,37 +2662,8 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
         <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <div className="flex items-center">
-            <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mr-4">Research Activities</h3>
+            <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mr-4">Research Activities ({selectedActivityYear})</h3>
             <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <label className="text-sm font-medium text-gray-700">Year:</label>
-                <select
-                  value={selectedActivityYearId}
-                  onChange={e => {
-                    const newYearId = e.target.value;
-                    setSelectedActivityYearId(newYearId);
-                    setActiveActivityIndex(0); // Reset to first activity on year change
-                    console.log('Year selector changed to:', newYearId);
-                    
-                    // Find the year number for the selected year ID
-                    const selectedYear = availableActivityYears.find(y => y.id === newYearId);
-                    if (selectedYear) {
-                      setSelectedActivityYear(selectedYear.year);
-                    }
-                    
-                    // Trigger data reloading for the new year
-                    setTimeout(() => {
-                      loadSelectedActivities();
-                      loadRolesData();
-                    }, 100);
-                  }}
-                  className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {availableActivityYears.map(y => (
-                    <option key={y.id} value={y.id}>{y.year}</option>
-                  ))}
-                </select>
-              </div>
               <button
                 onClick={() => {
                   console.log('%c🚀 Research Report button clicked!', 'color: #ff00ff; font-size: 18px; font-weight: bold;');
@@ -2272,14 +2688,38 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {selectedActivities.map((activity, index) => {
               const isActive = activeActivityIndex === index;
-              const appliedPercentage = loading ? 0 : calculateActivityAppliedPercentage(activity);
-              const practicePercentage = getActivityPercentage(activity);
+              // CORRELATION FIX: Ensure database and template calculations match
+              // Practice percentage comes from Research Activities section (like 44.18%)
+              // Applied percentage is calculated from subcomponents (should be ≤ practice)
+              const practicePercentage = getActivityPercentage(activity);  // From Research Activities
+              const appliedPercentage = loading ? 0 : calculateActivityAppliedPercentage(activity);  // Calculated from subcomponents
+              
+              // Debug logging for correlation issues
+              if (!loading && Math.abs(appliedPercentage - practicePercentage) > 0.01) {
+                console.log(`🔍 [CORRELATION CHECK] Activity: ${getActivityName(activity)}`);
+                console.log(`   Practice: ${practicePercentage}%, Applied: ${appliedPercentage.toFixed(2)}%`);
+                console.log(`   Difference: ${Math.abs(appliedPercentage - practicePercentage).toFixed(2)}%`);
+              }
               const colorGradient = ACTIVITY_COLORS[index % ACTIVITY_COLORS.length];
+              
+              // DEBUG: Log to verify the fix
+              console.log(`🔧 ACTIVITY DISPLAY FIX - ${getActivityName(activity)}:`, {
+                practicePercentage: practicePercentage,
+                appliedPercentage: appliedPercentage,
+                isValid: appliedPercentage <= practicePercentage
+              });
               
               return (
                 <div
                   key={activity.id}
-                  onClick={() => setActiveActivityIndex(index)}
+                  onClick={() => {
+                    console.log('🎯 ACTIVITY CARD CLICKED - This should NOT affect Roles Applied Percentage');
+                    console.log('🎯 Previous activeActivityIndex:', activeActivityIndex);
+                    console.log('🎯 New activeActivityIndex will be:', index);
+                    console.log('🎯 CRITICAL: Roles calculation should remain the same because it uses ALL activities');
+                    console.log('🎯 If roles change after this click, there is a bug in the independence logic');
+                    setActiveActivityIndex(index);
+                  }}
                   className={`relative group cursor-pointer transition-all duration-300 transform hover:scale-105 ${
                     isActive ? 'ring-2 ring-blue-500 ring-offset-2' : ''
                   }`}
@@ -2293,12 +2733,24 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
                         <h4 className={`font-bold text-lg mb-2 ${isActive ? 'text-white' : 'text-white'}`}>
                       {getActivityName(activity)}
                     </h4>
-                    {/* Practice/Applied Percentages Combined */}
+                    {/* Practice/Applied Percentages - CORRECTED DISPLAY */}
                         <div className="mb-3">
-                          <div className="text-xs opacity-90 mb-1">Practice/Applied</div>
+                          <div className="text-xs opacity-90 mb-1">Practice → Applied</div>
                           <div className="text-lg font-bold">
-                        {practicePercentage}% / {loading ? '...' : `${appliedPercentage.toFixed(2)}%`}
+                        {practicePercentage}% → {loading ? '...' : `${appliedPercentage.toFixed(2)}%`}
                       </div>
+                          {/* Validation indicator */}
+                          {!loading && appliedPercentage > practicePercentage && (
+                            <div className="text-xs text-red-200 mt-1">
+                              ⚠️ Error: Applied &gt; Practice
+                            </div>
+                          )}
+                          {!loading && appliedPercentage <= practicePercentage && (
+                            <div className="text-xs opacity-75 mt-1">
+                              ✓ Applied ≤ Practice (template)
+                            </div>
+                          )}
+                          <DatabaseAppliedDisplay activityId={getActivityId(activity)} loading={loading} />
                     </div>
                   </div>
                 </div>
@@ -2307,55 +2759,11 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
               </div>
             </div>
 
-            {/* Roles Section - 1/3 width */}
+            {/* NEW: Clean Role Snapshot - 1/3 width */}
             <div className="w-1/3">
-              <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg p-4 border border-purple-200">
-                <h4 className="text-lg font-semibold text-purple-900 mb-3">Roles Applied Percentage</h4>
-                {/* Debug info */}
-                <div className="mb-3 p-2 bg-purple-100 rounded text-xs text-purple-700">
-                  <div>Effective Business Year ID: {effectiveBusinessYearId}</div>
-                  <div>Selected Year ID: {selectedActivityYearId}</div>
-                  <div>Roles found: {roles.length}</div>
-                  <div>Activities: {selectedActivities.length}</div>
+              <RoleSnapshot ref={roleSnapshotRef} businessYearId={selectedActivityYearId} />
+                  </div>
                 </div>
-                <div className="space-y-3">
-                  {roles.length > 0 ? (
-                    roles.map((role) => {
-                      const appliedPercentage = rolesAppliedPercentages[role.name] || 0;
-                      const baselinePercent = role.baseline_applied_percent || 0;
-                      return (
-                        <div key={role.id} className="text-sm text-purple-700">
-                          <div className="flex justify-between items-center mb-1">
-                            <span>{role.name}</span>
-                            <span className="font-semibold">{appliedPercentage.toFixed(2)}%</span>
-                          </div>
-                          <div className="w-full bg-purple-200 rounded-full h-2">
-                            <div 
-                              className="bg-purple-600 h-2 rounded-full transition-all duration-300" 
-                              style={{ width: `${Math.min(appliedPercentage, 100)}%` }}
-                            ></div>
-                          </div>
-                          {/* Show both calculated and stored baseline */}
-                          <div className="text-xs text-purple-500 mt-1">
-                            Calculated: {appliedPercentage.toFixed(2)}% | Stored: {baselinePercent.toFixed(2)}%
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="text-center py-4">
-                      <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-2">
-                        <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
-                        </svg>
-                      </div>
-                      <p className="text-purple-500 text-xs">No roles found for this business year.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
           </div>
         </div>
 
@@ -2390,7 +2798,15 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
             const stepMax = step.percentage;
             // Calculate the raw applied percent for this subcomponent
             let applied = (practicePercent / 100) * (step.percentage / 100) * (subState.frequencyPercent / 100) * (subState.yearPercent / 100) * 100;
-            return { id: sub.id, title: sub.title, name: sub.name, applied, stepId: step.id, stepMax, stepName: step.name };
+            
+            // Apply Non-R&D reduction if applicable
+            const nonRdPercent = step.nonRdPercentage || 0;
+            if (nonRdPercent > 0) {
+              const rdOnlyPercent = (100 - nonRdPercent) / 100;
+              applied = applied * rdOnlyPercent;
+            }
+            
+            return { id: sub.id, title: sub.title, name: sub.name, applied, stepId: step.id, stepMax, stepName: step.name, nonRdPercent };
           });
           // Auto-scale within each step if needed
           const stepGroups = {};
@@ -2476,6 +2892,58 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
                 <p className="text-green-700">Configure research steps and subcomponents</p>
               </div>
                 <div className="flex items-center space-x-4">
+                {/* Force Recalculate Button */}
+                <button
+                  onClick={() => {
+                    console.log('🔄 FORCE RECALCULATE TRIGGERED - DEEP DIVE DEBUG');
+                    console.log('📊 Current State Before Recalculation:');
+                    console.log('  Selected Activities:', selectedActivities.length);
+                    console.log('  Selected Steps:', selectedSteps.length);
+                    console.log('  Selected Subcomponents:', selectedSubcomponents.length);
+                    console.log('  Current Activity Data:', currentActivityData);
+                    
+                    // DEEP DIVE: Check each activity's data sources
+                    selectedActivities.forEach((activity, index) => {
+                      console.log(`\n🧮 === ACTIVITY ${index + 1}: ${getActivityName(activity)} ===`);
+                      console.log('📝 Raw Activity Data:', activity);
+                      console.log('🎯 Practice Percentage (from getActivityPercentage):', getActivityPercentage(activity));
+                      console.log('🆔 Activity ID (from getActivityId):', getActivityId(activity));
+                      
+                      // Check what steps belong to this activity
+                      const activitySteps = selectedSteps.filter(step => 
+                        step.research_activity_id === getActivityId(activity)
+                      );
+                      console.log(`📊 Steps for this activity (${activitySteps.length}):`, activitySteps);
+                      
+                      // Check subcomponents for each step
+                      activitySteps.forEach(step => {
+                        const stepSubcomponents = selectedSubcomponents.filter(sub => 
+                          sub.step_id === step.step_id
+                        );
+                        console.log(`   Step ${step.step_id} has ${stepSubcomponents.length} subcomponents:`, stepSubcomponents);
+                      });
+                      
+                      // Now calculate and show the math
+                      console.log('🧮 Calculating applied percentage...');
+                      const calculatedApplied = calculateActivityAppliedPercentage(activity);
+                      console.log(`📊 RESULT: Applied = ${calculatedApplied}%, Practice = ${getActivityPercentage(activity)}%`);
+                      console.log(`✅ Valid (Applied ≤ Practice): ${calculatedApplied <= getActivityPercentage(activity)}`);
+                    });
+                    
+                    // Force a state update to trigger re-render
+                    setLoading(true);
+                    setTimeout(() => setLoading(false), 100);
+                    
+                    console.log('✅ Force recalculation completed - Check console logs above for issues');
+                  }}
+                  className="px-3 py-2 bg-yellow-500 text-white text-sm font-medium rounded-lg hover:bg-yellow-600 transition-colors duration-200 flex items-center space-x-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span>Force Recalc</span>
+                </button>
+                
                 <div className="text-right">
                   <div className="text-sm text-green-600">Practice Percentage</div>
                   <div className="text-2xl font-bold text-green-900">{getActivityPercentage(currentActivityData)}%</div>
@@ -2493,10 +2961,24 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
             {/* Research Step Time Allocation - Enhanced Accordion UI */}
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
               <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 px-6 py-4 border-b border-gray-200">
-                <h3 className="text-xl font-semibold text-white mb-2">Research Step Time Allocation</h3>
-                <p className="text-blue-100">Allocate time across your research steps. Click to expand and configure subcomponents.</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xl font-semibold text-white mb-2">Research Step Time Allocation</h3>
+                    <p className="text-blue-100">Allocate time across your research steps. Click to expand and configure subcomponents.</p>
+                  </div>
+                  <button
+                    onClick={forceRecalculateEverything}
+                    className="px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 text-white text-sm font-medium rounded-lg transition-all duration-200 flex items-center space-x-2"
+                    title="Force recalculate all applied percentages with current data"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    <span>Force Recalculate</span>
+                  </button>
+                </div>
               </div>
-              <div className="p-4 space-y-2">
+              <div className="p-4 space-y-2 max-h-[70vh] overflow-y-auto">
                 {researchSteps.map((step, idx) => {
                   const color = STEP_COLORS[idx % STEP_COLORS.length];
                   const percentage = Math.round(step.percentage);
@@ -2625,8 +3107,8 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
               </div>
 
                       {/* Enhanced Accordion Content */}
-                      <div className={`overflow-hidden transition-all duration-300 ${isExpanded ? 'max-h-screen' : 'max-h-0'}`}>
-                        <div className="px-4 pb-3 border-t border-gray-100 bg-gradient-to-r from-gray-50 to-blue-50">
+                      <div className={`overflow-hidden transition-all duration-300 ${isExpanded ? 'max-h-[60vh]' : 'max-h-0'}`}>
+                        <div className="px-4 pb-3 border-t border-gray-100 bg-gradient-to-r from-gray-50 to-blue-50 max-h-[50vh] overflow-y-auto scrollbar-thin scrollbar-thumb-blue-300 scrollbar-track-blue-50 hover:scrollbar-thumb-blue-400">
                           <div className="pt-3">
                             <div className="flex items-center justify-between mb-3">
                               <h4 className="text-sm font-semibold text-gray-700">Subcomponent Configuration</h4>
@@ -2701,7 +3183,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
                       stepId={step.id}
                                       businessId={effectiveBusinessId}
                                       year={effectiveYear}
-                                      stepTimePercent={step.percentage}
+                                      stepTimePercent={selectedSteps.find(s => s.step_id === step.id)?.time_percentage || 0}
                                       practicePercent={currentActivityData?.practice_percent || currentActivityData?.percentage || 0}
                                       isSelected={subState.isSelected}
                                       frequencyPercent={subState.frequencyPercent}

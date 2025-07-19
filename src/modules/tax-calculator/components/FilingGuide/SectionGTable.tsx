@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { aiService, AIGenerationContext } from '../../../../services/aiService';
+// aiService removed - using static content generation
 import { SectionGQREService } from '../../services/sectionGQREService';
 
 // Note: OpenAI API key should be configured in environment variables (VITE_OPENAI_API_KEY)
@@ -183,7 +183,8 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
             
             console.log('[SECTION G DEBUG] AI Context for Line 49(f):', line49fContext);
             
-            description = await AIService.generateSectionGLine49f(line49fContext);
+            // Generate static description based on the line49fContext
+            description = `The company evaluated ${line49fContext.subcomponent_count} ${line49fContext.subcomponent_groups} to resolve technical uncertainty in ${line49fContext.research_activity_name}. Experimental testing was conducted using systematic research methodologies within the ${line49fContext.industry} industry. ${line49fContext.guideline_notes || 'Research activities were performed in accordance with established protocols and regulatory requirements.'}`;
             
             // Save to rd_federal_credit table
             await saveToFederalCreditTable({

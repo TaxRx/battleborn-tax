@@ -1,5 +1,5 @@
 // Report Generator Helper Functions for Clinical Practice Guideline Report
-import { aiService } from '../../../../services/aiService';
+// aiService removed - using static report generation
 
 export interface ReportData {
   businessProfile: any;
@@ -283,7 +283,7 @@ export const generateHierarchyTree = (
                   <div class="node-icon">📄</div>
                   <div class="node-text">
                     <div class="node-title">${step.step?.name || 'Research Step'}</div>
-                    <div class="node-subtitle">Time: ${step.time_percentage}% | Applied: ${step.applied_percentage}%</div>
+                    <div class="node-subtitle">Time: ${step.time_percentage || 0}% | Applied: ${step.applied_percentage || 0}%</div>
                   </div>
                 </div>
                 
@@ -336,11 +336,11 @@ export const generateStepsTable = (steps: any[], subcomponents: any[]): string =
                 <td><strong>${step.step?.name || 'Unnamed Step'}</strong></td>
                 <td>
                   <div class="progress-bar">
-                    <div class="progress-fill" style="width: ${step.time_percentage}%"></div>
+                    <div class="progress-fill" style="width: ${step.time_percentage || 0}%"></div>
                   </div>
-                  ${step.time_percentage}%
+                  ${step.time_percentage || 0}%
                 </td>
-                <td>${step.applied_percentage}%</td>
+                <td>${step.applied_percentage || 0}%</td>
                 <td>${stepSubcomponents.length}</td>
                 <td><span class="chip chip-success">Active</span></td>
               </tr>
@@ -368,24 +368,44 @@ export const generateSubcomponentGuidelines = async (
         { id: 'default-3', name: 'Research Coordinators' }
       ];
 
-  // Generate AI-powered best practices for each subcomponent (sequentially to avoid rate limits)
+  // Generate static best practices for each subcomponent
   const subcomponentSummaries = [];
   
   for (const sub of subcomponents) {
     const subData = sub.rd_research_subcomponents || sub;
-    try {
-      console.log(`🤖 Generating AI best practices for: ${subData.name || 'Unknown Component'}`);
-      const bestPractices = await aiService.generateSubcomponentBestPractices(
-        subData.name || subData.general_description || 'Subcomponent',
-        subData.general_description || subData.description || '',
-        safeBusinessRoles
-      );
-      subcomponentSummaries.push({ ...sub, aiGeneratedBestPractices: bestPractices });
-      console.log(`✅ AI content generated successfully for: ${subData.name || 'Unknown Component'}`);
-    } catch (error) {
-      console.warn('Failed to generate AI content for subcomponent:', error);
-      subcomponentSummaries.push({ ...sub, aiGeneratedBestPractices: null });
-    }
+    
+    // Generate static best practices content
+    const componentName = subData.name || subData.general_description || 'Subcomponent';
+    const description = subData.general_description || subData.description || '';
+    
+    const bestPractices = `<h4>Best Practices for ${componentName}</h4>
+<p><strong>Research Component Overview:</strong><br>
+${description || 'Detailed research component focused on systematic investigation and development activities.'}</p>
+
+<h5>Key Implementation Guidelines:</h5>
+<ul>
+  <li><strong>Documentation Standards:</strong> Maintain comprehensive records of all research activities, methodologies, and findings for this component</li>
+  <li><strong>Quality Assurance:</strong> Implement systematic review processes and validation procedures specific to ${componentName}</li>
+  <li><strong>Resource Management:</strong> Optimize allocation of personnel, equipment, and materials for maximum research efficiency</li>
+  <li><strong>Compliance Management:</strong> Ensure adherence to regulatory requirements and industry standards relevant to this research area</li>
+  <li><strong>Progress Monitoring:</strong> Regular assessment and refinement of research processes and methodologies</li>
+</ul>
+
+<h5>Role Assignments:</h5>
+<ul>
+  ${safeBusinessRoles.map(role => `<li><strong>${role.name}:</strong> Participate in research activities according to their expertise and defined responsibilities</li>`).join('')}
+</ul>
+
+<h5>Performance Metrics:</h5>
+<ul>
+  <li>Research milestone completion rates for ${componentName}</li>
+  <li>Quality of deliverables and outcomes</li>
+  <li>Resource utilization efficiency</li>
+  <li>Compliance audit results</li>
+  <li>Innovation impact assessment</li>
+</ul>`;
+
+    subcomponentSummaries.push({ ...sub, aiGeneratedBestPractices: bestPractices });
   }
 
   return `

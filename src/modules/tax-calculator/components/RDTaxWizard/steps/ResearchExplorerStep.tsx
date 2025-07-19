@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../../../../lib/supabase';
 import { Plus, ChevronDown, ChevronRight, Edit, Trash2, MoveUp, MoveDown, UserPlus, Sparkles, RotateCcw } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { aiService, AIGenerationContext } from '../../../../../services/aiService';
+// aiService removed - using static content generation
 
 interface ResearchExplorerStepProps {
   selectedActivities: any[];
@@ -11,6 +11,7 @@ interface ResearchExplorerStepProps {
   onPrevious: () => void;
   businessId?: string;
   businessYearId?: string;
+  parentSelectedYear?: number; // Add parentSelectedYear prop to receive year from parent
 }
 
 interface ResearchCategory {
@@ -941,7 +942,8 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
   onNext,
   onPrevious,
   businessId,
-  businessYearId
+  businessYearId,
+  parentSelectedYear
 }) => {
   const [activeTab, setActiveTab] = useState<'roles' | 'activities' | 'design'>('roles');
   const [loading, setLoading] = useState(true);
@@ -967,7 +969,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
   // UI state
   const [showSubcomponents, setShowSubcomponents] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedYear, setSelectedYear] = useState(2025);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [showAddRoleModal, setShowAddRoleModal] = useState(false);
   const [showEditRoleModal, setShowEditRoleModal] = useState(false);
   const [editingRole, setEditingRole] = useState<ResearchRole | null>(null);
@@ -986,7 +988,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
   // State for copy confirmation modal
   const [showCopyModal, setShowCopyModal] = useState(false);
-  const [copyType, setCopyType] = useState<'roles' | 'activities' | null>(null);
+  const [copyType, setCopyType] = useState<'roles' | 'activities' | 'all' | null>(null);
   const [copyTargetYear, setCopyTargetYear] = useState<string | null>(null);
 
   // Practice percentage configuration
@@ -1047,10 +1049,19 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
   // Set default business year when available business years are loaded
   useEffect(() => {
     if (availableBusinessYears.length > 0 && !selectedBusinessYearId) {
-      const firstYear = availableBusinessYears[0];
-      console.log('Setting default business year:', firstYear.year, 'ID:', firstYear.id);
-      setSelectedYear(firstYear.year);
-      setSelectedBusinessYearId(firstYear.id);
+      const currentYear = new Date().getFullYear();
+      
+      // Try to find the current year first
+      let defaultYear = availableBusinessYears.find(year => year.year === currentYear);
+      
+      // If current year doesn't exist, use the most recent year
+      if (!defaultYear) {
+        defaultYear = availableBusinessYears[0]; // Years are sorted newest first
+      }
+      
+      console.log('Setting default business year:', defaultYear.year, 'ID:', defaultYear.id, '(current year:', currentYear, ')');
+      setSelectedYear(defaultYear.year);
+      setSelectedBusinessYearId(defaultYear.id);
     }
   }, [availableBusinessYears, selectedBusinessYearId]);
 
@@ -1075,6 +1086,24 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       saveFilterSelections();
     }
   }, [selectedCategories, selectedAreas, selectedFocuses, selectedYear]);
+
+  // Sync with parent year selection from bottom bar
+  useEffect(() => {
+    if (parentSelectedYear && parentSelectedYear !== selectedYear) {
+      console.log('Parent year changed from bottom bar:', parentSelectedYear, 'current:', selectedYear);
+      setSelectedYear(parentSelectedYear);
+      
+      // Find the corresponding business year ID for the new year
+      const businessYear = availableBusinessYears.find(by => by.year === parentSelectedYear);
+      if (businessYear) {
+        setSelectedBusinessYearId(businessYear.id);
+      } else if (businessId) {
+        // Need to create this business year if it doesn't exist
+        console.log('Creating business year for parent-selected year:', parentSelectedYear);
+        // This will be handled by the existing year change logic
+      }
+    }
+  }, [parentSelectedYear, selectedYear, availableBusinessYears, businessId]);
 
   const loadResearchData = async () => {
     setLoading(true);
@@ -1128,49 +1157,122 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       console.log('Using business ID from props:', businessId);
       setCurrentBusinessId(businessId);
 
-      // First, let's see ALL business years in the database to debug
-      const { data: allBusinessYears, error: allYearsError } = await supabase
-        .from('rd_business_years')
-        .select('id, year, business_id')
-        .order('year', { ascending: false });
-
-      console.log('ALL business years in database:', { allBusinessYears, allYearsError });
+      // First, get the business start year from rd_businesses table
+      const { data: business, error: businessError } = await supabase
+        .from('rd_businesses')
+        .select('start_year')
+        .eq('id', businessId)
+        .single();
       
-      // Log the business_id values to debug the mismatch
-      if (allBusinessYears && allBusinessYears.length > 0) {
-        console.log('Business years with their business_id values:');
-        allBusinessYears.forEach((year, index) => {
-          console.log(`Year ${index + 1}:`, year);
-        });
+      if (businessError) {
+        console.error('Error fetching business start year:', businessError);
+        // Fallback to current implementation
+        await loadExistingBusinessYears();
+        return;
+      }
+      
+      if (!business) {
+        console.error('Business not found for ID:', businessId);
+        setAvailableBusinessYears([]);
+        return;
+      }
+      
+      const startYear = business.start_year;
+      const currentYear = new Date().getFullYear();
+      
+      console.log('Business start year:', startYear, 'Current year:', currentYear);
+      
+      // Generate ALL years from business start year to current year + 1
+      const allPossibleYears = [];
+      for (let year = startYear; year <= currentYear + 1; year++) {
+        allPossibleYears.push(year);
+      }
+      
+      console.log('All possible years:', allPossibleYears);
+      
+      // Get existing business years to map IDs
+      const { data: existingYears, error: yearError } = await supabase
+        .from('rd_business_years')
+        .select('id, year')
+        .eq('business_id', businessId);
+
+      if (yearError) {
+        console.error('Error loading existing business years:', yearError);
       }
 
-      // Now get business years for this specific business
+      // Create available years array with existing IDs where available
+      const availableYears = [];
+      for (const year of allPossibleYears) {
+        const existingYear = existingYears?.find(ey => ey.year === year);
+        if (existingYear) {
+          // Use existing business year
+          availableYears.push({
+            id: existingYear.id,
+            year: year
+          });
+        } else {
+          // Create business year on-demand instead of using temp ID
+          console.log(`Creating business year for ${year}...`);
+          const { data: newBusinessYear, error: createError } = await supabase
+            .from('rd_business_years')
+            .insert({
+              business_id: businessId,
+              year: year
+            })
+            .select('id, year')
+            .single();
+          
+          if (createError) {
+            console.error(`Error creating business year for ${year}:`, createError);
+            // Skip this year if we can't create it
+            continue;
+          }
+          
+          availableYears.push({
+            id: newBusinessYear.id,
+            year: newBusinessYear.year
+          });
+        }
+      }
+      
+      // Sort descending (newest first)
+      availableYears.sort((a, b) => b.year - a.year);
+      
+      console.log('Available years for dropdown:', availableYears);
+      setAvailableBusinessYears(availableYears);
+      
+    } catch (error) {
+      console.error('Error loading business years:', error);
+      // Fallback to existing method
+      await loadExistingBusinessYears();
+    }
+  };
+
+  // Fallback method that loads only existing business years
+  const loadExistingBusinessYears = async () => {
+    try {
       const { data: businessYears, error: yearError } = await supabase
         .from('rd_business_years')
         .select('id, year')
         .eq('business_id', businessId)
         .order('year', { ascending: false });
 
-      console.log('Business years query result:', { businessYears, yearError });
-
       if (yearError) {
-        console.error('Error loading business years:', yearError);
+        console.error('Error loading existing business years:', yearError);
         setAvailableBusinessYears([]);
         setSelectedBusinessYearId('');
-        setSelectedYear(2025);
+        setSelectedYear(new Date().getFullYear());
         return;
       }
 
       setAvailableBusinessYears(businessYears || []);
       
-      // Don't automatically set the business year here - let the useEffect handle it
-      if (businessYears && businessYears.length > 0) {
-        console.log('Found business years:', businessYears);
-      } else {
+      if (!businessYears || businessYears.length === 0) {
         console.warn('No business years found for business:', businessId);
-        
         // Create business years for this business if none exist
-        await createBusinessYearsForBusiness(businessId);
+        if (businessId) {
+          await createBusinessYearsForBusiness(businessId);
+        }
         
         // Reload business years after creating them
         const { data: newBusinessYears, error: newYearError } = await supabase
@@ -1187,10 +1289,10 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         }
       }
     } catch (error) {
-      console.error('Error loading business years:', error);
+      console.error('Error in loadExistingBusinessYears:', error);
       setAvailableBusinessYears([]);
       setSelectedBusinessYearId('');
-      setSelectedYear(2025);
+      setSelectedYear(new Date().getFullYear());
     }
   };
 
@@ -1220,9 +1322,9 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       if (roles && roles.length > 0) {
         setRoles(roles);
       } else {
-        // No roles found for this business year, ask user if they want to copy
-        console.log('No roles found for this business year, asking user if they want to copy');
-        setCopyType('roles');
+        // No roles found for this business year, ask user if they want to copy all data
+        console.log('No roles found for this business year, asking user if they want to copy all data');
+        setCopyType('all');
         setShowCopyModal(true);
         setRoles([]);
       }
@@ -1466,17 +1568,31 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         is_default: role.is_default || false,
         type: role.type || null, // null = Direct Participant, "supervisor" or "admin"
         business_year_id: selectedBusinessYearId,
-        business_id: currentBusinessId
+        business_id: currentBusinessId,
+        baseline_applied_percent: null
       };
       
+      console.log('Attempting to insert role data:', roleData);
+      
+      // Explicitly specify columns to help with schema cache issues
       const { data, error } = await supabase
         .from('rd_roles')
-        .insert(roleData)
+        .insert({
+          business_id: roleData.business_id,
+          business_year_id: roleData.business_year_id,
+          name: roleData.name,
+          description: roleData.description,
+          parent_id: roleData.parent_id,
+          is_default: roleData.is_default,
+          type: roleData.type,
+          baseline_applied_percent: roleData.baseline_applied_percent
+        })
         .select()
         .single();
 
       if (error) {
         console.error('Database error saving role:', error);
+        console.error('Role data that caused error:', roleData);
         throw error;
       }
       
@@ -1831,7 +1947,65 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
     setSelectedActivitiesState(remainingActivities.map(act => ({ ...act, practice_percent: equalShare })));
 
-    // Delete the removed activity from database
+    // CASCADE DELETION: Remove all related research design data
+    try {
+      console.log('🗑️ Starting cascade deletion for activity:', activityId);
+      
+      // 1. Delete selected subcomponents for this activity
+      const { error: subcomponentError } = await supabase
+        .from('rd_selected_subcomponents')
+        .delete()
+        .eq('business_year_id', selectedBusinessYearId)
+        .eq('research_activity_id', activityId);
+      
+      if (subcomponentError) {
+        console.error('Error deleting selected subcomponents:', subcomponentError);
+      } else {
+        console.log('✅ Deleted selected subcomponents for activity:', activityId);
+      }
+
+      // 2. Delete selected steps for this activity
+      const { error: stepsError } = await supabase
+        .from('rd_selected_steps')
+        .delete()
+        .eq('business_year_id', selectedBusinessYearId)
+        .eq('research_activity_id', activityId);
+      
+      if (stepsError) {
+        console.error('Error deleting selected steps:', stepsError);
+      } else {
+        console.log('✅ Deleted selected steps for activity:', activityId);
+      }
+
+      // 3. Delete employee subcomponents for this activity
+      // First get the subcomponent IDs for this activity
+      const { data: activitySubcomponents } = await supabase
+        .from('rd_research_subcomponents')
+        .select('id')
+        .eq('step_id', activityId);
+      
+      if (activitySubcomponents && activitySubcomponents.length > 0) {
+        const subcomponentIds = activitySubcomponents.map(sub => sub.id);
+        const { error: employeeSubError } = await supabase
+          .from('rd_employee_subcomponents')
+          .delete()
+          .eq('business_year_id', selectedBusinessYearId)
+          .in('subcomponent_id', subcomponentIds);
+        
+        if (employeeSubError) {
+          console.error('Error deleting employee subcomponents:', employeeSubError);
+        } else {
+          console.log('✅ Deleted employee subcomponents for activity:', activityId);
+        }
+              }
+
+      console.log('🎯 Cascade deletion completed for activity:', activityId);
+      
+    } catch (error) {
+      console.error('Error in cascade deletion:', error);
+    }
+
+    // Delete the removed activity from database (main activity record)
     try {
       const { error } = await supabase
         .from('rd_selected_activities')
@@ -1839,6 +2013,8 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         .eq('business_year_id', selectedBusinessYearId)
         .eq('activity_id', activityId);
       if (error) throw error;
+      
+      console.log('✅ Successfully removed activity and all related data:', activityId);
     } catch (error) {
       console.error('Error deleting selected activity:', error);
     }
@@ -1934,10 +2110,10 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
     }
   };
 
-  // Copy activities from source year to current year
-  const copyActivitiesFromYear = async (sourceBusinessYearId: string) => {
+  // Enhanced comprehensive copy function - copies ALL data from source year to current year
+  const copyAllDataFromYear = async (sourceBusinessYearId: string) => {
     try {
-      console.log('🔄 Starting activity copy process...');
+      console.log('🔄 Starting COMPREHENSIVE data copy process...');
       console.log('📅 Available business years:', availableBusinessYears);
       console.log('🎯 Source business year ID:', sourceBusinessYearId);
       console.log('🎯 Current business year ID:', selectedBusinessYearId);
@@ -1952,30 +2128,15 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         return;
       }
 
-      console.log(`Copying activities from source year ${sourceBusinessYearId} to current year ${selectedBusinessYearId}`);
+      console.log(`🚀 Copying ALL DATA from source year ${sourceBusinessYearId} to current year ${selectedBusinessYearId}`);
 
-      // Get all activities from source year
-      const { data: sourceYearActivities, error: fetchError } = await supabase
-        .from('rd_selected_activities')
-        .select('*')
-        .eq('business_year_id', sourceBusinessYearId);
+      // STEP 1: Copy Roles (same as before but improved)
+      await copyRolesFromYear(sourceBusinessYearId);
 
-      if (fetchError) {
-        console.error('Error fetching source year activities:', fetchError);
-        return;
-      }
-
-      if (!sourceYearActivities || sourceYearActivities.length === 0) {
-        console.log('No activities found in source year to copy');
-        return;
-      }
-
-      console.log(`Found ${sourceYearActivities.length} activities to copy`);
-
-      // Get all available roles for the current year to pre-select them
+      // Get current year roles for role mapping
       const { data: currentYearRoles, error: rolesError } = await supabase
         .from('rd_roles')
-        .select('id')
+        .select('id, name')
         .eq('business_year_id', selectedBusinessYearId);
 
       if (rolesError) {
@@ -1984,39 +2145,266 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       }
 
       const allRoleIds = currentYearRoles?.map(role => role.id) || [];
+      console.log('📋 Current year role IDs for mapping:', allRoleIds);
 
-      // Copy each activity to the current year with all roles pre-selected
-      for (const activity of sourceYearActivities) {
-        try {
-          const { data: newActivity, error: insertError } = await supabase
-            .from('rd_selected_activities')
-            .insert({
-              business_year_id: selectedBusinessYearId,
-              activity_id: activity.activity_id,
-              practice_percent: activity.practice_percent,
-              selected_roles: allRoleIds, // Pre-select all roles instead of copying original selection
-              config: activity.config
-            })
-            .select()
-            .single();
+      // STEP 2: Copy Selected Activities
+      const { data: sourceActivities, error: activitiesError } = await supabase
+        .from('rd_selected_activities')
+        .select('*')
+        .eq('business_year_id', sourceBusinessYearId);
 
-          if (insertError) {
-            console.error(`Error copying activity ${activity.id}:`, insertError);
-          } else {
-            console.log(`✅ Successfully copied activity ${activity.activity_id} to current year with all roles pre-selected`);
+      if (activitiesError) {
+        console.error('Error fetching source activities:', activitiesError);
+      } else if (sourceActivities && sourceActivities.length > 0) {
+        console.log(`📊 Copying ${sourceActivities.length} activities...`);
+        
+        for (const activity of sourceActivities) {
+          try {
+            await supabase
+              .from('rd_selected_activities')
+              .insert({
+                business_year_id: selectedBusinessYearId,
+                activity_id: activity.activity_id,
+                practice_percent: activity.practice_percent,
+                selected_roles: allRoleIds, // Use current year roles
+                config: activity.config,
+                research_guidelines: activity.research_guidelines
+              });
+            console.log(`✅ Copied activity ${activity.activity_id}`);
+          } catch (error) {
+            console.error(`❌ Error copying activity ${activity.activity_id}:`, error);
           }
-        } catch (copyError) {
-          console.error(`Error copying activity ${activity.id}:`, copyError);
         }
       }
 
-      console.log('🔄 Activity copy process completed');
+      // STEP 3: Copy Selected Steps
+      const { data: sourceSteps, error: stepsError } = await supabase
+        .from('rd_selected_steps')
+        .select('*')
+        .eq('business_year_id', sourceBusinessYearId);
+
+      if (stepsError) {
+        console.error('Error fetching source steps:', stepsError);
+      } else if (sourceSteps && sourceSteps.length > 0) {
+        console.log(`🪜 Copying ${sourceSteps.length} research steps...`);
+        
+        for (const step of sourceSteps) {
+          try {
+            await supabase
+              .from('rd_selected_steps')
+              .insert({
+                business_year_id: selectedBusinessYearId,
+                research_activity_id: step.research_activity_id,
+                step_id: step.step_id,
+                time_percentage: step.time_percentage,
+                applied_percentage: step.applied_percentage
+              });
+            console.log(`✅ Copied step ${step.step_id}`);
+          } catch (error) {
+            console.error(`❌ Error copying step ${step.step_id}:`, error);
+          }
+        }
+      }
+
+      // STEP 4: Copy Selected Subcomponents
+      const { data: sourceSubcomponents, error: subcomponentsError } = await supabase
+        .from('rd_selected_subcomponents')
+        .select('*')
+        .eq('business_year_id', sourceBusinessYearId);
+
+      if (subcomponentsError) {
+        console.error('Error fetching source subcomponents:', subcomponentsError);
+      } else if (sourceSubcomponents && sourceSubcomponents.length > 0) {
+        console.log(`🧩 Copying ${sourceSubcomponents.length} subcomponents...`);
+        
+        for (const subcomponent of sourceSubcomponents) {
+          try {
+            await supabase
+              .from('rd_selected_subcomponents')
+              .insert({
+                business_year_id: selectedBusinessYearId,
+                research_activity_id: subcomponent.research_activity_id,
+                step_id: subcomponent.step_id,
+                subcomponent_id: subcomponent.subcomponent_id,
+                frequency_percentage: subcomponent.frequency_percentage,
+                year_percentage: subcomponent.year_percentage,
+                start_month: subcomponent.start_month,
+                start_year: subcomponent.start_year,
+                selected_roles: allRoleIds, // Use current year roles
+                non_rd_percentage: subcomponent.non_rd_percentage,
+                approval_data: subcomponent.approval_data,
+                hint: subcomponent.hint,
+                general_description: subcomponent.general_description,
+                goal: subcomponent.goal,
+                hypothesis: subcomponent.hypothesis,
+                alternatives: subcomponent.alternatives,
+                uncertainties: subcomponent.uncertainties,
+                developmental_process: subcomponent.developmental_process,
+                primary_goal: subcomponent.primary_goal,
+                expected_outcome_type: subcomponent.expected_outcome_type,
+                cpt_codes: subcomponent.cpt_codes,
+                cdt_codes: subcomponent.cdt_codes,
+                alternative_paths: subcomponent.alternative_paths,
+                applied_percentage: subcomponent.applied_percentage,
+                time_percentage: subcomponent.time_percentage,
+                user_notes: subcomponent.user_notes,
+                step_name: subcomponent.step_name,
+                practice_percent: subcomponent.practice_percent
+              });
+            console.log(`✅ Copied subcomponent ${subcomponent.subcomponent_id}`);
+          } catch (error) {
+            console.error(`❌ Error copying subcomponent ${subcomponent.subcomponent_id}:`, error);
+          }
+        }
+      }
+
+      // STEP 5: Copy Employee Subcomponents (Employee Allocations)
+      const { data: sourceEmployeeSubcomponents, error: empSubError } = await supabase
+        .from('rd_employee_subcomponents')
+        .select('*')
+        .eq('business_year_id', sourceBusinessYearId);
+
+      if (empSubError) {
+        console.error('Error fetching source employee subcomponents:', empSubError);
+      } else if (sourceEmployeeSubcomponents && sourceEmployeeSubcomponents.length > 0) {
+        console.log(`👥 Copying ${sourceEmployeeSubcomponents.length} employee allocations...`);
+        
+        for (const empSub of sourceEmployeeSubcomponents) {
+          try {
+            await supabase
+              .from('rd_employee_subcomponents')
+              .insert({
+                employee_id: empSub.employee_id,
+                subcomponent_id: empSub.subcomponent_id,
+                business_year_id: selectedBusinessYearId,
+                time_percentage: empSub.time_percentage,
+                applied_percentage: empSub.applied_percentage,
+                is_included: empSub.is_included,
+                baseline_applied_percent: empSub.baseline_applied_percent,
+                practice_percentage: empSub.practice_percentage,
+                year_percentage: empSub.year_percentage,
+                frequency_percentage: empSub.frequency_percentage,
+                baseline_practice_percentage: empSub.baseline_practice_percentage,
+                baseline_time_percentage: empSub.baseline_time_percentage,
+                user_id: empSub.user_id
+              });
+            console.log(`✅ Copied employee allocation for employee ${empSub.employee_id}`);
+          } catch (error) {
+            console.error(`❌ Error copying employee allocation:`, error);
+          }
+        }
+      }
+
+      // STEP 6: Copy Contractor Year Data
+      const { data: sourceContractors, error: contractorsError } = await supabase
+        .from('rd_contractor_year_data')
+        .select('*')
+        .eq('business_year_id', sourceBusinessYearId);
+
+      if (contractorsError) {
+        console.error('Error fetching source contractors:', contractorsError);
+      } else if (sourceContractors && sourceContractors.length > 0) {
+        console.log(`🔧 Copying ${sourceContractors.length} contractor records...`);
+        
+        for (const contractor of sourceContractors) {
+          try {
+            await supabase
+              .from('rd_contractor_year_data')
+              .insert({
+                business_year_id: selectedBusinessYearId,
+                name: contractor.name,
+                cost_amount: contractor.cost_amount,
+                applied_percent: contractor.applied_percent,
+                activity_link: contractor.activity_link,
+                contractor_id: contractor.contractor_id,
+                user_id: contractor.user_id,
+                activity_roles: contractor.activity_roles
+              });
+            console.log(`✅ Copied contractor ${contractor.name}`);
+          } catch (error) {
+            console.error(`❌ Error copying contractor ${contractor.name}:`, error);
+          }
+        }
+      }
+
+      // STEP 7: Copy Supply Year Data
+      const { data: sourceSupplies, error: suppliesError } = await supabase
+        .from('rd_supply_year_data')
+        .select('*')
+        .eq('business_year_id', sourceBusinessYearId);
+
+      if (suppliesError) {
+        console.error('Error fetching source supplies:', suppliesError);
+      } else if (sourceSupplies && sourceSupplies.length > 0) {
+        console.log(`📦 Copying ${sourceSupplies.length} supply records...`);
+        
+        for (const supply of sourceSupplies) {
+          try {
+            await supabase
+              .from('rd_supply_year_data')
+              .insert({
+                business_year_id: selectedBusinessYearId,
+                supply_name: supply.supply_name,
+                cost_amount: supply.cost_amount,
+                applied_percent: supply.applied_percent,
+                activity_link: supply.activity_link,
+                supply_id: supply.supply_id,
+                user_id: supply.user_id
+              });
+            console.log(`✅ Copied supply ${supply.supply_name}`);
+          } catch (error) {
+            console.error(`❌ Error copying supply ${supply.supply_name}:`, error);
+          }
+        }
+      }
+
+      // STEP 8: Copy Employee Year Data  
+      const { data: sourceEmployeeYearData, error: empYearError } = await supabase
+        .from('rd_employee_year_data')
+        .select('*')
+        .eq('business_year_id', sourceBusinessYearId);
+
+      if (empYearError) {
+        console.error('Error fetching source employee year data:', empYearError);
+      } else if (sourceEmployeeYearData && sourceEmployeeYearData.length > 0) {
+        console.log(`👤 Copying ${sourceEmployeeYearData.length} employee year records...`);
+        
+        for (const empYear of sourceEmployeeYearData) {
+          try {
+            await supabase
+              .from('rd_employee_year_data')
+              .insert({
+                employee_id: empYear.employee_id,
+                business_year_id: selectedBusinessYearId,
+                calculated_qre: empYear.calculated_qre,
+                applied_percent: empYear.applied_percent
+              });
+            console.log(`✅ Copied employee year data for employee ${empYear.employee_id}`);
+          } catch (error) {
+            console.error(`❌ Error copying employee year data:`, error);
+          }
+        }
+      }
+
+      console.log('🎉 COMPREHENSIVE DATA COPY COMPLETED!');
+      console.log('📊 Successfully copied all research data, activities, steps, subcomponents, employee allocations, contractors, and supplies');
       
-      // Reload the activities for the current year
-      await loadSelectedActivities();
+      // Reload all data for the current year
+      await Promise.all([
+        loadSelectedActivities(),
+        loadRoles()
+      ]);
+      
+      console.log('🔄 All data reloaded for current year');
     } catch (error) {
-      console.error('Error in copyActivitiesFromYear:', error);
+      console.error('❌ Error in comprehensive data copy:', error);
     }
+  };
+
+  // Legacy function for backward compatibility
+  const copyActivitiesFromYear = async (sourceBusinessYearId: string) => {
+    // Redirect to comprehensive copy
+    await copyAllDataFromYear(sourceBusinessYearId);
   };
 
   const loadSelectedActivities = async () => {
@@ -2088,9 +2476,9 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
           onUpdate({ selectedActivities: mappedActivities });
         }
       } else {
-        // No activities found for this business year, ask user if they want to copy
-        console.log('No activities found for this business year, asking user if they want to copy');
-        setCopyType('activities');
+        // No activities found for this business year, ask user if they want to copy all data
+        console.log('No activities found for this business year, asking user if they want to copy all data');
+        setCopyType('all');
         setShowCopyModal(true);
         
         // Set empty state
@@ -2299,6 +2687,8 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       await copyRolesFromYear(sourceYearId);
     } else if (copyType === 'activities') {
       await copyActivitiesFromYear(sourceYearId);
+    } else if (copyType === 'all') {
+      await copyAllDataFromYear(sourceYearId);
     }
   };
 
@@ -2501,53 +2891,99 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
     );
   }
 
+  // Calculate completion status for tabs
+  const getTabCompletionStatus = (tab: string) => {
+    switch (tab) {
+      case 'roles':
+        return roles.length > 0;
+      case 'activities':
+        return selectedActivitiesState.length > 0;
+      case 'design':
+        return selectedActivitiesState.some(activity => 
+          activity.research_guidelines && 
+          Object.keys(activity.research_guidelines).length > 0
+        );
+      default:
+        return false;
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div className="text-center mb-8">
-        <h3 className="text-3xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mb-4">
-          Research Explorer
-        </h3>
+      {/* Header with Business Setup style */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-6 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-3xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mb-2">
+                Research Explorer
+              </h3>
+              <p className="text-gray-600 text-lg">Configure your research team, activities, and guidelines</p>
+              <div className="flex items-center space-x-4 mt-3">
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                  <span className="text-sm text-gray-600">Active configuration for {selectedYear}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Tab Navigation */}
-      <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
-        <button
-          onClick={() => setActiveTab('roles')}
-          className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
-            activeTab === 'roles'
-              ? 'bg-white text-blue-600 shadow-sm'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Roles
-        </button>
-        <button
-          onClick={() => setActiveTab('activities')}
-          className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
-            activeTab === 'activities'
-              ? 'bg-white text-blue-600 shadow-sm'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Activities
-        </button>
-        <button
-          onClick={() => setActiveTab('design')}
-          className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
-            activeTab === 'design'
-              ? 'bg-white text-blue-600 shadow-sm'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          Research Guidelines
-        </button>
+      {/* Enhanced Tab Navigation with Completion Indicators */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="flex space-x-0 bg-gray-50">
+          {[
+            { key: 'roles', label: 'Research Roles', icon: '👥', description: 'Define team hierarchy' },
+            { key: 'activities', label: 'Research Activities', icon: '🔬', description: 'Select research areas' },
+            { key: 'design', label: 'Research Guidelines', icon: '📋', description: 'Configure guidelines' }
+          ].map((tab, index) => {
+            const isActive = activeTab === tab.key;
+            const isCompleted = getTabCompletionStatus(tab.key);
+            
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key as any)}
+                className={`flex-1 p-6 transition-all border-b-4 ${
+                  isActive
+                    ? 'bg-white border-blue-500 text-blue-600 shadow-sm'
+                    : 'bg-gray-50 border-transparent text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                <div className="flex items-center justify-center space-x-3">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-2xl">{tab.icon}</span>
+                    <div className="text-left">
+                      <div className="font-semibold">{tab.label}</div>
+                      <div className="text-xs text-gray-500">{tab.description}</div>
+                    </div>
+                  </div>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+                    isCompleted
+                      ? 'bg-green-100 text-green-600'
+                      : 'bg-yellow-100 text-yellow-600'
+                  }`}>
+                    {isCompleted ? (
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    ) : (
+                      <span className="text-xs font-semibold">!</span>
+                    )}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Tab Content */}
       <div className="bg-white rounded-lg shadow-sm p-6">
         {activeTab === 'roles' && (
           <div className="space-y-6">
-            {/* Enhanced Header with Year Selector */}
+            {/* Enhanced Header */}
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
               <div className="flex items-center justify-between">
                 <div>
@@ -2556,37 +2992,9 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
                   </h4>
                   <p className="text-gray-600 text-lg">Define your research team hierarchy and responsibilities</p>
                   <div className="flex items-center space-x-4 mt-3">
-                    <div className="flex items-center space-x-2 bg-white rounded-lg px-3 py-2 shadow-sm">
-                      <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <label className="text-sm font-medium text-gray-700">Year:</label>
-                      <select
-                        value={selectedYear}
-                        onChange={(e) => {
-                          const year = parseInt(e.target.value);
-                          setSelectedYear(year);
-                          const businessYear = availableBusinessYears.find(by => by.year === year);
-                          if (businessYear) {
-                            setSelectedBusinessYearId(businessYear.id);
-                          }
-                        }}
-                        className="px-3 py-1 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-transparent"
-                      >
-                        {availableBusinessYears.length > 0 ? (
-                          availableBusinessYears.map(businessYear => (
-                            <option key={businessYear.id} value={businessYear.year}>
-                              {businessYear.year}
-                            </option>
-                          ))
-                        ) : (
-                          <option value="">No years available</option>
-                        )}
-                      </select>
-                    </div>
                     <div className="flex items-center space-x-2">
                       <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                      <span className="text-sm text-gray-600">Active configuration</span>
+                      <span className="text-sm text-gray-600">Active configuration for {selectedYear}</span>
                     </div>
                   </div>
                 </div>
@@ -2598,7 +3006,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                     </svg>
-                    <span>Copy from Year</span>
+                    <span>Copy All Data from Year</span>
                   </button>
                   <button
                     onClick={() => setShowAddRoleModal(true)}
@@ -2682,7 +3090,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                         </svg>
-                        <span>Copy from Another Year</span>
+                        <span>Copy All Data from Another Year</span>
                       </button>
                     </div>
                     
@@ -2861,32 +3269,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
             <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
               <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200 flex items-center justify-between">
                 <div className="flex items-center">
-                  <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mr-4">Activity Configuration</h3>
-                  <div className="flex items-center space-x-2">
-                    <label className="text-sm font-medium text-gray-700">Year:</label>
-                    <select
-                      value={selectedYear}
-                      onChange={(e) => {
-                        const year = parseInt(e.target.value);
-                        setSelectedYear(year);
-                        const businessYear = availableBusinessYears.find(by => by.year === year);
-                        if (businessYear) {
-                          setSelectedBusinessYearId(businessYear.id);
-                        }
-                      }}
-                      className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      {availableBusinessYears.length > 0 ? (
-                        availableBusinessYears.map(businessYear => (
-                          <option key={businessYear.id} value={businessYear.year}>
-                            {businessYear.year}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="">No years available</option>
-                      )}
-                    </select>
-                  </div>
+                  <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mr-4">Activity Configuration ({selectedYear})</h3>
                 </div>
                 <div className="text-right">
                   <div className="text-sm text-gray-600">Available for R&D</div>
@@ -3335,11 +3718,41 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 const createBusinessYearsForBusiness = async (businessId: string) => {
   try {
     console.log('Creating business years for business:', businessId);
-    // Create business years for 2024 and 2025 with required fields
-    const businessYearsToCreate = [
-      { business_id: businessId, year: 2024, gross_receipts: 0 },
-      { business_id: businessId, year: 2025, gross_receipts: 0 }
-    ];
+    
+    // First, get the business start year from rd_businesses table
+    const { data: business, error: businessError } = await supabase
+      .from('rd_businesses')
+      .select('start_year')
+      .eq('id', businessId)
+      .single();
+    
+    if (businessError) {
+      console.error('Error fetching business start year:', businessError);
+      throw businessError;
+    }
+    
+    if (!business) {
+      console.error('Business not found for ID:', businessId);
+      throw new Error('Business not found');
+    }
+    
+    const startYear = business.start_year;
+    const currentYear = new Date().getFullYear();
+    
+    console.log('Business start year:', startYear, 'Current year:', currentYear);
+    
+    // Generate years from business start year to current year + 1 (for next year planning)
+    const businessYearsToCreate = [];
+    for (let year = startYear; year <= currentYear + 1; year++) {
+      businessYearsToCreate.push({
+        business_id: businessId,
+        year: year,
+        gross_receipts: 0
+      });
+    }
+    
+    console.log('Creating business years:', businessYearsToCreate.map(by => by.year));
+    
     const { data: businessYears, error } = await supabase
       .from('rd_business_years')
       .insert(businessYearsToCreate)
@@ -3382,7 +3795,7 @@ interface CopyConfirmationModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: (sourceYearId: string) => void;
-  copyType: 'roles' | 'activities' | null;
+  copyType: 'roles' | 'activities' | 'all' | null;
   availableYears: any[];
   currentYear: any;
 }
@@ -3426,11 +3839,11 @@ const CopyConfirmationModal: React.FC<CopyConfirmationModalProps> = ({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          Copy {copyType === 'roles' ? 'Roles' : 'Activities'} from Another Year
+          Copy {copyType === 'all' ? 'All Research Data' : copyType === 'roles' ? 'Roles' : 'Activities'} from Another Year
         </h3>
         
         <p className="text-sm text-gray-600 mb-4">
-          Select which year you'd like to copy the {copyType === 'roles' ? 'roles' : 'activities'} from to {currentYear?.year}:
+          Select which year you'd like to copy the {copyType === 'all' ? 'complete research setup (roles, activities, subcomponents, employee allocations, etc.)' : copyType === 'roles' ? 'roles' : 'activities'} from to {currentYear?.year}:
         </p>
         
         <div className="mb-4">
@@ -3515,16 +3928,22 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
         .filter(role => activity.selected_roles.includes(role.id))
         .map(role => role.name);
 
-      const context: AIGenerationContext = {
-        businessProfile: { name: activity.activity_name || 'Unknown Activity' },
-        selectedActivities: [activity],
-        selectedSteps: [],
-        selectedSubcomponents: []
-      };
+      // TEMP: Commented out AI functionality due to deleted aiService
+      // const context: AIGenerationContext = {
+      //   businessProfile: { name: activity.activity_name || 'Unknown Activity' },
+      //   selectedActivities: [activity],
+      //   selectedSteps: [],
+      //   selectedSubcomponents: []
+      // };
 
-      const hypothesis = await aiService.generateContent(`Generate a research hypothesis for: ${activity.activity_name || 'Unknown Activity'}`);
-      const developmentSteps = await aiService.generateContent(`Generate development steps for: ${activity.activity_name || 'Unknown Activity'}`);
-      const dataFeedback = await aiService.generateContent(`Generate data feedback approach for: ${activity.activity_name || 'Unknown Activity'}`);
+      // const hypothesis = await aiService.generateContent(`Generate a research hypothesis for: ${activity.activity_name || 'Unknown Activity'}`);
+      // const developmentSteps = await aiService.generateContent(`Generate development steps for: ${activity.activity_name || 'Unknown Activity'}`);
+      // const dataFeedback = await aiService.generateContent(`Generate data feedback approach for: ${activity.activity_name || 'Unknown Activity'}`);
+      
+      // TEMP: Using placeholder values
+      const hypothesis = 'AI service temporarily unavailable';
+      const developmentSteps = 'AI service temporarily unavailable';
+      const dataFeedback = 'AI service temporarily unavailable';
       
       const aiAnswers = {
         hypothesis,
@@ -3555,16 +3974,20 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
         .filter(role => activity.selected_roles.includes(role.id))
         .map(role => role.name);
 
+      // TEMP: Commented out AI functionality due to deleted aiService
       let newValue = '';
       switch (field) {
         case 'hypothesis':
-          newValue = await aiService.generateContent(`Generate a research hypothesis for: ${activity.activity_name || 'Unknown Activity'}`);
+          // newValue = await aiService.generateContent(`Generate a research hypothesis for: ${activity.activity_name || 'Unknown Activity'}`);
+          newValue = 'AI service temporarily unavailable';
           break;
         case 'development_steps':
-          newValue = await aiService.generateContent(`Generate development steps for: ${activity.activity_name || 'Unknown Activity'}`);
+          // newValue = await aiService.generateContent(`Generate development steps for: ${activity.activity_name || 'Unknown Activity'}`);
+          newValue = 'AI service temporarily unavailable';
           break;
         case 'data_feedback':
-          newValue = await aiService.generateContent(`Generate data feedback approach for: ${activity.activity_name || 'Unknown Activity'}`);
+          // newValue = await aiService.generateContent(`Generate data feedback approach for: ${activity.activity_name || 'Unknown Activity'}`);
+          newValue = 'AI service temporarily unavailable';
           break;
       }
 

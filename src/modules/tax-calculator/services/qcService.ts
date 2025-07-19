@@ -30,7 +30,6 @@ export interface PortalToken {
   token: string;
   created_at: string;
   expires_at: string | null;
-  is_active: boolean;
   access_count: number;
   last_accessed_at: string | null;
 }
@@ -201,7 +200,6 @@ export class QCService {
         .from('rd_client_portal_tokens')
         .select('*')
         .eq('business_id', businessId)
-        .eq('is_active', true)
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
@@ -219,7 +217,7 @@ export class QCService {
     try {
       const { error } = await supabase
         .from('rd_client_portal_tokens')
-        .update({ is_active: false })
+        .delete()
         .eq('id', tokenId);
 
       if (error) throw error;

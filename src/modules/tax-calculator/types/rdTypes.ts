@@ -19,9 +19,14 @@ export interface RDBusiness {
     zip: string;
   };
   website?: string;
-  naics_code?: string;
+  naics?: string;
   image_path?: string;
   is_controlled_grp: boolean;
+  historical_data?: Array<{
+    year: number;
+    gross_receipts: number;
+    qre: number;
+  }>;
   created_at: string;
   updated_at: string;
 }

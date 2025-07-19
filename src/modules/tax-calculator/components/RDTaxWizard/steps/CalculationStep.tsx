@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Calculator, TrendingUp, Building2, MapPin, DollarSign, AlertTriangle, CheckCircle, Info, Settings as SettingsIcon, ChevronDown, ChevronUp, FileText, RefreshCw } from 'lucide-react';
+import { Calculator, TrendingUp, Building2, MapPin, DollarSign, AlertTriangle, CheckCircle, Info, Settings as SettingsIcon, ChevronDown, ChevronUp, FileText, RefreshCw, BarChart3 } from 'lucide-react';
 import { RDCalculationsService, CalculationResults, FederalCreditResults } from '../../../services/rdCalculationsService';
 import { StateCalculationService, StateCalculationResult, QREBreakdown } from '../../../services/stateCalculationService';
 import { toast } from 'react-hot-toast';
 import { supabase } from '../../../lib/supabase';
 import { FilingGuideModal } from '../../FilingGuide/FilingGuideModal';
+import AllocationReportModal from '../../AllocationReport/AllocationReportModal';
 
 // Standardized rounding functions
 const roundToDollar = (value: number): number => Math.round(value);
@@ -69,7 +70,104 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
   const maxValue = Math.max(...data.map(item => item.value));
   const minValue = Math.min(...data.map(item => item.value));
 
-  // Use logarithmic scale for better visualization when values differ greatly
+  // Line Chart Rendering
+  if (type === 'line') {
+    const chartHeight = 120;
+    const chartWidth = 200;
+    const padding = 20;
+    
+    // Color mapping for SVG
+    const colorMap: { [key: string]: string } = {
+      'bg-blue-500': '#3b82f6',
+      'bg-green-500': '#10b981',
+      'bg-purple-500': '#8b5cf6',
+      'bg-red-500': '#ef4444',
+      'bg-yellow-500': '#eab308',
+      'bg-indigo-500': '#6366f1',
+      'bg-pink-500': '#ec4899',
+      'bg-orange-500': '#f97316'
+    };
+    
+    const strokeColor = colorMap[color] || '#3b82f6'; // Default to blue
+    
+    // Calculate points for SVG path
+    const points = data.map((item, index) => {
+      const x = padding + (index * (chartWidth - 2 * padding)) / (data.length - 1);
+      const y = maxValue === minValue 
+        ? chartHeight / 2 
+        : chartHeight - padding - ((item.value - minValue) / (maxValue - minValue)) * (chartHeight - 2 * padding);
+      return `${x},${y}`;
+    }).join(' ');
+
+    return (
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+        <h4 className="text-sm font-semibold text-gray-700 mb-3">{title}</h4>
+        <div className="relative">
+          <svg width={chartWidth} height={chartHeight} className="w-full h-32">
+            {/* Grid lines */}
+            <defs>
+              <pattern id={`grid-${title.replace(/\s+/g, '')}`} width="20" height="20" patternUnits="userSpaceOnUse">
+                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#f3f4f6" strokeWidth="1"/>
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill={`url(#grid-${title.replace(/\s+/g, '')})`} />
+            
+            {/* Line path */}
+            <polyline
+              fill="none"
+              stroke={strokeColor}
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              points={points}
+              className="drop-shadow-sm"
+            />
+            
+            {/* Data points */}
+            {data.map((item, index) => {
+              const x = padding + (index * (chartWidth - 2 * padding)) / (data.length - 1);
+              const y = maxValue === minValue 
+                ? chartHeight / 2 
+                : chartHeight - padding - ((item.value - minValue) / (maxValue - minValue)) * (chartHeight - 2 * padding);
+              return (
+                <circle
+                  key={index}
+                  cx={x}
+                  cy={y}
+                  r="4"
+                  fill={strokeColor}
+                  stroke="white"
+                  strokeWidth="2"
+                  className="drop-shadow-sm"
+                />
+              );
+            })}
+          </svg>
+          
+          {/* Value labels */}
+          <div className="flex justify-between mt-2 text-xs text-gray-500">
+            {data.map((item, index) => (
+              <div key={index} className="text-center">
+                <div className="font-medium">{item.label}</div>
+                <div className="text-gray-600">
+                  {typeof item.value === 'number' && item.value >= 1000 
+                    ? `$${(item.value / 1000).toFixed(0)}k`
+                    : typeof item.value === 'number' && item.value < 1
+                    ? `${(item.value * 100).toFixed(1)}%`
+                    : typeof item.value === 'number'
+                    ? `$${item.value.toLocaleString()}`
+                    : '$0'
+                  }
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Bar Chart Rendering (existing logic)
   const getBarHeight = (value: number) => {
     if (maxValue === minValue) return 100;
     
@@ -162,6 +260,10 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
 
   // Accordion state for debug data
   const [showDebug, setShowDebug] = useState(false);
+
+  // Filing guide modal state
+  const [isFilingGuideOpen, setIsFilingGuideOpen] = useState(false);
+  const [isAllocationReportOpen, setIsAllocationReportOpen] = useState(false);
 
   const [allYears, setAllYears] = useState<any[]>([]);
   const [selectedYearId, setSelectedYearId] = useState<string | null>(wizardState.selectedYear?.id || null);
@@ -791,6 +893,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
   useEffect(() => {
     const loadStateCalculations = async () => {
       if (!qreBreakdown || qreBreakdown.total_qre === 0) {
+        console.log('🔍 State Credits - No QRE data available:', { qreBreakdown });
         setStateCredits([]);
         setStateCalculations([]);
         setAvailableStateMethods([]);
@@ -798,12 +901,19 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
         return;
       }
 
+      console.log('🔍 State Credits - Loading calculations for:', {
+        businessState: wizardState.business?.contact_info?.state || wizardState.business?.state,
+        qreBreakdown,
+        selectedActivityYear
+      });
+
       setStateLoading(true);
       try {
         const year = selectedActivityYear || new Date().getFullYear();
         const businessState = wizardState.business?.contact_info?.state || wizardState.business?.state;
         
         if (!businessState) {
+          console.log('🔍 State Credits - No business state found');
           setStateCredits([]);
           setStateCalculations([]);
           setAvailableStateMethods([]);
@@ -960,7 +1070,16 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           });
         }
         setStateCredits(calculatedCredits);
+        setStateCalculations(calculationRows);
+        setAvailableStateMethods(methods);
+        setSelectedStateMethod(methods[0] || 'Standard');
         
+        console.log('🔍 State Credits - Successfully loaded:', {
+          creditsCount: calculatedCredits.length,
+          totalStateCredits: calculatedCredits.reduce((sum, c) => sum + (c.credit || 0), 0),
+          methods,
+          selectedStateMethod: methods[0] || 'Standard'
+        });
       } catch (e) {
         console.error('[STATE CREDIT] ❌ Exception in state credit calculation:', e);
         toast.error('Error calculating state credits: ' + e.message);
@@ -1229,6 +1348,15 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
     if (selectedStateCredit) total += selectedStateCredit.credit || 0;
     const additional = stateCredits.find(c => c.method === 'Additional');
     if (additional) total += additional.credit || 0;
+    
+    console.log('🔍 State Credits - Total calculation:', {
+      selectedStateCredit,
+      selectedStateMethod,
+      stateCreditsLength: stateCredits.length,
+      additionalCredit: additional?.credit || 0,
+      total
+    });
+    
     return total;
   }, [selectedStateCredit, stateCredits]);
 
@@ -1270,8 +1398,8 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
     return result;
   }, [allYears]);
 
-  // Prepare data for KPI charts
-  const chartData = useMemo(() => {
+  // Helper function to calculate chart data
+  const calculateChartData = (allYears: any[], results: any, selectedMethod: string, totalStateCredits: number) => {
     if (!allYears.length) {
       return { qreData: [], creditData: [], efficiencyData: [] };
     }
@@ -1328,25 +1456,51 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
     });
 
     // Credit values over years chart data
-    const creditData = qreData.map(item => ({
-      year: item.year,
-      federalCredit: roundToDollar((item.qre || 0) * 0.20), // 20% federal credit
-      stateCredit: roundToDollar(totalStateCredits), // Use actual calculated state credits
-      totalCredit: roundToDollar((item.qre || 0) * 0.20 + totalStateCredits) // Federal + State
-    }));
+    const creditData = qreData.map(item => {
+      const isCurrentYear = item.year === new Date().getFullYear();
+      let federalCredit = 0;
+      let stateCredit = 0;
+      
+      if (isCurrentYear && results?.federalCredits) {
+        // Use actual calculated federal credit for current year
+        federalCredit = selectedMethod === 'asc' 
+          ? (results.federalCredits.asc?.adjustedCredit || results.federalCredits.asc?.credit || 0)
+          : (results.federalCredits.standard?.adjustedCredit || results.federalCredits.standard?.credit || 0);
+        stateCredit = totalStateCredits;
+      } else {
+        // For historical years, use simplified calculation
+        federalCredit = roundToDollar((item.qre || 0) * 0.20);
+        stateCredit = 0; // No state credit data for historical years
+      }
+      
+      return {
+        year: item.year,
+        federalCredit: roundToDollar(federalCredit),
+        stateCredit: roundToDollar(stateCredit),
+        totalCredit: roundToDollar(federalCredit + stateCredit)
+      };
+    });
 
     // Efficiency metric chart data (simplified to avoid division by zero)
-    const efficiencyData = qreData.map(item => ({
-      year: item.year,
-      qrePerEmployee: (item.employees || 0) > 0 ? roundToDollar((item.qre || 0) / ((item.employees || 0) / 100000)) : 0, // QRE per $100k employee
-      researchIntensity: (item.qre || 0) > 0 ? roundToPercentage(((item.qre || 0) / ((item.qre || 0) * 5)) * 100) : 0, // Research intensity percentage
-      supplyEfficiency: (item.qre || 0) > 0 ? roundToPercentage(((item.supplies || 0) / (item.qre || 0)) * 100) : 0 // Supply percentage of total QRE
-    }));
+    const efficiencyData = qreData.map(item => {
+      const totalQRE = item.qre || 0;
+      const employeeCount = allYears.find(y => y.year === item.year)?.employees?.length || 0;
+      const contractorCount = allYears.find(y => y.year === item.year)?.contractors?.length || 0;
+      const supplyCount = allYears.find(y => y.year === item.year)?.supply_subcomponents?.length || 0;
+      
+      return {
+        year: item.year,
+        // QRE per employee (if employees exist)
+        qrePerEmployee: employeeCount > 0 ? roundToDollar(totalQRE / employeeCount) : 0,
+        // Credit efficiency: credit amount per dollar of QRE
+        creditEfficiency: totalQRE > 0 ? roundToPercentage(((creditData.find(c => c.year === item.year)?.totalCredit || 0) / totalQRE) * 100) : 0,
+        // Supply percentage of total QRE
+        supplyPercentage: totalQRE > 0 ? roundToPercentage(((item.supplies || 0) / totalQRE) * 100) : 0
+      };
+    });
     
     return { qreData, creditData, efficiencyData };
-  }, [allYears, totalStateCredits]);
-
-  const [isFilingGuideOpen, setIsFilingGuideOpen] = useState(false);
+  };
 
   if (loading) {
     return (
@@ -1387,6 +1541,9 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
 
   const { federalCredits, currentYearQRE: federalCurrentYearQRE, stateCredits: federalStateCredits, totalFederalCredit, totalStateCredits: totalFederalStateCredits, totalCredits } = results;
 
+  // Calculate chart data after results are available
+  const chartData = calculateChartData(allYears, results, selectedMethod, totalStateCredits);
+
   return (
     <div className="space-y-6">
       {/* Header with Year Selector and Filing Guide Button */}
@@ -1416,14 +1573,6 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                     <option key={y.id} value={y.id}>{y.year}</option>
                   ))}
                 </select>
-                {/* Filing Guide Button */}
-                <button
-                  onClick={() => setIsFilingGuideOpen(true)}
-                  className="ml-2 flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-all duration-200 text-sm font-medium shadow-sm border border-white/30"
-                  title="Open Filing Guide"
-                >
-                  <FileText className="w-4 h-4" /> Filing Guide
-                </button>
                 {/* Refresh Button */}
                 <button
                   onClick={handleRecalculate}
@@ -1542,19 +1691,19 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <KPIChart 
           title="QREs Over Years" 
-          data={(chartData?.qreData || []).map(item => ({ label: item.year.toString(), value: item.qre }))} 
-          type="bar" 
+          data={(chartData?.qreData || []).sort((a, b) => a.year - b.year).map(item => ({ label: item.year.toString(), value: item.qre }))} 
+          type="line" 
           color="bg-blue-500" 
         />
         <KPIChart 
-          title="ASC Credits Over Years" 
-          data={(chartData?.creditData || []).map(item => ({ label: item.year.toString(), value: item.credit }))} 
-          type="bar" 
+          title="Total Federal Credits Over Years" 
+          data={(chartData?.creditData || []).sort((a, b) => a.year - b.year).map(item => ({ label: item.year.toString(), value: item.federalCredit }))} 
+          type="line" 
           color="bg-green-500" 
         />
         <KPIChart 
-          title="Credit Efficiency (%)" 
-          data={(chartData?.efficiencyData || []).map(item => ({ label: item.year.toString(), value: item.efficiency }))} 
+          title="Total State Credits Over Years" 
+          data={(chartData?.creditData || []).sort((a, b) => a.year - b.year).map(item => ({ label: item.year.toString(), value: item.stateCredit }))} 
           type="line" 
           color="bg-purple-500" 
         />
@@ -1819,7 +1968,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900 flex items-center">
               <MapPin className="w-5 h-5 mr-2" />
-              State Credits
+              {wizardState.business?.state ? `[${wizardState.business.state}] ` : ''}State Credits
             </h3>
                 <div className="text-right">
               <div className="text-sm text-gray-600">Total State</div>
@@ -2034,18 +2183,48 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                     <span className="font-semibold">{formatCurrency(card.qre)}</span>
                   </div>
                   {card.isInternal && (
-                    <div className="flex justify-between items-end h-16 w-full max-w-xs mx-auto">
-                      <div className="flex flex-col items-center w-1/3">
-                        <div className="bg-blue-500 w-3" style={{ height: `${Math.max(4, card.qre > 0 ? (card.employeeQRE / card.qre) * 48 : 4)}px` }} />
-                        <span className="text-xs text-blue-700 mt-1">Emp</span>
+                    <div className="space-y-3">
+                      {/* Horizontal Bar Chart */}
+                      <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+                        <div className="h-full flex">
+                          <div 
+                            className="bg-blue-500 h-full" 
+                            style={{ width: `${card.qre > 0 ? (card.employeeQRE / card.qre) * 100 : 0}%` }}
+                          />
+                          <div 
+                            className="bg-green-500 h-full" 
+                            style={{ width: `${card.qre > 0 ? (card.contractorQRE / card.qre) * 100 : 0}%` }}
+                          />
+                          <div 
+                            className="bg-purple-500 h-full" 
+                            style={{ width: `${card.qre > 0 ? (card.supplyQRE / card.qre) * 100 : 0}%` }}
+                          />
+                        </div>
                       </div>
-                      <div className="flex flex-col items-center w-1/3">
-                        <div className="bg-green-500 w-3" style={{ height: `${Math.max(4, card.qre > 0 ? (card.contractorQRE / card.qre) * 48 : 4)}px` }} />
-                        <span className="text-xs text-green-700 mt-1">Cont</span>
-                      </div>
-                      <div className="flex flex-col items-center w-1/3">
-                        <div className="bg-purple-500 w-3" style={{ height: `${Math.max(4, card.qre > 0 ? (card.supplyQRE / card.qre) * 48 : 4)}px` }} />
-                        <span className="text-xs text-purple-700 mt-1">Supp</span>
+                      
+                      {/* Legend with amounts */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center space-x-2">
+                            <div className="w-3 h-3 bg-blue-500 rounded"></div>
+                            <span className="text-gray-600">Employees</span>
+                          </div>
+                          <span className="font-medium">{formatCurrency(card.employeeQRE)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center space-x-2">
+                            <div className="w-3 h-3 bg-green-500 rounded"></div>
+                            <span className="text-gray-600">Contractors</span>
+                          </div>
+                          <span className="font-medium">{formatCurrency(card.contractorQRE)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center space-x-2">
+                            <div className="w-3 h-3 bg-purple-500 rounded"></div>
+                            <span className="text-gray-600">Supplies</span>
+                          </div>
+                          <span className="font-medium">{formatCurrency(card.supplyQRE)}</span>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -2061,6 +2240,76 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           </div>
         </div>
       )}
+
+      {/* Action Buttons Section */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+            <SettingsIcon className="w-5 h-5 mr-2" />
+            Actions & Reports
+          </h3>
+          <div className="text-sm text-gray-600">
+            Generate reports and manage calculations
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Filing Guide */}
+          <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border border-purple-200 p-4">
+            <div className="flex items-center mb-3">
+              <FileText className="w-6 h-6 text-purple-600 mr-3" />
+              <div>
+                <h4 className="font-semibold text-gray-900">Filing Guide</h4>
+                <p className="text-sm text-gray-600">Tax credit claiming instructions</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setIsFilingGuideOpen(true)}
+              className="w-full flex items-center justify-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              Open Filing Guide
+            </button>
+          </div>
+          
+          {/* Allocation Report */}
+          <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200 p-4">
+            <div className="flex items-center mb-3">
+              <BarChart3 className="w-6 h-6 text-green-600 mr-3" />
+              <div>
+                <h4 className="font-semibold text-gray-900">Allocation Report</h4>
+                <p className="text-sm text-gray-600">Detailed QRE breakdown analysis</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setIsAllocationReportOpen(true)}
+              className="w-full flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+            >
+              <BarChart3 className="w-4 h-4 mr-2" />
+              View Allocation Report
+            </button>
+          </div>
+          
+          {/* Recalculate */}
+          <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg border border-blue-200 p-4">
+            <div className="flex items-center mb-3">
+              <RefreshCw className="w-6 h-6 text-blue-600 mr-3" />
+              <div>
+                <h4 className="font-semibold text-gray-900">Recalculate</h4>
+                <p className="text-sm text-gray-600">Refresh with latest data</p>
+              </div>
+            </div>
+            <button
+              onClick={handleRecalculate}
+              disabled={loading}
+              className="w-full flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              {loading ? 'Recalculating...' : 'Recalculate All'}
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Navigation */}
       <div className="flex justify-between pt-4">
@@ -2082,6 +2331,28 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
         <FilingGuideModal
           isOpen={isFilingGuideOpen}
           onClose={() => setIsFilingGuideOpen(false)}
+          businessData={wizardState.business}
+          selectedYear={selectedYearData}
+          calculations={results}
+          selectedMethod={selectedMethod}
+          debugData={{
+            selectedMethod,
+            results,
+            selectedYearData,
+            wizardState,
+            federalCredits,
+            currentYearQRE: federalCurrentYearQRE,
+            totalFederalCredit,
+            totalStateCredits: totalFederalStateCredits,
+            totalCredits,
+          }}
+        />
+      )}
+      {/* Allocation Report Modal */}
+      {isAllocationReportOpen && (
+        <AllocationReportModal
+          isOpen={isAllocationReportOpen}
+          onClose={() => setIsAllocationReportOpen(false)}
           businessData={wizardState.business}
           selectedYear={selectedYearData}
           calculations={results}

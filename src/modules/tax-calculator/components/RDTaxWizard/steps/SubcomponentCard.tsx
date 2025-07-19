@@ -135,15 +135,8 @@ const SubcomponentCard: React.FC<SubcomponentCardProps> = ({
     }
   }, [subcomponentData]);
 
-  // Initialize selected roles from parent activity roles when component is selected
-  useEffect(() => {
-    if (isSelected && selectedRoles.length === 0 && parentActivityRoles.length > 0) {
-      // Initialize with parent activity roles
-      parentActivityRoles.forEach(roleId => {
-        handleRoleToggle(roleId);
-      });
-    }
-  }, [isSelected, parentActivityRoles]);
+  // Note: Role initialization is now handled at the database level when subcomponents are first added
+  // This ensures consistency between the database and UI state
 
   const handleTextFieldChange = async (field: string, value: string) => {
     setTextFields(prev => ({
@@ -170,14 +163,21 @@ const SubcomponentCard: React.FC<SubcomponentCardProps> = ({
     return value.toFixed(2);
   };
 
-  // Corrected applied percentage calculation using decimals
+  // Applied percentage calculation using decimals (correct method)
   const calculateAppliedPercentage = (): number => {
     // Convert all to decimals
     const practice = practicePercent / 100;
     const step = stepTimePercent / 100;
     const freq = frequencyPercent / 100;
     const yearP = yearPercent / 100;
-    return +(practice * step * freq * yearP * 100).toFixed(2); // Return as percent
+    
+    // Calculate base applied percentage: practice × step × frequency × year
+    let applied = practice * step * freq * yearP * 100;
+    
+    // Apply Non-R&D reduction if available (this would need to be passed as a prop)
+    // For now, we'll assume non-R&D adjustment is handled upstream
+    
+    return +applied.toFixed(2); // Return as percent
   };
 
   const handleFrequencyChange = (value: number) => {

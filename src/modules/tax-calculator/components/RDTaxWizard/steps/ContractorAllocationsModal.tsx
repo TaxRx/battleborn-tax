@@ -659,11 +659,11 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
           business_year_id: businessYearId,
           time_percentage: subcomponent.timePercentage,
           applied_percentage: (
-            (activity.practicePercentage || 0) *
-            (subcomponent.timePercentage || 0) *
-            (subcomponent.yearPercentage || 0) *
-            (subcomponent.frequencyPercentage || 0)
-          ) / 1000000,
+            (activity.practicePercentage || 0) / 100 *
+            (subcomponent.timePercentage || 0) / 100 *
+            (subcomponent.yearPercentage || 0) / 100 *
+            (subcomponent.frequencyPercentage || 0) / 100
+          ) * 100,
           is_included: subcomponent.isIncluded,
           baseline_applied_percent: subcomponent.baselineTimePercentage || 0,
           practice_percentage: activity.practicePercentage,

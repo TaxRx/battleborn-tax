@@ -327,7 +327,7 @@ export class ResearchDesignService {
     timePercentage: number,
     frequencyPercentage: number
   ): number {
-    return (practicePercentage * timePercentage * frequencyPercentage) / 10000;
+    return (practicePercentage / 100) * (timePercentage / 100) * (frequencyPercentage / 100) * 100;
   }
 
   // Get approval data

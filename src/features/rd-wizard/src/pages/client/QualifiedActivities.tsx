@@ -324,7 +324,7 @@ const QualifiedActivities: React.FC = () => {
             frequencyPercentage,
             timePercentage,
             yearPercentage: 100,
-            appliedPercentage: Math.min((frequencyPercentage * timePercentage * 100) / 10000, practicePercentageLimit)
+            appliedPercentage: Math.min((frequencyPercentage / 100) * (timePercentage / 100) * 100, practicePercentageLimit)
           };
         });
       const newActivity: SelectedActivity = {

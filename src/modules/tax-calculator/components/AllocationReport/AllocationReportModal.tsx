@@ -18,10 +18,19 @@ interface EmployeeData {
   name: string;
   total_qre: number;
   applied_percentage: number;
+  roles: string[];
+  roleIds: string[];
+  activities: Array<{
+    name: string;
+    applied_percentage: number;
+    color: string;
+    dollar_amount: number;
+  }>;
   subcomponents: Array<{
     name: string;
     applied_percentage: number;
     color: string;
+    dollar_amount: number;
   }>;
 }
 
@@ -81,6 +90,11 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
 
   useEffect(() => {
     if (isOpen && selectedYear?.id) {
+      console.log('🚀 AllocationReportModal - Opening with:', {
+        businessData: businessData?.name || businessData?.id,
+        selectedYear: selectedYear?.year,
+        businessYearId: selectedYear?.id
+      });
       loadAllocationData();
     }
   }, [isOpen, selectedYear?.id]);
@@ -98,12 +112,52 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
       if (businessError) throw businessError;
       setBusinessProfile(business);
 
+      // Load selected activities for the business year to get activity lookup
+      const { data: selectedActivities, error: actError } = await supabase
+        .from('rd_selected_activities')
+        .select(`
+          *,
+          rd_research_activities!inner(id, title)
+        `)
+        .eq('business_year_id', selectedYear.id);
+
+      if (actError) throw actError;
+
+      // Create activity lookup table
+      const activityLookup: Record<string, { title: string }> = {};
+      selectedActivities?.forEach(activityItem => {
+        activityLookup[activityItem.activity_id] = {
+          title: activityItem.rd_research_activities.title
+        };
+      });
+
+      // Load selected subcomponents to get the activity relationships
+      const { data: selectedSubcomponents, error: selectedSubError } = await supabase
+        .from('rd_selected_subcomponents')
+        .select(`
+          subcomponent_id,
+          research_activity_id,
+          step_id
+        `)
+        .eq('business_year_id', selectedYear.id);
+
+      if (selectedSubError) throw selectedSubError;
+
+      // Create subcomponent to activity mapping
+      const subcomponentToActivity: Record<string, { activity_id: string; step_id: string }> = {};
+      selectedSubcomponents?.forEach(item => {
+        subcomponentToActivity[item.subcomponent_id] = {
+          activity_id: item.research_activity_id,
+          step_id: item.step_id
+        };
+      });
+
       // Load employees with subcomponent data
       const { data: employeeData, error: empError } = await supabase
         .from('rd_employee_subcomponents')
         .select(`
           *,
-          rd_employees!inner(id, first_name, last_name, annual_wage),
+          rd_employees!inner(id, first_name, last_name, annual_wage, role_id, rd_roles(id, name)),
           rd_research_subcomponents!inner(id, name)
         `)
         .eq('business_year_id', selectedYear.id)
@@ -111,8 +165,8 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
 
       if (empError) throw empError;
 
-      // Process employee data
-      const processedEmployees = processEmployeeData(employeeData || []);
+      // Process employee data with correct activity mapping
+      const processedEmployees = processEmployeeData(employeeData || [], activityLookup, subcomponentToActivity);
       setEmployees(processedEmployees);
 
       // Load contractors
@@ -146,25 +200,43 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
     }
   };
 
-  const processEmployeeData = (data: any[]): EmployeeData[] => {
+  const processEmployeeData = (
+    data: any[], 
+    activityLookup: Record<string, { title: string }>,
+    subcomponentToActivity: Record<string, { activity_id: string; step_id: string }>
+  ): EmployeeData[] => {
     const employeeMap = new Map<string, EmployeeData>();
     
+    console.log('🔍 AllocationReport - Processing employee data:', data.length, 'records');
+    console.log('🔍 AllocationReport - Activity lookup:', activityLookup);
+    console.log('🔍 AllocationReport - Subcomponent to activity mapping:', subcomponentToActivity);
+    
+    // Process subcomponent data
     data.forEach(item => {
       const empId = item.rd_employees.id;
       const empName = `${item.rd_employees.first_name} ${item.rd_employees.last_name}`;
+      const annualWage = item.rd_employees.annual_wage || 0;
       
       if (!employeeMap.has(empId)) {
         employeeMap.set(empId, {
           id: empId,
           name: empName,
-          total_qre: item.rd_employees.annual_wage || 0,
+          total_qre: annualWage,
           applied_percentage: 0,
+          roles: item.rd_employees.rd_roles ? [item.rd_employees.rd_roles.name] : [],
+          roleIds: item.rd_employees.rd_roles ? [item.rd_employees.rd_roles.id] : [],
+          activities: [],
           subcomponents: []
         });
+        console.log('👤 AllocationReport - Added employee:', empName, 'with wage:', annualWage);
       }
       
       const employee = employeeMap.get(empId)!;
       const subcompName = item.rd_research_subcomponents.name;
+      const appliedPercentage = item.applied_percentage || 0;
+      const dollarAmount = (annualWage * appliedPercentage) / 100;
+      
+      console.log('📋 AllocationReport - Processing subcomponent:', subcompName, 'applied:', appliedPercentage + '%', 'amount:', dollarAmount);
       
       // Assign color to subcomponent
       if (!subcomponentColors[subcompName]) {
@@ -174,14 +246,94 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
       
       employee.subcomponents.push({
         name: subcompName,
-        applied_percentage: item.applied_percentage || 0,
-        color: subcomponentColors[subcompName]
+        applied_percentage: appliedPercentage,
+        color: subcomponentColors[subcompName],
+        dollar_amount: dollarAmount
       });
       
-      employee.applied_percentage += item.applied_percentage || 0;
+      employee.applied_percentage += appliedPercentage;
+    });
+
+    // Group subcomponents by employee and activity using subcomponent mapping
+    const employeeActivityTotals: Record<string, Record<string, { total_applied: number; activity_name: string; activity_id: string }>> = {};
+    
+    console.log('🔄 AllocationReport - Starting activity grouping...');
+    
+    data.forEach(item => {
+      const empId = item.rd_employees.id;
+      const subcomponentId = item.subcomponent_id;
+      const appliedPercentage = item.applied_percentage || 0;
+      
+      // Get activity info from subcomponent mapping
+      const activityMapping = subcomponentToActivity[subcomponentId];
+      if (!activityMapping) {
+        console.warn(`⚠️ No activity mapping found for subcomponent ${subcomponentId}`);
+        return;
+      }
+      
+      const activityId = activityMapping.activity_id;
+      const activityName = activityLookup[activityId]?.title || 'Unknown Activity';
+      
+      console.log('🔗 AllocationReport - Mapping subcomponent:', subcomponentId, 'to activity:', activityName, 'applied:', appliedPercentage + '%');
+      
+      if (!employeeActivityTotals[empId]) {
+        employeeActivityTotals[empId] = {};
+      }
+      
+      if (!employeeActivityTotals[empId][activityId]) {
+        employeeActivityTotals[empId][activityId] = {
+          total_applied: 0,
+          activity_name: activityName,
+          activity_id: activityId
+        };
+      }
+      
+      employeeActivityTotals[empId][activityId].total_applied += appliedPercentage;
     });
     
-    return Array.from(employeeMap.values());
+    console.log('📊 AllocationReport - Employee activity totals:', employeeActivityTotals);
+    
+    // Now add activities to each employee based on their actual allocations
+    employeeMap.forEach(employee => {
+      const employeeActivities = employeeActivityTotals[employee.id] || {};
+      
+      console.log('🎯 AllocationReport - Adding activities for employee:', employee.name, 'activities:', Object.keys(employeeActivities));
+      
+      Object.values(employeeActivities).forEach(activityTotal => {
+        if (activityTotal.total_applied > 0) {
+          // Assign color to activity
+          if (!subcomponentColors[activityTotal.activity_name]) {
+            const colorIndex = Object.keys(subcomponentColors).length % SUBCOMPONENT_COLORS.length;
+            subcomponentColors[activityTotal.activity_name] = SUBCOMPONENT_COLORS[colorIndex];
+          }
+          
+          const dollarAmount = (employee.total_qre * activityTotal.total_applied) / 100;
+          
+          console.log('✨ AllocationReport - Adding activity:', activityTotal.activity_name, 'applied:', activityTotal.total_applied + '%', 'amount:', dollarAmount);
+          
+          employee.activities.push({
+            name: activityTotal.activity_name,
+            applied_percentage: activityTotal.total_applied,
+            color: subcomponentColors[activityTotal.activity_name],
+            dollar_amount: dollarAmount
+          });
+        }
+      });
+      
+      console.log('✅ AllocationReport - Final employee data for', employee.name + ':', {
+        activities: employee.activities.length,
+        subcomponents: employee.subcomponents.length,
+        total_applied: employee.applied_percentage
+      });
+    });
+    
+    const result = Array.from(employeeMap.values());
+    console.log('🎉 AllocationReport - Final processed employees:', result.length);
+    result.forEach(emp => {
+      console.log(`📈 ${emp.name}: ${emp.activities.length} activities, ${emp.subcomponents.length} subcomponents`);
+    });
+    
+    return result;
   };
 
   const processContractorData = (data: any[]): ContractorData[] => {
@@ -248,40 +400,226 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
     <title>Allocation Report - ${businessProfile?.name || 'Business'} - ${selectedYear?.year || new Date().getFullYear()}</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        .header { background: linear-gradient(135deg, #10b981, #047857); color: white; padding: 40px; text-align: center; margin-bottom: 30px; }
-        .logo { display: inline-block; margin-bottom: 20px; }
-        .logo img { height: 60px; }
-        .title { font-size: 2.5rem; font-weight: 700; margin-bottom: 10px; }
-        .subtitle { font-size: 1.2rem; opacity: 0.9; }
-        .report-meta { background: #f8fafc; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
-        .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            line-height: 1.4; 
+            color: #333; 
+            font-size: 14px;
+        }
+        .container { 
+            max-width: 8.5in; 
+            margin: 0 auto; 
+            padding: 0.5in; 
+        }
+        .header { 
+            background: linear-gradient(135deg, #10b981, #047857); 
+            color: white; 
+            padding: 20px; 
+            text-align: center; 
+            margin-bottom: 20px;
+            border-radius: 8px;
+        }
+        .logo { display: inline-block; margin-bottom: 10px; }
+        .title { font-size: 1.8rem; font-weight: 700; margin-bottom: 8px; }
+        .subtitle { font-size: 1rem; opacity: 0.9; }
+        .report-meta { 
+            background: #f8fafc; 
+            padding: 15px; 
+            border-radius: 6px; 
+            margin-bottom: 20px; 
+            page-break-inside: avoid;
+        }
+        .meta-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); 
+            gap: 15px; 
+        }
         .meta-item { text-align: center; }
-        .meta-label { font-size: 0.875rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; }
-        .meta-value { font-size: 1.125rem; font-weight: 600; color: #1f2937; }
-        .section { margin-bottom: 40px; }
-        .section-title { font-size: 1.5rem; font-weight: 600; margin-bottom: 20px; color: #1f2937; border-bottom: 2px solid #10b981; padding-bottom: 10px; }
-        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
-        .summary-card { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; text-align: center; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
-        .summary-value { font-size: 2rem; font-weight: 700; color: #10b981; }
-        .summary-label { font-size: 0.875rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; }
-        .allocation-section { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
-        .allocation-header { display: flex; align-items: center; margin-bottom: 15px; }
-        .allocation-icon { margin-right: 10px; }
-        .allocation-title { font-size: 1.25rem; font-weight: 600; }
-        .allocation-item { display: flex; justify-content: between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f3f4f6; }
-        .allocation-item:last-child { border-bottom: none; }
-        .item-name { flex: 1; font-weight: 500; }
-        .item-amount { font-weight: 600; color: #10b981; }
-        .progress-bar { width: 100%; height: 20px; background: #f3f4f6; border-radius: 10px; overflow: hidden; margin: 10px 0; }
+        .meta-label { 
+            font-size: 0.75rem; 
+            color: #6b7280; 
+            text-transform: uppercase; 
+            letter-spacing: 0.05em; 
+        }
+        .meta-value { font-size: 1rem; font-weight: 600; color: #1f2937; }
+        .section { 
+            margin-bottom: 25px; 
+            page-break-inside: avoid;
+        }
+        .section-title { 
+            font-size: 1.3rem; 
+            font-weight: 600; 
+            margin-bottom: 15px; 
+            color: #1f2937; 
+            border-bottom: 2px solid #10b981; 
+            padding-bottom: 8px; 
+        }
+        .summary-grid { 
+            display: grid; 
+            grid-template-columns: repeat(3, 1fr); 
+            gap: 15px; 
+            margin-bottom: 20px; 
+        }
+        .summary-card { 
+            background: white; 
+            border: 1px solid #e5e7eb; 
+            border-radius: 6px; 
+            padding: 15px; 
+            text-align: center; 
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); 
+        }
+        .summary-value { font-size: 1.5rem; font-weight: 700; color: #10b981; }
+        .summary-label { 
+            font-size: 0.75rem; 
+            color: #6b7280; 
+            text-transform: uppercase; 
+            letter-spacing: 0.05em; 
+        }
+        .allocation-section { 
+            background: white; 
+            border: 1px solid #e5e7eb; 
+            border-radius: 6px; 
+            padding: 15px; 
+            margin-bottom: 15px;
+            page-break-inside: avoid;
+        }
+        .allocation-header { 
+            display: flex; 
+            align-items: center; 
+            margin-bottom: 12px; 
+        }
+        .allocation-icon { margin-right: 8px; }
+        .allocation-title { font-size: 1.1rem; font-weight: 600; }
+        .employee-item {
+            border-bottom: 1px solid #f3f4f6;
+            padding: 15px 0;
+            page-break-inside: avoid;
+        }
+        .employee-item:last-child { border-bottom: none; }
+        .employee-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 10px;
+        }
+        .employee-info { flex: 1; }
+        .employee-name { font-size: 1.1rem; font-weight: 600; margin-bottom: 5px; }
+        .roles-container { margin-bottom: 8px; }
+        .role-tag {
+            display: inline-block;
+            background: #dbeafe;
+            color: #1e40af;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            margin-right: 4px;
+            margin-bottom: 2px;
+        }
+        .employee-details {
+            font-size: 0.85rem;
+            color: #6b7280;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .applied-amount {
+            text-align: right;
+            margin-left: 15px;
+        }
+        .applied-value { 
+            font-size: 1.3rem; 
+            font-weight: 700; 
+            color: #10b981; 
+        }
+        .applied-label { 
+            font-size: 0.8rem; 
+            color: #6b7280; 
+        }
+        .breakdown-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #4b5563;
+            margin: 12px 0 8px 0;
+        }
+        .progress-bar { 
+            width: 100%; 
+            height: 24px; 
+            background: #f3f4f6; 
+            border-radius: 12px; 
+            overflow: hidden; 
+            margin-bottom: 12px;
+        }
         .progress-segment { height: 100%; display: inline-block; }
-        .no-data { text-align: center; color: #6b7280; font-style: italic; padding: 40px; }
+        .legend-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 8px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px;
+            background: #f9fafb;
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            flex-shrink: 0;
+        }
+        .legend-info { flex: 1; font-weight: 500; }
+        .legend-amounts { text-align: right; }
+        .legend-amount { font-weight: 600; }
+        .legend-percent { font-size: 0.75rem; color: #6b7280; }
+        .no-data { text-align: center; color: #6b7280; font-style: italic; padding: 30px; }
         
         @media print {
-            body { font-size: 12px; }
-            .container { max-width: none; margin: 0; padding: 10px; }
-            .header { background: #10b981 !important; -webkit-print-color-adjust: exact; color-adjust: exact; }
+            @page {
+                size: 8.5in 11in;
+                margin: 0.5in;
+            }
+            body { 
+                font-size: 11px; 
+                line-height: 1.3;
+                -webkit-print-color-adjust: exact;
+                color-adjust: exact;
+            }
+            .container { 
+                max-width: none; 
+                margin: 0; 
+                padding: 0; 
+                width: 100%;
+            }
+            .header { 
+                background: #10b981 !important; 
+                -webkit-print-color-adjust: exact; 
+                color-adjust: exact; 
+                color: white !important;
+                page-break-inside: avoid;
+            }
+            .section {
+                page-break-inside: avoid;
+                margin-bottom: 20px;
+            }
+            .employee-item {
+                page-break-inside: avoid;
+                margin-bottom: 15px;
+            }
+            .allocation-section {
+                page-break-inside: avoid;
+            }
+            .progress-segment {
+                -webkit-print-color-adjust: exact;
+                color-adjust: exact;
+            }
+            .role-tag {
+                -webkit-print-color-adjust: exact;
+                color-adjust: exact;
+            }
         }
     </style>
 </head>
@@ -342,14 +680,69 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
             <h2 class="section-title">👥 Employee Allocations</h2>
             <div class="allocation-section">
                 ${employees.length > 0 ? employees.map(emp => `
-                    <div class="allocation-item">
-                        <div class="item-name">${emp.name}</div>
-                        <div class="item-amount">${formatCurrency(emp.total_qre * (emp.applied_percentage / 100))} (${formatPercentage(emp.applied_percentage)})</div>
-                    </div>
-                    <div class="progress-bar">
-                        ${emp.subcomponents.map(sub => 
-                            `<div class="progress-segment" style="width: ${(sub.applied_percentage / emp.applied_percentage) * 100}%; background-color: ${sub.color};" title="${sub.name}: ${formatPercentage(sub.applied_percentage)}"></div>`
-                        ).join('')}
+                    <div class="employee-item">
+                        <div class="employee-header">
+                            <div class="employee-info">
+                                <div class="employee-name">${emp.name}</div>
+                                ${emp.roles && emp.roles.length > 0 ? `
+                                    <div class="roles-container">
+                                        ${emp.roles.map(role => `<span class="role-tag">${role}</span>`).join('')}
+                                    </div>
+                                ` : ''}
+                                <div class="employee-details">
+                                    <div><strong>Total Annual Wage:</strong> ${formatCurrency(emp.total_qre)}</div>
+                                    <div><strong>Total Applied:</strong> ${formatPercentage(emp.applied_percentage)}</div>
+                                </div>
+                            </div>
+                            <div class="applied-amount">
+                                <div class="applied-value">${formatCurrency(emp.total_qre * (emp.applied_percentage / 100))}</div>
+                                <div class="applied-label">Applied Amount</div>
+                            </div>
+                        </div>
+                        ${emp.activities && emp.activities.length > 0 ? `
+                            <div class="breakdown-title">Research Activity Participation:</div>
+                            <div class="progress-bar">
+                                ${emp.activities.map(activity => 
+                                    `<div class="progress-segment" style="width: ${(activity.applied_percentage / emp.applied_percentage) * 100}%; background-color: ${activity.color};" title="${activity.name}: ${formatPercentage(activity.applied_percentage)} (${formatCurrency(activity.dollar_amount)})"></div>`
+                                ).join('')}
+                            </div>
+                            <div class="legend-grid">
+                                ${emp.activities.map(activity => `
+                                    <div class="legend-item">
+                                        <div style="display: flex; align-items: center;">
+                                            <div class="legend-color" style="background-color: ${activity.color};"></div>
+                                            <span class="legend-info">${activity.name}</span>
+                                        </div>
+                                        <div class="legend-amounts">
+                                            <div class="legend-amount">${formatCurrency(activity.dollar_amount)}</div>
+                                            <div class="legend-percent">${formatPercentage(activity.applied_percentage)}</div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                        ${emp.subcomponents.length > 0 ? `
+                            <div class="breakdown-title">Subcomponent Breakdown:</div>
+                            <div class="progress-bar">
+                                ${emp.subcomponents.map(sub => 
+                                    `<div class="progress-segment" style="width: ${(sub.applied_percentage / emp.applied_percentage) * 100}%; background-color: ${sub.color};" title="${sub.name}: ${formatPercentage(sub.applied_percentage)} (${formatCurrency(sub.dollar_amount)})"></div>`
+                                ).join('')}
+                            </div>
+                            <div class="legend-grid">
+                                ${emp.subcomponents.map(sub => `
+                                    <div class="legend-item">
+                                        <div style="display: flex; align-items: center;">
+                                            <div class="legend-color" style="background-color: ${sub.color};"></div>
+                                            <span class="legend-info">${sub.name}</span>
+                                        </div>
+                                        <div class="legend-amounts">
+                                            <div class="legend-amount">${formatCurrency(sub.dollar_amount)}</div>
+                                            <div class="legend-percent">${formatPercentage(sub.applied_percentage)}</div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
                     </div>
                 `).join('') : '<div class="no-data">No employee data available</div>'}
             </div>
@@ -360,9 +753,20 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
             <h2 class="section-title">💼 Contractor Allocations</h2>
             <div class="allocation-section">
                 ${contractors.length > 0 ? contractors.map(cont => `
-                    <div class="allocation-item">
-                        <div class="item-name">${cont.name}</div>
-                        <div class="item-amount">${formatCurrency(cont.cost_amount * (cont.applied_percent / 100))} (${formatPercentage(cont.applied_percent)})</div>
+                    <div class="employee-item">
+                        <div class="employee-header">
+                            <div class="employee-info">
+                                <div class="employee-name">${cont.name}</div>
+                                <div class="employee-details">
+                                    <div><strong>Total Cost:</strong> ${formatCurrency(cont.cost_amount)}</div>
+                                    <div><strong>Applied Percentage:</strong> ${formatPercentage(cont.applied_percent)}</div>
+                                </div>
+                            </div>
+                            <div class="applied-amount">
+                                <div class="applied-value">${formatCurrency(cont.cost_amount * (cont.applied_percent / 100))}</div>
+                                <div class="applied-label">Applied Amount</div>
+                            </div>
+                        </div>
                     </div>
                 `).join('') : '<div class="no-data">No contractor data available</div>'}
             </div>
@@ -373,9 +777,20 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
             <h2 class="section-title">📦 Supply Allocations</h2>
             <div class="allocation-section">
                 ${supplies.length > 0 ? supplies.map(sup => `
-                    <div class="allocation-item">
-                        <div class="item-name">${sup.name}</div>
-                        <div class="item-amount">${formatCurrency(sup.cost * (sup.applied_percentage / 100))} (${formatPercentage(sup.applied_percentage)})</div>
+                    <div class="employee-item">
+                        <div class="employee-header">
+                            <div class="employee-info">
+                                <div class="employee-name">${sup.name}</div>
+                                <div class="employee-details">
+                                    <div><strong>Total Cost:</strong> ${formatCurrency(sup.cost)}</div>
+                                    <div><strong>Applied Percentage:</strong> ${formatPercentage(sup.applied_percentage)}</div>
+                                </div>
+                            </div>
+                            <div class="applied-amount">
+                                <div class="applied-value">${formatCurrency(sup.cost * (sup.applied_percentage / 100))}</div>
+                                <div class="applied-label">Applied Amount</div>
+                            </div>
+                        </div>
                     </div>
                 `).join('') : '<div class="no-data">No supply data available</div>'}
             </div>
@@ -597,21 +1012,78 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
                     {employees.length > 0 ? (
                       <div className="space-y-6">
                         {employees.map(emp => (
-                          <div key={emp.id} className="border-b border-gray-100 pb-6 last:border-b-0">
-                            <div className="flex justify-between items-center mb-3">
-                              <h3 className="text-lg font-semibold text-gray-900">{emp.name}</h3>
-                              <div className="text-right">
-                                <div className="text-lg font-bold text-blue-600">
+                          <div key={emp.id} className="border-b border-gray-100 pb-8 last:border-b-0 break-inside-avoid">
+                            <div className="flex justify-between items-start mb-4">
+                              <div className="flex-1">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-1">{emp.name}</h3>
+                                {emp.roles && emp.roles.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mb-2">
+                                    {emp.roles.map((role, idx) => (
+                                      <span key={idx} className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                                        {role}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                                <div className="text-sm text-gray-600">
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                      <span className="font-medium">Total Annual Wage:</span> {formatCurrency(emp.total_qre)}
+                                    </div>
+                                    <div>
+                                      <span className="font-medium">Total Applied:</span> {formatPercentage(emp.applied_percentage)}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="text-right ml-4">
+                                <div className="text-xl font-bold text-blue-600">
                                   {formatCurrency(emp.total_qre * (emp.applied_percentage / 100))}
                                 </div>
                                 <div className="text-sm text-gray-600">
-                                  {formatPercentage(emp.applied_percentage)} applied
+                                  Applied Amount
                                 </div>
                               </div>
                             </div>
+                            {emp.activities && emp.activities.length > 0 && (
+                              <div className="mt-4">
+                                <h4 className="text-sm font-semibold text-gray-700 mb-2">Research Activity Participation:</h4>
+                                <div className="w-full h-8 bg-gray-200 rounded-lg overflow-hidden mb-4">
+                                  {emp.activities.map((activity, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="h-full inline-block"
+                                      style={{
+                                        width: `${(activity.applied_percentage / emp.applied_percentage) * 100}%`,
+                                        backgroundColor: activity.color
+                                      }}
+                                      title={`${activity.name}: ${formatPercentage(activity.applied_percentage)} (${formatCurrency(activity.dollar_amount)})`}
+                                    />
+                                  ))}
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  {emp.activities.map((activity, idx) => (
+                                    <div key={idx} className="flex items-center justify-between p-2 bg-blue-50 rounded text-sm">
+                                      <div className="flex items-center">
+                                        <div 
+                                          className="w-4 h-4 rounded-full mr-3 flex-shrink-0"
+                                          style={{ backgroundColor: activity.color }}
+                                        />
+                                        <span className="font-medium">{activity.name}</span>
+                                      </div>
+                                      <div className="text-right ml-2">
+                                        <div className="font-semibold">{formatCurrency(activity.dollar_amount)}</div>
+                                        <div className="text-xs text-gray-600">{formatPercentage(activity.applied_percentage)}</div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                             {emp.subcomponents.length > 0 && (
-                              <div>
-                                <div className="w-full h-6 bg-gray-200 rounded-full overflow-hidden mb-2">
+                              <div className="mt-4">
+                                <h4 className="text-sm font-semibold text-gray-700 mb-2">Subcomponent Breakdown:</h4>
+                                <div className="w-full h-8 bg-gray-200 rounded-lg overflow-hidden mb-4">
                                   {emp.subcomponents.map((sub, idx) => (
                                     <div
                                       key={idx}
@@ -620,18 +1092,24 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
                                         width: `${(sub.applied_percentage / emp.applied_percentage) * 100}%`,
                                         backgroundColor: sub.color
                                       }}
-                                      title={`${sub.name}: ${formatPercentage(sub.applied_percentage)}`}
+                                      title={`${sub.name}: ${formatPercentage(sub.applied_percentage)} (${formatCurrency(sub.dollar_amount)})`}
                                     />
                                   ))}
                                 </div>
-                                <div className="flex flex-wrap gap-2">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                   {emp.subcomponents.map((sub, idx) => (
-                                    <div key={idx} className="flex items-center text-xs">
-                                      <div 
-                                        className="w-3 h-3 rounded-full mr-2"
-                                        style={{ backgroundColor: sub.color }}
-                                      />
-                                      <span>{sub.name}: {formatPercentage(sub.applied_percentage)}</span>
+                                    <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">
+                                      <div className="flex items-center">
+                                        <div 
+                                          className="w-4 h-4 rounded-full mr-3 flex-shrink-0"
+                                          style={{ backgroundColor: sub.color }}
+                                        />
+                                        <span className="font-medium">{sub.name}</span>
+                                      </div>
+                                      <div className="text-right ml-2">
+                                        <div className="font-semibold">{formatCurrency(sub.dollar_amount)}</div>
+                                        <div className="text-xs text-gray-600">{formatPercentage(sub.applied_percentage)}</div>
+                                      </div>
                                     </div>
                                   ))}
                                 </div>

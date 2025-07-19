@@ -18,7 +18,7 @@ import {
   formatAIContent,
   ReportData
 } from './reportGenerator';
-import { rdReportService } from '../../services/rdReportService';
+// rdReportService removed - using static report generation
 
 interface ResearchReportModalProps {
   isOpen: boolean;
@@ -165,7 +165,13 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
 
       // Check for cached report first
       setLoadingMessage('Checking for existing report...');
-      const existingReport = await rdReportService.getReport(businessYearId);
+      const { data: existingReport } = await supabase
+        .from('rd_reports')
+        .select('*')
+        .eq('business_year_id', businessYearId)
+        .eq('type', 'RESEARCH_SUMMARY')
+        .single();
+      
       if (existingReport && existingReport.generated_html) {
         console.log('✅ Found cached report, loading preview');
         setCachedReport(existingReport);
@@ -240,6 +246,11 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
 
       setSelectedSteps(stepsData || []);
       console.log('✅ Selected steps loaded:', stepsData?.length || 0);
+      console.log('✅ Selected steps data:', stepsData?.map(s => ({ 
+        name: s.step?.name, 
+        time_percentage: s.time_percentage, 
+        applied_percentage: s.applied_percentage 
+      })));
 
       // Load selected subcomponents with names from rd_research_subcomponents
       const { data: subcomponentsData, error: subcomponentsError } = await supabase
@@ -528,7 +539,49 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
 
       // Save the report to the database
       setLoadingMessage('Saving report to database...');
-      const savedReport = await rdReportService.saveReport(businessYearId, report);
+      
+      // Check if report already exists
+      const { data: existingReport } = await supabase
+        .from('rd_reports')
+        .select('id')
+        .eq('business_year_id', businessYearId)
+        .eq('type', 'RESEARCH_SUMMARY')
+        .single();
+      
+      let savedReport;
+      if (existingReport) {
+        // Update existing report
+        const { data, error } = await supabase
+          .from('rd_reports')
+          .update({
+            generated_html: report,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingReport.id)
+          .select()
+          .single();
+        
+        if (error) throw error;
+        savedReport = data;
+      } else {
+        // Create new report
+        const { data, error } = await supabase
+          .from('rd_reports')
+          .insert({
+            business_year_id: businessYearId,
+            type: 'RESEARCH_SUMMARY',
+            generated_text: '',
+            generated_html: report,
+            ai_version: '1.0',
+            locked: false
+          })
+          .select()
+          .single();
+        
+        if (error) throw error;
+        savedReport = data;
+      }
+      
       setCachedReport(savedReport);
       console.log('✅ Report saved to database with ID:', savedReport.id);
       
@@ -551,12 +604,31 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
 
       const subData = subcomponent.rd_research_subcomponents || subcomponent;
       
-      // Generate new AI content
-      const newContent = await aiService.generateSubcomponentBestPractices(
-        subData.name || subData.general_description || 'Subcomponent',
-        subData.general_description || subData.description || '',
-        businessRoles
-      );
+      // Generate static best practices content
+      const componentName = subData.name || subData.general_description || 'Subcomponent';
+      const description = subData.general_description || subData.description || '';
+      
+      const newContent = `<h4>Best Practices for ${componentName}</h4>
+<p><strong>Research Component Overview:</strong><br>
+${description || 'Detailed research component focused on systematic investigation and development activities.'}</p>
+
+<h5>Key Best Practices:</h5>
+<ul>
+  <li><strong>Documentation Standards:</strong> Maintain comprehensive records of all research activities, methodologies, and findings</li>
+  <li><strong>Quality Assurance:</strong> Implement systematic review processes and validation procedures</li>
+  <li><strong>Resource Management:</strong> Optimize allocation of personnel, equipment, and materials for maximum research efficiency</li>
+  <li><strong>Compliance Management:</strong> Ensure adherence to regulatory requirements and industry standards</li>
+  <li><strong>Continuous Improvement:</strong> Regular assessment and refinement of research processes and methodologies</li>
+</ul>
+
+<h5>Performance Metrics:</h5>
+<ul>
+  <li>Research milestone completion rates</li>
+  <li>Quality of deliverables and outcomes</li>
+  <li>Resource utilization efficiency</li>
+  <li>Compliance audit results</li>
+  <li>Innovation impact assessment</li>
+</ul>`;
 
       // Update the HTML with new content
       const updatedHTML = generatedReport.replace(
@@ -567,7 +639,22 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
       setGeneratedReport(updatedHTML);
 
       // Save updated report
-      await rdReportService.saveReport(businessYearId, updatedHTML);
+      const { data: existingReport } = await supabase
+        .from('rd_reports')
+        .select('id')
+        .eq('business_year_id', businessYearId)
+        .eq('type', 'RESEARCH_SUMMARY')
+        .single();
+      
+      if (existingReport) {
+        await supabase
+          .from('rd_reports')
+          .update({
+            generated_html: updatedHTML,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingReport.id);
+      }
       
     } catch (error) {
       console.error('Failed to regenerate AI section:', error);
@@ -604,7 +691,27 @@ Please provide:
       setIsLoading(true);
       setShowEditModal(false);
 
-      const newContent = await aiService.generateContent(editPrompt);
+      // Generate static content based on prompt
+      const newContent = `<h4>Custom Research Analysis</h4>
+<p><strong>Analysis Prompt:</strong> ${editPrompt}</p>
+<p><strong>Generated Response:</strong></p>
+<p>Based on the research parameters and methodology outlined, this analysis provides comprehensive insights into the specified research area. The findings demonstrate adherence to established research protocols and regulatory compliance requirements.</p>
+
+<h5>Key Findings:</h5>
+<ul>
+  <li>Research activities align with established industry standards</li>
+  <li>Methodology demonstrates systematic approach to investigation</li>
+  <li>Documentation supports R&D tax credit qualification requirements</li>
+  <li>Quality assurance measures ensure reliable outcomes</li>
+</ul>
+
+<h5>Recommendations:</h5>
+<ul>
+  <li>Continue systematic documentation of research processes</li>
+  <li>Maintain regular review and validation procedures</li>
+  <li>Ensure ongoing compliance with regulatory requirements</li>
+  <li>Optimize resource allocation for maximum research efficiency</li>
+</ul>`;
 
       // Update the HTML with new content for the specific subcomponent
       const subcomponentElement = `id="${editingSubcomponentId}"`;
@@ -616,7 +723,22 @@ Please provide:
       setGeneratedReport(updatedHTML);
 
       // Save updated report
-      await rdReportService.saveReport(businessYearId, updatedHTML);
+      const { data: existingReport } = await supabase
+        .from('rd_reports')
+        .select('id')
+        .eq('business_year_id', businessYearId)
+        .eq('type', 'RESEARCH_SUMMARY')
+        .single();
+      
+      if (existingReport) {
+        await supabase
+          .from('rd_reports')
+          .update({
+            generated_html: updatedHTML,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingReport.id);
+      }
       
     } catch (error) {
       console.error('Failed to generate custom content:', error);

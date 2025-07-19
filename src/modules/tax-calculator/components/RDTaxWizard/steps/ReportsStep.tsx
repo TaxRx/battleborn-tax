@@ -42,7 +42,6 @@ interface PortalToken {
   token: string;
   created_at: string;
   expires_at: string | null;
-  is_active: boolean;
   access_count: number;
 }
 
@@ -152,7 +151,6 @@ I further affirm that I am authorized to sign on behalf of the business entity a
         .from('rd_client_portal_tokens')
         .select('*')
         .eq('business_id', wizardState.business?.id)
-        .eq('is_active', true)
         .order('created_at', { ascending: false })
         .limit(1);
 

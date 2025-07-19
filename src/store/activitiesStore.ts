@@ -254,10 +254,11 @@ const useActivitiesStore = create<ActivitiesState>()(
         const subcomponentPercentages = activity.subcomponents
           .filter(sub => sub.isSelected)
           .map(sub => {
+            const practice = activity.practicePercentage || 0;
             const frequency = sub.frequencyPercentage || 0;
             const time = sub.timePercentage || 0;
             const year = sub.yearPercentage || 0;
-            return (frequency * time * year) / 10000;
+            return (practice / 100) * (frequency / 100) * (time / 100) * (year / 100) * 100;
           });
 
         return subcomponentPercentages.reduce((sum, p) => sum + p, 0);

@@ -156,6 +156,31 @@ export class RDBusinessService {
     }
   }
 
+  // Save historical data to rd_businesses.historical_data JSONB column
+  static async saveHistoricalData(businessId: string, historicalData: { year: number; grossReceipts: number; qre: number }[]): Promise<void> {
+    try {
+      // Transform data to match database schema (camelCase to snake_case)
+      const transformedData = historicalData.map(item => ({
+        year: item.year,
+        gross_receipts: item.grossReceipts,
+        qre: item.qre
+      }));
+
+      const { error } = await supabase
+        .from('rd_businesses')
+        .update({
+          historical_data: transformedData,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', businessId);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error saving historical data:', error);
+      throw error;
+    }
+  }
+
   // Save business year data
   static async saveBusinessYear(businessId: string, yearData: { year: number; grossReceipts: number; qre: number }): Promise<RDBusinessYear> {
     try {
@@ -165,7 +190,7 @@ export class RDBusinessService {
         .select('*')
         .eq('business_id', businessId)
         .eq('year', yearData.year)
-        .single();
+        .maybeSingle();
 
       let result;
       if (existingYear) {
@@ -211,10 +236,7 @@ export class RDBusinessService {
     try {
       const { data, error } = await supabase
         .from('rd_businesses')
-        .select(`
-          *,
-          rd_business_years (*)
-        `)
+        .select('*')
         .eq('id', businessId)
         .single();
 
@@ -297,7 +319,7 @@ export class RDBusinessService {
             zip: '90210'
           },
           website: updates.website || '',
-          naics_code: updates.naics_code || '',
+          naics: updates.naics || '',
           image_path: updates.image_path || '',
           is_controlled_grp: false,
           created_at: new Date().toISOString(),
@@ -332,7 +354,7 @@ export class RDBusinessService {
         .select('*')
         .eq('business_id', businessId)
         .eq('year', year)
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
       return data;

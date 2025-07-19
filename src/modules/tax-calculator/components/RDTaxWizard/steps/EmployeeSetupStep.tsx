@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Users, Settings, ChevronDown, ChevronRight, Check, X, Download, Calculator, Calendar, Briefcase, Package } from 'lucide-react';
+import { Plus, Edit, Trash2, Users, Settings, ChevronDown, ChevronRight, Check, X, Download, Calculator, Calendar, Briefcase, Package, FileText } from 'lucide-react';
 import { supabase } from '../../../../../lib/supabase';
 import { EmployeeManagementService } from '../../../../../services/employeeManagementService';
 import { ExpenseManagementService } from '../../../../../services/expenseManagementService';
@@ -1407,7 +1407,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
   const [showEmployeeDetailModal, setShowEmployeeDetailModal] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeWithExpenses | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const [activeTab, setActiveTab] = useState<'employees' | 'contractors' | 'supplies'>('employees');
+  const [activeTab, setActiveTab] = useState<'employees' | 'contractors' | 'supplies' | 'support'>('employees');
   const [sortBy, setSortBy] = useState<'first_name' | 'last_name' | 'calculated_qre' | 'applied_percentage'>('last_name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [showContractorDetailModal, setShowContractorDetailModal] = useState(false);
@@ -1463,72 +1463,106 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         setRoles(rolesData || []);
       }
 
-      // Load employees with calculated QRE - only show employees that have data for the selected year
+      // Load employees with calculated QRE - FIXED: proper year filtering and data isolation
       const { data: employeesData, error: employeesError } = await supabase
         .from('rd_employees')
         .select(`
           *,
-          role:rd_roles (
+          role:rd_roles!inner (
             id,
             name,
             baseline_applied_percent
-          ),
-          year_data:rd_employee_year_data (
-            calculated_qre,
-            applied_percent
-          ),
-          subcomponents:rd_employee_subcomponents (
-            id
           )
         `)
         .eq('business_id', businessId)
-        .eq('rd_employee_subcomponents.business_year_id', selectedYear || businessYearId);
+        .eq('rd_roles.business_year_id', selectedYear || businessYearId);
 
       if (employeesError) {
         console.error('❌ EmployeeSetupStep - Error loading employees:', employeesError);
+        setEmployeesWithData([]);
       } else {
-        // Filter employees to only include those that have subcomponents for the selected year
-        const employeesWithYearData = (employeesData || []).filter(employee => 
-          employee.subcomponents && employee.subcomponents.length > 0
-        );
-
-        // Calculate QRE for each employee using actual applied percentage from subcomponents
-        const employeesWithQRE = await Promise.all(employeesWithYearData.map(async (employee) => {
+        // FIXED: Load year-specific data separately to prevent data leakage
+        const currentBusinessYearId = selectedYear || businessYearId;
+        console.log('🔍 Loading employee data for specific year:', currentBusinessYearId);
+        
+        // Calculate QRE for each employee using ONLY data from the selected year
+        const employeesWithQRE = await Promise.all((employeesData || []).map(async (employee) => {
           const role = employee.role;
-          const yearData = employee.year_data?.[0];
           const baselinePercent = role?.baseline_applied_percent || 0;
           const annualWage = employee.annual_wage || 0;
           
-          // Get actual applied percentage from employee subcomponents
-          const { data: subcomponents, error: subcomponentsError } = await supabase
-            .from('rd_employee_subcomponents')
-            .select('applied_percentage, baseline_applied_percent')
-            .eq('employee_id', employee.id)
-            .eq('business_year_id', selectedYear || businessYearId);
+          // CRITICAL FIX: Load year-specific data only
+          const [yearDataResult, subcomponentsResult] = await Promise.all([
+            // Get year-specific employee data
+            supabase
+              .from('rd_employee_year_data')
+              .select('calculated_qre, applied_percent')
+              .eq('employee_id', employee.id)
+              .eq('business_year_id', currentBusinessYearId)
+              .maybeSingle(),
+            
+            // Get year-specific subcomponents
+            supabase
+              .from('rd_employee_subcomponents')
+              .select('applied_percentage, baseline_applied_percent, is_included')
+              .eq('employee_id', employee.id)
+              .eq('business_year_id', currentBusinessYearId)
+              .eq('is_included', true)
+          ]);
           
-          if (subcomponentsError) {
-            console.error('❌ EmployeeSetupStep - Error loading subcomponents for employee:', employee.id, subcomponentsError);
+          if (yearDataResult.error) {
+            console.error('❌ Error loading year data for employee:', employee.id, yearDataResult.error);
           }
           
-          const totalAppliedPercentage = subcomponents?.reduce((sum, sub) => sum + (sub.applied_percentage || 0), 0) || 0;
+          if (subcomponentsResult.error) {
+            console.error('❌ Error loading subcomponents for employee:', employee.id, subcomponentsResult.error);
+          }
           
-          // Use actual applied percentage if available, otherwise use baseline
-          const actualAppliedPercentage = totalAppliedPercentage > 0 ? totalAppliedPercentage : baselinePercent;
+          const yearData = yearDataResult.data;
+          const subcomponents = subcomponentsResult.data || [];
           
-          // Calculate QRE using actual applied percentage
-          const calculatedQRE = Math.round((annualWage * actualAppliedPercentage) / 100);
+          // Calculate applied percentage from subcomponents (year-specific)
+          const totalAppliedPercentage = subcomponents.reduce((sum, sub) => sum + (sub.applied_percentage || 0), 0);
+          
+          // Use stored calculated_qre if available, otherwise calculate
+          let calculatedQRE = yearData?.calculated_qre || 0;
+          let actualAppliedPercentage = yearData?.applied_percent || 0;
+          
+          // If no stored data, calculate from subcomponents
+          if (!calculatedQRE && totalAppliedPercentage > 0) {
+            actualAppliedPercentage = totalAppliedPercentage;
+            calculatedQRE = Math.round((annualWage * actualAppliedPercentage) / 100);
+          } else if (!calculatedQRE) {
+            // Fall back to baseline if no subcomponent data
+            actualAppliedPercentage = baselinePercent;
+            calculatedQRE = Math.round((annualWage * actualAppliedPercentage) / 100);
+          }
+          
+          console.log(`🔍 Employee ${employee.first_name} ${employee.last_name}:`, {
+            annualWage,
+            actualAppliedPercentage,
+            calculatedQRE,
+            hasYearData: !!yearData,
+            subcomponentsCount: subcomponents.length
+          });
 
           return {
             ...employee,
             calculated_qre: calculatedQRE,
             baseline_applied_percent: baselinePercent,
-            practice_percentage: yearData?.applied_percent || 0,
-            time_percentage: yearData?.applied_percent || 0,
-            applied_percentage: actualAppliedPercentage
+            applied_percentage: actualAppliedPercentage,
+            year_data: yearData ? [yearData] : [],
+            subcomponents: subcomponents
           };
         }));
 
-        setEmployeesWithData(employeesWithQRE);
+        // Filter to only include employees with data for this year
+        const filteredEmployees = employeesWithQRE.filter(emp => 
+          emp.calculated_qre > 0 || emp.subcomponents.length > 0
+        );
+
+        console.log(`✅ Loaded ${filteredEmployees.length} employees with year-specific data`);
+        setEmployeesWithData(filteredEmployees);
       }
 
       // Load contractors
@@ -1616,7 +1650,19 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
 
   useEffect(() => {
     console.log('🔄 EmployeeSetupStep - useEffect triggered, businessId:', businessId, 'selectedYear:', selectedYear);
-    loadData();
+    
+    // CRITICAL FIX: Clear all state when year changes to prevent data leakage
+    if (selectedYear) {
+      console.log('🔄 Clearing state for year change to prevent data corruption');
+      setEmployeesWithData([]);
+      setContractorsWithData([]);
+      setSupplies([]);
+      setExpenses([]);
+      setRoles([]);
+      
+      // Load data for the specific year
+      loadData();
+    }
   }, [businessId, selectedYear]);
 
   // Removed the problematic useEffect that was causing infinite loops
@@ -2021,11 +2067,33 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     }
   };
 
-  // Calculate QRE totals for each group
-  const employeeQRE = employeesWithData.reduce((sum, e) => sum + (e.calculated_qre || 0), 0);
-  const contractorQRE = contractorsWithData.reduce((sum, c) => sum + (c.calculated_qre || 0), 0);
-  const supplyQRE = supplies.reduce((sum, s) => sum + (s.calculated_qre || 0), 0);
+  // Calculate QRE totals for each group - FIXED: Add debugging and validation
+  const employeeQRE = employeesWithData.reduce((sum, e) => {
+    const qre = e.calculated_qre || 0;
+    console.log(`💰 Employee QRE: ${e.first_name} ${e.last_name} = $${qre.toLocaleString()}`);
+    return sum + qre;
+  }, 0);
+  
+  const contractorQRE = contractorsWithData.reduce((sum, c) => {
+    const qre = c.calculated_qre || 0;
+    console.log(`💰 Contractor QRE: Contractor ${c.id} = $${qre.toLocaleString()}`);
+    return sum + qre;
+  }, 0);
+  
+  const supplyQRE = supplies.reduce((sum, s) => {
+    const qre = s.calculated_qre || 0;
+    console.log(`💰 Supply QRE: ${s.name} = $${qre.toLocaleString()}`);
+    return sum + qre;
+  }, 0);
+  
   const totalQRE = employeeQRE + contractorQRE + supplyQRE;
+  
+  console.log(`💰 TOTAL QRE Breakdown for ${selectedYear}:`, {
+    employees: `$${employeeQRE.toLocaleString()}`,
+    contractors: `$${contractorQRE.toLocaleString()}`,
+    supplies: `$${supplyQRE.toLocaleString()}`,
+    total: `$${totalQRE.toLocaleString()}`
+  });
 
   console.log('📊 EmployeeSetupStep - Render state:', {
     loading,
@@ -2484,44 +2552,150 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         const rows: Record<string, string>[] = results.data;
         let successCount = 0;
         let errorCount = 0;
-        let missingRoleCount = 0;
+        let invalidYearCount = 0;
+        let rolesAssignedCount = 0;
+        
+        console.log('🔍 CSV Import - Processing', rows.length, 'rows');
+        console.log('📋 CSV Headers detected:', results.meta.fields);
         
         for (const row of rows) {
           const firstName = row['First Name'] || row['first_name'] || row['firstName'];
           const lastName = row['Last Name'] || row['last_name'] || row['lastName'];
           const wage = row['Wage'] || row['wage'] || '';
-          const roleName = row['Role'] || row['role'] || '';
+          const year = row['Year'] || row['year'] || '';
+          const roleName = row['Role'] || row['role'] || ''; // Optional, processed at the end
           
-          if (!firstName || !lastName || !wage) {
-            console.warn('⚠️ Skipping row with missing required fields:', row);
+          console.log('👤 Processing employee:', firstName, lastName, 'Year:', year, 'Wage:', wage);
+          
+          // Validate required fields: First Name, Last Name, Wage, Year
+          if (!firstName || !lastName || !wage || !year) {
+            console.warn('⚠️ Skipping row with missing required fields:', {
+              firstName: !!firstName,
+              lastName: !!lastName, 
+              wage: !!wage,
+              year: !!year,
+              row
+            });
             errorCount++;
             continue;
           }
           
-          let roleId = '';
-          if (roleName) {
-            const foundRole = roles.find(r => r.name && r.name.toLowerCase() === roleName.toLowerCase());
-            if (foundRole) {
-              roleId = foundRole.id;
-            } else {
-              console.warn(`⚠️ Role "${roleName}" not found for employee ${firstName} ${lastName}`);
-              missingRoleCount++;
-            }
+          // Find or create the target business year
+          let targetBusinessYearId = businessYearId; // Default fallback
+          
+          const yearNumber = parseInt(year.trim());
+          if (isNaN(yearNumber) || yearNumber < 1900 || yearNumber > 2100) {
+            console.warn(`⚠️ Invalid year "${year}" for employee ${firstName} ${lastName}. Skipping this employee.`);
+            invalidYearCount++;
+            errorCount++;
+            continue;
+          }
+          
+          // Find existing business year or create new one
+          const targetYear = availableYears.find(y => y.year === yearNumber);
+          if (targetYear) {
+            targetBusinessYearId = targetYear.id;
+            console.log(`✅ Found business year ${yearNumber} with ID: ${targetYear.id}`);
           } else {
-            console.log(`ℹ️ No role specified for employee ${firstName} ${lastName} - will be created without role`);
-            missingRoleCount++;
+            // Create a new business year for this year
+            console.log(`📅 Creating new business year for ${yearNumber}`);
+            try {
+              const { data: newBusinessYear, error: yearError } = await supabase
+                .from('rd_business_years')
+                .insert({
+                  business_id: businessId,
+                  year: yearNumber,
+                  gross_receipts: 0, // Default value
+                  total_qre: 0
+                })
+                .select()
+                .single();
+              
+              if (yearError) {
+                console.error('❌ Error creating business year:', yearError);
+                console.warn(`⚠️ Failed to create year ${yearNumber} for employee ${firstName} ${lastName}. Skipping this employee.`);
+                invalidYearCount++;
+                errorCount++;
+                continue;
+              } else {
+                targetBusinessYearId = newBusinessYear.id;
+                console.log(`✅ Created new business year ${yearNumber} with ID: ${newBusinessYear.id}`);
+                
+                // Add to available years for UI updates
+                setAvailableYears(prev => [...prev, { id: newBusinessYear.id, year: yearNumber }]);
+              }
+            } catch (error) {
+              console.error('❌ Error in business year creation:', error);
+              invalidYearCount++;
+              errorCount++;
+              continue;
+            }
           }
           
           try {
-            // Add employee (if roleId is empty, will be created without role)
-            await handleQuickAddEmployee({
-              first_name: firstName.trim(),
-              last_name: lastName.trim(),
-              wage,
-              role_id: roleId,
-              is_owner: false
-            });
+            // Create employee WITHOUT role assignment (as requested)
+            console.log(`👤 Creating employee ${firstName} ${lastName} for business year: ${targetBusinessYearId} (Year: ${yearNumber})`);
+            
+            // Extract numeric value from formatted wage string
+            const numericWage = wage.replace(/[^0-9.]/g, '');
+            const annualWage = numericWage ? parseFloat(numericWage) : 0;
+            
+            // Get or create default role (but don't assign it to the employee)
+            const defaultRoleId = await getOrCreateDefaultRole(businessId);
+            
+            // Handle optional role assignment ONLY if role is provided and valid
+            let assignedRoleId = null;
+            if (roleName && roleName.trim() !== '') {
+              const foundRole = roles.find(r => r.name && r.name.toLowerCase() === roleName.toLowerCase());
+              if (foundRole) {
+                assignedRoleId = foundRole.id;
+                rolesAssignedCount++;
+                console.log(`✅ Assigned role "${roleName}" to ${firstName} ${lastName}`);
+              } else {
+                console.log(`ℹ️ Role "${roleName}" not found for ${firstName} ${lastName} - creating without role`);
+              }
+            }
+            
+            // Create employee record (without role assignment by default)
+            const { data: newEmployee, error: employeeError } = await supabase
+              .from('rd_employees')
+              .insert({
+                business_id: businessId,
+                first_name: firstName.trim(),
+                last_name: lastName.trim(),
+                role_id: assignedRoleId, // Will be null unless specific role was found
+                is_owner: false,
+                annual_wage: annualWage
+              })
+              .select('*')
+              .single();
+
+            if (employeeError) {
+              console.error('❌ Error creating employee:', employeeError);
+              throw employeeError;
+            }
+
+            // Create minimal employee year data (no role-based calculations)
+            const { error: yearDataError } = await supabase
+              .from('rd_employee_year_data')
+              .insert({
+                employee_id: newEmployee.id,
+                business_year_id: targetBusinessYearId,
+                applied_percent: 0, // Will be set later when roles are assigned
+                calculated_qre: 0,  // Will be calculated later when roles are assigned
+                activity_roles: assignedRoleId ? [assignedRoleId] : []
+              });
+
+            if (yearDataError) {
+              console.error('❌ Error creating employee year data:', yearDataError);
+              // Don't throw here, as the employee was created successfully
+            }
+
+            // Note: Skipping subcomponent relationships - these will be created when roles are assigned later
+
             successCount++;
+            console.log(`✅ Successfully imported employee ${firstName} ${lastName} into year ${yearNumber} (${targetBusinessYearId})`);
+            
           } catch (error) {
             console.error(`❌ Failed to import employee ${firstName} ${lastName}:`, error);
             errorCount++;
@@ -2530,22 +2704,31 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         
         setCsvImporting(false);
         setCsvFile(null);
+        
+        // Reload data to show new employees
         await loadData();
         
-        // Show summary
-        const summary = `Import complete: ${successCount} employees imported successfully`;
-        if (missingRoleCount > 0) {
-          console.log(`ℹ️ ${missingRoleCount} employees imported without roles - you can assign roles manually`);
-        }
-        if (errorCount > 0) {
-          console.error(`❌ ${errorCount} employees failed to import`);
-        }
+        // Show comprehensive summary
+        let summary = `Import complete: ${successCount} employees imported successfully`;
+        if (errorCount > 0) summary += `, ${errorCount} failed`;
+        if (rolesAssignedCount > 0) summary += `, ${rolesAssignedCount} with roles assigned`;
+        if (invalidYearCount > 0) summary += `, ${invalidYearCount} with invalid years (skipped)`;
         
-        console.log(summary);
+        console.log('📊 Import Summary:', summary);
+        
+        // Show success message
+        const summaryMessage = `✅ ${successCount} employees imported across multiple years${rolesAssignedCount > 0 ? `. ${rolesAssignedCount} employees had roles assigned.` : '. All employees created without roles - assign roles manually as needed.'}`;
+        toast?.success?.(summaryMessage) || console.log(summaryMessage);
+        
+        if (errorCount > 0) {
+          const errorMessage = `⚠️ ${errorCount} employees failed to import. Check console for details.`;
+          toast?.error?.(errorMessage) || console.error(errorMessage);
+        }
       },
       error: (err: any) => {
         setCsvError('Failed to parse CSV: ' + (err?.message || 'Unknown error'));
         setCsvImporting(false);
+        console.error('❌ CSV Parse Error:', err);
       }
     });
   };
@@ -2609,37 +2792,11 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                   <div className="text-sm text-blue-100">Roles</div>
                 </div>
               </div>
+              {/* Header without Year Selector - moved to footer */}
               <div className="flex flex-col md:items-end mt-4 md:mt-0">
-                <div className="flex items-center space-x-4">
-                  {/* Allocation Report Button */}
-                  <button
-                    onClick={() => setShowAllocationReport(true)}
-                    className="flex items-center px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-md"
-                  >
-                    <Users className="w-4 h-4 mr-2" />
-                    Allocation Report
-                  </button>
-                  
-                  {/* Business Year Selector */}
-                  <div className="flex flex-col items-end">
-                    <label className="text-xs font-medium text-blue-100 mb-1">Business Year</label>
-                    <div className="flex items-center space-x-2">
-                      <Calendar className="w-5 h-5 text-blue-200" />
-                      <select
-                        value={selectedYear}
-                        onChange={(e) => {
-                          setSelectedYear(e.target.value);
-                        }}
-                        className="px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white/10 text-white placeholder-blue-200 min-w-[100px]"
-                      >
-                        {availableYears.map((year) => (
-                          <option key={year.id} value={year.id} className="text-gray-900">
-                            {year.year}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
+                <div className="text-right text-blue-100">
+                  <p className="text-sm">Total QRE: {formatCurrency(totalQRE)}</p>
+                  <p className="text-xs opacity-75">{employeesWithData.length + contractorsWithData.length + supplies.length} items</p>
                 </div>
               </div>
             </div>
@@ -2749,6 +2906,17 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
               <Package className="w-4 h-4" />
               <span>Supplies</span>
             </button>
+            <button
+              onClick={() => setActiveTab('support')}
+              className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 flex items-center space-x-2 ${
+                activeTab === 'support'
+                  ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-md'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              <span>Support</span>
+            </button>
           </div>
         </div>
 
@@ -2781,6 +2949,16 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                   </label>
                   {csvImporting && <span className="text-blue-600 text-sm">Importing...</span>}
                   {csvError && <span className="text-red-600 text-sm">{csvError}</span>}
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs">
+                    <div className="font-medium text-gray-700 mb-1">CSV Format:</div>
+                    <div className="text-gray-600 space-y-1">
+                      <div><span className="font-medium">Required:</span> First Name, Last Name, Wage, Year</div>
+                      <div><span className="font-medium">Optional:</span> Role (at end)</div>
+                      <div><span className="font-medium">Example:</span> John,Doe,$100000,2024,Research Leader</div>
+                      <div className="text-blue-600 mt-1">📅 <span className="font-medium">Multi-year import:</span> Automatically creates business years and assigns employees</div>
+                      <div className="text-green-600">🎯 <span className="font-medium">No roles by default:</span> Assign roles manually after import for better control</div>
+                    </div>
+                  </div>
                 </div>
               </div>
               {employeesWithData.length === 0 ? (
@@ -3089,10 +3267,218 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
               businessId={businessId}
             />
           )}
+
+          {activeTab === 'support' && (
+            <div className="space-y-8">
+              {/* Support Tab Header */}
+              <div className="text-center">
+                <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mb-2">
+                  Document Support
+                </h3>
+                <p className="text-gray-600">
+                  Upload and manage supporting documents for your R&D tax credit claim
+                </p>
+              </div>
+
+              {/* Document Upload Sections */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                {/* Invoices Section */}
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200 p-6">
+                  <div className="flex items-center mb-4">
+                    <div className="p-3 bg-blue-100 rounded-lg mr-3">
+                      <FileText className="w-6 h-6 text-blue-600" />
+                    </div>
+                    <div>
+                      <h4 className="text-lg font-semibold text-gray-900">Invoices</h4>
+                      <p className="text-sm text-gray-600">Upload supplier and vendor invoices</p>
+                    </div>
+                  </div>
+                  
+                  {/* Invoice Upload Area */}
+                  <div className="border-2 border-dashed border-blue-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors cursor-pointer mb-4">
+                    <div className="text-blue-500 text-3xl mb-2">📄</div>
+                    <p className="text-sm text-gray-600 mb-2">
+                      <span className="font-medium">Click to upload</span> or drag and drop
+                    </p>
+                    <p className="text-xs text-gray-500">PDF, DOC, DOCX, XLS, XLSX (max 10MB)</p>
+                    <input type="file" className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx" multiple />
+                  </div>
+
+                  {/* Invoice Linking Options */}
+                  <div className="bg-white rounded-lg p-4 border border-blue-200">
+                    <h5 className="font-medium text-gray-900 mb-2">Link Options</h5>
+                    <div className="space-y-2">
+                      <label className="flex items-center">
+                        <input type="radio" name="invoice-link" className="text-blue-600" />
+                        <span className="ml-2 text-sm text-gray-700">Link to Supply</span>
+                      </label>
+                      <label className="flex items-center">
+                        <input type="radio" name="invoice-link" className="text-blue-600" />
+                        <span className="ml-2 text-sm text-gray-700">Link to Contractor</span>
+                      </label>
+                      <label className="flex items-center">
+                        <input type="radio" name="invoice-link" className="text-blue-600" defaultChecked />
+                        <span className="ml-2 text-sm text-gray-700">General Support Document</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Uploaded Invoices List */}
+                  <div className="mt-4">
+                    <div className="text-sm font-medium text-gray-700 mb-2">Uploaded Documents (0)</div>
+                    <div className="text-center py-4 text-gray-500 text-sm">
+                      No invoices uploaded yet
+                    </div>
+                  </div>
+                </div>
+
+                {/* 1099s Section */}
+                <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200 p-6">
+                  <div className="flex items-center mb-4">
+                    <div className="p-3 bg-green-100 rounded-lg mr-3">
+                      <FileText className="w-6 h-6 text-green-600" />
+                    </div>
+                    <div>
+                      <h4 className="text-lg font-semibold text-gray-900">1099 Forms</h4>
+                      <p className="text-sm text-gray-600">Upload contractor 1099 forms</p>
+                    </div>
+                  </div>
+                  
+                  {/* 1099 Upload Area */}
+                  <div className="border-2 border-dashed border-green-300 rounded-lg p-6 text-center hover:border-green-400 transition-colors cursor-pointer mb-4">
+                    <div className="text-green-500 text-3xl mb-2">📋</div>
+                    <p className="text-sm text-gray-600 mb-2">
+                      <span className="font-medium">Click to upload</span> or drag and drop
+                    </p>
+                    <p className="text-xs text-gray-500">PDF, DOC, DOCX (max 10MB)</p>
+                    <input type="file" className="hidden" accept=".pdf,.doc,.docx" multiple />
+                  </div>
+
+                  {/* 1099 Linking Options */}
+                  <div className="bg-white rounded-lg p-4 border border-green-200">
+                    <h5 className="font-medium text-gray-900 mb-2">Link to Contractor</h5>
+                    <select className="w-full p-2 border border-gray-300 rounded-lg text-sm">
+                      <option value="">Select contractor...</option>
+                      {contractorsWithData.map(contractor => (
+                        <option key={contractor.id} value={contractor.id}>
+                          {`${contractor.first_name || ''} ${contractor.last_name || ''}`.trim() || 'Unnamed Contractor'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Uploaded 1099s List */}
+                  <div className="mt-4">
+                    <div className="text-sm font-medium text-gray-700 mb-2">Uploaded Forms (0)</div>
+                    <div className="text-center py-4 text-gray-500 text-sm">
+                      No 1099 forms uploaded yet
+                    </div>
+                  </div>
+                </div>
+
+                {/* Procedure Reports Section - Healthcare AI Integration */}
+                <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-xl border border-purple-200 p-6">
+                  <div className="flex items-center mb-4">
+                    <div className="p-3 bg-purple-100 rounded-lg mr-3">
+                      <div className="relative">
+                        <FileText className="w-6 h-6 text-purple-600" />
+                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full flex items-center justify-center">
+                          <span className="text-xs">✨</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="text-lg font-semibold text-gray-900">Procedure Reports</h4>
+                      <p className="text-sm text-gray-600">AI-powered procedure code analysis</p>
+                    </div>
+                  </div>
+                  
+                  {/* AI Enhancement Badge */}
+                  <div className="bg-gradient-to-r from-yellow-100 to-yellow-200 border border-yellow-300 rounded-lg p-3 mb-4">
+                    <div className="flex items-center">
+                      <span className="text-yellow-600 mr-2">🤖</span>
+                      <div>
+                        <div className="text-sm font-medium text-yellow-800">AI-Enhanced Analysis</div>
+                        <div className="text-xs text-yellow-700">Automatically links procedure codes to research activities</div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Procedure Report Upload Area */}
+                  <div className="border-2 border-dashed border-purple-300 rounded-lg p-6 text-center hover:border-purple-400 transition-colors cursor-pointer mb-4">
+                    <div className="text-purple-500 text-3xl mb-2">🏥</div>
+                    <p className="text-sm text-gray-600 mb-2">
+                      <span className="font-medium">Upload Production by Category</span>
+                    </p>
+                    <p className="text-xs text-gray-500">PDF, CSV, XLS, XLSX (max 25MB)</p>
+                    <input type="file" className="hidden" accept=".pdf,.csv,.xls,.xlsx" multiple />
+                  </div>
+
+                  {/* AI Processing Status */}
+                  <div className="bg-white rounded-lg p-4 border border-purple-200">
+                    <h5 className="font-medium text-gray-900 mb-2 flex items-center">
+                      <span className="animate-pulse mr-2">🔄</span>
+                      AI Analysis Status
+                    </h5>
+                    <div className="text-sm text-gray-600">
+                      Ready to analyze procedure codes and link to research activities
+                    </div>
+                    <div className="mt-2 bg-gray-200 rounded-full h-2">
+                      <div className="bg-purple-600 h-2 rounded-full w-0 transition-all duration-300"></div>
+                    </div>
+                  </div>
+
+                  {/* Expected Benefits */}
+                  <div className="mt-4 bg-white rounded-lg p-4 border border-purple-200">
+                    <h5 className="font-medium text-gray-900 mb-2">Expected Analysis:</h5>
+                    <ul className="text-xs text-gray-600 space-y-1">
+                      <li>• Link CPT codes to research activities</li>
+                      <li>• Calculate billable time percentages</li>
+                      <li>• Validate practice allocation ratios</li>
+                      <li>• Generate supporting documentation</li>
+                    </ul>
+                  </div>
+
+                  {/* Uploaded Reports List */}
+                  <div className="mt-4">
+                    <div className="text-sm font-medium text-gray-700 mb-2">Uploaded Reports (0)</div>
+                    <div className="text-center py-4 text-gray-500 text-sm">
+                      No procedure reports uploaded yet
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Summary Section */}
+              <div className="bg-white rounded-xl border border-gray-200 p-6">
+                <h4 className="text-lg font-semibold text-gray-900 mb-4">Document Summary</h4>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="text-center p-4 bg-blue-50 rounded-lg">
+                    <div className="text-2xl font-bold text-blue-600">0</div>
+                    <div className="text-sm text-gray-600">Total Documents</div>
+                  </div>
+                  <div className="text-center p-4 bg-green-50 rounded-lg">
+                    <div className="text-2xl font-bold text-green-600">0</div>
+                    <div className="text-sm text-gray-600">Linked Items</div>
+                  </div>
+                  <div className="text-center p-4 bg-purple-50 rounded-lg">
+                    <div className="text-2xl font-bold text-purple-600">0</div>
+                    <div className="text-sm text-gray-600">AI Analyzed</div>
+                  </div>
+                  <div className="text-center p-4 bg-yellow-50 rounded-lg">
+                    <div className="text-2xl font-bold text-yellow-600">0%</div>
+                    <div className="text-sm text-gray-600">Coverage</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Navigation */}
+      {/* Simple Navigation - Year moved to main footer */}
       <div className="flex justify-between items-center pt-6">
         <button
           onClick={onPrevious}
