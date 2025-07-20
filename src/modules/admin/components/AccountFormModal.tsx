@@ -3,8 +3,9 @@
 // Purpose: Modal component for creating and editing accounts with validation
 
 import React, { useState, useEffect } from 'react';
-import { X, Save, AlertCircle, Building, Globe, Image } from 'lucide-react';
+import { X, Save, AlertCircle, Building, Globe, Image, Users, FileText } from 'lucide-react';
 import AdminAccountService, { Account } from '../services/adminAccountService';
+import ProfileManagement from './ProfileManagement';
 
 interface AccountFormModalProps {
   isOpen: boolean;
@@ -12,6 +13,7 @@ interface AccountFormModalProps {
   onSave: (account: Account) => void;
   account?: Account | null; // null = create mode, Account = edit mode
   title?: string;
+  initialTab?: 'account' | 'profiles';
 }
 
 interface FormData {
@@ -33,7 +35,8 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
   onClose,
   onSave,
   account = null,
-  title
+  title,
+  initialTab = 'account'
 }) => {
   const [formData, setFormData] = useState<FormData>({
     name: '',
@@ -46,6 +49,7 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'account' | 'profiles'>('account');
 
   const isEditMode = account !== null;
   const modalTitle = title || (isEditMode ? 'Edit Account' : 'Create New Account');
@@ -74,8 +78,9 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
       }
       setErrors({});
       setSubmitError('');
+      setActiveTab(initialTab); // Use the specified initial tab
     }
-  }, [isOpen, account]);
+  }, [isOpen, account, initialTab]);
 
   const handleInputChange = (field: keyof FormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -158,7 +163,7 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
         />
 
         {/* Modal */}
-        <div className="inline-block w-full max-w-md p-6 my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-lg">
+        <div className="inline-block w-full max-w-4xl p-6 my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-lg">
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-medium text-gray-900 flex items-center">
@@ -174,8 +179,42 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
             </button>
           </div>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Tabs - Only show for edit mode */}
+          {isEditMode && (
+            <div className="border-b border-gray-200 mb-6">
+              <nav className="-mb-px flex space-x-8">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('account')}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'account'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <FileText className="h-4 w-4 mr-2 inline" />
+                  Account Info
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('profiles')}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'profiles'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <Users className="h-4 w-4 mr-2 inline" />
+                  Profiles
+                </button>
+              </nav>
+            </div>
+          )}
+
+          {/* Content */}
+          {activeTab === 'account' ? (
+            /* Account Info Form */
+            <form onSubmit={handleSubmit} className="space-y-4">
             {/* Account Name */}
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
@@ -312,35 +351,46 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
               </div>
             )}
 
-            {/* Form Actions */}
-            <div className="flex items-center justify-end space-x-3 pt-4 border-t border-gray-200">
-              <button
-                type="button"
-                onClick={handleClose}
-                disabled={isSubmitting}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center"
-              >
-                {isSubmitting ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    {isEditMode ? 'Updating...' : 'Creating...'}
-                  </>
-                ) : (
-                  <>
-                    <Save className="h-4 w-4 mr-2" />
-                    {isEditMode ? 'Update Account' : 'Create Account'}
-                  </>
-                )}
-              </button>
+              {/* Form Actions */}
+              <div className="flex items-center justify-end space-x-3 pt-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  disabled={isSubmitting}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      {isEditMode ? 'Updating...' : 'Creating...'}
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
+                      {isEditMode ? 'Update Account' : 'Create Account'}
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          ) : (
+            /* Profiles Tab Content */
+            <div>
+              {account && (
+                <ProfileManagement 
+                  accountId={account.id} 
+                  accountName={account.name} 
+                />
+              )}
             </div>
-          </form>
+          )}
         </div>
       </div>
     </div>

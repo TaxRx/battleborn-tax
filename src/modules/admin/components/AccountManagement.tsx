@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, 
+  User,
   Search, 
   Filter, 
   Plus, 
@@ -12,6 +13,7 @@ import {
   Trash2, 
   Eye, 
   MoreHorizontal,
+  RotateCcw,
   Download,
   RefreshCw,
   AlertCircle,
@@ -46,6 +48,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [accountToEdit, setAccountToEdit] = useState<Account | null>(null);
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
+  const [editModalInitialTab, setEditModalInitialTab] = useState<'account' | 'profiles'>('account');
 
   // Filters and pagination
   const [filters, setFilters] = useState<AccountFilters>({
@@ -148,6 +151,13 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
 
   const handleEditAccount = (account: Account) => {
     setAccountToEdit(account);
+    setEditModalInitialTab('account');
+    setShowEditModal(true);
+  };
+
+  const handleViewProfiles = (account: Account) => {
+    setAccountToEdit(account);
+    setEditModalInitialTab('profiles');
     setShowEditModal(true);
   };
 
@@ -196,6 +206,23 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
     }
   };
 
+  const handleRestoreAccount = async (account: Account) => {
+    try {
+      const result = await AdminAccountService_instance.restoreAccount(account.id);
+      
+      if (result.success) {
+        // Refresh the accounts list
+        loadAccounts();
+        setError(null);
+      } else {
+        setError(result.message);
+      }
+    } catch (err) {
+      console.error('Error restoring account:', err);
+      setError('Failed to restore account. Please try again.');
+    }
+  };
+
   const handleCloseModals = () => {
     setShowCreateModal(false);
     setShowEditModal(false);
@@ -218,6 +245,21 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
     return (
       <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${colors[type as keyof typeof colors] || 'bg-gray-100 text-gray-800'}`}>
         {type.charAt(0).toUpperCase() + type.slice(1)}
+      </span>
+    );
+  };
+
+  const getStatusBadge = (status: string) => {
+    const colors = {
+      active: 'bg-green-100 text-green-800',
+      inactive: 'bg-yellow-100 text-yellow-800',
+      suspended: 'bg-red-100 text-red-800',
+      deleted: 'bg-gray-100 text-gray-800',
+    };
+    
+    return (
+      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${colors[status as keyof typeof colors] || 'bg-gray-100 text-gray-800'}`}>
+        {status.charAt(0).toUpperCase() + status.slice(1)}
       </span>
     );
   };
@@ -353,7 +395,17 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
                   <option value="operator">Operator</option>
                 </select>
 
-                {/* Status filtering not available at account level - would need to query profiles */}
+                <select
+                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={filters.status || ''}
+                  onChange={(e) => handleFilterChange({ status: e.target.value || undefined })}
+                >
+                  <option value="">All Statuses</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="suspended">Suspended</option>
+                  <option value="deleted">Deleted</option>
+                </select>
 
                 <select
                   className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -368,8 +420,22 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
                   <option value="name_asc">Name A-Z</option>
                   <option value="name_desc">Name Z-A</option>
                   <option value="type_asc">Type A-Z</option>
-                  {/* Status sorting not available at account level */}
+                  <option value="status_asc">Status A-Z</option>
+                  <option value="status_desc">Status Z-A</option>
                 </select>
+              </div>
+              
+              {/* Show Deleted Toggle */}
+              <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={filters.includeDeleted || false}
+                    onChange={(e) => handleFilterChange({ includeDeleted: e.target.checked })}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">Show deleted accounts</span>
+                </label>
               </div>
             </div>
 
@@ -449,12 +515,19 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
                         {getTypeBadge(account.type)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                          Active
-                        </span>
+                        {getStatusBadge(account.status)}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {account.profiles?.[0]?.count || 0}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewProfiles(account);
+                          }}
+                          className="text-blue-600 hover:text-blue-900 hover:underline font-medium"
+                          title="View profiles for this account"
+                        >
+                          {account.profiles?.[0]?.count || 0}
+                        </button>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {new Date(account.created_at).toLocaleDateString()}
@@ -472,25 +545,51 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
                             <Eye className="h-4 w-4" />
                           </button>
                           <button 
-                            className="text-gray-600 hover:text-gray-900"
+                            className="text-purple-600 hover:text-purple-900"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleEditAccount(account);
+                              handleViewProfiles(account);
                             }}
-                            title="Edit Account"
+                            title="Manage Profiles"
                           >
-                            <Edit3 className="h-4 w-4" />
+                            <User className="h-4 w-4" />
                           </button>
-                          <button 
-                            className="text-red-600 hover:text-red-900"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteAccount(account);
-                            }}
-                            title="Delete Account"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          
+                          {account.status === 'deleted' ? (
+                            <button 
+                              className="text-green-600 hover:text-green-900"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRestoreAccount(account);
+                              }}
+                              title="Restore Account"
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                            </button>
+                          ) : (
+                            <>
+                              <button 
+                                className="text-gray-600 hover:text-gray-900"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditAccount(account);
+                                }}
+                                title="Edit Account"
+                              >
+                                <Edit3 className="h-4 w-4" />
+                              </button>
+                              <button 
+                                className="text-red-600 hover:text-red-900"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteAccount(account);
+                                }}
+                                title="Delete Account"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -584,6 +683,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
         onSave={handleAccountSaved}
         account={accountToEdit}
         title="Edit Account"
+        initialTab={editModalInitialTab}
       />
 
       <DeleteConfirmationModal

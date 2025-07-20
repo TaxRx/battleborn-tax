@@ -56,6 +56,7 @@ export interface Account {
   id: string;
   name: string;
   type: string;
+  status: 'active' | 'inactive' | 'suspended' | 'deleted';
   address?: string;
   logo_url?: string;
   website_url?: string;
@@ -65,10 +66,57 @@ export interface Account {
   profiles?: { count: number }[];
 }
 
+export interface Profile {
+  id: string;
+  email: string;
+  full_name?: string;
+  role?: string;
+  is_admin: boolean;
+  account_id?: string;
+  admin_role?: string;
+  access_level?: string;
+  status: 'active' | 'inactive' | 'suspended' | 'pending' | 'locked';
+  phone?: string;
+  avatar_url?: string;
+  last_login_at?: string;
+  login_count: number;
+  is_verified: boolean;
+  admin_notes?: string;
+  auth_sync_status: 'synced' | 'pending' | 'conflict' | 'error' | 'requires_attention';
+  metadata: Record<string, any>;
+  preferences: Record<string, any>;
+  timezone: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProfileFilters {
+  search?: string;
+  status?: string;
+  role?: string;
+  accountId?: string;
+  includeDeleted?: boolean;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface ProfileResponse {
+  profiles: Profile[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
+}
+
 export interface AccountFilters {
   search?: string;
   type?: string;
-  // Note: status filtering would need to be done via profiles table
+  status?: string;
+  includeDeleted?: boolean; // Whether to include deleted accounts in results
   page?: number;
   limit?: number;
   sortBy?: string;
@@ -241,6 +289,518 @@ class AdminAccountService {
     }
   }
 
+  // ========= PROFILE MANAGEMENT METHODS =========
+
+  async getProfiles(filters: ProfileFilters = {}): Promise<ProfileResponse> {
+    try {
+      let query = supabase
+        .from('profiles')
+        .select(`
+          id,
+          email,
+          full_name,
+          role,
+          is_admin,
+          account_id,
+          admin_role,
+          access_level,
+          status,
+          phone,
+          avatar_url,
+          last_login_at,
+          login_count,
+          is_verified,
+          admin_notes,
+          auth_sync_status,
+          metadata,
+          preferences,
+          timezone,
+          created_at,
+          updated_at
+        `, { count: 'exact' });
+
+      // Filter by account if specified
+      if (filters.accountId) {
+        query = query.eq('account_id', filters.accountId);
+      }
+
+      // Filter out deleted profiles by default
+      if (!filters.includeDeleted) {
+        query = query.neq('status', 'deleted');
+      }
+
+      // Apply other filters
+      if (filters.search) {
+        query = query.or(`full_name.ilike.%${filters.search}%,email.ilike.%${filters.search}%`);
+      }
+      if (filters.status) {
+        query = query.eq('status', filters.status);
+      }
+      if (filters.role) {
+        query = query.eq('role', filters.role);
+      }
+
+      // Apply sorting
+      let sortField = filters.sortBy || 'created_at';
+      const validSortFields = ['email', 'full_name', 'role', 'status', 'last_login_at', 'created_at', 'updated_at'];
+      
+      if (!validSortFields.includes(sortField)) {
+        console.warn(`Invalid sort field '${sortField}', defaulting to 'created_at'`);
+        sortField = 'created_at';
+      }
+      
+      const ascending = filters.sortOrder === 'asc';
+      query = query.order(sortField, { ascending });
+
+      // Apply pagination
+      const page = filters.page || 1;
+      const limit = filters.limit || 25;
+      const from = (page - 1) * limit;
+      const to = from + limit - 1;
+      query = query.range(from, to);
+
+      const { data: profiles, error, count } = await query;
+
+      if (error) {
+        console.error('Database error in getProfiles:', error);
+        throw error;
+      }
+
+      return {
+        profiles: profiles || [],
+        pagination: {
+          page,
+          limit,
+          total: count || 0,
+          pages: Math.ceil((count || 0) / limit)
+        }
+      };
+    } catch (error) {
+      console.error('Error fetching profiles:', error);
+      throw error;
+    }
+  }
+
+  async getProfile(profileId: string): Promise<Profile> {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select(`
+          id,
+          email,
+          full_name,
+          role,
+          is_admin,
+          account_id,
+          admin_role,
+          access_level,
+          status,
+          phone,
+          avatar_url,
+          last_login_at,
+          login_count,
+          is_verified,
+          admin_notes,
+          auth_sync_status,
+          metadata,
+          preferences,
+          timezone,
+          created_at,
+          updated_at
+        `)
+        .eq('id', profileId)
+        .single();
+
+      if (error) throw error;
+
+      return data;
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+      throw error;
+    }
+  }
+
+  async createProfile(profileData: {
+    email: string;
+    full_name?: string;
+    role?: string;
+    account_id: string;
+    access_level?: string;
+    phone?: string;
+    is_admin?: boolean;
+    admin_role?: string;
+    admin_notes?: string;
+  }): Promise<{ success: boolean; profile?: Profile; message: string }> {
+    try {
+      // Validate profile data
+      const validation = await this.validateProfileData(profileData, false);
+      if (!validation.isValid) {
+        return {
+          success: false,
+          message: Object.values(validation.errors).flat().join(', ')
+        };
+      }
+
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .insert([{
+          email: profileData.email.trim().toLowerCase(),
+          full_name: profileData.full_name?.trim() || null,
+          role: profileData.role || 'user',
+          account_id: profileData.account_id,
+          access_level: profileData.access_level || 'client',
+          phone: profileData.phone?.trim() || null,
+          is_admin: profileData.is_admin || false,
+          admin_role: profileData.admin_role || null,
+          admin_notes: profileData.admin_notes?.trim() || null,
+          status: 'pending', // New profiles start as pending
+          auth_sync_status: 'pending',
+          metadata: {},
+          preferences: {},
+          timezone: 'UTC',
+          login_count: 0,
+          is_verified: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating profile:', error);
+        return {
+          success: false,
+          message: error.message || 'Failed to create profile'
+        };
+      }
+
+      // Log activity
+      await this.logActivity({
+        accountId: profileData.account_id,
+        activityType: 'profile_created',
+        targetType: 'profile',
+        targetId: profile.id,
+        description: `Profile "${profile.email}" was created`,
+        metadata: { 
+          email: profile.email,
+          role: profile.role,
+          accessLevel: profile.access_level
+        }
+      });
+
+      return {
+        success: true,
+        profile,
+        message: 'Profile created successfully'
+      };
+    } catch (error) {
+      console.error('Error creating profile:', error);
+      return {
+        success: false,
+        message: 'An unexpected error occurred while creating the profile'
+      };
+    }
+  }
+
+  async updateProfile(profileId: string, updates: {
+    email?: string;
+    full_name?: string;
+    role?: string;
+    access_level?: string;
+    phone?: string;
+    is_admin?: boolean;
+    admin_role?: string;
+    admin_notes?: string;
+    status?: string;
+  }): Promise<{ success: boolean; profile?: Profile; message: string }> {
+    try {
+      // Get current profile for comparison
+      const { data: currentProfile, error: fetchError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', profileId)
+        .single();
+
+      if (fetchError || !currentProfile) {
+        return {
+          success: false,
+          message: 'Profile not found'
+        };
+      }
+
+      // Validate profile data if email is being updated
+      if (updates.email) {
+        const validation = await this.validateProfileData(
+          { ...currentProfile, ...updates } as any,
+          true,
+          profileId
+        );
+        if (!validation.isValid) {
+          return {
+            success: false,
+            message: Object.values(validation.errors).flat().join(', ')
+          };
+        }
+      }
+
+      // Prepare update data
+      const updateData: any = {
+        updated_at: new Date().toISOString()
+      };
+
+      if (updates.email !== undefined) updateData.email = updates.email.trim().toLowerCase();
+      if (updates.full_name !== undefined) updateData.full_name = updates.full_name?.trim() || null;
+      if (updates.role !== undefined) updateData.role = updates.role;
+      if (updates.access_level !== undefined) updateData.access_level = updates.access_level;
+      if (updates.phone !== undefined) updateData.phone = updates.phone?.trim() || null;
+      if (updates.is_admin !== undefined) updateData.is_admin = updates.is_admin;
+      if (updates.admin_role !== undefined) updateData.admin_role = updates.admin_role || null;
+      if (updates.admin_notes !== undefined) updateData.admin_notes = updates.admin_notes?.trim() || null;
+      if (updates.status !== undefined) updateData.status = updates.status;
+
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .update(updateData)
+        .eq('id', profileId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating profile:', error);
+        return {
+          success: false,
+          message: error.message || 'Failed to update profile'
+        };
+      }
+
+      // Log activity with changes
+      const changes = Object.keys(updates).filter(key => 
+        updates[key as keyof typeof updates] !== currentProfile[key]
+      );
+
+      if (changes.length > 0) {
+        await this.logActivity({
+          accountId: currentProfile.account_id,
+          activityType: 'profile_updated',
+          targetType: 'profile',
+          targetId: profile.id,
+          description: `Profile "${profile.email}" was updated (${changes.join(', ')})`,
+          metadata: { 
+            changes,
+            previousValues: Object.fromEntries(
+              changes.map(key => [key, currentProfile[key]])
+            ),
+            newValues: Object.fromEntries(
+              changes.map(key => [key, updates[key as keyof typeof updates]])
+            )
+          }
+        });
+      }
+
+      return {
+        success: true,
+        profile,
+        message: 'Profile updated successfully'
+      };
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      return {
+        success: false,
+        message: 'An unexpected error occurred while updating the profile'
+      };
+    }
+  }
+
+  async deleteProfile(profileId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      // Get profile details before deletion for logging
+      const { data: profile, error: fetchError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', profileId)
+        .neq('status', 'deleted')
+        .single();
+
+      if (fetchError || !profile) {
+        return {
+          success: false,
+          message: 'Profile not found or already deleted'
+        };
+      }
+
+      // Soft delete: Update status to 'deleted' instead of removing record
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ 
+          status: 'deleted',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', profileId);
+
+      if (updateError) {
+        console.error('Error soft deleting profile:', updateError);
+        return {
+          success: false,
+          message: updateError.message || 'Failed to delete profile'
+        };
+      }
+
+      // Log activity after successful soft deletion
+      await this.logActivity({
+        accountId: profile.account_id,
+        activityType: 'profile_deleted',
+        targetType: 'profile',
+        targetId: profile.id,
+        description: `Profile "${profile.email}" was soft deleted (status set to deleted)`,
+        metadata: { 
+          email: profile.email,
+          role: profile.role,
+          previousStatus: profile.status,
+          deletedAt: new Date().toISOString(),
+          softDelete: true
+        }
+      });
+
+      return {
+        success: true,
+        message: 'Profile deleted successfully'
+      };
+    } catch (error) {
+      console.error('Error deleting profile:', error);
+      return {
+        success: false,
+        message: 'An unexpected error occurred while deleting the profile'
+      };
+    }
+  }
+
+  async restoreProfile(profileId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      // Get profile details to verify it's deleted
+      const { data: profile, error: fetchError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', profileId)
+        .eq('status', 'deleted')
+        .single();
+
+      if (fetchError || !profile) {
+        return {
+          success: false,
+          message: 'Profile not found or not deleted'
+        };
+      }
+
+      // Restore profile by setting status back to pending (requires admin review)
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ 
+          status: 'pending',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', profileId);
+
+      if (updateError) {
+        console.error('Error restoring profile:', updateError);
+        return {
+          success: false,
+          message: updateError.message || 'Failed to restore profile'
+        };
+      }
+
+      // Log activity after successful restoration
+      await this.logActivity({
+        accountId: profile.account_id,
+        activityType: 'profile_restored',
+        targetType: 'profile',
+        targetId: profile.id,
+        description: `Profile "${profile.email}" was restored from deleted status`,
+        metadata: { 
+          email: profile.email,
+          role: profile.role,
+          restoredAt: new Date().toISOString()
+        }
+      });
+
+      return {
+        success: true,
+        message: 'Profile restored successfully'
+      };
+    } catch (error) {
+      console.error('Error restoring profile:', error);
+      return {
+        success: false,
+        message: 'An unexpected error occurred while restoring the profile'
+      };
+    }
+  }
+
+  async validateProfileData(profileData: {
+    email: string;
+    full_name?: string;
+    role?: string;
+    account_id: string;
+    access_level?: string;
+    phone?: string;
+  }, isUpdate: boolean = false, profileId?: string): Promise<{ 
+    isValid: boolean; 
+    errors: Record<string, string[]> 
+  }> {
+    const errors: Record<string, string[]> = {};
+
+    // Validate email
+    if (!profileData.email || profileData.email.trim().length === 0) {
+      errors.email = ['Email is required'];
+    } else {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(profileData.email.trim())) {
+        errors.email = ['Invalid email format'];
+      }
+    }
+
+    // Validate account_id
+    if (!profileData.account_id) {
+      errors.account_id = ['Account ID is required'];
+    }
+
+    // Validate phone if provided
+    if (profileData.phone && profileData.phone.trim()) {
+      const phoneRegex = /^\+?[\d\s\-\(\)]{10,}$/;
+      if (!phoneRegex.test(profileData.phone.trim())) {
+        errors.phone = ['Invalid phone number format'];
+      }
+    }
+
+    // Check for duplicate email (case-insensitive)
+    if (profileData.email && profileData.email.trim()) {
+      try {
+        let query = supabase
+          .from('profiles')
+          .select('id, email')
+          .ilike('email', profileData.email.trim());
+
+        // Exclude current profile when updating
+        if (isUpdate && profileId) {
+          query = query.neq('id', profileId);
+        }
+
+        const { data: existingProfiles } = await query;
+
+        if (existingProfiles && existingProfiles.length > 0) {
+          errors.email = errors.email || [];
+          errors.email.push('A profile with this email already exists');
+        }
+      } catch (error) {
+        console.error('Error checking email uniqueness:', error);
+      }
+    }
+
+    return {
+      isValid: Object.keys(errors).length === 0,
+      errors
+    };
+  }
+
   // Account Management Methods
   async getAccounts(filters: AccountFilters = {}): Promise<AccountResponse> {
     try {
@@ -250,6 +810,7 @@ class AdminAccountService {
           id,
           name,
           type,
+          status,
           address,
           logo_url,
           website_url,
@@ -259,6 +820,11 @@ class AdminAccountService {
           profiles(count)
         `, { count: 'exact' });
 
+      // Filter out deleted accounts by default (unless includeDeleted is true)
+      if (!filters.includeDeleted) {
+        query = query.neq('status', 'deleted');
+      }
+
       // Apply filters
       if (filters.search) {
         query = query.or(`name.ilike.%${filters.search}%`);
@@ -266,14 +832,13 @@ class AdminAccountService {
       if (filters.type) {
         query = query.eq('type', filters.type);
       }
-      // Note: status field is in profiles table, not accounts table
-      // if (filters.status) {
-      //   query = query.eq('status', filters.status);
-      // }
+      if (filters.status) {
+        query = query.eq('status', filters.status);
+      }
 
       // Apply sorting - validate sort field to prevent SQL errors
       let sortField = filters.sortBy || 'created_at';
-      const validSortFields = ['name', 'type', 'created_at', 'updated_at'];
+      const validSortFields = ['name', 'type', 'status', 'created_at', 'updated_at'];
       
       // Ensure the sort field is valid
       if (!validSortFields.includes(sortField)) {
@@ -321,6 +886,7 @@ class AdminAccountService {
           id,
           name,
           type,
+          status,
           address,
           logo_url,
           website_url,
@@ -639,62 +1205,47 @@ class AdminAccountService {
         .from('accounts')
         .select('*')
         .eq('id', accountId)
+        .neq('status', 'deleted') // Only get non-deleted accounts
         .single();
 
       if (fetchError || !account) {
         return {
           success: false,
-          message: 'Account not found'
+          message: 'Account not found or already deleted'
         };
       }
 
-      // Check if account has associated profiles
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('account_id', accountId);
+      // Soft delete: Update status to 'deleted' instead of removing record
+      const { error: updateError } = await supabase
+        .from('accounts')
+        .update({ 
+          status: 'deleted',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', accountId);
 
-      if (profilesError) {
-        console.error('Error checking account profiles:', profilesError);
+      if (updateError) {
+        console.error('Error soft deleting account:', updateError);
         return {
           success: false,
-          message: 'Error checking account dependencies'
+          message: updateError.message || 'Failed to delete account'
         };
       }
 
-      if (profiles && profiles.length > 0) {
-        return {
-          success: false,
-          message: `Cannot delete account with ${profiles.length} associated profile(s). Please remove or reassign profiles first.`
-        };
-      }
-
-      // Log activity before deletion
+      // Log activity after successful soft deletion
       await this.logActivity({
         accountId: account.id,
         activityType: 'account_deleted',
         targetType: 'account',
         targetId: account.id,
-        description: `Account "${account.name}" was deleted`,
+        description: `Account "${account.name}" was soft deleted (status set to deleted)`,
         metadata: { 
           accountType: account.type,
-          deletedAt: new Date().toISOString()
+          previousStatus: account.status,
+          deletedAt: new Date().toISOString(),
+          softDelete: true
         }
       });
-
-      // Delete the account
-      const { error: deleteError } = await supabase
-        .from('accounts')
-        .delete()
-        .eq('id', accountId);
-
-      if (deleteError) {
-        console.error('Error deleting account:', deleteError);
-        return {
-          success: false,
-          message: deleteError.message || 'Failed to delete account'
-        };
-      }
 
       return {
         success: true,
@@ -773,6 +1324,212 @@ class AdminAccountService {
       isValid: Object.keys(errors).length === 0,
       errors
     };
+  }
+
+  async restoreAccount(accountId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      // Get account details to verify it's deleted
+      const { data: account, error: fetchError } = await supabase
+        .from('accounts')
+        .select('*')
+        .eq('id', accountId)
+        .eq('status', 'deleted')
+        .single();
+
+      if (fetchError || !account) {
+        return {
+          success: false,
+          message: 'Account not found or not deleted'
+        };
+      }
+
+      // Restore account by setting status back to active
+      const { error: updateError } = await supabase
+        .from('accounts')
+        .update({ 
+          status: 'active',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', accountId);
+
+      if (updateError) {
+        console.error('Error restoring account:', updateError);
+        return {
+          success: false,
+          message: updateError.message || 'Failed to restore account'
+        };
+      }
+
+      // Log activity after successful restoration
+      await this.logActivity({
+        accountId: account.id,
+        activityType: 'account_restored',
+        targetType: 'account',
+        targetId: account.id,
+        description: `Account "${account.name}" was restored from deleted status`,
+        metadata: { 
+          accountType: account.type,
+          restoredAt: new Date().toISOString()
+        }
+      });
+
+      return {
+        success: true,
+        message: 'Account restored successfully'
+      };
+    } catch (error) {
+      console.error('Error restoring account:', error);
+      return {
+        success: false,
+        message: 'An unexpected error occurred while restoring the account'
+      };
+    }
+  }
+
+  // Auth User Management Methods
+  async checkAuthUserExists(email: string): Promise<boolean> {
+    try {
+      const { data, error } = await supabase.auth.admin.listUsers({
+        page: 1,
+        perPage: 1000
+      });
+      
+      if (error) {
+        console.error('Error listing auth users:', error);
+        return false;
+      }
+      
+      // Check if any user has the matching email (case-insensitive)
+      const userExists = data.users.some(user => 
+        user.email?.toLowerCase() === email.toLowerCase()
+      );
+      
+      return userExists;
+    } catch (error) {
+      console.error('Error checking auth user existence:', error);
+      return false;
+    }
+  }
+
+  async createAuthUser(email: string, password: string = 'TempPass123!'): Promise<{ 
+    success: boolean; 
+    userId?: string; 
+    message: string; 
+    temporaryPassword?: string;
+  }> {
+    try {
+      // Create the auth user
+      const { data, error } = await supabase.auth.admin.createUser({
+        email: email.trim().toLowerCase(),
+        password: password,
+        email_confirm: true // Auto-confirm the email
+      });
+
+      if (error) {
+        console.error('Error creating auth user:', error);
+        return {
+          success: false,
+          message: error.message || 'Failed to create user login'
+        };
+      }
+
+      if (!data.user) {
+        return {
+          success: false,
+          message: 'Failed to create user - no user returned'
+        };
+      }
+
+      return {
+        success: true,
+        userId: data.user.id,
+        message: 'User login created successfully',
+        temporaryPassword: password
+      };
+    } catch (error) {
+      console.error('Error creating auth user:', error);
+      return {
+        success: false,
+        message: 'An unexpected error occurred while creating user login'
+      };
+    }
+  }
+
+  async createProfileWithAuth(profileData: {
+    email: string;
+    full_name?: string;
+    role?: string;
+    account_id: string;
+    phone?: string;
+    status?: string;
+  }, createLogin: boolean = false): Promise<{ 
+    success: boolean; 
+    profile?: Profile; 
+    message: string;
+    temporaryPassword?: string;
+  }> {
+    try {
+      let authUserId: string | undefined;
+      let temporaryPassword: string | undefined;
+
+      // Create auth user first if requested
+      if (createLogin) {
+        const authResult = await this.createAuthUser(profileData.email);
+        if (!authResult.success) {
+          return {
+            success: false,
+            message: `Failed to create user login: ${authResult.message}`
+          };
+        }
+        authUserId = authResult.userId;
+        temporaryPassword = authResult.temporaryPassword;
+      }
+
+      // Create the profile
+      const profileResult = await this.createProfile({
+        ...profileData,
+        // Set profile ID to match auth user ID if login was created
+        ...(authUserId && { id: authUserId })
+      });
+
+      if (!profileResult.success) {
+        // If profile creation failed but auth user was created, we should clean up
+        if (authUserId) {
+          try {
+            await supabase.auth.admin.deleteUser(authUserId);
+          } catch (cleanupError) {
+            console.error('Error cleaning up auth user after profile creation failure:', cleanupError);
+          }
+        }
+        return profileResult;
+      }
+
+      // If auth user was created, update the profile to link them
+      if (authUserId && profileResult.profile) {
+        await supabase
+          .from('profiles')
+          .update({ 
+            id: authUserId,
+            auth_sync_status: 'synced'
+          })
+          .eq('id', profileResult.profile.id);
+      }
+
+      return {
+        success: true,
+        profile: profileResult.profile,
+        message: createLogin ? 
+          'Profile and user login created successfully' : 
+          'Profile created successfully',
+        temporaryPassword
+      };
+    } catch (error) {
+      console.error('Error creating profile with auth:', error);
+      return {
+        success: false,
+        message: 'An unexpected error occurred while creating the profile'
+      };
+    }
   }
 }
 
