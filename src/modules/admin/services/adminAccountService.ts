@@ -489,6 +489,291 @@ class AdminAccountService {
       throw error;
     }
   }
+
+  // ========= ACCOUNT CRUD OPERATIONS =========
+
+  async createAccount(accountData: {
+    name: string;
+    type: string;
+    address?: string;
+    website_url?: string;
+    logo_url?: string;
+  }): Promise<{ success: boolean; account?: Account; message: string }> {
+    try {
+      const { data: account, error } = await supabase
+        .from('accounts')
+        .insert([{
+          name: accountData.name.trim(),
+          type: accountData.type,
+          address: accountData.address?.trim() || null,
+          website_url: accountData.website_url?.trim() || null,
+          logo_url: accountData.logo_url?.trim() || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating account:', error);
+        return {
+          success: false,
+          message: error.message || 'Failed to create account'
+        };
+      }
+
+      // Log activity
+      await this.logActivity({
+        accountId: account.id,
+        activityType: 'account_created',
+        targetType: 'account',
+        targetId: account.id,
+        description: `Account "${account.name}" was created`,
+        metadata: { accountType: account.type }
+      });
+
+      return {
+        success: true,
+        account,
+        message: 'Account created successfully'
+      };
+    } catch (error) {
+      console.error('Error creating account:', error);
+      return {
+        success: false,
+        message: 'An unexpected error occurred while creating the account'
+      };
+    }
+  }
+
+  async updateAccount(accountId: string, updates: {
+    name?: string;
+    type?: string;
+    address?: string;
+    website_url?: string;
+    logo_url?: string;
+  }): Promise<{ success: boolean; account?: Account; message: string }> {
+    try {
+      // Get current account for comparison
+      const { data: currentAccount, error: fetchError } = await supabase
+        .from('accounts')
+        .select('*')
+        .eq('id', accountId)
+        .single();
+
+      if (fetchError || !currentAccount) {
+        return {
+          success: false,
+          message: 'Account not found'
+        };
+      }
+
+      // Prepare update data
+      const updateData: any = {
+        updated_at: new Date().toISOString()
+      };
+
+      if (updates.name !== undefined) updateData.name = updates.name.trim();
+      if (updates.type !== undefined) updateData.type = updates.type;
+      if (updates.address !== undefined) updateData.address = updates.address?.trim() || null;
+      if (updates.website_url !== undefined) updateData.website_url = updates.website_url?.trim() || null;
+      if (updates.logo_url !== undefined) updateData.logo_url = updates.logo_url?.trim() || null;
+
+      const { data: account, error } = await supabase
+        .from('accounts')
+        .update(updateData)
+        .eq('id', accountId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating account:', error);
+        return {
+          success: false,
+          message: error.message || 'Failed to update account'
+        };
+      }
+
+      // Log activity with changes
+      const changes = Object.keys(updates).filter(key => 
+        updates[key as keyof typeof updates] !== currentAccount[key]
+      );
+
+      if (changes.length > 0) {
+        await this.logActivity({
+          accountId: account.id,
+          activityType: 'account_updated',
+          targetType: 'account',
+          targetId: account.id,
+          description: `Account "${account.name}" was updated (${changes.join(', ')})`,
+          metadata: { 
+            changes,
+            previousValues: Object.fromEntries(
+              changes.map(key => [key, currentAccount[key]])
+            ),
+            newValues: Object.fromEntries(
+              changes.map(key => [key, updates[key as keyof typeof updates]])
+            )
+          }
+        });
+      }
+
+      return {
+        success: true,
+        account,
+        message: 'Account updated successfully'
+      };
+    } catch (error) {
+      console.error('Error updating account:', error);
+      return {
+        success: false,
+        message: 'An unexpected error occurred while updating the account'
+      };
+    }
+  }
+
+  async deleteAccount(accountId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      // Get account details before deletion for logging
+      const { data: account, error: fetchError } = await supabase
+        .from('accounts')
+        .select('*')
+        .eq('id', accountId)
+        .single();
+
+      if (fetchError || !account) {
+        return {
+          success: false,
+          message: 'Account not found'
+        };
+      }
+
+      // Check if account has associated profiles
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('account_id', accountId);
+
+      if (profilesError) {
+        console.error('Error checking account profiles:', profilesError);
+        return {
+          success: false,
+          message: 'Error checking account dependencies'
+        };
+      }
+
+      if (profiles && profiles.length > 0) {
+        return {
+          success: false,
+          message: `Cannot delete account with ${profiles.length} associated profile(s). Please remove or reassign profiles first.`
+        };
+      }
+
+      // Log activity before deletion
+      await this.logActivity({
+        accountId: account.id,
+        activityType: 'account_deleted',
+        targetType: 'account',
+        targetId: account.id,
+        description: `Account "${account.name}" was deleted`,
+        metadata: { 
+          accountType: account.type,
+          deletedAt: new Date().toISOString()
+        }
+      });
+
+      // Delete the account
+      const { error: deleteError } = await supabase
+        .from('accounts')
+        .delete()
+        .eq('id', accountId);
+
+      if (deleteError) {
+        console.error('Error deleting account:', deleteError);
+        return {
+          success: false,
+          message: deleteError.message || 'Failed to delete account'
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Account deleted successfully'
+      };
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      return {
+        success: false,
+        message: 'An unexpected error occurred while deleting the account'
+      };
+    }
+  }
+
+  async validateAccountData(accountData: {
+    name: string;
+    type: string;
+    address?: string;
+    website_url?: string;
+    logo_url?: string;
+  }, isUpdate: boolean = false, accountId?: string): Promise<{ 
+    isValid: boolean; 
+    errors: Record<string, string[]> 
+  }> {
+    const errors: Record<string, string[]> = {};
+
+    // Validate name
+    if (!accountData.name || accountData.name.trim().length === 0) {
+      errors.name = ['Account name is required'];
+    } else if (accountData.name.trim().length < 2) {
+      errors.name = ['Account name must be at least 2 characters long'];
+    } else if (accountData.name.trim().length > 100) {
+      errors.name = ['Account name must be less than 100 characters'];
+    }
+
+    // Validate type
+    const validTypes = ['admin', 'client', 'affiliate', 'expert', 'operator'];
+    if (!accountData.type || !validTypes.includes(accountData.type)) {
+      errors.type = [`Account type must be one of: ${validTypes.join(', ')}`];
+    }
+
+    // Validate website URL if provided
+    if (accountData.website_url && accountData.website_url.trim()) {
+      try {
+        new URL(accountData.website_url.trim());
+      } catch {
+        errors.website_url = ['Invalid website URL format'];
+      }
+    }
+
+    // Check for duplicate account names (case-insensitive)
+    if (accountData.name && accountData.name.trim()) {
+      try {
+        let query = supabase
+          .from('accounts')
+          .select('id, name')
+          .ilike('name', accountData.name.trim());
+
+        // Exclude current account when updating
+        if (isUpdate && accountId) {
+          query = query.neq('id', accountId);
+        }
+
+        const { data: existingAccounts } = await query;
+
+        if (existingAccounts && existingAccounts.length > 0) {
+          errors.name = errors.name || [];
+          errors.name.push('An account with this name already exists');
+        }
+      } catch (error) {
+        console.error('Error checking account name uniqueness:', error);
+      }
+    }
+
+    return {
+      isValid: Object.keys(errors).length === 0,
+      errors
+    };
+  }
 }
 
 export default AdminAccountService;

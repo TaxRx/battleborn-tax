@@ -24,6 +24,8 @@ import {
 } from 'lucide-react';
 import AccountActivityTimeline from './AccountActivityTimeline';
 import AdminAccountService, { Account, AccountFilters, Activity } from '../services/adminAccountService';
+import AccountFormModal from './AccountFormModal';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
 
 interface AccountManagementProps {
   className?: string;
@@ -37,6 +39,13 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showActivityTimeline, setShowActivityTimeline] = useState(false);
+  
+  // Modal states
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [accountToEdit, setAccountToEdit] = useState<Account | null>(null);
+  const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
 
   // Filters and pagination
   const [filters, setFilters] = useState<AccountFilters>({
@@ -130,6 +139,69 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
       console.error('Error logging activity:', err);
       setError('Failed to log activity. Please try again.');
     }
+  };
+
+  // CRUD handlers
+  const handleCreateAccount = () => {
+    setShowCreateModal(true);
+  };
+
+  const handleEditAccount = (account: Account) => {
+    setAccountToEdit(account);
+    setShowEditModal(true);
+  };
+
+  const handleDeleteAccount = (account: Account) => {
+    setAccountToDelete(account);
+    setShowDeleteModal(true);
+  };
+
+  const handleAccountSaved = (savedAccount: Account) => {
+    // Refresh the accounts list
+    loadAccounts();
+    
+    // Update selected account if it was edited
+    if (selectedAccount && selectedAccount.id === savedAccount.id) {
+      setSelectedAccount(savedAccount);
+    }
+    
+    setError(null);
+  };
+
+  const handleAccountDeleted = async () => {
+    if (!accountToDelete) return;
+
+    try {
+      const result = await AdminAccountService_instance.deleteAccount(accountToDelete.id);
+      
+      if (result.success) {
+        // Refresh the accounts list
+        loadAccounts();
+        
+        // Clear selected account if it was deleted
+        if (selectedAccount && selectedAccount.id === accountToDelete.id) {
+          setSelectedAccount(null);
+          setShowActivityTimeline(false);
+        }
+        
+        setShowDeleteModal(false);
+        setAccountToDelete(null);
+        setError(null);
+      } else {
+        setError(result.message);
+      }
+    } catch (err) {
+      console.error('Error deleting account:', err);
+      setError('Failed to delete account. Please try again.');
+    }
+  };
+
+  const handleCloseModals = () => {
+    setShowCreateModal(false);
+    setShowEditModal(false);
+    setShowDeleteModal(false);
+    setAccountToEdit(null);
+    setAccountToDelete(null);
   };
 
   // Note: Status badge removed since status is in profiles table, not accounts table
@@ -236,6 +308,13 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-medium text-gray-900">Account Management</h2>
                 <div className="flex items-center space-x-3">
+                  <button
+                    onClick={handleCreateAccount}
+                    className="flex items-center px-3 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Account
+                  </button>
                   <button
                     onClick={loadAccounts}
                     className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
@@ -388,13 +467,28 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
                               e.stopPropagation();
                               handleAccountSelect(account);
                             }}
+                            title="View Details"
                           >
                             <Eye className="h-4 w-4" />
                           </button>
-                          <button className="text-gray-600 hover:text-gray-900">
+                          <button 
+                            className="text-gray-600 hover:text-gray-900"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditAccount(account);
+                            }}
+                            title="Edit Account"
+                          >
                             <Edit3 className="h-4 w-4" />
                           </button>
-                          <button className="text-red-600 hover:text-red-900">
+                          <button 
+                            className="text-red-600 hover:text-red-900"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteAccount(account);
+                            }}
+                            title="Delete Account"
+                          >
                             <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
@@ -474,6 +568,33 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
           </div>
         </div>
       )}
+
+      {/* Modals */}
+      <AccountFormModal
+        isOpen={showCreateModal}
+        onClose={handleCloseModals}
+        onSave={handleAccountSaved}
+        account={null}
+        title="Create New Account"
+      />
+
+      <AccountFormModal
+        isOpen={showEditModal}
+        onClose={handleCloseModals}
+        onSave={handleAccountSaved}
+        account={accountToEdit}
+        title="Edit Account"
+      />
+
+      <DeleteConfirmationModal
+        isOpen={showDeleteModal}
+        onClose={handleCloseModals}
+        onConfirm={handleAccountDeleted}
+        title="Delete Account"
+        message="Are you sure you want to delete this account?"
+        itemName={accountToDelete?.name}
+        confirmText="Delete Account"
+      />
     </div>
   );
 };
