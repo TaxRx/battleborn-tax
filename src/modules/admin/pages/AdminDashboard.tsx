@@ -10,6 +10,7 @@ import ProposalDetailView from '../components/ProposalDetailView';
 import ProposalsTable from '../components/ProposalsTable';
 import ExpertManagement from '../components/ExpertManagement';
 import CommissionDashboard from '../components/CommissionDashboard';
+import BillingDashboard from '../components/billing/BillingDashboard';
 import ClientRetentionDashboard from '../components/ClientRetentionDashboard';
 import AdminTaxCalculator from '../components/AdminTaxCalculator';
 import AugustaRuleWizard from '../../../modules/tax-calculator/components/AugustaRuleWizard';
@@ -155,6 +156,7 @@ const AdminDashboard: React.FC = () => {
     { name: 'Dashboard', href: '/admin', icon: Home, current: location.pathname === '/admin' },
     { name: 'Account Management', href: '/admin/accounts', icon: Users, current: location.pathname === '/admin/accounts' },
     { name: 'Tool Management', href: '/admin/tool-management', icon: Cog, current: location.pathname === '/admin/tool-management' },
+    { name: 'Operators', href: '/admin/operators', icon: Briefcase, current: location.pathname === '/admin/operators' },
     { name: 'Activity Analytics', href: '/admin/activity-analytics', icon: Activity, current: location.pathname === '/admin/activity-analytics' },
     { name: 'Client Management', href: '/admin/clients', icon: Users, current: location.pathname === '/admin/clients' },
     { name: 'R&D Clients', href: '/admin/rd-clients', icon: Zap, current: location.pathname === '/admin/rd-clients' },
@@ -163,10 +165,10 @@ const AdminDashboard: React.FC = () => {
     { name: 'Tax Planning', href: '/admin/calculator', icon: Calculator, current: location.pathname === '/admin/calculator' },
     { name: 'Client Retention', href: '/admin/retention', icon: Shield, current: location.pathname === '/admin/retention' },
     { name: 'Commission', href: '/admin/commission', icon: DollarSign, current: location.pathname === '/admin/commission' },
+    { name: 'Billing', href: '/admin/billing', icon: CreditCard, current: location.pathname === '/admin/billing' },
     { name: 'Experts', href: '/admin/experts', icon: UserCheck, current: location.pathname === '/admin/experts' },
     { name: 'Reports', href: '/admin/reports', icon: BarChart3, current: location.pathname === '/admin/reports' },
     { name: 'Settings', href: '/admin/settings', icon: Settings, current: location.pathname === '/admin/settings' },
-    { name: 'Operators', href: '/admin/operators', icon: Briefcase, current: location.pathname === '/admin/operators' },
   ];
 
   const getPageTitle = () => {
@@ -360,6 +362,7 @@ const AdminDashboard: React.FC = () => {
             <Route path="/calculator" element={<AdminTaxCalculator />} />
             <Route path="/retention" element={<ClientRetentionDashboard />} />
             <Route path="/commission" element={<CommissionDashboard />} />
+            <Route path="/billing" element={<BillingDashboard />} />
             <Route path="/experts" element={<ExpertManagement />} />
             <Route path="/reports" element={<div className="p-8"><h1 className="text-2xl font-bold">Reports</h1><p>Coming soon...</p></div>} />
             <Route path="/settings" element={<div className="p-8"><h1 className="text-2xl font-bold">Settings</h1><p>Coming soon...</p></div>} />

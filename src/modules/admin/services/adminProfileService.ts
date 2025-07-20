@@ -2439,6 +2439,311 @@ class AdminProfileService {
     }
   }
 
+  // ========= ADMIN-LEVEL BILLING METHODS (ALL ACCOUNTS) =========
+
+  async getAllSubscriptions(): Promise<AccountSubscription[]> {
+    try {
+      const { data: subscriptions, error } = await supabase
+        .from('subscriptions')
+        .select(`
+          *,
+          subscription_plans:plan_id (
+            plan_code,
+            plan_name,
+            description,
+            price_cents,
+            currency,
+            billing_interval
+          ),
+          payment_methods:payment_method_id (
+            method_type,
+            last_four,
+            brand,
+            exp_month,
+            exp_year
+          ),
+          accounts!subscriptions_account_id_fkey (
+            id,
+            name,
+            type
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      return (subscriptions || []).map(sub => ({
+        id: sub.id,
+        accountId: sub.account_id,
+        planId: sub.plan_id,
+        status: sub.status,
+        currentPeriodStart: sub.current_period_start,
+        currentPeriodEnd: sub.current_period_end,
+        trialStart: sub.trial_start,
+        trialEnd: sub.trial_end,
+        cancelAtPeriodEnd: sub.cancel_at_period_end,
+        canceledAt: sub.canceled_at,
+        endedAt: sub.ended_at,
+        stripeSubscriptionId: sub.stripe_subscription_id,
+        squareSubscriptionId: sub.square_subscription_id,
+        paymentMethodId: sub.payment_method_id,
+        billingContactProfileId: sub.billing_contact_profile_id,
+        quantity: sub.quantity,
+        discountPercent: sub.discount_percent,
+        metadata: sub.metadata || {},
+        createdAt: sub.created_at,
+        updatedAt: sub.updated_at,
+        plan: sub.subscription_plans ? {
+          planCode: sub.subscription_plans.plan_code,
+          planName: sub.subscription_plans.plan_name,
+          description: sub.subscription_plans.description,
+          priceCents: sub.subscription_plans.price_cents,
+          currency: sub.subscription_plans.currency,
+          billingInterval: sub.subscription_plans.billing_interval
+        } : undefined,
+        paymentMethod: sub.payment_methods ? {
+          methodType: sub.payment_methods.method_type,
+          lastFour: sub.payment_methods.last_four,
+          brand: sub.payment_methods.brand,
+          expMonth: sub.payment_methods.exp_month,
+          expYear: sub.payment_methods.exp_year
+        } : undefined,
+        account: sub.accounts ? {
+          id: sub.accounts.id,
+          name: sub.accounts.name,
+          type: sub.accounts.type
+        } : undefined
+      }));
+    } catch (error) {
+      console.error('Error fetching all subscriptions:', error);
+      throw error;
+    }
+  }
+
+  async getAllInvoices(options?: {
+    limit?: number;
+    status?: string;
+  }): Promise<AccountInvoice[]> {
+    try {
+      let query = supabase
+        .from('billing_invoices')
+        .select(`
+          *,
+          subscriptions:subscription_id (
+            id,
+            status,
+            plan_id
+          ),
+          invoice_line_items (
+            id,
+            description,
+            quantity,
+            unit_price_cents,
+            total_cents,
+            period_start,
+            period_end
+          ),
+          accounts!billing_invoices_account_id_fkey (
+            id,
+            name,
+            type
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (options?.status) {
+        query = query.eq('status', options.status);
+      }
+
+      if (options?.limit) {
+        query = query.limit(options.limit);
+      }
+
+      const { data: invoices, error } = await query;
+
+      if (error) throw error;
+
+      return (invoices || []).map(invoice => ({
+        id: invoice.id,
+        accountId: invoice.account_id,
+        subscriptionId: invoice.subscription_id,
+        invoiceNumber: invoice.invoice_number,
+        status: invoice.status,
+        subtotalCents: invoice.subtotal_cents,
+        taxCents: invoice.tax_cents,
+        discountCents: invoice.discount_cents,
+        totalCents: invoice.total_cents,
+        currency: invoice.currency,
+        dueDate: invoice.due_date,
+        paidAt: invoice.paid_at,
+        billingPeriodStart: invoice.billing_period_start,
+        billingPeriodEnd: invoice.billing_period_end,
+        billingAddress: invoice.billing_address || {},
+        notes: invoice.notes,
+        pdfUrl: invoice.pdf_url,
+        stripeInvoiceId: invoice.stripe_invoice_id,
+        squareInvoiceId: invoice.square_invoice_id,
+        metadata: invoice.metadata || {},
+        createdAt: invoice.created_at,
+        updatedAt: invoice.updated_at,
+        subscription: invoice.subscriptions ? {
+          id: invoice.subscriptions.id,
+          status: invoice.subscriptions.status,
+          planId: invoice.subscriptions.plan_id
+        } : undefined,
+        lineItems: (invoice.invoice_line_items || []).map((item: any) => ({
+          id: item.id,
+          description: item.description,
+          quantity: item.quantity,
+          unitPriceCents: item.unit_price_cents,
+          totalCents: item.total_cents,
+          periodStart: item.period_start,
+          periodEnd: item.period_end
+        })),
+        account: invoice.accounts ? {
+          id: invoice.accounts.id,
+          name: invoice.accounts.name,
+          type: invoice.accounts.type
+        } : undefined
+      }));
+    } catch (error) {
+      console.error('Error fetching all invoices:', error);
+      throw error;
+    }
+  }
+
+  async getAllPayments(options?: {
+    limit?: number;
+    status?: string;
+  }): Promise<PaymentHistory[]> {
+    try {
+      let query = supabase
+        .from('payments')
+        .select(`
+          *,
+          payment_methods:payment_method_id (
+            method_type,
+            last_four,
+            brand,
+            exp_month,
+            exp_year
+          ),
+          accounts!payments_account_id_fkey (
+            id,
+            name,
+            type
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (options?.status) {
+        query = query.eq('status', options.status);
+      }
+
+      if (options?.limit) {
+        query = query.limit(options.limit);
+      }
+
+      const { data: payments, error } = await query;
+
+      if (error) throw error;
+
+      return (payments || []).map(payment => ({
+        id: payment.id,
+        accountId: payment.account_id,
+        subscriptionId: payment.subscription_id,
+        invoiceId: payment.invoice_id,
+        paymentMethodId: payment.payment_method_id,
+        amountCents: payment.amount_cents,
+        currency: payment.currency,
+        status: payment.status,
+        paymentType: payment.payment_type,
+        description: payment.description,
+        stripePaymentIntentId: payment.stripe_payment_intent_id,
+        stripeChargeId: payment.stripe_charge_id,
+        squarePaymentId: payment.square_payment_id,
+        gatewayResponse: payment.gateway_response || {},
+        failureReason: payment.failure_reason,
+        processedAt: payment.processed_at,
+        refundedAt: payment.refunded_at,
+        refundAmountCents: payment.refund_amount_cents,
+        metadata: payment.metadata || {},
+        createdAt: payment.created_at,
+        updatedAt: payment.updated_at,
+        paymentMethod: payment.payment_methods ? {
+          methodType: payment.payment_methods.method_type,
+          lastFour: payment.payment_methods.last_four,
+          brand: payment.payment_methods.brand,
+          expMonth: payment.payment_methods.exp_month,
+          expYear: payment.payment_methods.exp_year
+        } : undefined,
+        account: payment.accounts ? {
+          id: payment.accounts.id,
+          name: payment.accounts.name,
+          type: payment.accounts.type
+        } : undefined
+      }));
+    } catch (error) {
+      console.error('Error fetching all payments:', error);
+      throw error;
+    }
+  }
+
+  async getAllBillingEvents(options?: {
+    limit?: number;
+    eventType?: string;
+  }): Promise<BillingEvent[]> {
+    try {
+      let query = supabase
+        .from('billing_events')
+        .select(`
+          *,
+          accounts!billing_events_account_id_fkey (
+            id,
+            name,
+            type
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (options?.eventType) {
+        query = query.eq('event_type', options.eventType);
+      }
+
+      if (options?.limit) {
+        query = query.limit(options.limit);
+      }
+
+      const { data: events, error } = await query;
+
+      if (error) throw error;
+
+      return (events || []).map(event => ({
+        id: event.id,
+        accountId: event.account_id,
+        eventType: event.event_type,
+        eventData: event.event_data || {},
+        subscriptionId: event.subscription_id,
+        paymentId: event.payment_id,
+        invoiceId: event.invoice_id,
+        gatewayEventId: event.gateway_event_id,
+        processed: event.processed,
+        processedAt: event.processed_at,
+        errorMessage: event.error_message,
+        retryCount: event.retry_count,
+        createdAt: event.created_at,
+        account: event.accounts ? {
+          id: event.accounts.id,
+          name: event.accounts.name,
+          type: event.accounts.type
+        } : undefined
+      }));
+    } catch (error) {
+      console.error('Error fetching all billing events:', error);
+      throw error;
+    }
+  }
+
   private getCurrentProfileId(): string {
     // This would typically get the current user's profile ID from authentication context
     // For now, return a placeholder - this should be implemented based on your auth system

@@ -22,7 +22,7 @@ import AdminProfileService, {
 } from '../../services/adminProfileService';
 
 interface BillingDashboardProps {
-  accountId: string;
+  accountId?: string;
 }
 
 interface BillingStats {
@@ -64,10 +64,10 @@ export default function BillingDashboard({ accountId }: BillingDashboardProps) {
         eventsData
       ] = await Promise.all([
         adminProfileService.getSubscriptionPlans(),
-        adminProfileService.getAccountSubscriptions(accountId),
-        adminProfileService.getAccountInvoices(accountId, { limit: 50 }),
-        adminProfileService.getPaymentHistory(accountId, { limit: 50 }),
-        adminProfileService.getBillingEvents(accountId, { limit: 50 })
+        accountId ? adminProfileService.getAccountSubscriptions(accountId) : adminProfileService.getAllSubscriptions(),
+        accountId ? adminProfileService.getAccountInvoices(accountId, { limit: 50 }) : adminProfileService.getAllInvoices({ limit: 50 }),
+        accountId ? adminProfileService.getPaymentHistory(accountId, { limit: 50 }) : adminProfileService.getAllPayments({ limit: 50 }),
+        accountId ? adminProfileService.getBillingEvents(accountId, { limit: 50 }) : adminProfileService.getAllBillingEvents({ limit: 50 })
       ]);
 
       setSubscriptionPlans(plansData);
@@ -95,7 +95,7 @@ export default function BillingDashboard({ accountId }: BillingDashboardProps) {
   };
 
   const handleCreateSubscription = async () => {
-    if (!selectedPlan) return;
+    if (!selectedPlan || !accountId) return;
 
     try {
       const result = await adminProfileService.createSubscription(accountId, selectedPlan, {
@@ -165,13 +165,24 @@ export default function BillingDashboard({ accountId }: BillingDashboardProps) {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Billing Management</h1>
-        <button
-          onClick={() => setShowCreateSubscription(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium"
-        >
-          Create Subscription
-        </button>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {accountId ? 'Account Billing Management' : 'Global Billing Management'}
+          </h1>
+          {!accountId && (
+            <p className="text-sm text-gray-500 mt-1">
+              Viewing all billing data across all accounts
+            </p>
+          )}
+        </div>
+        {accountId && (
+          <button
+            onClick={() => setShowCreateSubscription(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+          >
+            Create Subscription
+          </button>
+        )}
       </div>
 
       {/* Stats Cards */}
@@ -297,6 +308,9 @@ export default function BillingDashboard({ accountId }: BillingDashboardProps) {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
+                    {!accountId && (
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Account</th>
+                    )}
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plan</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
@@ -307,6 +321,12 @@ export default function BillingDashboard({ accountId }: BillingDashboardProps) {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {subscriptions.map(sub => (
                     <tr key={sub.id}>
+                      {!accountId && (
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">{(sub as any).account?.name || 'Unknown Account'}</div>
+                          <div className="text-sm text-gray-500">{(sub as any).account?.type}</div>
+                        </td>
+                      )}
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
                           <div className="text-sm font-medium text-gray-900">{sub.plan?.planName}</div>
@@ -347,6 +367,9 @@ export default function BillingDashboard({ accountId }: BillingDashboardProps) {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
+                    {!accountId && (
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Account</th>
+                    )}
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Invoice #</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
@@ -357,6 +380,12 @@ export default function BillingDashboard({ accountId }: BillingDashboardProps) {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {invoices.map(invoice => (
                     <tr key={invoice.id}>
+                      {!accountId && (
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">{(invoice as any).account?.name || 'Unknown Account'}</div>
+                          <div className="text-sm text-gray-500">{(invoice as any).account?.type}</div>
+                        </td>
+                      )}
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                         {invoice.invoiceNumber}
                       </td>
