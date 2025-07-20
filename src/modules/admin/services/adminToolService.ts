@@ -55,7 +55,6 @@ export interface ToolAssignmentMatrix {
 export interface Account {
   id: string;
   name: string;
-  email: string;
   type: string;
   status: string;
   created_at: string;
@@ -65,7 +64,6 @@ export interface Tool {
   id: string;
   name: string;
   slug: string;
-  category: string;
   description: string;
   status: string;
 }
@@ -288,84 +286,174 @@ class AdminToolService {
   // Matrix Operations
   async getToolAssignmentMatrix(filters: ToolAssignmentFilters = {}): Promise<ToolAssignmentMatrix> {
     try {
-      // Build the main query with filters
-      let query = supabase
-        .from('active_tool_assignments')
-        .select('*', { count: 'exact' });
+      // Load ALL active tools first
+      const toolsResult = await supabase
+        .from('tools')
+        .select('id, name, slug, description, status')
+        .eq('status', 'active');
 
-      // Apply filters
-      if (filters.search) {
-        query = query.or(`account_name.ilike.%${filters.search}%,tool_name.ilike.%${filters.search}%`);
-      }
-      if (filters.accountType) {
-        query = query.eq('account_type', filters.accountType);
-      }
+      if (toolsResult.error) throw toolsResult.error;
+      const tools = toolsResult.data || [];
+
+      // Load assignments first to get accounts that have assignments
+      let assignmentsQuery = supabase
+        .from('active_tool_assignments')
+        .select('*');
+
+      // Apply assignment-specific filters
       if (filters.subscriptionLevel) {
-        query = query.eq('subscription_level', filters.subscriptionLevel);
+        assignmentsQuery = assignmentsQuery.eq('subscription_level', filters.subscriptionLevel);
       }
       if (filters.status) {
-        query = query.eq('status', filters.status);
+        assignmentsQuery = assignmentsQuery.eq('status', filters.status);
       }
       if (filters.expirationStatus) {
         switch (filters.expirationStatus) {
           case 'active':
-            query = query.eq('is_expired', false);
+            assignmentsQuery = assignmentsQuery.eq('is_expired', false);
             break;
           case 'expires_soon':
-            query = query.eq('expires_soon', true);
+            assignmentsQuery = assignmentsQuery.eq('expires_soon', true);
             break;
           case 'expired':
-            query = query.eq('is_expired', true);
+            assignmentsQuery = assignmentsQuery.eq('is_expired', true);
             break;
         }
       }
 
-      // Apply sorting
-      const ascending = filters.sortOrder === 'asc';
-      query = query.order(filters.sortBy || 'account_name', { ascending });
-
-      // Apply pagination
-      const page = filters.page || 1;
-      const limit = filters.limit || 100;
-      const from = (page - 1) * limit;
-      const to = from + limit - 1;
-      query = query.range(from, to);
-
-      const { data: assignments, error: assignmentsError, count } = await query;
-
+      const { data: assignments, error: assignmentsError } = await assignmentsQuery;
       if (assignmentsError) throw assignmentsError;
 
-      // Get unique accounts and tools for the matrix structure
-      const accountIds = [...new Set(assignments?.map(a => a.account_id) || [])];
-      const toolIds = [...new Set(assignments?.map(a => a.tool_id) || [])];
+      // Get unique account IDs that have assignments
+      const accountIdsWithAssignments = [...new Set(assignments?.map(a => a.account_id) || [])];
+      
+      if (accountIdsWithAssignments.length === 0) {
+        return {
+          assignments: [],
+          accounts: [],
+          tools: tools,
+          pagination: {
+            page: 1,
+            limit: 100,
+            total: 0,
+            pages: 0
+          }
+        };
+      }
 
-      const [accountsResult, toolsResult] = await Promise.all([
-        accountIds.length > 0 ? supabase
-          .from('accounts')
-          .select('id, name, type, created_at')
-          .in('id', accountIds) : { data: [], error: null },
-        toolIds.length > 0 ? supabase
-          .from('tools')
-          .select('id, name, slug, description, status')
-          .in('id', toolIds) : { data: [], error: null }
-      ]);
+      // Load accounts that have assignments
+      const accountsResult = await supabase
+        .from('accounts')
+        .select('id, name, type, status, created_at')
+        .in('id', accountIdsWithAssignments);
 
       if (accountsResult.error) throw accountsResult.error;
-      if (toolsResult.error) throw toolsResult.error;
+      let accounts = accountsResult.data || [];
+
+      // Apply account type filter
+      if (filters.accountType) {
+        accounts = accounts.filter(acc => acc.type === filters.accountType);
+      }
+
+      // Apply search filter to accounts
+      if (filters.search) {
+        const searchLower = filters.search.toLowerCase();
+        accounts = accounts.filter(acc => 
+          acc.name.toLowerCase().includes(searchLower) ||
+          acc.type.toLowerCase().includes(searchLower)
+        );
+      }
+
+      // Sort accounts
+      const ascending = filters.sortOrder === 'asc';
+      accounts.sort((a, b) => {
+        const sortBy = filters.sortBy || 'name';
+        const aVal = a[sortBy as keyof typeof a] || '';
+        const bVal = b[sortBy as keyof typeof b] || '';
+        return ascending ? 
+          aVal.toString().localeCompare(bVal.toString()) :
+          bVal.toString().localeCompare(aVal.toString());
+      });
+
+      // Apply pagination to accounts (tools are always shown in full)
+      const page = filters.page || 1;
+      const limit = filters.limit || 100;
+      const totalAccounts = accounts.length;
+      const from = (page - 1) * limit;
+      const paginatedAccounts = accounts.slice(from, from + limit);
+
+      // Filter assignments to only include the paginated accounts
+      const paginatedAccountIds = paginatedAccounts.map(acc => acc.id);
+      const filteredAssignments = assignments?.filter(a => paginatedAccountIds.includes(a.account_id)) || [];
 
       return {
-        assignments: assignments || [],
-        accounts: accountsResult.data || [],
-        tools: toolsResult.data || [],
+        assignments: filteredAssignments,
+        accounts: paginatedAccounts,
+        tools: tools,
         pagination: {
           page,
           limit,
-          total: count || 0,
-          pages: Math.ceil((count || 0) / limit)
+          total: totalAccounts,
+          pages: Math.ceil(totalAccounts / limit)
         }
       };
     } catch (error) {
       console.error('Error fetching tool assignment matrix:', error);
+      throw error;
+    }
+  }
+
+  // Tool Operations
+  async getAllTools(): Promise<Tool[]> {
+    try {
+      const { data, error } = await supabase
+        .from('tools')
+        .select('id, name, slug, description, status')
+        .order('name');
+
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      console.error('Error fetching tools:', error);
+      throw error;
+    }
+  }
+
+  async getToolMetrics(): Promise<{
+    activeTools: number;
+    totalAssignments: number;
+    premiumSubscriptions: number;
+    expiringSoon: number;
+  }> {
+    try {
+      const [toolsResult, assignmentsResult] = await Promise.all([
+        supabase.from('tools').select('status'),
+        supabase.from('active_tool_assignments').select('subscription_level, expires_soon')
+      ]);
+
+      if (toolsResult.error) throw toolsResult.error;
+      if (assignmentsResult.error) throw assignmentsResult.error;
+
+      const tools = toolsResult.data || [];
+      const assignments = assignmentsResult.data || [];
+
+      const activeTools = tools.filter(tool => tool.status === 'active').length;
+      const totalAssignments = assignments.length;
+      const premiumSubscriptions = assignments.filter(assignment => 
+        ['premium', 'enterprise', 'custom'].includes(assignment.subscription_level)
+      ).length;
+      const expiringSoon = assignments.filter(assignment => 
+        assignment.expires_soon === true
+      ).length;
+
+      return {
+        activeTools,
+        totalAssignments,
+        premiumSubscriptions,
+        expiringSoon
+      };
+    } catch (error) {
+      console.error('Error fetching tool metrics:', error);
       throw error;
     }
   }

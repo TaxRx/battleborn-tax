@@ -2,31 +2,64 @@
 // File: ToolManagement.tsx
 // Purpose: Main page for tool assignment management with integrated components
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { 
   CogIcon,
   PlusIcon,
   UserGroupIcon,
   ChartBarIcon,
-  ClockIcon
+  ClockIcon,
+  WrenchScrewdriverIcon,
+  PencilIcon
 } from '@heroicons/react/24/outline';
 import ToolAssignmentMatrix from './ToolAssignmentMatrix';
 import ToolAssignmentModal from './ToolAssignmentModal';
 import BulkToolOperations from './BulkToolOperations';
+import ToolFormModal from './ToolFormModal';
 import AdminToolService, { 
   ToolAssignment, 
-  BulkOperationResult 
+  BulkOperationResult,
+  Tool 
 } from '../../services/adminToolService';
 import { toast } from 'react-toastify';
 
 export const ToolManagement: React.FC = () => {
   const [showAssignmentModal, setShowAssignmentModal] = useState(false);
   const [showBulkOperations, setShowBulkOperations] = useState(false);
+  const [showToolFormModal, setShowToolFormModal] = useState(false);
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [editingAssignment, setEditingAssignment] = useState<ToolAssignment | null>(null);
+  const [editingTool, setEditingTool] = useState<Tool | null>(null);
   const [refreshMatrix, setRefreshMatrix] = useState(0);
+  const [preselectedAccountId, setPreselectedAccountId] = useState<string>('');
+  const [preselectedToolId, setPreselectedToolId] = useState<string>('');
+  const [metrics, setMetrics] = useState({
+    activeTools: 0,
+    totalAssignments: 0,
+    premiumSubscriptions: 0,
+    expiringSoon: 0
+  });
+  const [loadingMetrics, setLoadingMetrics] = useState(true);
 
   const adminToolService = AdminToolService.getInstance();
+
+  // Load metrics data
+  const loadMetrics = useCallback(async () => {
+    try {
+      setLoadingMetrics(true);
+      const metricsData = await adminToolService.getToolMetrics();
+      setMetrics(metricsData);
+    } catch (error) {
+      console.error('Failed to load metrics:', error);
+    } finally {
+      setLoadingMetrics(false);
+    }
+  }, []);
+
+  // Load metrics on component mount and when matrix refreshes
+  useEffect(() => {
+    loadMetrics();
+  }, [loadMetrics, refreshMatrix]);
 
   // Handle assignment changes from matrix
   const handleAssignmentChange = useCallback((accountId: string, toolId: string, action: 'assign' | 'unassign') => {
@@ -78,9 +111,58 @@ export const ToolManagement: React.FC = () => {
     setRefreshMatrix(prev => prev + 1);
   }, []);
 
+  // Handle assignment deletion
+  const handleAssignmentDeleted = useCallback(() => {
+    toast.success('Tool assignment deactivated successfully!');
+    setShowAssignmentModal(false);
+    setEditingAssignment(null);
+    
+    // Trigger matrix refresh
+    setRefreshMatrix(prev => prev + 1);
+  }, []);
+
   // Handle assignment editing (from matrix or other components)
   const handleEditAssignment = useCallback((assignment: ToolAssignment) => {
     setEditingAssignment(assignment);
+    setShowAssignmentModal(true);
+  }, []);
+
+  // Handle tool creation
+  const handleCreateTool = useCallback(() => {
+    setEditingTool(null);
+    setShowToolFormModal(true);
+  }, []);
+
+  // Handle tool editing
+  const handleEditTool = useCallback((tool: Tool) => {
+    setEditingTool(tool);
+    setShowToolFormModal(true);
+  }, []);
+
+  // Handle tool form completion
+  const handleToolSaved = useCallback((tool: Tool) => {
+    const action = editingTool ? 'updated' : 'created';
+    toast.success(`Tool ${action} successfully!`);
+    setShowToolFormModal(false);
+    setEditingTool(null);
+    
+    // Trigger matrix refresh to show new/updated tool
+    setRefreshMatrix(prev => prev + 1);
+  }, [editingTool]);
+
+  // Handle tool assignment from matrix (preselected values)
+  const handleAssignToolFromMatrix = useCallback((accountId: string, toolId: string) => {
+    setPreselectedAccountId(accountId);
+    setPreselectedToolId(toolId);
+    setEditingAssignment(null); // Ensure it's create mode
+    setShowAssignmentModal(true);
+  }, []);
+
+  // Handle assignment editing from matrix
+  const handleEditAssignmentFromMatrix = useCallback((assignment: ToolAssignment) => {
+    setEditingAssignment(assignment);
+    setPreselectedAccountId(''); // Clear preselected values
+    setPreselectedToolId('');
     setShowAssignmentModal(true);
   }, []);
 
@@ -103,6 +185,13 @@ export const ToolManagement: React.FC = () => {
             </div>
             <div className="flex items-center space-x-3">
               <button
+                onClick={handleCreateTool}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                <WrenchScrewdriverIcon className="h-4 w-4 mr-2" />
+                Create Tool
+              </button>
+              <button
                 onClick={() => setShowAssignmentModal(true)}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
               >
@@ -123,7 +212,13 @@ export const ToolManagement: React.FC = () => {
             </div>
             <div className="ml-4">
               <div className="text-sm font-medium text-gray-500">Active Tools</div>
-              <div className="text-2xl font-bold text-gray-900">6</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {loadingMetrics ? (
+                  <div className="animate-pulse bg-gray-200 h-8 w-12 rounded"></div>
+                ) : (
+                  metrics.activeTools
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -135,7 +230,13 @@ export const ToolManagement: React.FC = () => {
             </div>
             <div className="ml-4">
               <div className="text-sm font-medium text-gray-500">Total Assignments</div>
-              <div className="text-2xl font-bold text-gray-900">247</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {loadingMetrics ? (
+                  <div className="animate-pulse bg-gray-200 h-8 w-16 rounded"></div>
+                ) : (
+                  metrics.totalAssignments
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -147,7 +248,13 @@ export const ToolManagement: React.FC = () => {
             </div>
             <div className="ml-4">
               <div className="text-sm font-medium text-gray-500">Premium Subscriptions</div>
-              <div className="text-2xl font-bold text-gray-900">89</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {loadingMetrics ? (
+                  <div className="animate-pulse bg-gray-200 h-8 w-12 rounded"></div>
+                ) : (
+                  metrics.premiumSubscriptions
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -159,7 +266,13 @@ export const ToolManagement: React.FC = () => {
             </div>
             <div className="ml-4">
               <div className="text-sm font-medium text-gray-500">Expiring Soon</div>
-              <div className="text-2xl font-bold text-gray-900">12</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {loadingMetrics ? (
+                  <div className="animate-pulse bg-gray-200 h-8 w-12 rounded"></div>
+                ) : (
+                  metrics.expiringSoon
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -178,6 +291,9 @@ export const ToolManagement: React.FC = () => {
             key={refreshMatrix} // Force re-render on refresh
             onAssignmentChange={handleAssignmentChange}
             onBulkAction={handleBulkAction}
+            onEditTool={handleEditTool}
+            onAssignTool={handleAssignToolFromMatrix}
+            onEditAssignment={handleEditAssignmentFromMatrix}
           />
         </div>
       </div>
@@ -232,10 +348,15 @@ export const ToolManagement: React.FC = () => {
         onClose={() => {
           setShowAssignmentModal(false);
           setEditingAssignment(null);
+          setPreselectedAccountId('');
+          setPreselectedToolId('');
         }}
         existingAssignment={editingAssignment || undefined}
         mode={editingAssignment ? 'edit' : 'create'}
         onAssignmentComplete={handleAssignmentComplete}
+        onAssignmentDeleted={handleAssignmentDeleted}
+        preselectedAccountId={preselectedAccountId}
+        preselectedToolId={preselectedToolId}
       />
 
       <BulkToolOperations
@@ -243,6 +364,16 @@ export const ToolManagement: React.FC = () => {
         onClose={() => setShowBulkOperations(false)}
         selectedAccountIds={selectedAccounts}
         onOperationComplete={handleBulkOperationComplete}
+      />
+
+      <ToolFormModal
+        isOpen={showToolFormModal}
+        onClose={() => {
+          setShowToolFormModal(false);
+          setEditingTool(null);
+        }}
+        tool={editingTool}
+        onToolSaved={handleToolSaved}
       />
     </div>
   );

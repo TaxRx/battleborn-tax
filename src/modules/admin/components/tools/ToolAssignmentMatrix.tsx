@@ -3,7 +3,7 @@
 // Purpose: Interactive matrix view for managing tool assignments with virtualization
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { FixedSizeGrid as Grid } from 'react-window';
+import { VariableSizeGrid as Grid } from 'react-window';
 import { 
   ChevronDownIcon, 
   ChevronUpIcon,
@@ -14,7 +14,8 @@ import {
   UserGroupIcon,
   Cog6ToothIcon,
   MagnifyingGlassIcon,
-  FunnelIcon
+  FunnelIcon,
+  PencilIcon
 } from '@heroicons/react/24/outline';
 import AdminToolService, { 
   ToolAssignmentMatrix as MatrixData, 
@@ -27,6 +28,9 @@ import AdminToolService, {
 interface ToolAssignmentMatrixProps {
   onAssignmentChange?: (accountId: string, toolId: string, action: 'assign' | 'unassign') => void;
   onBulkAction?: (selectedAccounts: string[], action: string) => void;
+  onEditTool?: (tool: Tool) => void;
+  onAssignTool?: (accountId: string, toolId: string) => void;
+  onEditAssignment?: (assignment: ToolAssignment) => void;
 }
 
 // Subscription level color mappings
@@ -39,11 +43,21 @@ const subscriptionColors = {
 };
 
 // Status indicator components
-const StatusIndicator: React.FC<{ assignment: ToolAssignment | null }> = ({ assignment }) => {
+const StatusIndicator: React.FC<{ 
+  assignment: ToolAssignment | null; 
+  isClickable?: boolean;
+  onClick?: () => void;
+}> = ({ assignment, isClickable = false, onClick }) => {
   if (!assignment) {
     return (
-      <div className="w-8 h-8 rounded border-2 border-dashed border-gray-300 flex items-center justify-center">
-        <span className="text-xs text-gray-400">—</span>
+      <div 
+        className={`w-8 h-8 rounded border-2 border-dashed border-gray-300 flex items-center justify-center ${
+          isClickable ? 'cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors' : ''
+        }`}
+        onClick={onClick}
+        title={isClickable ? 'Click to assign tool' : 'Not assigned'}
+      >
+        <span className={`text-xs ${isClickable ? 'text-blue-400' : 'text-gray-400'}`}>+</span>
       </div>
     );
   }
@@ -85,11 +99,14 @@ interface CellProps {
     onCellClick: (accountId: string, toolId: string) => void;
     selectedAccounts: Set<string>;
     onAccountSelect: (accountId: string, selected: boolean) => void;
+    onEditTool?: (tool: Tool) => void;
+    onAssignTool?: (accountId: string, toolId: string) => void;
+    onEditAssignment?: (assignment: ToolAssignment) => void;
   };
 }
 
 const Cell: React.FC<CellProps> = ({ columnIndex, rowIndex, style, data }) => {
-  const { accounts, tools, assignments, onCellClick, selectedAccounts, onAccountSelect } = data;
+  const { accounts, tools, assignments, onCellClick, selectedAccounts, onAccountSelect, onEditTool, onAssignTool, onEditAssignment } = data;
 
   // Header row
   if (rowIndex === 0) {
@@ -115,13 +132,25 @@ const Cell: React.FC<CellProps> = ({ columnIndex, rowIndex, style, data }) => {
     if (!tool) return <div style={style}></div>;
 
     return (
-      <div style={style} className="border-r border-b bg-gray-50 p-2 font-medium text-sm text-center">
+      <div style={style} className="border-r border-b bg-gray-50 p-2 font-medium text-sm text-center group relative">
         <div className="truncate" title={tool.name}>
           {tool.name}
         </div>
-        <div className="text-xs text-gray-500 truncate" title={tool.category}>
-          {tool.category}
+        <div className="text-xs text-gray-500 truncate" title={tool.slug}>
+          {tool.slug}
         </div>
+        {onEditTool && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditTool(tool);
+            }}
+            className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-200 rounded"
+            title="Edit Tool"
+          >
+            <PencilIcon className="h-3 w-3 text-gray-600" />
+          </button>
+        )}
       </div>
     );
   }
@@ -144,9 +173,6 @@ const Cell: React.FC<CellProps> = ({ columnIndex, rowIndex, style, data }) => {
           <div className="truncate font-medium text-sm" title={account.name}>
             {account.name}
           </div>
-          <div className="truncate text-xs text-gray-500" title={account.email}>
-            {account.email}
-          </div>
           <div className="flex items-center mt-1">
             <span className={`inline-flex px-2 py-1 text-xs rounded-full ${
               account.type === 'admin' ? 'bg-purple-100 text-purple-700' :
@@ -167,13 +193,27 @@ const Cell: React.FC<CellProps> = ({ columnIndex, rowIndex, style, data }) => {
 
   const assignment = assignments.find(a => a.account_id === account.id && a.tool_id === tool.id);
 
+  const handleCellClick = () => {
+    if (assignment) {
+      // If assigned, open edit assignment modal
+      onEditAssignment?.(assignment);
+    } else {
+      // If not assigned, open assignment modal
+      onAssignTool?.(account.id, tool.id);
+    }
+  };
+
   return (
     <div 
       style={style} 
       className="border-r border-b p-2 bg-white flex flex-col items-center justify-center hover:bg-gray-50 cursor-pointer transition-colors"
-      onClick={() => onCellClick(account.id, tool.id)}
+      onClick={handleCellClick}
     >
-      <StatusIndicator assignment={assignment} />
+      <StatusIndicator 
+        assignment={assignment} 
+        isClickable={!assignment}
+        onClick={!assignment ? handleCellClick : undefined}
+      />
       {assignment && (
         <div className="mt-1 text-xs text-center">
           <div className={`px-1 py-0.5 rounded text-xs ${subscriptionColors[assignment.subscription_level]}`}>
@@ -193,7 +233,10 @@ const Cell: React.FC<CellProps> = ({ columnIndex, rowIndex, style, data }) => {
 
 export const ToolAssignmentMatrix: React.FC<ToolAssignmentMatrixProps> = ({
   onAssignmentChange,
-  onBulkAction
+  onBulkAction,
+  onEditTool,
+  onAssignTool,
+  onEditAssignment
 }) => {
   const [matrixData, setMatrixData] = useState<MatrixData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -279,9 +322,12 @@ export const ToolAssignmentMatrix: React.FC<ToolAssignmentMatrixProps> = ({
       assignments: matrixData.assignments,
       onCellClick: handleCellClick,
       selectedAccounts,
-      onAccountSelect: handleAccountSelect
+      onAccountSelect: handleAccountSelect,
+      onEditTool,
+      onAssignTool,
+      onEditAssignment
     };
-  }, [matrixData, handleCellClick, selectedAccounts, handleAccountSelect]);
+  }, [matrixData, handleCellClick, selectedAccounts, handleAccountSelect, onEditTool, onAssignTool, onEditAssignment]);
 
   // Handle filter changes
   const handleFilterChange = useCallback((newFilters: Partial<ToolAssignmentFilters>) => {
@@ -331,8 +377,19 @@ export const ToolAssignmentMatrix: React.FC<ToolAssignmentMatrixProps> = ({
 
   const columnCount = matrixData.tools.length + 1; // +1 for account column
   const rowCount = matrixData.accounts.length + 1; // +1 for header row
-  const columnWidth = 150;
-  const rowHeight = 80;
+  const accountColumnWidth = 250; // Wider for account names
+  const toolColumnWidth = 150; // Standard width for tools
+  const defaultRowHeight = 80;
+
+  // Function to get column width based on column index
+  const getColumnWidth = (columnIndex: number) => {
+    return columnIndex === 0 ? accountColumnWidth : toolColumnWidth;
+  };
+
+  // Function to get row height (all rows same height for now)
+  const getRowHeight = (rowIndex: number) => {
+    return defaultRowHeight;
+  };
 
   return (
     <div className="space-y-4">
@@ -486,11 +543,11 @@ export const ToolAssignmentMatrix: React.FC<ToolAssignmentMatrixProps> = ({
       <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
         <Grid
           columnCount={columnCount}
-          columnWidth={columnWidth}
-          height={Math.min(600, rowHeight * Math.min(rowCount, 10))} // Max height with scrolling
-          width={Math.min(1200, columnWidth * columnCount)} // Max width with horizontal scrolling
+          columnWidth={getColumnWidth}
+          height={Math.min(600, defaultRowHeight * Math.min(rowCount, 10))} // Max height with scrolling
+          width={Math.min(1200, accountColumnWidth + (toolColumnWidth * matrixData.tools.length))} // Dynamic width calculation
           rowCount={rowCount}
-          rowHeight={rowHeight}
+          rowHeight={getRowHeight}
           itemData={gridData}
           overscanColumnCount={2}
           overscanRowCount={2}

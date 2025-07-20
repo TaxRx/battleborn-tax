@@ -27,6 +27,8 @@ import AdminToolService, {
   Account,
   Tool
 } from '../../services/adminToolService';
+import FilterableAccountSelect from './FilterableAccountSelect';
+import FilterableToolSelect from './FilterableToolSelect';
 
 interface ToolAssignmentModalProps {
   isOpen: boolean;
@@ -38,9 +40,19 @@ interface ToolAssignmentModalProps {
   mode?: 'create' | 'edit';
   showRenewalOptions?: boolean;
   onRenewal?: (assignmentId: string, newExpirationDate: string) => void;
+  preselectedAccountId?: string;
+  preselectedToolId?: string;
+  onAssignmentDeleted?: () => void;
 }
 
 const subscriptionLevels = [
+  { 
+    value: 'trial', 
+    label: 'Trial', 
+    color: 'bg-yellow-100 text-yellow-700',
+    description: 'Time-limited access to premium features',
+    features: ['All Premium features', 'Limited time access', 'Trial support']
+  },
   { 
     value: 'basic', 
     label: 'Basic', 
@@ -63,13 +75,6 @@ const subscriptionLevels = [
     features: ['All Premium features', 'API access', 'Custom integrations', 'Dedicated support']
   },
   { 
-    value: 'trial', 
-    label: 'Trial', 
-    color: 'bg-yellow-100 text-yellow-700',
-    description: 'Time-limited access to premium features',
-    features: ['All Premium features', 'Limited time access', 'Trial support']
-  },
-  { 
     value: 'custom', 
     label: 'Custom', 
     color: 'bg-green-100 text-green-700',
@@ -79,11 +84,11 @@ const subscriptionLevels = [
 ] as const;
 
 const accessLevels = [
-  { value: 'reporting', label: 'Reporting Only', description: 'View data and reports only' },
-  { value: 'limited', label: 'Limited Access', description: 'Basic functionality access' },
   { value: 'full', label: 'Full Access', description: 'Complete access to all features' },
+  { value: 'limited', label: 'Limited Access', description: 'Basic functionality access' },
+  { value: 'expert', label: 'Expert Access', description: 'Expert-level functionality' },
   { value: 'client', label: 'Client Access', description: 'Client-specific features' },
-  { value: 'expert', label: 'Expert Access', description: 'Expert-level functionality' }
+  { value: 'reporting', label: 'Reporting Only', description: 'View data and reports only' }
 ] as const;
 
 export const ToolAssignmentModal: React.FC<ToolAssignmentModalProps> = ({
@@ -93,17 +98,21 @@ export const ToolAssignmentModal: React.FC<ToolAssignmentModalProps> = ({
   toolId,
   existingAssignment,
   onAssignmentComplete,
-  mode = 'create'
+  mode = 'create',
+  preselectedAccountId,
+  preselectedToolId,
+  onAssignmentDeleted
 }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   
   // Form state
-  const [selectedAccountId, setSelectedAccountId] = useState(accountId || '');
-  const [selectedToolId, setSelectedToolId] = useState(toolId || '');
-  const [subscriptionLevel, setSubscriptionLevel] = useState<'basic' | 'premium' | 'enterprise' | 'trial' | 'custom'>('basic');
-  const [accessLevel, setAccessLevel] = useState('read');
+  const [selectedAccountId, setSelectedAccountId] = useState(accountId || preselectedAccountId || '');
+  const [selectedToolId, setSelectedToolId] = useState(toolId || preselectedToolId || '');
+  const [subscriptionLevel, setSubscriptionLevel] = useState<'basic' | 'premium' | 'enterprise' | 'trial' | 'custom'>('trial');
+  const [accessLevel, setAccessLevel] = useState('full');
   const [expiresAt, setExpiresAt] = useState('');
   const [notes, setNotes] = useState('');
   const [featuresEnabled, setFeaturesEnabled] = useState<Record<string, boolean>>({});
@@ -141,8 +150,26 @@ export const ToolAssignmentModal: React.FC<ToolAssignmentModalProps> = ({
       });
       setAutoRenewal(existingAssignment.auto_renewal || false);
       setRenewalPeriod(existingAssignment.renewal_period || 'monthly');
+    } else if (mode === 'create') {
+      // Handle preselected values for create mode
+      setSelectedAccountId(accountId || preselectedAccountId || '');
+      setSelectedToolId(toolId || preselectedToolId || '');
+      // Reset other fields to defaults
+      setSubscriptionLevel('trial');
+      setAccessLevel('full');
+      setExpiresAt('');
+      setNotes('');
+      setFeaturesEnabled({});
+      setUsageLimits({});
+      setNotificationSettings({
+        expires_soon: true,
+        usage_limit_reached: true,
+        feature_updates: false
+      });
+      setAutoRenewal(false);
+      setRenewalPeriod('monthly');
     }
-  }, [existingAssignment, mode]);
+  }, [existingAssignment, mode, accountId, toolId, preselectedAccountId, preselectedToolId]);
 
   // Load accounts and tools when modal opens
   useEffect(() => {
@@ -260,11 +287,42 @@ export const ToolAssignmentModal: React.FC<ToolAssignmentModalProps> = ({
     }
   };
 
+  const handleDelete = async () => {
+    if (!existingAssignment || mode !== 'edit') {
+      return;
+    }
+
+    setDeleting(true);
+    setError(null);
+
+    try {
+      // Change status to inactive instead of actually deleting
+      const updateData: ToolAssignmentUpdate = {
+        status: 'inactive'
+      };
+
+      await adminToolService.updateAssignment(selectedAccountId, selectedToolId, updateData);
+      
+      setSuccess(true);
+      onAssignmentDeleted?.();
+      
+      // Close modal after short delay
+      setTimeout(() => {
+        onClose();
+        resetForm();
+      }, 1500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to deactivate assignment');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const resetForm = () => {
     setSelectedAccountId(accountId || '');
     setSelectedToolId(toolId || '');
-    setSubscriptionLevel('basic');
-    setAccessLevel('read');
+    setSubscriptionLevel('trial');
+    setAccessLevel('full');
     setExpiresAt('');
     setNotes('');
     setFeaturesEnabled({});
@@ -280,6 +338,7 @@ export const ToolAssignmentModal: React.FC<ToolAssignmentModalProps> = ({
     setShowAdvancedOptions(false);
     setError(null);
     setSuccess(false);
+    setDeleting(false);
   };
 
   const handleClose = () => {
@@ -351,20 +410,17 @@ export const ToolAssignmentModal: React.FC<ToolAssignmentModalProps> = ({
                 <UserIcon className="h-4 w-4 inline mr-1" />
                 Account
               </label>
-              <select
+              <FilterableAccountSelect
+                accounts={accounts}
                 value={selectedAccountId}
-                onChange={(e) => setSelectedAccountId(e.target.value)}
+                onChange={setSelectedAccountId}
                 disabled={mode === 'edit'}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+                placeholder="Select an account..."
                 required
-              >
-                <option value="">Select an account...</option>
-                {accounts.map(account => (
-                  <option key={account.id} value={account.id}>
-                    {account.name} ({account.email})
-                  </option>
-                ))}
-              </select>
+              />
+              {validationErrors.account && (
+                <div className="mt-1 text-red-600 text-sm">{validationErrors.account}</div>
+              )}
             </div>
 
             <div>
@@ -372,20 +428,17 @@ export const ToolAssignmentModal: React.FC<ToolAssignmentModalProps> = ({
                 <CogIcon className="h-4 w-4 inline mr-1" />
                 Tool
               </label>
-              <select
+              <FilterableToolSelect
+                tools={tools}
                 value={selectedToolId}
-                onChange={(e) => setSelectedToolId(e.target.value)}
+                onChange={setSelectedToolId}
                 disabled={mode === 'edit'}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+                placeholder="Select a tool..."
                 required
-              >
-                <option value="">Select a tool...</option>
-                {tools.map(tool => (
-                  <option key={tool.id} value={tool.id}>
-                    {tool.name} ({tool.category})
-                  </option>
-                ))}
-              </select>
+              />
+              {validationErrors.tool && (
+                <div className="mt-1 text-red-600 text-sm">{validationErrors.tool}</div>
+              )}
             </div>
           </div>
 
@@ -395,7 +448,7 @@ export const ToolAssignmentModal: React.FC<ToolAssignmentModalProps> = ({
               <h4 className="font-medium text-gray-900 mb-2">{selectedTool.name}</h4>
               <p className="text-sm text-gray-600">{selectedTool.description}</p>
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mt-2">
-                {selectedTool.category}
+                {selectedTool.slug}
               </span>
             </div>
           )}
@@ -675,9 +728,28 @@ export const ToolAssignmentModal: React.FC<ToolAssignmentModalProps> = ({
 
           {/* Form Actions */}
           <div className="flex items-center justify-between pt-4 border-t">
-            <div className="flex items-center space-x-2 text-sm text-gray-500">
-              <ClockIcon className="h-4 w-4" />
-              <span>Changes are applied immediately</span>
+            <div className="flex items-center space-x-3">
+              {mode === 'edit' && existingAssignment && (
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleting || loading}
+                  className="px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {deleting ? (
+                    <div className="flex items-center">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600 mr-2"></div>
+                      Deactivating...
+                    </div>
+                  ) : (
+                    'Deactivate Assignment'
+                  )}
+                </button>
+              )}
+              <div className="flex items-center space-x-2 text-sm text-gray-500">
+                <ClockIcon className="h-4 w-4" />
+                <span>Changes are applied immediately</span>
+              </div>
             </div>
             <div className="flex items-center space-x-3">
               <button

@@ -65,17 +65,19 @@ const operationTypes = [
 ] as const;
 
 const subscriptionLevels = [
+  { value: 'trial', label: 'Trial' },
   { value: 'basic', label: 'Basic' },
   { value: 'premium', label: 'Premium' },
   { value: 'enterprise', label: 'Enterprise' },
-  { value: 'trial', label: 'Trial' },
   { value: 'custom', label: 'Custom' }
 ] as const;
 
 const accessLevels = [
-  { value: 'read', label: 'Read Only' },
-  { value: 'write', label: 'Read/Write' },
-  { value: 'admin', label: 'Admin Access' }
+  { value: 'full', label: 'Full Access' },
+  { value: 'limited', label: 'Limited Access' },
+  { value: 'expert', label: 'Expert Access' },
+  { value: 'client', label: 'Client Access' },
+  { value: 'reporting', label: 'Reporting Only' }
 ] as const;
 
 export const BulkToolOperations: React.FC<BulkToolOperationsProps> = ({
@@ -99,8 +101,8 @@ export const BulkToolOperations: React.FC<BulkToolOperationsProps> = ({
   // Form state
   const [operationType, setOperationType] = useState<BulkOperationType>('assign');
   const [selectedToolIds, setSelectedToolIds] = useState<string[]>([]);
-  const [subscriptionLevel, setSubscriptionLevel] = useState<'basic' | 'premium' | 'enterprise' | 'trial' | 'custom'>('basic');
-  const [accessLevel, setAccessLevel] = useState('read');
+  const [subscriptionLevel, setSubscriptionLevel] = useState<'basic' | 'premium' | 'enterprise' | 'trial' | 'custom'>('trial');
+  const [accessLevel, setAccessLevel] = useState('full');
   const [expiresAt, setExpiresAt] = useState('');
   
   // Data state
@@ -422,8 +424,8 @@ export const BulkToolOperations: React.FC<BulkToolOperationsProps> = ({
   const resetForm = () => {
     setOperationType('assign');
     setSelectedToolIds([]);
-    setSubscriptionLevel('basic');
-    setAccessLevel('read');
+    setSubscriptionLevel('trial');
+    setAccessLevel('full');
     setExpiresAt('');
     setError(null);
     setOperationResult(null);
