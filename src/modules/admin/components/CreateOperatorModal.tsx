@@ -43,7 +43,7 @@ const CreateOperatorModal: React.FC<CreateOperatorModalProps> = ({ isOpen, onClo
       
       const { error } = await supabase.functions.invoke('admin-service', {
         body: {
-          pathname: '/admin-service/create-partner',
+          pathname: '/admin-service/create-operator',
           companyName,
           contactEmail,
           logoUrl,

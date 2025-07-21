@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import Stripe from 'https://esm.sh/stripe@17.3.1'
 
 // CORS headers to allow requests from the browser
 const corsHeaders = {
@@ -99,19 +100,70 @@ async function handleRegistration(req, supabaseAdmin) {
 
   // Since the trigger approach doesn't work, manually create account and profile
   try {
-    // Create account
+    // Create Stripe customer for non-admin accounts
+    let stripeCustomerId = null;
+    
+    if (accountType !== 'admin') {
+      try {
+        const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY') || Deno.env.get('STRIPE_API_KEY');
+        console.log('Stripe key check for registration:', { 
+          hasSecretKey: !!Deno.env.get('STRIPE_SECRET_KEY'),
+          hasApiKey: !!Deno.env.get('STRIPE_API_KEY'),
+          keyLength: stripeSecretKey?.length || 0,
+          keyPrefix: stripeSecretKey?.substring(0, 7) || 'none'
+        });
+        
+        if (!stripeSecretKey) {
+          throw new Error('Stripe API key not found in environment variables');
+        }
+        
+        const stripe = new Stripe(stripeSecretKey, { apiVersion: '2024-12-18.acacia' })
+        const accountName = registrationData.businessInfo?.businessName || registrationData.fullName || authData.user.email;
+        
+        const stripeCustomer = await stripe.customers.create({
+          name: accountName,
+          email: registrationData.email,
+          metadata: {
+            account_type: accountType,
+            created_via: 'user_registration',
+            full_name: registrationData.fullName
+          }
+        })
+        stripeCustomerId = stripeCustomer.id;
+        console.log('Stripe customer created:', stripeCustomerId);
+      } catch (stripeError) {
+        console.error('Stripe customer creation failed during registration:', stripeError);
+        // Don't fail the entire registration if Stripe fails
+        // Just log the error and continue without Stripe customer ID
+      }
+    }
+
+    // Create account with Stripe customer ID and contact email
     const accountName = registrationData.businessInfo?.businessName || registrationData.fullName || authData.user.email;
     const { data: accountData, error: accountError } = await supabaseAdmin
       .from('accounts')
       .insert({
         name: accountName,
-        type: accountType
+        type: accountType,
+        contact_email: registrationData.email,
+        stripe_customer_id: stripeCustomerId
       })
       .select()
       .single();
 
     if (accountError) {
       console.error('Error creating account:', accountError);
+      // If account creation fails and we created a Stripe customer, clean it up
+      if (stripeCustomerId) {
+        try {
+          const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY') || Deno.env.get('STRIPE_API_KEY');
+          const stripe = new Stripe(stripeSecretKey, { apiVersion: '2024-12-18.acacia' })
+          await stripe.customers.del(stripeCustomerId)
+          console.log('Cleaned up Stripe customer after account creation failure:', stripeCustomerId);
+        } catch (cleanupError) {
+          console.error('Failed to cleanup Stripe customer:', cleanupError)
+        }
+      }
       throw accountError;
     }
 

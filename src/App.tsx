@@ -43,6 +43,7 @@ import ErrorBoundary from './modules/shared/components/ErrorBoundary';
 import DemoModeIndicator from './components/DemoModeIndicator';
 import AcceptInvitation from './pages/AcceptInvitation';
 import PartnerDashboard from './modules/partner/pages/PartnerDashboard'; // Import the new component
+import OperatorDashboard from './modules/operator/pages/OperatorDashboard';
 
 const defaultTaxInfo = {
   standardDeduction: true,
@@ -89,8 +90,8 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 };
 
 const AppRoutes = ({ profile }: { profile: any }) => {
-  // Robust role extraction from the new, more detailed profile
-  const accessLevel = profile?.access_level;
+  // Get account type from the joined account data
+  const accountType = profile?.account?.type;
 
   return (
     <Routes>
@@ -104,6 +105,9 @@ const AppRoutes = ({ profile }: { profile: any }) => {
       {/* Partner Routes */}
       <Route path="/partner/*" element={<ProtectedRoute><PartnerDashboard /></ProtectedRoute>} />
 
+      {/* Operator Routes */}
+      <Route path="/operator/*" element={<ProtectedRoute><OperatorDashboard /></ProtectedRoute>} />
+
       {/* Client Routes (Future) */}
       <Route path="/client" element={<ProtectedRoute><ClientDashboard /></ProtectedRoute>} />
 
@@ -112,11 +116,11 @@ const AppRoutes = ({ profile }: { profile: any }) => {
         path="/"
         element={
           <ProtectedRoute>
-            {accessLevel === 'operator' && <Navigate to="/admin" />}
-            {accessLevel === 'partner' && <Navigate to="/partner" />}
-            {accessLevel === 'client' && <Navigate to="/client" />}
+            {accountType === 'operator' && <Navigate to="/operator" />}
+            {accountType === 'partner' && <Navigate to="/partner" />}
+            {accountType === 'client' && <Navigate to="/client" />}
             {/* Default fallback for other roles or while loading */}
-            {(!accessLevel) && <Dashboard />}
+            {(!accountType) && <Dashboard />}
           </ProtectedRoute>
         }
       />
@@ -164,7 +168,15 @@ const App = () => {
       try {
         let { data, error } = await supabase
           .from('profiles')
-          .select('*')
+          .select(`
+            *,
+            account:accounts (
+              id,
+              name,
+              type,
+              status
+            )
+          `)
           .eq('id', userId)
           .single();
         if (error && error.code === 'PGRST116') {

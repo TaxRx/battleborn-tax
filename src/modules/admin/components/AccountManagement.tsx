@@ -28,6 +28,7 @@ import AccountActivityTimeline from './AccountActivityTimeline';
 import AdminAccountService, { Account, AccountFilters, Activity } from '../services/adminAccountService';
 import AccountFormModal from './AccountFormModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
+import { supabase } from '../../../lib/supabase';
 
 interface AccountManagementProps {
   className?: string;
@@ -41,6 +42,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showActivityTimeline, setShowActivityTimeline] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
   
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -72,10 +74,31 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
     activityTrends: [] as { date: string; count: number }[]
   });
 
+  // Wait for session to be ready before loading data
   useEffect(() => {
-    loadAccounts();
-    loadMetrics();
-  }, [filters]);
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        console.log('AccountManagement - Session check:', {
+          hasSession: !!session,
+          userId: session?.user?.id
+        });
+        setSessionReady(!!session);
+      } catch (error) {
+        console.error('Session check error:', error);
+        setSessionReady(false);
+      }
+    };
+
+    checkSession();
+  }, []);
+
+  useEffect(() => {
+    if (sessionReady) {
+      loadAccounts();
+      loadMetrics();
+    }
+  }, [filters, sessionReady]);
 
   const loadAccounts = async () => {
     setLoading(true);
@@ -554,6 +577,22 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
                           >
                             <User className="h-4 w-4" />
                           </button>
+                          
+                          {/* Stripe Dashboard Link */}
+                          {account.stripe_customer_id && (
+                            <button 
+                              className="text-orange-600 hover:text-orange-900"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                window.open(`https://dashboard.stripe.com/customers/${account.stripe_customer_id}`, '_blank');
+                              }}
+                              title="View in Stripe Dashboard"
+                            >
+                              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M13.976 9.15c-2.172-.806-3.356-1.426-3.356-2.409 0-.831.683-1.305 1.901-1.305 2.227 0 4.515.858 6.09 1.631l.89-5.494C18.252.975 15.697 0 12.165 0 9.667 0 7.589.654 6.104 1.872 4.56 3.147 3.757 4.992 3.757 7.218c0 4.039 2.467 5.76 6.476 7.219 2.585.92 3.445 1.574 3.445 2.583 0 .98-.84 1.545-2.354 1.545-1.875 0-4.965-.921-6.99-2.109l-.9 5.555C5.175 22.99 8.385 24 11.714 24c2.641 0 4.843-.624 6.328-1.813 1.516-1.205 2.281-2.91 2.281-5.061 0-3.748-2.19-5.471-6.347-7.976z"/>
+                              </svg>
+                            </button>
+                          )}
                           
                           {account.status === 'deleted' ? (
                             <button 

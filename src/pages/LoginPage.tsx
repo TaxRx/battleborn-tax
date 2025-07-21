@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService, AuthUser } from '../services/authService';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
+import useAuthStore from '../store/authStore';
+import { useUser } from '../context/UserContext';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -10,6 +12,8 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const { login } = useAuthStore();
+  const { setUser } = useUser();
 
   useEffect(() => {
     // Check if user is already logged in
@@ -33,7 +37,7 @@ export default function LoginPage() {
         throw new Error('Please enter both email and password');
       }
 
-      const { user, error: signInError } = await authService.signIn(email, password);
+      const { user, error: signInError } = await authService.signIn(email, password, setUser);
 
       if (signInError) {
         throw new Error(signInError);
@@ -43,6 +47,10 @@ export default function LoginPage() {
         throw new Error('Login failed - no user data received');
       }
 
+      // Update auth store with user type
+      const userType = user.profile.account?.type || 'client';
+      login(userType);
+
       // Show user info and redirect
       console.log('Login successful:', {
         email: user.profile.email,
@@ -50,7 +58,8 @@ export default function LoginPage() {
         isClientUser: user.isClientUser,
         primaryClientRole: user.primaryClientRole,
         clientCount: user.clientUsers.length,
-        permissions: user.permissions
+        permissions: user.permissions,
+        userType
       });
 
       const redirectPath = authService.getRedirectPath(user);
@@ -70,8 +79,9 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const { user, error: signInError } = await authService.signIn(email, password);
-
+      console.log('Abbount to Lgoin')
+      const { user, error: signInError } = await authService.signIn(email, password, setUser);
+      console.log('signIn Details', {user, signInError})
       if (signInError) {
         throw new Error(signInError);
       }
@@ -80,7 +90,15 @@ export default function LoginPage() {
         throw new Error('Login failed - no user data received');
       }
 
+      // Update auth store with user type
+      const userType = user.profile.account?.type || 'client';
+      login(userType);
+
       const redirectPath = authService.getRedirectPath(user);
+      // Show user info and redirect
+      console.log('Login successful:', {
+        redirectPath, user, userType
+      });
       navigate(redirectPath);
     } catch (err) {
       console.error('Quick login error:', err);

@@ -77,7 +77,8 @@ class AuthService {
       if (!session?.access_token) return null;
 
       // Call user-service get-profile endpoint
-      const response = await fetch('http://localhost:54321/functions/v1/user-service/get-profile', {
+      const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL || 'http://localhost:54321/functions/v1';
+      const response = await fetch(`${functionsUrl}/user-service/get-profile`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -308,10 +309,11 @@ class AuthService {
     return user.clientUsers;
   }
 
-  async signIn(email: string, password: string): Promise<{ user: AuthUser | null; error: string | null }> {
+  async signIn(email: string, password: string, setUserCallback?: (user: any) => void): Promise<{ user: AuthUser | null; error: string | null }> {
     try {
       // Call user-service login endpoint
-      const response = await fetch('http://localhost:54321/functions/v1/user-service/login', {
+      const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL || 'http://localhost:54321/functions/v1';
+      const response = await fetch(`${functionsUrl}/user-service/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -320,7 +322,7 @@ class AuthService {
       });
 
       const data = await response.json();
-
+      console.log('signIn Details', {data})
       if (!response.ok) {
         return { user: null, error: data.error || 'Login failed' };
       }
@@ -330,15 +332,26 @@ class AuthService {
       }
 
       // Set the session in Supabase client
-      const { error: sessionError } = await supabase.auth.setSession({
+      console.log('Calling setSession')
+      const { data: sessionData,error: sessionError } = await supabase.auth.setSession({
         access_token: data.session.access_token,
         refresh_token: data.session.refresh_token
       });
-
+      console.log('sessionDetails', {sessionData, sessionError})
       if (sessionError) {
         return { user: null, error: 'Failed to set session' };
       }
-
+      
+      // Call the setUser callback immediately so user data is available before redirect
+      if (setUserCallback) {
+        const extendedUser = {
+          id: sessionData.user.id,
+          email: sessionData.user.email || '',
+          profile: data.user.profile,
+          account: data.user.profile?.account || undefined
+        };
+        setUserCallback(extendedUser);
+      }
       // Transform the user data from service into AuthUser format
       const profile = data.user.profile;
       const clientUsers = data.user.clientUsers || [];
@@ -412,7 +425,7 @@ class AuthService {
     
     // Platform users go to partner dashboard
     if (user.isPlatformUser) {
-      return '/partner';
+      return '/operator';
     }
     
     // Affiliate users go to affiliate dashboard
@@ -433,7 +446,7 @@ class AuthService {
     // Default fallback based on account type
     const accountType = user.profile.account?.type;
     switch (accountType) {
-      case 'operator': return '/partner';
+      case 'operator': return '/operator';
       case 'affiliate': return '/affiliate';
       case 'expert': return '/expert';
       case 'client': return '/client';

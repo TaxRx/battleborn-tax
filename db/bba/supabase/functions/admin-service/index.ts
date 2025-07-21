@@ -1,7 +1,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import Stripe from 'https://esm.sh/stripe@14.21.0'
+import Stripe from 'https://esm.sh/stripe@17.3.1'
 import { handleActivityOperations } from './activity-handler.ts'
 import { handleAccountOperations } from './account-handler.ts'
 import { handleSecurityOperations } from './security-handler.ts'
@@ -97,11 +97,23 @@ serve(async (req) => {
     }
 
     // Routing logic for admin-specific actions
-    if (pathname === '/admin-service/create-partner') {
+    if (pathname === '/admin-service/create-operator') {
       const { companyName, contactEmail, logoUrl } = body
 
       // 1. Create a Stripe Customer object
-      const stripe = new Stripe(Deno.env.get('STRIPE_API_KEY') ?? '', { apiVersion: '2023-10-16' })
+      const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY') || Deno.env.get('STRIPE_API_KEY');
+      console.log('Stripe key check:', { 
+        hasSecretKey: !!Deno.env.get('STRIPE_SECRET_KEY'),
+        hasApiKey: !!Deno.env.get('STRIPE_API_KEY'),
+        keyLength: stripeSecretKey?.length || 0,
+        keyPrefix: stripeSecretKey?.substring(0, 7) || 'none'
+      });
+      
+      if (!stripeSecretKey) {
+        throw new Error('Stripe API key not found in environment variables');
+      }
+      
+      const stripe = new Stripe(stripeSecretKey, { apiVersion: '2024-12-18.acacia' })
       const stripeCustomer = await stripe.customers.create({
         name: companyName,
         email: contactEmail,
@@ -120,36 +132,111 @@ serve(async (req) => {
         .single()
 
       if (accountError) {
+        console.log('accountError', accountError)
         // If this fails, we should ideally delete the Stripe customer to avoid orphans
         await stripe.customers.del(stripeCustomer.id)
         return new Response(JSON.stringify({ error: accountError.message }), { status: 500 })
       }
 
-      // 3. Send an invitation to the primary contact email
-      // This calls our other Edge Function to handle the invitation logic
-      const { data: { user } } = await supabaseClient.auth.getUser();
-      const inviteResponse = await supabaseClient.functions.invoke('user-service', {
-        body: {
-          pathname: '/user-service/send-invitation',
-          inviterId: user.id, // The admin is the inviter
-          inviteeEmail: contactEmail,
-          role: 'account_admin', // Assigning the primary contact as account admin
-          accountId: account.id,
-        },
-      })
+      // // 3. Send an invitation to the primary contact email
+      // // This calls our other Edge Function to handle the invitation logic
+      // const { data: { user } } = await supabaseClient.auth.getUser();
+      // const inviteResponse = await supabaseClient.functions.invoke('user-service', {
+      //   body: {
+      //     pathname: '/user-service/send-invitation',
+      //     inviterId: user.id, // The admin is the inviter
+      //     inviteeEmail: contactEmail,
+      //     role: 'account_admin', // Assigning the primary contact as account admin
+      //     accountId: account.id,
+      //   },
+      // })
 
-      if (inviteResponse.error) {
-        // If invite fails, clean up account and stripe customer
-        await supabaseServiceClient.from('accounts').delete().eq('id', account.id)
-        await stripe.customers.del(stripeCustomer.id)
-        return new Response(JSON.stringify({ error: `Failed to send invitation: ${inviteResponse.error.message}` }), { status: 500 })
-      }
+      // if (inviteResponse.error) {
+      //   // If invite fails, clean up account and stripe customer
+      //   await supabaseServiceClient.from('accounts').delete().eq('id', account.id)
+      //   await stripe.customers.del(stripeCustomer.id)
+      //   return new Response(JSON.stringify({ error: `Failed to send invitation: ${inviteResponse.error.message}` }), { status: 500 })
+      // }
 
       return new Response(JSON.stringify({ message: "Account created and invitation sent successfully", account }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       })
-    } else if (pathname === '/admin-service/list-partners') {
+    } else if (pathname === '/admin-service/create-account') {
+      const { name, type, address, website_url, logo_url, contact_email } = body
+
+      let stripeCustomerId = null;
+
+      // Create Stripe customer for non-admin account types
+      if (type !== 'admin' && contact_email) {
+        try {
+          const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY') || Deno.env.get('STRIPE_API_KEY');
+          console.log('Stripe key check for account creation:', { 
+            hasSecretKey: !!Deno.env.get('STRIPE_SECRET_KEY'),
+            hasApiKey: !!Deno.env.get('STRIPE_API_KEY'),
+            keyLength: stripeSecretKey?.length || 0,
+            keyPrefix: stripeSecretKey?.substring(0, 7) || 'none'
+          });
+          
+          if (!stripeSecretKey) {
+            throw new Error('Stripe API key not found in environment variables');
+          }
+          
+          const stripe = new Stripe(stripeSecretKey, { apiVersion: '2024-12-18.acacia' })
+          const stripeCustomer = await stripe.customers.create({
+            name: name,
+            email: contact_email,
+            metadata: {
+              account_type: type,
+              created_via: 'admin_panel'
+            }
+          })
+          stripeCustomerId = stripeCustomer.id;
+        } catch (stripeError) {
+          console.error('Stripe customer creation failed:', stripeError);
+          // Don't fail the entire account creation if Stripe fails
+          // Just log the error and continue without Stripe customer ID
+        }
+      }
+
+      // Create account record in database
+      const { data: account, error: accountError } = await supabaseServiceClient
+        .from('accounts')
+        .insert({
+          name: name,
+          type: type,
+          address: address || null,
+          website_url: website_url || null,
+          logo_url: logo_url || null,
+          stripe_customer_id: stripeCustomerId,
+        })
+        .select()
+        .single()
+
+      if (accountError) {
+        console.log('accountError', accountError)
+        // If account creation fails and we created a Stripe customer, clean it up
+        if (stripeCustomerId) {
+          try {
+            const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY') || Deno.env.get('STRIPE_API_KEY');
+            const stripe = new Stripe(stripeSecretKey, { apiVersion: '2024-12-18.acacia' })
+            await stripe.customers.del(stripeCustomerId)
+          } catch (cleanupError) {
+            console.error('Failed to cleanup Stripe customer:', cleanupError)
+          }
+        }
+        return new Response(JSON.stringify({ error: accountError.message }), { status: 500 })
+      }
+
+      return new Response(JSON.stringify({ 
+        message: "Account created successfully", 
+        account,
+        stripe_customer_id: stripeCustomerId 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      })
+    } else if (pathname === '/admin-service/list-operators') {
       // Query the public.accounts table for operator accounts
       const { data, error } = await supabaseServiceClient
         .from('accounts')
@@ -173,12 +260,12 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       })
-    } else if (pathname === '/admin-service/update-partner-status') {
-      // TODO: Implement logic to update a partner's status
-      // 1. Get partner_id and new status from request body
-      // 2. Update the record in the public.partners table
+    } else if (pathname === '/admin-service/update-operator-status') {
+      // TODO: Implement logic to update an operator's status
+      // 1. Get operator_id and new status from request body
+      // 2. Update the record in the public.accounts table
       // ... implementation needed
-      return new Response(JSON.stringify({ message: "Partner status updated" }), {
+      return new Response(JSON.stringify({ message: "Operator status updated" }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       })

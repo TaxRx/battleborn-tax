@@ -3,8 +3,8 @@ import { SupabaseClient } from '@supabase/supabase-js';
 
 // Test environment configuration
 export const testEnv = {
-  VITE_SUPABASE_URL: 'http://localhost:54321',
-  VITE_SUPABASE_ANON_KEY: 'test-key',
+  VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL || 'http://localhost:54321',
+  VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY || 'test-key',
 };
 
 // Mock import.meta.env for test environment

@@ -22,6 +22,7 @@ interface FormData {
   address: string;
   website_url: string;
   logo_url: string;
+  contact_email: string;
 }
 
 interface FormErrors {
@@ -43,7 +44,8 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
     type: 'client',
     address: '',
     website_url: '',
-    logo_url: ''
+    logo_url: '',
+    contact_email: ''
   });
   
   const [errors, setErrors] = useState<FormErrors>({});
@@ -64,7 +66,8 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
           type: account.type || 'client',
           address: account.address || '',
           website_url: account.website_url || '',
-          logo_url: account.logo_url || ''
+          logo_url: account.logo_url || '',
+          contact_email: account.contact_email || ''
         });
       } else {
         // Create mode - reset to defaults
@@ -73,7 +76,8 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
           type: 'client',
           address: '',
           website_url: '',
-          logo_url: ''
+          logo_url: '',
+          contact_email: ''
         });
       }
       setErrors({});
@@ -273,6 +277,40 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* Contact Email */}
+            <div>
+              <label htmlFor="contact_email" className="block text-sm font-medium text-gray-700 mb-1">
+                Contact Email {formData.type !== 'admin' && '*'}
+              </label>
+              <input
+                type="email"
+                id="contact_email"
+                value={formData.contact_email}
+                onChange={(e) => handleInputChange('contact_email', e.target.value)}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  errors.contact_email ? 'border-red-300' : 'border-gray-300'
+                }`}
+                placeholder="Enter contact email"
+                disabled={isSubmitting}
+              />
+              {errors.contact_email && (
+                <div className="mt-1 text-sm text-red-600">
+                  {errors.contact_email.map((error, index) => (
+                    <div key={index} className="flex items-center">
+                      <AlertCircle className="h-4 w-4 mr-1" />
+                      {error}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="mt-1 text-xs text-gray-500">
+                {formData.type === 'admin' 
+                  ? 'Optional - Admin accounts don\'t require Stripe integration'
+                  : 'Required for Stripe billing integration'
+                }
+              </p>
             </div>
 
             {/* Address */}

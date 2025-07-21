@@ -70,7 +70,7 @@ export const testConnection = async () => {
 
 // Set up auth state change listener with error handling
 supabase.auth.onAuthStateChange((event, session) => {
-  console.log('Auth state changed:', event, {
+  console.log('Auth state changed (tax-calculator):', event, {
     email: session?.user?.email,
     id: session?.user?.id,
     timestamp: new Date().toISOString()

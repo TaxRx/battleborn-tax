@@ -3,6 +3,7 @@ import { LayoutDashboard, Calculator, User, LogOut, Menu, X, FileText, Settings,
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useLocation } from 'react-router-dom';
+import useAuthStore from '../store/authStore';
 
 interface NavigationProps {
   currentView: string;
@@ -44,7 +45,12 @@ export default function Navigation({
 
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut();
+      // Don't wait for Supabase signOut - do it in background
+      supabase.auth.signOut().catch(error => console.error('Supabase signOut error:', error));
+      
+      // Clear auth store state
+      const { logout } = useAuthStore.getState();
+      logout();
       localStorage.clear();
       sessionStorage.clear();
       onLogoutClick();

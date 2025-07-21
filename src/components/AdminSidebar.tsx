@@ -15,6 +15,7 @@ import {
   User
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import useAuthStore from '../store/authStore';
 import AdminProfileService from '../modules/admin/services/adminProfileService';
 
 const menuItems = [
@@ -149,7 +150,15 @@ export default function AdminSidebar() {
 
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut();
+      // Don't wait for Supabase signOut - do it in background
+      supabase.auth.signOut().catch(error => console.error('Supabase signOut error:', error));
+      
+      // Clear auth store state
+      const { logout } = useAuthStore.getState();
+      logout();
+      // Clear any cached data
+      localStorage.clear();
+      sessionStorage.clear();
       navigate('/login');
     } catch (error) {
       console.error('Error signing out:', error);

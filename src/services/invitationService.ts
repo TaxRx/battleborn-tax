@@ -42,7 +42,8 @@ export class InvitationService {
         return { success: false, error: 'Authentication required' };
       }
 
-      const response = await fetch(`${process.env.REACT_APP_SUPABASE_URL}/functions/v1/send-invitation`, {
+      const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL || 'http://localhost:54321/functions/v1';
+      const response = await fetch(`${functionsUrl}/send-invitation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

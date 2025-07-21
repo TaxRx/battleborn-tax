@@ -60,6 +60,7 @@ export interface Account {
   address?: string;
   logo_url?: string;
   website_url?: string;
+  contact_email?: string;
   stripe_customer_id?: string;
   created_at: string;
   updated_at: string;
@@ -814,6 +815,7 @@ class AdminAccountService {
           address,
           logo_url,
           website_url,
+          contact_email,
           stripe_customer_id,
           created_at,
           updated_at,
@@ -1064,29 +1066,31 @@ class AdminAccountService {
     address?: string;
     website_url?: string;
     logo_url?: string;
+    contact_email?: string;
   }): Promise<{ success: boolean; account?: Account; message: string }> {
     try {
-      const { data: account, error } = await supabase
-        .from('accounts')
-        .insert([{
+      // Use the admin-service edge function for account creation with Stripe integration
+      const { data, error } = await supabase.functions.invoke('admin-service', {
+        body: {
+          pathname: '/admin-service/create-account',
           name: accountData.name.trim(),
           type: accountData.type,
           address: accountData.address?.trim() || null,
           website_url: accountData.website_url?.trim() || null,
           logo_url: accountData.logo_url?.trim() || null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }])
-        .select()
-        .single();
+          contact_email: accountData.contact_email?.trim() || null,
+        },
+      });
 
       if (error) {
-        console.error('Error creating account:', error);
+        console.error('Error creating account via edge function:', error);
         return {
           success: false,
           message: error.message || 'Failed to create account'
         };
       }
+
+      const account = data.account;
 
       // Log activity
       await this.logActivity({
@@ -1094,14 +1098,18 @@ class AdminAccountService {
         activityType: 'account_created',
         targetType: 'account',
         targetId: account.id,
-        description: `Account "${account.name}" was created`,
-        metadata: { accountType: account.type }
+        description: `Account "${account.name}" was created${data.stripe_customer_id ? ' with Stripe integration' : ''}`,
+        metadata: { 
+          accountType: account.type,
+          hasStripeCustomer: !!data.stripe_customer_id,
+          stripeCustomerId: data.stripe_customer_id || null
+        }
       });
 
       return {
         success: true,
         account,
-        message: 'Account created successfully'
+        message: data.message || 'Account created successfully'
       };
     } catch (error) {
       console.error('Error creating account:', error);
@@ -1118,6 +1126,7 @@ class AdminAccountService {
     address?: string;
     website_url?: string;
     logo_url?: string;
+    contact_email?: string;
   }): Promise<{ success: boolean; account?: Account; message: string }> {
     try {
       // Get current account for comparison
@@ -1144,6 +1153,7 @@ class AdminAccountService {
       if (updates.address !== undefined) updateData.address = updates.address?.trim() || null;
       if (updates.website_url !== undefined) updateData.website_url = updates.website_url?.trim() || null;
       if (updates.logo_url !== undefined) updateData.logo_url = updates.logo_url?.trim() || null;
+      if (updates.contact_email !== undefined) updateData.contact_email = updates.contact_email?.trim() || null;
 
       const { data: account, error } = await supabase
         .from('accounts')
@@ -1266,6 +1276,7 @@ class AdminAccountService {
     address?: string;
     website_url?: string;
     logo_url?: string;
+    contact_email?: string;
   }, isUpdate: boolean = false, accountId?: string): Promise<{ 
     isValid: boolean; 
     errors: Record<string, string[]> 
@@ -1285,6 +1296,25 @@ class AdminAccountService {
     const validTypes = ['admin', 'client', 'affiliate', 'expert', 'operator'];
     if (!accountData.type || !validTypes.includes(accountData.type)) {
       errors.type = [`Account type must be one of: ${validTypes.join(', ')}`];
+    }
+
+    // Validate contact email
+    if (accountData.type !== 'admin') {
+      // Contact email is required for non-admin accounts (for Stripe integration)
+      if (!accountData.contact_email || accountData.contact_email.trim().length === 0) {
+        errors.contact_email = ['Contact email is required for billing integration'];
+      } else {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(accountData.contact_email.trim())) {
+          errors.contact_email = ['Invalid email format'];
+        }
+      }
+    } else if (accountData.contact_email && accountData.contact_email.trim()) {
+      // If provided for admin accounts, validate format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(accountData.contact_email.trim())) {
+        errors.contact_email = ['Invalid email format'];
+      }
     }
 
     // Validate website URL if provided

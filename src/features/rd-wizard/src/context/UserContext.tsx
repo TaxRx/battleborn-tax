@@ -32,6 +32,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
     };
     getSession();
+    console.log('UserContextProvider')
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user || null);
     });

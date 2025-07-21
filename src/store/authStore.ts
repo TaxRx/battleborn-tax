@@ -3,9 +3,12 @@ import { persist } from 'zustand/middleware';
 
 interface AuthState {
   isAuthenticated: boolean;
-  userType: 'client' | 'admin' | 'master-admin' | null;
-  login: (userType: 'client' | 'admin' | 'master-admin') => void;
+  userType: 'admin' | 'operator' | 'affiliate' | 'client' | 'expert' | 'master-admin' | null;
+  login: (userType: 'admin' | 'operator' | 'affiliate' | 'client' | 'expert' | 'master-admin') => void;
   logout: () => void;
+  demoMode?: boolean;
+  enableDemoMode?: (userType: 'admin' | 'operator' | 'affiliate' | 'client' | 'expert') => void;
+  disableDemoMode?: () => void;
 }
 
 const useAuthStore = create<AuthState>()(
@@ -13,8 +16,11 @@ const useAuthStore = create<AuthState>()(
     (set, get) => ({
       isAuthenticated: false,
       userType: null,
-      login: (userType) => set({ isAuthenticated: true, userType }),
-      logout: () => set({ isAuthenticated: false, userType: null }),
+      demoMode: false,
+      login: (userType) => set({ isAuthenticated: true, userType, demoMode: false }),
+      logout: () => set({ isAuthenticated: false, userType: null, demoMode: false }),
+      enableDemoMode: (userType) => set({ demoMode: true, isAuthenticated: true, userType }),
+      disableDemoMode: () => set({ demoMode: false, isAuthenticated: false, userType: null }),
     }),
     {
       name: 'auth-storage',

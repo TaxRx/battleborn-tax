@@ -53,9 +53,9 @@ import {
   Cog
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
+import useAuthStore from '../../../store/authStore';
 import CreateClientModal from '../components/CreateClientModal';
 import { useUser } from '../../../context/UserContext';
-import useAuthStore from '../../../store/authStore';
 import RDClientManagement from '../../../components/RDClientManagement';
 import OperatorsList from '../components/OperatorsList'; // Import the new component
 import AccountManagement from '../components/AccountManagement';
@@ -72,6 +72,7 @@ const AdminDashboard: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const { logout: authLogout } = useAuthStore();
   const [activeTab, setActiveTab] = useState('overview');
   const [showCreateClientModal, setShowCreateClientModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -144,8 +145,20 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleLogout = async () => {
+    console.log('Logout clicked - starting logout process...');
     try {
-      await supabase.auth.signOut();
+      // Don't wait for Supabase signOut - do it in background
+      console.log('Calling supabase.auth.signOut() (not waiting)...');
+      supabase.auth.signOut().catch(error => console.error('Supabase signOut error:', error));
+      
+      console.log('Calling authLogout()...');
+      // Clear auth store state
+      authLogout();
+      console.log('Clearing storage...');
+      // Clear any cached data
+      localStorage.clear();
+      sessionStorage.clear();
+      console.log('Navigating to /login...');
       navigate('/login');
     } catch (error) {
       console.error('Error signing out:', error);

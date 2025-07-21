@@ -25,7 +25,7 @@ const OperatorsList: React.FC = () => {
       const supabase = createClient(import.meta.env.VITE_SUPABASE_URL!, import.meta.env.VITE_SUPABASE_ANON_KEY!);
       
       const { data, error } = await supabase.functions.invoke('admin-service', {
-        body: { pathname: '/admin-service/list-partners' },
+        body: { pathname: '/admin-service/list-operators' },
       });
 
       if (error) throw error;

@@ -67,10 +67,10 @@ export const testConnection = async () => {
     return false;
   }
 };
-
+console.log('supabase setting AuthStateChange', supabase)
 // Set up auth state change listener with error handling
 supabase.auth.onAuthStateChange((event, session) => {
-  console.log('Auth state changed:', event, {
+  console.log('Auth state changed (supabase):', event, {
     email: session?.user?.email,
     id: session?.user?.id,
     timestamp: new Date().toISOString()

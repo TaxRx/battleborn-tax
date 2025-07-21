@@ -5,7 +5,7 @@ import 'react-toastify/dist/ReactToastify.css';
 
 // // Use the new modular AdminDashboard
 import AdminDashboard from './modules/admin/pages/AdminDashboard';
-import { UserProvider } from './context/UserContext';
+import { UserProvider, useUser } from './context/UserContext';
 import useAuthStore from './store/authStore';
 import ClientRegistration from './pages/ClientRegistration';
 import LandingPage from './pages/LandingPage';
@@ -16,6 +16,40 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import EnhancedClientDashboard from './components/EnhancedClientDashboard';
 import PartnerDashboard from './modules/partner/pages/PartnerDashboard'; // Import the new component
+import OperatorDashboard from './modules/operator/pages/OperatorDashboard';
+
+// Component to handle role-based redirects
+const RoleBasedRedirect: React.FC = () => {
+  const { user, loading } = useUser();
+  const accountType = user?.account?.type;
+  console.log('RoleBasedRedirect:', { accountType, user, loading });
+  
+  // Show loading if user data is still being fetched
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
+  
+  // If no user data, redirect to login
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  if (accountType === 'operator') {
+    return <Navigate to="/operator" replace />;
+  }
+  if (accountType === 'partner') {
+    return <Navigate to="/partner" replace />;
+  }
+  if (accountType === 'client') {
+    return <Navigate to="/client" replace />;
+  }
+  if (accountType === 'admin') {
+    return <Navigate to="/admin" replace />;
+  }
+  
+  // Default fallback for any other account types or missing account type
+  return <Navigate to="/admin" replace />;
+};
 
 const BattleBornApp: React.FC = () => {
   const location = useLocation();
@@ -23,7 +57,7 @@ const BattleBornApp: React.FC = () => {
 
   // // Public routes
   const isPublicRoute = ['/', '/login', '/signup', '/register', '/verify-email', '/accept-invitation', '/forgot-password', '/reset-password'].includes(location.pathname);
-  
+    console.log('Main App',{isAuthenticated, isPublicRoute, location})
   
   if (!isAuthenticated && !isPublicRoute) {
     return <Navigate to="/login" replace />;
@@ -62,6 +96,12 @@ const BattleBornApp: React.FC = () => {
                 element={<PartnerDashboard />} 
               />
 
+              {/* Operator Routes */}
+              <Route 
+                path="/operator/*" 
+                element={<OperatorDashboard />} 
+              />
+
               {/* Client Routes */}
               <Route 
                 path="/client" 
@@ -71,14 +111,7 @@ const BattleBornApp: React.FC = () => {
               {/* Default redirects based on user role */}
               <Route 
                 path="/dashboard" 
-                element={
-                  // TODO: Replace with actual role-based logic from user profile
-                  // const { accessLevel } = useProfileStore();
-                  // if (accessLevel === 'operator') return <Navigate to="/admin" replace />;
-                  // if (accessLevel === 'partner') return <Navigate to="/partner" replace />;
-                  // if (accessLevel === 'client') return <Navigate to="/client" replace />;
-                  <Navigate to="/admin" replace /> // Default fallback
-                } 
+                element={<RoleBasedRedirect />} 
               />
             </>
           )}
@@ -88,7 +121,7 @@ const BattleBornApp: React.FC = () => {
             path="*" 
             element={
               isAuthenticated ? (
-                <Navigate to="/admin" replace />
+                <RoleBasedRedirect />
               ) : (
                 <Navigate to="/" replace />
               )
