@@ -56,11 +56,13 @@ const OperatorDashboard: React.FC = () => {
   // Access control - only allow operator accounts
   useEffect(() => {
     console.log('user in operator dashboard', user)
-    if (user && user.profile?.account?.type !== 'operator') {
-      navigate('/'); // Redirect non-operators
-      return;
+    if(user?.profile){
+      if (user && user.profile?.account?.type !== 'operator') {
+        navigate('/'); // Redirect non-operators
+        return;
+      }
+      setLoading(false);
     }
-    setLoading(false);
   }, [user, navigate]);
 
   const handleLogout = async () => {

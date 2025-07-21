@@ -83,10 +83,67 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
   // Allow access if user is authenticated via Supabase OR in demo mode
   if (!user && !isAuthenticated && !demoMode) {
-    return <Navigate to="/" />;
+    return <Navigate to="/login" />;
   }
 
   return <>{children}</>;
+};
+
+// Role-based redirect component that waits for user to load
+const RoleBasedRedirect: React.FC = () => {
+  const { user, loading } = useUser();
+  const { isAuthenticated, demoMode, userType } = useAuthStore();
+  
+  // Show loading while user is being fetched
+  if (loading && !demoMode) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto"></div>
+          <p className="mt-4 text-slate-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If not authenticated and not in demo mode, redirect to login
+  if (!user && !isAuthenticated && !demoMode) {
+    return <Navigate to="/login" />;
+  }
+
+  // Get account type from user context or auth store
+  const accountType = user?.account?.type || userType;
+  
+  // Debug logging to see what we're getting
+  console.log('RoleBasedRedirect - Debug info:', {
+    userAccountType: user?.account?.type,
+    authStoreUserType: userType,
+    finalAccountType: accountType,
+    user: user,
+    isAuthenticated,
+    demoMode
+  });
+
+  // Perform role-based redirects only after user is loaded
+  if (accountType === 'admin') {
+    return <Navigate to="/admin" />;
+  }
+  if (accountType === 'operator') {
+    return <Navigate to="/operator" />;
+  }
+  if (accountType === 'partner') {
+    return <Navigate to="/partner" />;
+  }
+  if (accountType === 'client') {
+    return <Navigate to="/client" />;
+  }
+
+  // Default fallback
+  return (
+    <ProtectedRoute>
+      <Dashboard />
+    </ProtectedRoute>
+  );
 };
 
 const AppRoutes = ({ profile }: { profile: any }) => {
@@ -114,15 +171,7 @@ const AppRoutes = ({ profile }: { profile: any }) => {
       {/* Root URL: Role-based redirect */}
       <Route
         path="/"
-        element={
-          <ProtectedRoute>
-            {accountType === 'operator' && <Navigate to="/operator" />}
-            {accountType === 'partner' && <Navigate to="/partner" />}
-            {accountType === 'client' && <Navigate to="/client" />}
-            {/* Default fallback for other roles or while loading */}
-            {(!accountType) && <Dashboard />}
-          </ProtectedRoute>
-        }
+        element={<RoleBasedRedirect />}
       />
 
       {/* Legacy and other routes */}

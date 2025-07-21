@@ -21,69 +21,125 @@ import OperatorDashboard from './modules/operator/pages/OperatorDashboard';
 // Component to handle role-based redirects
 const RoleBasedRedirect: React.FC = () => {
   const { user, loading } = useUser();
+  const { isAuthenticated, userType } = useAuthStore();
   const accountType = user?.account?.type;
-  console.log('RoleBasedRedirect:', { accountType, user, loading });
+  
+  console.log('RoleBasedRedirect - DETAILED DEBUG:', { 
+    accountType, 
+    userType,
+    user: user ? {
+      id: user.id,
+      email: user.email,
+      profile: user.profile,
+      account: user.account
+    } : null,
+    loading,
+    isAuthenticated
+  });
   
   // Show loading if user data is still being fetched
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto"></div>
+          <p className="mt-4 text-slate-600">Loading user data...</p>
+        </div>
+      </div>
+    );
   }
   
   // If no user data, redirect to login
-  if (!user) {
+  if (!user && !isAuthenticated) {
+    console.log('RoleBasedRedirect: No user data and not authenticated, redirecting to login');
     return <Navigate to="/login" replace />;
   }
   
-  if (accountType === 'operator') {
+  // Use accountType from user context first, fall back to userType from auth store
+  const finalAccountType = accountType || userType;
+  console.log('RoleBasedRedirect: Using account type:', finalAccountType);
+  
+  if (finalAccountType === 'operator') {
+    console.log('RoleBasedRedirect: Redirecting to /operator');
     return <Navigate to="/operator" replace />;
   }
-  if (accountType === 'partner') {
+  if (finalAccountType === 'partner') {
+    console.log('RoleBasedRedirect: Redirecting to /partner');
     return <Navigate to="/partner" replace />;
   }
-  if (accountType === 'client') {
+  if (finalAccountType === 'client') {
+    console.log('RoleBasedRedirect: Redirecting to /client');
     return <Navigate to="/client" replace />;
   }
-  if (accountType === 'admin') {
+  if (finalAccountType === 'admin') {
+    console.log('RoleBasedRedirect: Redirecting to /admin');
     return <Navigate to="/admin" replace />;
   }
   
   // Default fallback for any other account types or missing account type
+  console.log('RoleBasedRedirect: No matching account type, redirecting to /admin as fallback');
   return <Navigate to="/admin" replace />;
 };
 
 const BattleBornApp: React.FC = () => {
+  return (
+    <UserProvider>
+      <AppContent />
+    </UserProvider>
+  );
+};
+
+const AppContent: React.FC = () => {
   const location = useLocation();
   const { isAuthenticated } = useAuthStore();
+  const { user, loading } = useUser();
 
-  // // Public routes
+  // Public routes
   const isPublicRoute = ['/', '/login', '/signup', '/register', '/verify-email', '/accept-invitation', '/forgot-password', '/reset-password'].includes(location.pathname);
-    console.log('Main App',{isAuthenticated, isPublicRoute, location})
   
-  if (!isAuthenticated && !isPublicRoute) {
+  console.log('AppContent - Auth state:', {
+    isAuthenticated,
+    hasUser: !!user,
+    loading,
+    isPublicRoute,
+    location: location.pathname
+  });
+
+  // Show loading while determining authentication state
+  if (loading && !isPublicRoute) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto"></div>
+          <p className="mt-4 text-slate-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Redirect to login if not authenticated and not on public route
+  if (!user && !isAuthenticated && !isPublicRoute) {
     return <Navigate to="/login" replace />;
   }
 
-
-
   return (
-    <UserProvider>
-      <div className="min-h-screen bg-gray-50">
-        <Routes>
-          {/* Public Routes */}
-          <Route path="/" element={<LandingPage />} />
-          <Route 
-            path="/login" 
-            element={<LoginPage />} 
-          />
-          <Route path="/register" element={<ClientRegistration />} />
-          <Route path="/verify-email" element={<EmailVerification />} />
-          <Route path="/accept-invitation" element={<AcceptInvitation />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
+    <div className="min-h-screen bg-gray-50">
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/" element={<LandingPage />} />
+        <Route 
+          path="/login" 
+          element={<LoginPage />} 
+        />
+        <Route path="/register" element={<ClientRegistration />} />
+        <Route path="/verify-email" element={<EmailVerification />} />
+        <Route path="/accept-invitation" element={<AcceptInvitation />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
 
-          {/* Protected Routes */}
-          {isAuthenticated && (
-            <>
+        {/* Protected Routes */}
+        {(user || isAuthenticated) && (
+          <>
               {/* Admin Routes */}
               <Route 
                 path="/admin/*" 
@@ -120,7 +176,7 @@ const BattleBornApp: React.FC = () => {
           <Route 
             path="*" 
             element={
-              isAuthenticated ? (
+              (user || isAuthenticated) ? (
                 <RoleBasedRedirect />
               ) : (
                 <Navigate to="/" replace />
@@ -142,8 +198,7 @@ const BattleBornApp: React.FC = () => {
           pauseOnHover
         />
       </div>
-    </UserProvider>
-  );
+    );
 };
 
 export default BattleBornApp; 
