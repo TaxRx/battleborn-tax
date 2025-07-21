@@ -3,6 +3,7 @@
 // Purpose: Display tools assigned to current operator account from account_tool_access table
 
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Cog, 
   Calendar, 
@@ -49,6 +50,7 @@ const accessLevelColors = {
 
 const OperatorToolsPage: React.FC = () => {
   const { user } = useUser();
+  const navigate = useNavigate();
   const [tools, setTools] = useState<AssignedTool[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -115,9 +117,40 @@ const OperatorToolsPage: React.FC = () => {
   };
 
   const handleToolAccess = (tool: AssignedTool) => {
-    // TODO: Navigate to the specific tool or open it
+    // Navigate to the specific tool based on tool_slug
     console.log('Accessing tool:', tool.tool_slug);
-    // This could navigate to a tool-specific route or open the tool in a new window
+    
+    switch (tool.tool_slug) {
+      case 'tax-calculator':
+      case 'charitable-donations':
+        // Navigate to the tax calculator within the operator area
+        navigate('/operator/tax-calculator');
+        break;
+      case 'augusta-rule':
+        // Navigate to Augusta Rule wizard
+        navigate('/operator/tax-tools/augusta-rule');
+        break;
+      case 'rd-tax-credit':
+        // Navigate to R&D Tax Credit wizard
+        navigate('/operator/tax-tools/rd-credit');
+        break;
+      case 'proposal-generator':
+        // Navigate to proposal generation tool
+        navigate('/operator/proposals');
+        break;
+      case 'client-dashboard':
+        // Navigate to client management
+        navigate('/operator/clients');
+        break;
+      case 'affiliate-management':
+        // Navigate to affiliate management
+        navigate('/operator/affiliates');
+        break;
+      default:
+        // For tools we don't have specific routes for yet, show an alert
+        alert(`Tool "${tool.tool_name}" will be available soon. This tool is still in development.`);
+        break;
+    }
   };
 
   if (loading) {

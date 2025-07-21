@@ -30,6 +30,10 @@ import OperatorDashboardOverview from '../components/OperatorDashboardOverview';
 import OperatorAffiliatesPage from './OperatorAffiliatesPage';
 import OperatorClientsPage from './OperatorClientsPage';
 import OperatorExpertsPage from './OperatorExpertsPage';
+// Import tax calculator tools
+import AdminTaxCalculator from '../../admin/components/AdminTaxCalculator';
+import AugustaRuleWizard from '../../../modules/tax-calculator/components/AugustaRuleWizard';
+import { RDTaxCreditDashboard } from '../../../modules/tax-calculator/components/RDTaxCreditDashboard';
 
 const OperatorDashboard: React.FC = () => {
   const { user } = useUser();
@@ -267,6 +271,12 @@ const OperatorDashboard: React.FC = () => {
             <Route path="/affiliates" element={<OperatorAffiliatesPage />} />
             <Route path="/clients" element={<OperatorClientsPage />} />
             <Route path="/experts" element={<OperatorExpertsPage />} />
+            
+            {/* Tax Tools Routes */}
+            <Route path="/tax-calculator" element={<AdminTaxCalculator />} />
+            <Route path="/tax-tools/augusta-rule" element={<AugustaRuleWizard onClose={() => navigate('/operator/tools')} />} />
+            <Route path="/tax-tools/rd-credit" element={<RDTaxCreditDashboard />} />
+            
             <Route path="*" element={<Navigate to="/operator" replace />} />
           </Routes>
         </main>

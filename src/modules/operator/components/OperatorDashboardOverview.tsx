@@ -3,6 +3,7 @@
 // Purpose: Dashboard overview with stats and quick actions for operators
 
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Users, 
   Cog, 
@@ -18,6 +19,7 @@ import OperatorToolService from '../services/operatorToolService';
 
 const OperatorDashboardOverview: React.FC = () => {
   const { user } = useUser();
+  const navigate = useNavigate();
   const [toolSummary, setToolSummary] = useState({
     totalTools: 0,
     activeTools: 0,
@@ -132,7 +134,10 @@ const OperatorDashboardOverview: React.FC = () => {
 
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer">
+        <div 
+          className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer"
+          onClick={() => navigate('/operator/tools')}
+        >
           <div className="flex items-center space-x-3">
             <div className="flex-shrink-0 h-10 w-10 rounded-md bg-emerald-100 flex items-center justify-center">
               <Cog className="h-5 w-5 text-emerald-600" />
@@ -144,7 +149,10 @@ const OperatorDashboardOverview: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer">
+        <div 
+          className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer"
+          onClick={() => navigate('/operator/affiliates')}
+        >
           <div className="flex items-center space-x-3">
             <div className="flex-shrink-0 h-10 w-10 rounded-md bg-blue-100 flex items-center justify-center">
               <Users className="h-5 w-5 text-blue-600" />
@@ -156,7 +164,10 @@ const OperatorDashboardOverview: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer">
+        <div 
+          className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer"
+          onClick={() => navigate('/operator/clients')}
+        >
           <div className="flex items-center space-x-3">
             <div className="flex-shrink-0 h-10 w-10 rounded-md bg-purple-100 flex items-center justify-center">
               <Building className="h-5 w-5 text-purple-600" />
@@ -168,7 +179,10 @@ const OperatorDashboardOverview: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer">
+        <div 
+          className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer"
+          onClick={() => navigate('/operator/experts')}
+        >
           <div className="flex items-center space-x-3">
             <div className="flex-shrink-0 h-10 w-10 rounded-md bg-indigo-100 flex items-center justify-center">
               <UserCheck className="h-5 w-5 text-indigo-600" />
