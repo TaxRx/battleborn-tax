@@ -27,6 +27,7 @@ import AdvisorDashboard from './components/AdvisorDashboard';
 import ClientDashboard from './components/ClientDashboard';
 import HomePage from './components/HomePage';
 import { useUserStore } from './store/userStore';
+import ClientPortal from './pages/ClientPortal';
 
 import ClientList from './components/AdvisorDashboard/ClientList';
 import GroupList from './components/AdvisorDashboard/GroupList';
@@ -154,7 +155,7 @@ const App = () => {
   const { isAuthenticated: localAuth, demoMode, userType } = useAuthStore();
   const location = useLocation();
   const navigate = useNavigate();
-  const isPublicRoute = location.pathname === '/' || location.pathname === '/login';
+  const isPublicRoute = location.pathname === '/' || location.pathname === '/login' || location.pathname.startsWith('/client-portal/');
   const { setTaxInfo } = useTaxStore();
   const isAdminRoute = location.pathname.startsWith('/admin');
 
@@ -303,7 +304,7 @@ const App = () => {
     isAuthenticated, 
     isUserAuthenticated, 
     actualProfileLoading, 
-    pathname: location.pathname 
+    pathname: location.pathname
   });
   
   if (!isUserAuthenticated) {
@@ -342,32 +343,42 @@ const App = () => {
       <Toaster position="top-right" />
       <UserProvider>
         <div className="min-h-screen bg-gray-50">
-          {/* Only show Navigation on non-public routes and not on Admin routes */}
-          {isUserAuthenticated && !isPublicRoute && !isAdminRoute && (
-            <Navigation 
-              currentView={location.pathname.substring(1) || 'dashboard'}
-              onViewChange={(view) => navigate(`/${view}`)}
-              isAuthenticated={isUserAuthenticated}
-              onLoginClick={() => navigate('/login')}
-              onLogoutClick={() => {
-                if (demoMode) {
-                  const { disableDemoMode } = useAuthStore.getState();
-                  disableDemoMode();
-                  navigate('/');
-                } else {
-                  supabase.auth.signOut();
-                }
-              }}
-              userType={(() => {
-                if (demoMode) return userType || 'client';
-                if (effectiveProfile?.email === 'admin@taxrxgroup.com') return 'admin';
-                return effectiveProfile?.role || 'client';
-              })()}
-            />
-          )}
-          <main className={isUserAuthenticated && !isPublicRoute ? 'ml-64' : ''}>
-            <AppRoutes profile={effectiveProfile} />
-          </main>
+          <Routes>
+            {/* Client Portal - Always available (token-based authentication) */}
+            <Route path="/client-portal/:businessId/:token" element={<ClientPortal />} />
+            
+            {/* All other routes */}
+            <Route path="*" element={
+              <>
+                {/* Only show Navigation on non-public routes and not on Admin routes */}
+                {isUserAuthenticated && !isPublicRoute && !isAdminRoute && (
+                  <Navigation 
+                    currentView={location.pathname.substring(1) || 'dashboard'}
+                    onViewChange={(view) => navigate(`/${view}`)}
+                    isAuthenticated={isUserAuthenticated}
+                    onLoginClick={() => navigate('/login')}
+                    onLogoutClick={() => {
+                      if (demoMode) {
+                        const { disableDemoMode } = useAuthStore.getState();
+                        disableDemoMode();
+                        navigate('/');
+                      } else {
+                        supabase.auth.signOut();
+                      }
+                    }}
+                    userType={(() => {
+                      if (demoMode) return userType || 'client';
+                      if (effectiveProfile?.email === 'admin@taxrxgroup.com') return 'admin';
+                      return effectiveProfile?.role || 'client';
+                    })()}
+                  />
+                )}
+                <main className={isUserAuthenticated && !isPublicRoute ? 'ml-64' : ''}>
+                  <AppRoutes profile={effectiveProfile} />
+                </main>
+              </>
+            } />
+          </Routes>
         </div>
         <ToastContainer position="top-right" autoClose={5000} />
       </UserProvider>

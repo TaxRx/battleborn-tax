@@ -16,7 +16,7 @@ export interface RoleSnapshotRef {
   recalculate: () => Promise<void>;
 }
 
-const RoleSnapshot: React.ForwardRefRenderFunction<RoleSnapshotRef, RoleSnapshotProps> = ({ businessYearId, onUpdate }, ref) => {
+const RoleSnapshot = forwardRef<RoleSnapshotRef, RoleSnapshotProps>(({ businessYearId, onUpdate }, ref) => {
   const [roles, setRoles] = useState<Role[]>([]);
   const [rolePercentages, setRolePercentages] = useState<{ [roleName: string]: number }>({});
   const [activityBreakdowns, setActivityBreakdowns] = useState<{ [roleName: string]: { [activityName: string]: number } }>({});
@@ -60,8 +60,25 @@ const RoleSnapshot: React.ForwardRefRenderFunction<RoleSnapshotRef, RoleSnapshot
         return;
       }
 
-      console.log('🎯 [ROLE SNAPSHOT] Found', rolesData.length, 'roles');
-      setRoles(rolesData);
+      console.log('🎯 [ROLE SNAPSHOT] Found', rolesData.length, 'raw roles from database');
+      
+      // CRITICAL FIX: Deduplicate roles by name to prevent double processing
+      const uniqueRoles = rolesData.reduce((acc, role) => {
+        const existingRole = acc.find(r => r.name === role.name);
+        if (!existingRole) {
+          acc.push(role);
+        } else {
+          console.log(`🔍 [ROLE DEDUP] Skipping duplicate role: ${role.name} (ID: ${role.id}), keeping: ${existingRole.id}`);
+        }
+        return acc;
+      }, [] as typeof rolesData);
+      
+      console.log('🎯 [ROLE SNAPSHOT] After deduplication:', uniqueRoles.length, 'unique roles');
+      uniqueRoles.forEach((role, index) => {
+        console.log(`   ${index + 1}. ${role.name} (ID: ${role.id})`);
+      });
+      
+      setRoles(uniqueRoles);
 
       // Get selected activities for this business year to filter subcomponents
       const { data: selectedActivitiesData, error: activitiesError } = await supabase
@@ -80,7 +97,7 @@ const RoleSnapshot: React.ForwardRefRenderFunction<RoleSnapshotRef, RoleSnapshot
       if (selectedActivityIds.length === 0) {
         console.log('🎯 [ROLE SNAPSHOT] No selected activities found');
         const emptyPercentages: { [roleName: string]: number } = {};
-        rolesData.forEach(role => {
+        uniqueRoles.forEach(role => {
           emptyPercentages[role.name] = 0;
         });
         setRolePercentages(emptyPercentages);
@@ -118,7 +135,7 @@ const RoleSnapshot: React.ForwardRefRenderFunction<RoleSnapshotRef, RoleSnapshot
       if (!subcomponents || subcomponents.length === 0) {
         console.log('🎯 [ROLE SNAPSHOT] No subcomponents found');
         const emptyPercentages: { [roleName: string]: number } = {};
-        rolesData.forEach(role => {
+        uniqueRoles.forEach(role => {
           emptyPercentages[role.name] = 0;
         });
         setRolePercentages(emptyPercentages);
@@ -223,7 +240,8 @@ const RoleSnapshot: React.ForwardRefRenderFunction<RoleSnapshotRef, RoleSnapshot
         activityDetails.set(activity.id, title);
       });
 
-      rolesData.forEach(role => {
+      uniqueRoles.forEach(role => {
+        console.log(`\n🔄 [ROLE PROCESSING] Starting calculation for: ${role.name} (ID: ${role.id})`);
         let roleTotal = 0;
         let subcomponentCount = 0;
         activityBreakdowns[role.name] = {};
@@ -303,6 +321,13 @@ const RoleSnapshot: React.ForwardRefRenderFunction<RoleSnapshotRef, RoleSnapshot
         calculations[role.name] = +roleTotal.toFixed(2);
         console.log(`🎯 [ROLE SNAPSHOT] ${role.name}: ${roleTotal.toFixed(2)}% from ${subcomponentCount} subcomponents (DYNAMIC CALCULATION)`);
         
+        // CRITICAL DEBUG: Track calculation storage to prevent overwriting
+        if (calculations[role.name] !== +roleTotal.toFixed(2)) {
+          console.log(`🚨 [CALCULATION OVERWRITE] ${role.name}: Previous value was overwritten!`);
+        } else {
+          console.log(`✅ [CALCULATION STORED] ${role.name}: ${calculations[role.name]}% successfully stored`);
+        }
+        
         // Special debugging for Research Leader
         if (role.name === 'Research Leader') {
           console.log(`📊 [RESEARCH LEADER SUMMARY] - FILTERED DYNAMIC CALCULATION`);
@@ -372,12 +397,18 @@ const RoleSnapshot: React.ForwardRefRenderFunction<RoleSnapshotRef, RoleSnapshot
       console.log(`🎯 [ROLE SNAPSHOT] Fixed calculation - filtered to match research activity cards exactly`);
       console.log(`🎨 [ROLE SNAPSHOT] Activity breakdowns:`, activityBreakdowns);
 
+      // FINAL DEBUG: Log what's being stored in state
+      console.log(`📝 [FINAL STATE] Setting role percentages:`, calculations);
+      Object.entries(calculations).forEach(([roleName, percentage]) => {
+        console.log(`   └─ ${roleName}: ${percentage}%`);
+      });
+
       setRolePercentages(calculations);
       setActivityBreakdowns(activityBreakdowns);
       setLastCalculation(new Date().toLocaleTimeString());
 
       // Save baseline percentages to database for expense management
-      await saveBaselinesToDatabase(rolesData, calculations);
+      await saveBaselinesToDatabase(uniqueRoles, calculations);
 
       console.log('🎯 [ROLE SNAPSHOT] Calculation complete:', calculations);
 
@@ -587,6 +618,6 @@ const RoleSnapshot: React.ForwardRefRenderFunction<RoleSnapshotRef, RoleSnapshot
       </div>
     </div>
   );
-};
+});
 
-export default forwardRef(RoleSnapshot); 
+export default RoleSnapshot; 

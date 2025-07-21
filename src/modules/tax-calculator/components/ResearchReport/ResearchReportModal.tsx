@@ -18,6 +18,7 @@ import {
   formatAIContent,
   ReportData
 } from './reportGenerator';
+import { rdReportService } from "../../services/rdReportService";
 // rdReportService removed - using static report generation
 
 interface ResearchReportModalProps {

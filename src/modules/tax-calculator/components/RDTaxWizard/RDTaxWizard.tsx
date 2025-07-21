@@ -12,6 +12,8 @@ import { RDBusinessService } from '../../services/rdBusinessService';
 import { FilingGuideModal } from '../FilingGuide/FilingGuideModal';
 import ResearchReportModal from '../ResearchReport/ResearchReportModal';
 import AllocationReportModal from '../AllocationReport/AllocationReportModal';
+import { StateProFormaCalculationService } from '../../services/stateProFormaCalculationService'; // NEW: For real state credit calculations
+import { StateCreditDataService } from '../../services/stateCreditDataService'; // NEW: For base QRE data
 
 // Helper function to get URL parameters
 const getUrlParams = () => {
@@ -90,10 +92,19 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
   const [isResearchReportOpen, setIsResearchReportOpen] = useState(false);
   const [isAllocationReportOpen, setIsAllocationReportOpen] = useState(false);
 
+  // 🔧 NEW: Real state credits for footer display (using StateProFormaCalculationService)
+  const [realStateCredits, setRealStateCredits] = useState<number>(0);
+
+  // Add state for client data and business selector
+  const [clientData, setClientData] = useState<any>(null);
+  const [availableBusinesses, setAvailableBusinesses] = useState<any[]>([]);
+  const [showBusinessSelector, setShowBusinessSelector] = useState(false);
+
   // CRITICAL: Use a key to force component remount when business changes
   // This ensures complete isolation between different business files
   const [componentKey, setComponentKey] = useState(0);
   const lastBusinessIdRef = useRef<string>('');
+  const businessSelectorRef = useRef<HTMLDivElement>(null);
 
   // CRITICAL: Reset wizard state when businessId changes to prevent data leakage
   useEffect(() => {
@@ -234,33 +245,60 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
             console.log('[RDTaxWizard] Calling enrollBusinessFromExisting', { businessId: unifiedBusiness.id, clientId });
             const newRdBusiness = await RDBusinessService.enrollBusinessFromExisting(unifiedBusiness.id, clientId);
             console.log('[RDTaxWizard] enrollBusinessFromExisting result', newRdBusiness);
-            // Create a default business year
-            const { data: businessYear, error: yearError } = await supabase
+            
+            // CRITICAL FIX: Check if business years already exist before creating new ones
+            const { data: existingBusinessYears, error: existingYearsError } = await supabase
               .from('rd_business_years')
-              .insert({
-                business_id: newRdBusiness.id,
-                year: new Date().getFullYear(),
-                gross_receipts: unifiedBusiness.annual_revenue || 0,
-                total_qre: 0
-              })
-              .select()
-              .single();
+              .select('*')
+              .eq('business_id', newRdBusiness.id)
+              .order('year', { ascending: false });
 
-            if (yearError) {
-              console.error('Error creating R&D business year:', yearError);
-              throw yearError;
+            if (existingYearsError) {
+              console.error('Error checking existing business years:', existingYearsError);
+              throw existingYearsError;
             }
 
-            console.log('✅ Created R&D business year:', businessYear);
+            console.log('📊 Existing business years found:', existingBusinessYears?.length || 0);
+            
+            let currentYearData = null;
+            const currentYear = new Date().getFullYear();
+            
+            if (existingBusinessYears && existingBusinessYears.length > 0) {
+              // Use existing business years - find current year or most recent
+              currentYearData = existingBusinessYears.find(by => by.year === currentYear) || 
+                               existingBusinessYears[0];
+              console.log('✅ Using existing business year:', currentYearData.year);
+            } else {
+              // Only create a new business year if none exist
+              console.log('📅 No existing business years found, creating default for', currentYear);
+              const { data: businessYear, error: yearError } = await supabase
+                .from('rd_business_years')
+                .insert({
+                  business_id: newRdBusiness.id,
+                  year: currentYear,
+                  gross_receipts: unifiedBusiness.annual_revenue || 0,
+                  total_qre: 0
+                })
+                .select()
+                .single();
 
-            // Set the wizard state with the new business
+              if (yearError) {
+                console.error('Error creating R&D business year:', yearError);
+                throw yearError;
+              }
+
+              console.log('✅ Created new R&D business year:', businessYear);
+              currentYearData = businessYear;
+            }
+
+            // Set the wizard state with the business and existing/new business years
             setWizardState(prev => ({
               ...prev,
               business: {
                 ...newRdBusiness,
-                rd_business_years: [businessYear]
+                rd_business_years: existingBusinessYears || [currentYearData]
               },
-              selectedYear: businessYear
+              selectedYear: currentYearData
             }));
           } catch (error) {
             console.error('Error enrolling business in rd_businesses:', error, { businessId: unifiedBusiness.id, clientId });
@@ -296,6 +334,128 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
 
     loadBusinessData();
   }, [businessId]);
+
+  // Load client and businesses data
+  useEffect(() => {
+    const loadClientAndBusinesses = async () => {
+      if (!wizardState.business?.id) return;
+
+      try {
+        // Get client data by finding which client owns this business
+        const { data: clientBusinesses, error: cbError } = await supabase
+          .from('rd_businesses')
+          .select(`
+            *,
+            clients (
+              id,
+              business_name,
+              first_name,
+              last_name,
+              company_name
+            )
+          `)
+          .eq('id', wizardState.business.id)
+          .single();
+
+        if (cbError) {
+          console.error('Error loading client data:', cbError);
+          return;
+        }
+
+        if (clientBusinesses) {
+          setClientData(clientBusinesses.clients);
+          
+          // Load all businesses for this client
+          const { data: businesses, error: bError } = await supabase
+            .from('rd_businesses')
+            .select('id, name, contact_info')
+            .eq('client_id', clientBusinesses.clients.id)
+            .order('name');
+
+          if (!bError && businesses) {
+            setAvailableBusinesses(businesses);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading client and businesses:', error);
+      }
+    };
+
+    loadClientAndBusinesses();
+  }, [wizardState.business?.id]);
+
+  // Close business selector when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (businessSelectorRef.current && !businessSelectorRef.current.contains(event.target as Node)) {
+        setShowBusinessSelector(false);
+      }
+    };
+
+    if (showBusinessSelector) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showBusinessSelector]);
+
+  // 🔧 FIXED: Use exact same logic as working IntegratedStateCredits for footer display
+  useEffect(() => {
+    const calculateRealStateCredits = async () => {
+      // Use same conditions as IntegratedStateCredits - only need selectedYear and business state
+      if (!wizardState.selectedYear?.id || !wizardState.business?.state) {
+        console.log('🔍 Footer State Credits - Missing data:', {
+          selectedYearId: wizardState.selectedYear?.id,
+          businessState: wizardState.business?.state,
+          fullBusiness: wizardState.business
+        });
+        setRealStateCredits(0);
+        return;
+      }
+
+      try {
+        console.log('🔍 Footer State Credits - Starting calculation with:', {
+          selectedYearId: wizardState.selectedYear?.id,
+          businessState: wizardState.business?.state,
+          wizardStep: wizardState.currentStep
+        });
+        
+        const businessState = wizardState.business?.state || wizardState.business?.contact_info?.state || 'CA';
+        console.log('🔍 Footer State Credits - Business state:', businessState);
+        
+        // 🔧 EXACT SAME LOGIC as IntegratedStateCredits - Step 1: Load base QRE data 
+        const baseQREData = await StateCreditDataService.getAggregatedQREData(wizardState.selectedYear.id);
+        console.log('🔍 Footer State Credits - Base QRE data:', baseQREData);
+        
+        // 🔧 EXACT SAME LOGIC as IntegratedStateCredits - Step 2: Calculate final credit using REAL pro forma logic
+        const realProFormaResult = await StateProFormaCalculationService.getStateCreditsFromProForma(
+          wizardState.selectedYear.id, 
+          businessState, 
+          'Standard' // Use same method as IntegratedStateCredits
+        );
+        console.log('🔍 Footer State Credits - REAL Pro forma result:', realProFormaResult);
+        
+        // 🔧 EXACT SAME LOGIC as IntegratedStateCredits - Extract the calculated final credit from the real pro forma
+        const calculatedCredit = realProFormaResult.total || 0;
+        console.log(`🔍 Footer State Credits - REAL Final credit for ${businessState}: $${calculatedCredit}`);
+        
+        setRealStateCredits(calculatedCredit);
+        
+      } catch (error) {
+        console.error('🔍 Footer State Credits - Error calculating real state credits:', error);
+        setRealStateCredits(0);
+      }
+    };
+
+    // Only calculate if we're on step 4+ (calculation step) to avoid unnecessary calls
+    if (wizardState.currentStep >= 4) {
+      calculateRealStateCredits();
+    } else {
+      console.log('🔍 Footer State Credits - Skipping calculation, not on calculation step yet:', wizardState.currentStep);
+      setRealStateCredits(0);
+    }
+  }, [wizardState.selectedYear?.id, wizardState.business?.state, wizardState.currentStep]); // Added currentStep to dependencies
 
   const handleNext = () => {
     if (wizardState.currentStep < steps.length - 1) {
@@ -412,17 +572,71 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
       >
         {/* Header - Updated to match Dark Blue Gradient */}
         <div className="bg-gradient-to-r from-[#1a1a3f] to-[#2d2d67] text-white p-6 flex-shrink-0">
-          <div className="flex justify-between items-center">
-            <div>
+          <div className="flex justify-between items-start">
+            <div className="flex-1">
               <h2 className="text-2xl font-bold">R&D Tax Credit Wizard</h2>
               <p className="text-blue-100">
                 Step {wizardState.currentStep + 1} of {steps.length}: {steps[wizardState.currentStep].title}
               </p>
             </div>
+            
+            {/* Client Name and Business Selector - Right Aligned */}
+            <div className="text-right">
+              {clientData && (
+                <>
+                  <div className="text-lg font-semibold text-white mb-1">
+                    {clientData.company_name || `${clientData.first_name} ${clientData.last_name}`}
+                  </div>
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowBusinessSelector(!showBusinessSelector)}
+                      className="flex items-center space-x-2 text-blue-200 hover:text-white transition-colors"
+                    >
+                      <span className="text-sm">
+                        {wizardState.business?.name || 'Business Name'}
+                      </span>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    
+                    {/* Business Dropdown */}
+                    {showBusinessSelector && availableBusinesses.length > 1 && (
+                      <div ref={businessSelectorRef} className="absolute right-0 top-full mt-2 bg-white rounded-lg shadow-lg border border-gray-200 min-w-60 z-50">
+                        <div className="py-1">
+                          {availableBusinesses.map((business) => (
+                            <button
+                              key={business.id}
+                              onClick={() => {
+                                // Navigate to new business
+                                const url = new URL(window.location.href);
+                                url.searchParams.set('businessId', business.id);
+                                window.location.href = url.toString();
+                              }}
+                              className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors ${
+                                business.id === wizardState.business?.id 
+                                  ? 'bg-blue-50 text-blue-700 font-medium' 
+                                  : 'text-gray-700'
+                              }`}
+                            >
+                              <div className="font-medium">{business.name}</div>
+                              {business.contact_info?.state && (
+                                <div className="text-xs text-gray-500">{business.contact_info.state}</div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            
             {isModal && (
               <button
                 onClick={onClose}
-                className="text-white hover:text-blue-200 transition-colors"
+                className="text-white hover:text-blue-200 transition-colors ml-4"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -587,7 +801,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
                           <div className="flex items-center space-x-2">
                             <span className="text-xs font-medium text-blue-200">State:</span>
                             <span className="text-sm font-bold text-purple-300">
-                              ${Math.round(wizardState.calculations.totalStateCredits || 0)?.toLocaleString()}
+                              ${Math.round(realStateCredits || 0)?.toLocaleString()}
                             </span>
                           </div>
                         </div>
@@ -595,7 +809,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
                           <div className="flex items-center space-x-2">
                             <div className="text-xs text-blue-200">Total:</div>
                             <div className="text-lg font-bold text-yellow-300">
-                              ${Math.round((wizardState.calculations.federalCredits?.asc?.adjustedCredit || wizardState.calculations.federalCredits?.asc?.credit || 0) + (wizardState.calculations.totalStateCredits || 0))?.toLocaleString()}
+                              ${Math.round((wizardState.calculations.federalCredits?.asc?.adjustedCredit || wizardState.calculations.federalCredits?.asc?.credit || 0) + (realStateCredits || 0))?.toLocaleString()}
                             </div>
                           </div>
                         </div>
@@ -616,56 +830,102 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
                   <select
                     value={wizardState.selectedYear.year || new Date().getFullYear()}
                     onChange={async (e) => {
-                      const year = parseInt(e.target.value);
-                      // Find existing business year or create new one
-                      let businessYearData = wizardState.selectedYear;
+                      const selectedValue = e.target.value;
                       
-                      // Check if this year already exists
-                      const { data: existingYear } = await supabase
-                        .from('rd_business_years')
-                        .select('id, year')
-                        .eq('business_id', businessId)
-                        .eq('year', year)
-                        .single();
-                      
-                      if (existingYear) {
-                        businessYearData = { id: existingYear.id, year: existingYear.year };
-                      } else if (businessId) {
-                        // Create new business year
-                        const { data: newYear } = await supabase
+                      if (selectedValue.startsWith('create-')) {
+                        // User wants to create a new year
+                        const year = parseInt(selectedValue.replace('create-', ''));
+                        const confirmed = confirm(`Create business year ${year}?\n\nThis will create a new business year that you can start working on.`);
+                        
+                        if (!confirmed) {
+                          return; // User cancelled
+                        }
+                        
+                        try {
+                          const { data: newYear } = await supabase
+                            .from('rd_business_years')
+                            .insert({
+                              business_id: businessId,
+                              year: year,
+                              gross_receipts: 0,
+                              total_qre: 0
+                            })
+                            .select('id, year')
+                            .single();
+                          
+                          if (newYear) {
+                            console.log(`✅ Created business year ${year}:`, newYear.id);
+                            setWizardState(prev => ({
+                              ...prev,
+                              selectedYear: { id: newYear.id, year: newYear.year }
+                            }));
+                          }
+                        } catch (error) {
+                          console.error(`Failed to create business year ${year}:`, error);
+                          alert(`Failed to create business year ${year}. Please try again.`);
+                        }
+                      } else {
+                        // User selected existing business year
+                        const year = parseInt(selectedValue);
+                        
+                        // Find existing business year
+                        const { data: existingYear } = await supabase
                           .from('rd_business_years')
-                          .insert({
-                            business_id: businessId,
-                            year: year,
-                            gross_receipts: 0
-                          })
                           .select('id, year')
+                          .eq('business_id', businessId)
+                          .eq('year', year)
                           .single();
                         
-                        if (newYear) {
-                          businessYearData = { id: newYear.id, year: newYear.year };
+                        if (existingYear) {
+                          console.log(`✅ Selected existing business year ${year}:`, existingYear.id);
+                          setWizardState(prev => ({
+                            ...prev,
+                            selectedYear: { id: existingYear.id, year: existingYear.year }
+                          }));
                         }
                       }
-                      
-                      // Update wizard state with new year
-                      setWizardState(prev => ({
-                        ...prev,
-                        selectedYear: businessYearData
-                      }));
                     }}
                     className="rounded-md border-none bg-white/10 text-white shadow-sm focus:ring-2 focus:ring-blue-400 px-3 py-1 text-sm"
                   >
-                    {/* Generate year options from business start year to current + 1 */}
+                    {/* Show existing business years only, plus create options */}
                     {(() => {
                       const currentYear = new Date().getFullYear();
-                      const startYear = wizardState.business?.start_year || currentYear - 5;
-                      const years = [];
-                      for (let year = startYear; year <= currentYear + 1; year++) {
-                        years.push(year);
+                      const businessYears = wizardState.business?.rd_business_years || [];
+                      // FIXED: Remove duplicates to prevent React key warnings
+                      const existingYears = [...new Set(businessYears.map(by => by.year))].sort((a, b) => b - a);
+                      
+                      const options = [];
+                      
+                      // Add existing business years
+                      existingYears.forEach(year => {
+                        const hasData = businessYears.find(by => by.year === year && (by.total_qre > 0 || by.gross_receipts > 0));
+                        options.push(
+                          <option key={`existing-${year}`} value={year}>
+                            {year} {hasData ? '✓' : ''}
+                          </option>
+                        );
+                      });
+                      
+                      // Add separator if there are existing years
+                      if (existingYears.length > 0) {
+                        options.push(
+                          <option key="separator" disabled>── Create New Year ──</option>
+                        );
                       }
-                      return years.map(year => (
-                        <option key={year} value={year}>{year}</option>
-                      ));
+                      
+                      // Add create options for missing years
+                      const startYear = wizardState.business?.start_year || currentYear - 3;
+                      for (let year = currentYear + 1; year >= startYear; year--) {
+                        if (!existingYears.includes(year)) {
+                          options.push(
+                            <option key={`create-${year}`} value={`create-${year}`}>
+                              📅 Create {year}
+                            </option>
+                          );
+                        }
+                      }
+                      
+                      return options;
                     })()}
                   </select>
                 </div>

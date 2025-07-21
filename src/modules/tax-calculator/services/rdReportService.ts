@@ -44,15 +44,25 @@ export class RDReportService {
     try {
       const existingReport = await this.getReport(businessYearId, reportType);
       
+      // Prepare update data based on report type
+      const updateData: any = {
+        generated_text: `${reportType === 'FILING_GUIDE' ? 'Filing Guide' : 'Research Report'} generated on ${new Date().toLocaleDateString()}`,
+        editable_text: null,
+        updated_at: new Date().toISOString()
+      };
+
+      // Save to appropriate column based on report type
+      if (reportType === 'FILING_GUIDE') {
+        updateData.filing_guide = htmlContent;
+      } else {
+        updateData.generated_html = htmlContent;
+      }
+      
       if (existingReport) {
         // Update existing report
         const { data, error } = await supabase
           .from('rd_reports')
-          .update({
-            generated_html: htmlContent,
-            generated_text: `Research Report generated on ${new Date().toLocaleDateString()}`,
-            editable_text: null
-          })
+          .update(updateData)
           .eq('id', existingReport.id)
           .select()
           .single();
@@ -61,16 +71,24 @@ export class RDReportService {
         return data;
       } else {
         // Create new report
+        const insertData: any = {
+          business_year_id: businessYearId,
+          type: reportType,
+          generated_text: `${reportType === 'FILING_GUIDE' ? 'Filing Guide' : 'Research Report'} generated on ${new Date().toLocaleDateString()}`,
+          ai_version: 'gpt-4o-mini-2024-01-25',
+          locked: false
+        };
+
+        // Save to appropriate column based on report type
+        if (reportType === 'FILING_GUIDE') {
+          insertData.filing_guide = htmlContent;
+        } else {
+          insertData.generated_html = htmlContent;
+        }
+
         const { data, error } = await supabase
           .from('rd_reports')
-          .insert({
-            business_year_id: businessYearId,
-            type: reportType,
-            generated_html: htmlContent,
-            generated_text: `Research Report generated on ${new Date().toLocaleDateString()}`,
-            ai_version: 'gpt-4o-mini-2024-01-25',
-            locked: false
-          })
+          .insert(insertData)
           .select()
           .single();
 

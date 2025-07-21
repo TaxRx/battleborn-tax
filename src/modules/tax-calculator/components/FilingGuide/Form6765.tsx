@@ -276,12 +276,32 @@ export const Form6765: React.FC<Form6765Props> = ({
       const contractorQRE = getOverrideValue('B', 27) ?? (calculations?.currentYearQRE?.contractor_costs ?? 0);
       const totalQRE = employeeQRE + supplyQRE + computerQRE + contractorQRE;
       
-      // Check for 3 consecutive prior years with QREs
+      // Enhanced: Check for 3 consecutive prior years with QREs
       const historicalData = calculations?.historicalData || [];
-      const priorYears = historicalData.slice(0, 3); // Get the 3 most recent prior years
-      const has3ConsecutiveYears = priorYears.length === 3 && priorYears.every(year => (year.qre || 0) > 0);
+      console.log('🔍 [Form 6765 Pre-2024] ASC calculation - Historical data:', historicalData);
       
-      const priorQRE = getOverrideValue('B', 29) ?? (has3ConsecutiveYears ? priorYears.reduce((sum, y) => sum + (y.qre || 0), 0) : 0);
+      // Get exactly the 3 most recent prior years (excluding current year)
+      const currentYear = selectedYear?.year || new Date().getFullYear();
+      const priorYears = historicalData
+        .filter(year => year.year < currentYear && year.year >= (currentYear - 3))
+        .sort((a, b) => b.year - a.year)
+        .slice(0, 3);
+      
+      console.log('📊 [Form 6765 Pre-2024] ASC - Prior 3 years for calculation:', priorYears);
+      
+      // Check if we have exactly 3 consecutive years with QREs > 0
+      const has3ConsecutiveYears = priorYears.length === 3 && 
+        priorYears.every(year => (year.qre || 0) > 0) &&
+        priorYears[0].year === currentYear - 1 &&
+        priorYears[1].year === currentYear - 2 &&
+        priorYears[2].year === currentYear - 3;
+      
+      console.log('✅ [Form 6765 Pre-2024] ASC - Has 3 consecutive years with QREs:', has3ConsecutiveYears);
+      
+      const priorQRESum = has3ConsecutiveYears ? 
+        priorYears.reduce((sum, y) => sum + (y.qre || 0), 0) : 0;
+      
+      const priorQRE = getOverrideValue('B', 29) ?? priorQRESum;
       
       // Calculate lines 30 and 31 only if we have 3 consecutive years with QREs
       const line30 = has3ConsecutiveYears ? priorQRE / 6.0 : 0;
@@ -291,6 +311,16 @@ export const Form6765: React.FC<Form6765Props> = ({
       const line32 = has3ConsecutiveYears 
         ? line31 * 0.14  // 14% rate if 3 consecutive years with QREs
         : totalQRE * 0.06; // 6% rate if not 3 consecutive years
+      
+      console.log('💰 [Form 6765 Pre-2024] ASC calculation results:', {
+        totalQRE,
+        priorQRESum,
+        has3ConsecutiveYears,
+        line30,
+        line31,
+        line32,
+        rate: has3ConsecutiveYears ? '14%' : '6%'
+      });
       
       const line33 = (getOverrideValue('B', 23) ?? 0) + line32;
       const line34Yes = line33 * 0.79;

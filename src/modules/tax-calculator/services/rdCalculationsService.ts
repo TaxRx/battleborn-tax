@@ -266,7 +266,10 @@ export class RDCalculationsService {
     if (validPriorYears.length === 3) {
       avgPriorQRE = validPriorYears.reduce((sum, year) => sum + year.qre, 0) / 3;
       calculationDetails.push(`ASC Multi-year: Avg Prior QRE = $${avgPriorQRE.toFixed(2)}`);
-      incrementalQRE = Math.max(currentYearQRE - avgPriorQRE, 0);
+      // FIXED: Use 50% of average prior QRE as base amount (IRS regulation)
+      const baseAmount = avgPriorQRE * 0.5;
+      incrementalQRE = Math.max(currentYearQRE - baseAmount, 0);
+      calculationDetails.push(`Base Amount (50% of Avg Prior QRE): $${baseAmount.toFixed(2)}`);
       calculationDetails.push(`Incremental QRE: $${incrementalQRE.toFixed(2)}`);
       credit = incrementalQRE * 0.14;
       calculationDetails.push(`Credit (14%): $${credit.toFixed(2)}`);
@@ -274,8 +277,9 @@ export class RDCalculationsService {
     } else if (validPriorYears.length > 0) {
       avgPriorQRE = validPriorYears.reduce((sum, year) => sum + year.qre, 0) / validPriorYears.length;
       calculationDetails.push(`ASC Single-year: Avg Prior QRE = $${avgPriorQRE.toFixed(2)}`);
-      incrementalQRE = Math.max(currentYearQRE - avgPriorQRE, 0);
-      calculationDetails.push(`Incremental QRE: $${incrementalQRE.toFixed(2)}`);
+      // For single-year/startup method, use 6% of current year QRE (no incremental calculation)
+      incrementalQRE = 0; // Not used for startup provision
+      calculationDetails.push(`Using startup provision (6% of current QRE)`);
       credit = currentYearQRE * 0.06;
       calculationDetails.push(`Credit (6%): $${credit.toFixed(2)}`);
       isStartup = true; // Single-year method (startup provision)

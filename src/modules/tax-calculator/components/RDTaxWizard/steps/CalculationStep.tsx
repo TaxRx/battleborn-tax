@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Calculator, TrendingUp, Building2, MapPin, DollarSign, AlertTriangle, CheckCircle, Info, Settings as SettingsIcon, ChevronDown, ChevronUp, FileText, RefreshCw, BarChart3 } from 'lucide-react';
+import { Calculator, TrendingUp, Building2, MapPin, DollarSign, AlertTriangle, CheckCircle, Info, Settings as SettingsIcon, ChevronDown, ChevronUp, ChevronRight, FileText, RefreshCw, BarChart3 } from 'lucide-react';
 import { RDCalculationsService, CalculationResults, FederalCreditResults } from '../../../services/rdCalculationsService';
 import { StateCalculationService, StateCalculationResult, QREBreakdown } from '../../../services/stateCalculationService';
+import { StateProFormaCalculationService } from '../../../services/stateProFormaCalculationService';
 import { toast } from 'react-hot-toast';
 import { supabase } from '../../../lib/supabase';
 import { FilingGuideModal } from '../../FilingGuide/FilingGuideModal';
 import AllocationReportModal from '../../AllocationReport/AllocationReportModal';
+import { IntegratedFederalCredits } from './IntegratedFederalCredits';
+import { IntegratedStateCredits } from './IntegratedStateCredits';
 
 // Standardized rounding functions
 const roundToDollar = (value: number): number => Math.round(value);
@@ -144,16 +147,14 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
             })}
           </svg>
           
-          {/* Value labels */}
-          <div className="flex justify-between mt-2 text-xs text-gray-500">
+          {/* Value labels - Compact display for better UX */}
+          <div className="flex justify-between mt-2 text-xs text-gray-500 overflow-hidden">
             {data.map((item, index) => (
-              <div key={index} className="text-center">
-                <div className="font-medium">{item.label}</div>
-                <div className="text-gray-600">
+              <div key={index} className="text-center flex-1 min-w-0">
+                <div className="font-medium truncate">{item.label}</div>
+                <div className="text-gray-600 text-xs">
                   {typeof item.value === 'number' && item.value >= 1000 
                     ? `$${(item.value / 1000).toFixed(0)}k`
-                    : typeof item.value === 'number' && item.value < 1
-                    ? `${(item.value * 100).toFixed(1)}%`
                     : typeof item.value === 'number'
                     ? `$${item.value.toLocaleString()}`
                     : '$0'
@@ -207,8 +208,6 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
                   <div className="absolute top-0 right-0 text-xs text-gray-500 mt-1">
                     {typeof item.value === 'number' && item.value >= 1000 
                       ? `$${(item.value / 1000).toFixed(0)}k`
-                      : typeof item.value === 'number' && item.value < 1
-                      ? `${(item.value * 100).toFixed(1)}%`
                       : typeof item.value === 'number'
                       ? `$${item.value.toLocaleString()}`
                       : '$0'
@@ -246,6 +245,14 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
   const [selectedStateMethod, setSelectedStateMethod] = useState<string>('Standard');
   const [availableStateMethods, setAvailableStateMethods] = useState<string[]>([]);
   const [stateCalculations, setStateCalculations] = useState<any[]>([]);
+  const [enableStateCredits, setEnableStateCredits] = useState(true);
+
+  // State gross receipts management
+  const [stateGrossReceipts, setStateGrossReceipts] = useState<{[year: string]: number}>({});
+  const [showStateGrossReceipts, setShowStateGrossReceipts] = useState(false);
+
+  // Historical accordion state
+  const [showOlderYears, setShowOlderYears] = useState(false);
 
   // State for manual variable overrides
   const [manualOverrides, setManualOverrides] = useState<{[key: string]: number}>({});
@@ -526,11 +533,13 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           return year.year !== currentYear; // Historical years are external
         };
 
-        setHistoricalCards(yearsWithSupplyData.map((year, idx) => {
+        // Create unique historical cards and remove duplicates
+        const uniqueCards = yearsWithSupplyData.map((year, idx) => {
           const breakdown = getQREBreakdown(year);
           const asc = getASCCredit(idx);
           const std = getStandardCredit(idx);
           return {
+            id: year.id, // Include unique ID
             year: year.year,
             qre: getQRE(year),
             ...breakdown,
@@ -545,7 +554,14 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
             stdGross: std.gross,
             calculationDetails: null // Placeholder, will be populated later
           };
-        }));
+        });
+        
+        // Remove duplicates based on year and id combination
+        const deduplicatedCards = uniqueCards.filter((card, index, arr) => 
+          arr.findIndex(c => c.year === card.year && c.id === card.id) === index
+        );
+        
+        setHistoricalCards(deduplicatedCards);
         
         setAvailableActivityYears(yearsWithSupplyData.sort((a, b) => b.year - a.year));
         setAllYears(yearsWithSupplyData.sort((a, b) => b.year - a.year));
@@ -750,29 +766,85 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
         let ascCredit = 0;
         let ascPercent = 0;
         let ascAvgPrior3 = null;
+        
+        // Enhanced debugging for ASC calculation
+        console.log(`🔍 ASC Debug for ${year.year}:`, {
+          qre,
+          isExternalQRE,
+          total_qre: year.total_qre,
+          hasEmployeeData: !!year.employees?.length,
+          hasContractorData: !!year.contractors?.length,
+          hasSupplyData: !!year.supplies?.length
+        });
+        
         // Find 3 consecutive prior years with QREs > 0
         let validPriorQREs = [];
+        let priorYearDetails = [];
+        
         for (let i = idx - 1; i >= 0 && validPriorQREs.length < 3; i--) {
           let priorQRE = 0;
-          if (allYears[i].total_qre > 0) priorQRE = allYears[i].total_qre;
-          else {
-            const empQRE = allYears[i].employees?.reduce((sum, e) => sum + roundToDollar(e.calculated_qre || 0), 0) || 0;
-            const contQRE = allYears[i].contractors?.reduce((sum, c) => sum + roundToDollar(c.calculated_qre || 0), 0) || 0;
-            const supQRE = allYears[i].supplies?.reduce((sum, s) => sum + roundToDollar(s.calculated_qre || 0), 0) || 0;
+          const priorYear = allYears[i];
+          
+          // Check external QRE first, then internal calculation
+          if (priorYear.total_qre > 0) {
+            priorQRE = priorYear.total_qre;
+          } else if (priorYear.employees || priorYear.contractors || priorYear.supplies) {
+            const empQRE = priorYear.employees?.reduce((sum, e) => sum + roundToDollar(e.calculated_qre || 0), 0) || 0;
+            const contQRE = priorYear.contractors?.reduce((sum, c) => sum + roundToDollar(c.calculated_qre || 0), 0) || 0;
+            const supQRE = priorYear.supplies?.reduce((sum, s) => sum + roundToDollar(s.calculated_qre || 0), 0) || 0;
             priorQRE = roundToDollar(empQRE + contQRE + supQRE);
           }
-          if (priorQRE > 0) validPriorQREs.push(priorQRE);
-          else break; // must be consecutive
+          
+          priorYearDetails.push({
+            year: priorYear.year,
+            qre: priorQRE,
+            external: priorYear.total_qre > 0
+          });
+          
+          if (priorQRE > 0) {
+            validPriorQREs.push(priorQRE);
+          } else {
+            // For ASC, we can be more lenient - don't break on first zero year
+            // Allow gaps in historical data for a more practical calculation
+            console.log(`⚠️ Year ${priorYear.year} has no QRE data - continuing search`);
+          }
         }
+        
         validPriorQREs = validPriorQREs.reverse();
-        if (validPriorQREs.length === 3) {
-          const avgPrior3 = validPriorQREs.reduce((a, b) => a + b, 0) / 3;
-          ascCredit = roundToDollar(Math.max(0, (qre - avgPrior3) * 0.14));
+        priorYearDetails.reverse();
+        
+        console.log(`📊 Prior year QRE details for ${year.year}:`, priorYearDetails);
+        console.log(`✅ Valid prior QREs found: ${validPriorQREs.length}`, validPriorQREs);
+        
+        // ASC Calculation Logic
+        if (validPriorQREs.length >= 3) {
+          // Multi-year ASC (14% rate) - CORRECTED FORMULA: 14% × max(0, Current QRE - 50% of avg prior 3 years)
+          const avgPrior3 = validPriorQREs.slice(0, 3).reduce((a, b) => a + b, 0) / 3;
+          const fiftyPercentOfAvg = avgPrior3 * 0.5; // 50% of average prior 3 years
+          const incrementalQRE = Math.max(0, qre - fiftyPercentOfAvg);
+          ascCredit = roundToDollar(incrementalQRE * 0.14);
           ascPercent = 14;
           ascAvgPrior3 = roundToDollar(avgPrior3);
-        } else {
+          
+          console.log(`✅ Multi-year ASC for ${year.year}: ${formatCurrency(ascCredit)} (${qre} - 50% of ${avgPrior3} = ${qre} - ${fiftyPercentOfAvg} = ${incrementalQRE} * 14%)`);
+        } else if (validPriorQREs.length >= 1) {
+          // Simplified ASC with available data (6% rate)
           ascCredit = roundToDollar(qre * 0.06);
           ascPercent = 6;
+          
+          console.log(`⚡ Single-year ASC for ${year.year}: ${formatCurrency(ascCredit)} (${qre} * 6%)`);
+        } else {
+          // Startup provision (6% rate)
+          ascCredit = roundToDollar(qre * 0.06);
+          ascPercent = 6;
+          
+          console.log(`🚀 Startup ASC for ${year.year}: ${formatCurrency(ascCredit)} (${qre} * 6%)`);
+        }
+        
+        // Ensure we have a valid credit amount
+        if (qre > 0 && ascCredit === 0) {
+          // Don't log this as an error - it's valid ASC logic when incremental QRE is 0
+          console.log(`ℹ️ ASC calculation: ${year.year} has QRE = ${qre}, but incremental QRE is 0 or negative, resulting in credit = 0`);
         }
 
         // QRE breakdown for bar chart (only for internal QREs)
@@ -889,298 +961,65 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
     };
   }, [results?.currentYearQRE]);
 
-  // Load state calculations when QRE breakdown changes
+  // 🔧 FIX: Load state credits from State Pro Forma calculations using correct final credit fields
   useEffect(() => {
-    const loadStateCalculations = async () => {
-      if (!qreBreakdown || qreBreakdown.total_qre === 0) {
-        console.log('🔍 State Credits - No QRE data available:', { qreBreakdown });
+    const loadStateCreditsFromProForma = async () => {
+      if (!wizardState.selectedYear?.id) {
         setStateCredits([]);
-        setStateCalculations([]);
-        setAvailableStateMethods([]);
-        setStateLoading(false);
         return;
       }
 
-      console.log('🔍 State Credits - Loading calculations for:', {
-        businessState: wizardState.business?.contact_info?.state || wizardState.business?.state,
-        qreBreakdown,
-        selectedActivityYear
-      });
-
-      setStateLoading(true);
       try {
-        const year = selectedActivityYear || new Date().getFullYear();
-        const businessState = wizardState.business?.contact_info?.state || wizardState.business?.state;
+        console.log('🔍 State Credits - Loading from Pro Forma calculations with correct field mapping...');
         
-        if (!businessState) {
-          console.log('🔍 State Credits - No business state found');
-          setStateCredits([]);
-          setStateCalculations([]);
-          setAvailableStateMethods([]);
-          setStateLoading(false);
-          return;
-        }
-
-        // Test database connectivity and check available tables
-        try {
-          const { data: testData, error: testError } = await supabase
-            .from('rd_business_years')
-            .select('count')
-            .limit(1);
-          
-          if (testError) {
-            console.error('Database connectivity issue:', testError);
-            toast.error('Database connection error: ' + testError.message);
-            setStateCredits([]);
-            setStateCalculations([]);
-            setAvailableStateMethods([]);
-            setStateLoading(false);
-            return;
-          }
-        } catch (connectError) {
-          console.error('Database connectivity test failed:', connectError);
-          toast.error('Database connection failed');
-          setStateCredits([]);
-          setStateCalculations([]);
-          setAvailableStateMethods([]);
-          setStateLoading(false);
-          return;
-        }
-
-        // Query rd_state_calculations_full table for the selected state and year
-        let { data: calculationRows, error } = await supabase
-          .from('rd_state_calculations_full')
-          .select('*')
-          .eq('state', businessState);
-
-        // Filter rows in JS: start_year is 'unknown' or <= year, and (end_year is null or >= year or 'unknown')
-        if (calculationRows) {
-          calculationRows = calculationRows.filter(row => {
-            const startOk = row.start_year === 'unknown' || (!isNaN(parseInt(row.start_year)) && parseInt(row.start_year) <= year);
-            const endOk = !row.end_year || row.end_year === 'unknown' || (!isNaN(parseInt(row.end_year)) && parseInt(row.end_year) >= year);
-            return startOk && endOk;
-          });
-        }
+        // Get business state from wizardState (same as how we determine it above)
+        const businessState = wizardState.business?.state || wizardState.business?.contact_info?.state || 'CA';
+        console.log('🔍 State Credits - Business state from wizardState:', businessState);
         
-        if (error) {
-          console.error('Supabase error:', error);
-          toast.error('Error loading state credit data: ' + error.message);
-          setStateCredits([]);
-          setStateCalculations([]);
-          setAvailableStateMethods([]);
-          setStateLoading(false);
-          return;
-        }
-
-        if (!calculationRows || calculationRows.length === 0) {
-          // Try to check what tables exist
-          const { data: tables } = await supabase
-            .from('information_schema.tables')
-            .select('table_name')
-            .eq('table_schema', 'public')
-            .like('table_name', '%state%');
-          
-          // Provide fallback calculation based on state
-          const fallbackCredit = calculateFallbackStateCredit(businessState, qreBreakdown.total_qre);
-          
-          setStateCredits([{
-            method: 'Standard',
-            credit: fallbackCredit,
-            formula: `Fallback calculation for ${businessState}`,
-            info: `No specific state credit data found for ${businessState}. Using estimated calculation.`,
-            refundable: 'No',
-            carryforward: '15 years',
-            eligible_entities: null,
-            special_notes: 'This is a fallback calculation. Please verify with your tax advisor.',
-            formula_correct: 'Estimated'
-          }]);
-          setStateCalculations([{
+        // Use enhanced StateProFormaCalculationService to get REAL state credit from correct field
+        const proFormaResult = await StateProFormaCalculationService.getAllStateCreditsFromProForma(
+          wizardState.selectedYear.id,
+          businessState // Pass the business state we extracted above
+        );
+        console.log('🔍 State Credits - Pro forma result:', proFormaResult);
+        
+        if (proFormaResult.total > 0) {
+          // Convert the pro forma results into the expected UI format for state credits
+          const stateCreditsUI = [{
             state: businessState,
-            standard_credit_formula: `Fallback for ${businessState}`,
-            alternate_credit_formula: null,
-            additional_credit_formula: null,
-            standard_info: 'Fallback calculation',
-            alternative_info: null,
-            other_info: null,
-            refundable: 'No',
-            carryforward: '15 years',
-            eligible_entities: null,
-            special_notes: 'Fallback calculation',
-            formula_correct: 'Estimated'
-          }]);
-          setAvailableStateMethods(['Standard']);
-          setStateLoading(false);
-          return;
-        }
-
-        // Only one row per state/year, but may have multiple formulas
-        const row = calculationRows[0];
-        const methods: string[] = [];
-        if (row.standard_credit_formula) methods.push('Standard');
-        if (row.alternate_credit_formula) methods.push('Alternative');
-        if (row.additional_credit_formula) methods.push('Additional');
-        setAvailableStateMethods(methods);
-        setStateCalculations([row]);
-
-        // Calculate credits for each method
-        const calculatedCredits = [];
-        // Standard
-        if (row.standard_credit_formula) {
-          const standardCredit = cleanAndEvaluateStateFormula(row.standard_credit_formula, qreBreakdown, wizardState.business, year);
-          calculatedCredits.push({
             method: 'Standard',
-            credit: standardCredit,
-            formula: row.standard_credit_formula,
-            info: row.standard_info,
-            refundable: row.refundable,
-            carryforward: row.carryforward,
-            eligible_entities: row.eligible_entities,
-            special_notes: row.special_notes,
-            formula_correct: row.formula_correct
-          });
+            credit: proFormaResult.total,
+            methods: [{
+              name: 'Standard',
+              credit: proFormaResult.breakdown[`${businessState}_standard`] || proFormaResult.total
+            }]
+          }];
+          
+          // Add alternative method if available
+          const alternativeCredit = proFormaResult.breakdown[`${businessState}_alternative`];
+          if (alternativeCredit && alternativeCredit > 0) {
+            stateCreditsUI[0].methods.push({
+              name: 'Alternative',
+              credit: alternativeCredit
+            });
+          }
+          
+          setStateCredits(stateCreditsUI);
+          console.log('🔍 State Credits - Successfully loaded pro forma calculations with correct fields:', stateCreditsUI);
+        } else {
+          // Fallback if no pro forma data is available
+          console.log('🔍 State Credits - No pro forma data available, using fallback calculation');
+          setStateCredits([]);
         }
-        // Alternative
-        if (row.alternate_credit_formula) {
-          const alternativeCredit = cleanAndEvaluateStateFormula(row.alternate_credit_formula, qreBreakdown, wizardState.business, year);
-          calculatedCredits.push({
-            method: 'Alternative',
-            credit: alternativeCredit,
-            formula: row.alternate_credit_formula,
-            info: row.alternative_info,
-            refundable: row.refundable,
-            carryforward: row.carryforward,
-            eligible_entities: row.eligible_entities,
-            special_notes: row.special_notes,
-            formula_correct: row.formula_correct
-          });
-        }
-        // Additional (always apply in addition to selected method)
-        if (row.additional_credit_formula) {
-          const additionalCredit = cleanAndEvaluateStateFormula(row.additional_credit_formula, qreBreakdown, wizardState.business, year);
-          calculatedCredits.push({
-            method: 'Additional',
-            credit: additionalCredit,
-            formula: row.additional_credit_formula,
-            info: row.other_info,
-            refundable: row.refundable,
-            carryforward: row.carryforward,
-            eligible_entities: row.eligible_entities,
-            special_notes: row.special_notes,
-            formula_correct: row.formula_correct
-          });
-        }
-        setStateCredits(calculatedCredits);
-        setStateCalculations(calculationRows);
-        setAvailableStateMethods(methods);
-        setSelectedStateMethod(methods[0] || 'Standard');
         
-        console.log('🔍 State Credits - Successfully loaded:', {
-          creditsCount: calculatedCredits.length,
-          totalStateCredits: calculatedCredits.reduce((sum, c) => sum + (c.credit || 0), 0),
-          methods,
-          selectedStateMethod: methods[0] || 'Standard'
-        });
-      } catch (e) {
-        console.error('[STATE CREDIT] ❌ Exception in state credit calculation:', e);
-        toast.error('Error calculating state credits: ' + e.message);
+      } catch (error) {
+        console.error('🔍 State Credits - Error loading from pro forma:', error);
         setStateCredits([]);
-        setStateCalculations([]);
-        setAvailableStateMethods([]);
-      } finally {
-        setStateLoading(false);
       }
     };
-    loadStateCalculations();
-  }, [qreBreakdown, selectedActivityYear, wizardState.business?.state, manualOverrides]);
 
-  // --- Update cleanAndEvaluateStateFormula to support Avg Gross Receipts for prior 3 years ---
-  const cleanAndEvaluateStateFormula = (formula: string, qreBreakdown: any, business: any, year: number): number => {
-    try {
-      const qres = qreBreakdown.total_qre || 0;
-      const wages = qreBreakdown.employee_costs || 0;
-      const contractors = qreBreakdown.contractor_costs || 0;
-      const supplies = qreBreakdown.supply_costs || 0;
-      // Use selectedYearGrossReceipts for all calculations
-      const grossReceipts = selectedYearGrossReceipts;
-      const avgGrossReceipts = avgPrior3GrossReceipts;
-      const basicPayments = business?.basic_research_payments || 0;
-      const fixedBasePercent = 0.03;
-      
-      let evaluatedFormula = formula
-        .replace(/Credit\s*=\s*/gi, '')
-        .replace(/or\s*/gi, '')
-        .replace(/direct/gi, '')
-        .replace(/\bpercent\b/gi, '')
-        .replace(/\bpercentages?\b/gi, '')
-        .replace(/\bof\b/gi, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-      
-      // Replace variables in specific order to avoid conflicts
-      evaluatedFormula = evaluatedFormula.replace(/QREs/gi, qres.toString());
-      evaluatedFormula = evaluatedFormula.replace(/employee costs/gi, wages.toString());
-      evaluatedFormula = evaluatedFormula.replace(/contractor costs/gi, contractors.toString());
-      evaluatedFormula = evaluatedFormula.replace(/supply costs/gi, supplies.toString());
-      evaluatedFormula = evaluatedFormula.replace(/basic payments/gi, basicPayments.toString());
-      
-      // Handle "Avg Gross Receipts for prior 3 years" first (most specific)
-      evaluatedFormula = evaluatedFormula.replace(/(Avg|avg)?\s*Gross\s*Receipts\s*for\s*prior\s*3\s*years/gi, avgGrossReceipts.toString());
-      evaluatedFormula = evaluatedFormula.replace(/(Avg|avg)?\s*Gross\s*Receipts\s*for\s*prior\s*three\s*years/gi, avgGrossReceipts.toString());
-      evaluatedFormula = evaluatedFormula.replace(/(Avg|avg)?\s*Gross\s*Receipts\s*for\s*prior\s*years/gi, avgGrossReceipts.toString());
-      
-      // Handle "Avg Gross Receipts" (less specific)
-      evaluatedFormula = evaluatedFormula.replace(/(Avg|avg)?\s*Gross\s*Receipts/gi, grossReceipts.toString());
-      evaluatedFormula = evaluatedFormula.replace(/Gross\s*Receipts/gi, grossReceipts.toString());
-      
-      evaluatedFormula = evaluatedFormula.replace(/Fixed-Base\s*%/gi, fixedBasePercent.toString());
-      evaluatedFormula = evaluatedFormula.replace(/Fixed-/gi, '');
-      
-      // Convert math symbols
-      evaluatedFormula = evaluatedFormula
-        .replace(/×/g, '*')
-        .replace(/÷/g, '/')
-        .replace(/−/g, '-')
-        .replace(/%/g, '/100');
-      
-      // Clean up any remaining text that should be removed - more aggressive
-      evaluatedFormula = evaluatedFormula
-        .replace(/\bfor prior 3 years\b/gi, '')
-        .replace(/\bprior 3 years\b/gi, '')
-        .replace(/\bprior three years\b/gi, '')
-        .replace(/\bprior years\b/gi, '')
-        .replace(/\bavg\b/gi, '')
-        .replace(/\baverage\b/gi, '')
-        .replace(/\bfpri3 years\b/gi, '') // Remove the leftover fragment
-        .replace(/\bfpri\b/gi, '') // Remove any "fpri" fragments
-        .replace(/\byears\b/gi, '') // Remove any standalone "years"
-        .replace(/\s+/g, ' ')
-        .trim();
-      
-      // Clean up math syntax
-      evaluatedFormula = evaluatedFormula
-        .replace(/\*\*/g, '*')
-        .replace(/\+\+/g, '+')
-        .replace(/--/g, '-')
-        .replace(/\(\s*\)/g, '(0)')
-        .replace(/\(\s*([+\-*/])\s*\)/g, '(0)')
-        .replace(/\s+/g, ' ')
-        .trim();
-      
-      // Remove leading/trailing operators
-      evaluatedFormula = evaluatedFormula.replace(/^[+\-*/\s]+|[+\-*/\s]+$/g, '');
-      
-      if (!/^[-+*/().\d\s]+$/.test(evaluatedFormula)) {
-        console.error('Formula contains invalid characters:', evaluatedFormula);
-        return 0;
-      }
-      
-      const result = Function('"use strict"; return (' + evaluatedFormula + ')')();
-      return isNaN(result) ? 0 : Math.max(0, result);
-    } catch (error) {
-      console.error('Error evaluating state formula:', formula, error);
-      return 0;
-    }
-  };
+    loadStateCreditsFromProForma();
+  }, [wizardState.selectedYear?.id, wizardState.business?.state, wizardState.business?.contact_info?.state]);
 
   // Enhanced formula evaluation with fallback for complex formulas
   const evaluateComplexFormula = (formula: string, qreBreakdown: any, business: any, state: string): number => {
@@ -1251,6 +1090,34 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
 
     const rate = stateRates[state] || 0.05; // Default to 5% if state not found
     return totalQRE * rate;
+  };
+
+  // Fallback alternative state credit calculation
+  const calculateFallbackAlternativeStateCredit = (state: string, totalQRE: number): number => {
+    // Alternative calculation rates (typically different than standard)
+    const alternativeRates: { [key: string]: number } = {
+      'CA': 0.15, // California - same rate but different base calculation
+      'NY': 0.045, // New York - startup method
+      'IL': 0.0325, // Illinois - simplified method  
+      'CT': 0.06, // Connecticut - non-incremental
+      'AZ': 0.12, // Arizona - simplified method
+      'NJ': 0.05, // New Jersey - basic research
+      'MA': 0.05, // Massachusetts - current method
+    };
+
+    const rate = alternativeRates[state] || 0.05; // Default to 5% if state not found
+    return totalQRE * rate;
+  };
+
+  // Check if state requires gross receipts data
+  const stateRequiresGrossReceipts = (state: string): boolean => {
+    const grossReceiptsStates = ['CA', 'IA', 'SC', 'AZ', 'PA', 'NY', 'MA', 'NJ', 'OH', 'IL', 'FL', 'GA', 'CT'];
+    return grossReceiptsStates.includes(state);
+  };
+
+  // Get required years for gross receipts
+  const getGrossReceiptsYears = (selectedYear: number): number[] => {
+    return [selectedYear - 1, selectedYear - 2, selectedYear - 3, selectedYear - 4];
   };
 
   // Helper functions for variable overrides
@@ -1502,6 +1369,102 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
     return { qreData, creditData, efficiencyData };
   };
 
+  // Effect to check state gross receipts requirements and load existing data
+  useEffect(() => {
+    const checkGrossReceiptsRequirements = async () => {
+      if (!wizardState.business?.state || !selectedYearData) return;
+      
+      const businessState = wizardState.business.state;
+      const requiresGrossReceipts = stateRequiresGrossReceipts(businessState);
+      setShowStateGrossReceipts(requiresGrossReceipts);
+      
+      if (requiresGrossReceipts) {
+        // Load existing state gross receipts data from rd_reports
+        try {
+          const { data: reportData, error } = await supabase
+            .from('rd_reports')
+            .select('state_gross_receipts')
+            .eq('business_year_id', selectedYearData.id)
+            .eq('type', 'calculation')
+            .single();
+          
+          if (!error && reportData?.state_gross_receipts) {
+            setStateGrossReceipts(reportData.state_gross_receipts);
+          } else {
+            // Prepopulate with federal gross receipts if available
+            const currentYear = selectedYearData.year;
+            const requiredYears = getGrossReceiptsYears(currentYear);
+            const initialGrossReceipts: {[year: string]: number} = {};
+            
+            // Try to get federal gross receipts from business years
+            const { data: businessYears } = await supabase
+              .from('rd_business_years')
+              .select('year, gross_receipts')
+              .eq('business_id', wizardState.business.id)
+              .in('year', requiredYears);
+            
+            if (businessYears) {
+              businessYears.forEach(year => {
+                if (year.gross_receipts) {
+                  initialGrossReceipts[year.year.toString()] = year.gross_receipts;
+                }
+              });
+            }
+            
+            setStateGrossReceipts(initialGrossReceipts);
+          }
+        } catch (error) {
+          console.error('Error loading state gross receipts:', error);
+        }
+      }
+    };
+    
+    checkGrossReceiptsRequirements();
+  }, [wizardState.business?.state, selectedYearData?.id]);
+
+  // State gross receipts saving functionality
+  const saveStateGrossReceipts = async (grossReceiptsData: {[year: string]: number}) => {
+    if (!selectedYearData?.id) return;
+    
+    try {
+      // Upsert rd_reports record with state gross receipts data
+      const { error } = await supabase
+        .from('rd_reports')
+        .upsert({
+          business_year_id: selectedYearData.id,
+          business_id: wizardState.business?.id,
+          type: 'calculation',
+          state_gross_receipts: grossReceiptsData,
+          generated_text: 'State gross receipts data',
+          ai_version: '1.0',
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'business_year_id,type',
+          ignoreDuplicates: false
+        });
+      
+      if (error) {
+        console.error('Error saving state gross receipts:', error);
+        return;
+      }
+      
+      console.log('State gross receipts saved successfully');
+    } catch (error) {
+      console.error('Error saving state gross receipts:', error);
+    }
+  };
+
+  // Handle state gross receipts input changes
+  const handleStateGrossReceiptsChange = (year: string, value: number) => {
+    const updatedGrossReceipts = { ...stateGrossReceipts, [year]: value };
+    setStateGrossReceipts(updatedGrossReceipts);
+    
+    // Auto-save after a brief delay
+    setTimeout(() => {
+      saveStateGrossReceipts(updatedGrossReceipts);
+    }, 1000);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1605,10 +1568,10 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                   <MapPin className="w-4 h-4 mr-1 text-green-500" />
                   State Credit
                   <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-semibold">
-                    {selectedStateMethod}
+                    {enableStateCredits ? selectedStateMethod : 'Disabled'}
                   </span>
                 </span>
-                <span className="text-lg font-bold text-green-700">{formatCurrency(totalStateCredits)}</span>
+                <span className="text-lg font-bold text-green-700">{formatCurrency(enableStateCredits ? totalStateCredits : 0)}</span>
         </div>
               <div className="border-t border-gray-200 w-full my-1"></div>
               <div className="flex items-center justify-between w-full">
@@ -1617,7 +1580,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                   Total Credits
                 </span>
                 <span className="text-2xl font-extrabold text-purple-700 drop-shadow-lg">
-                  {formatCurrency((selectedMethod === 'asc' ? federalCredits.asc.credit : federalCredits.standard.credit) + totalStateCredits)}
+                  {formatCurrency((selectedMethod === 'asc' ? federalCredits.asc.credit : federalCredits.standard.credit) + (enableStateCredits ? totalStateCredits : 0))}
                 </span>
           </div>
         </div>
@@ -1691,19 +1654,25 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <KPIChart 
           title="QREs Over Years" 
-          data={(chartData?.qreData || []).sort((a, b) => a.year - b.year).map(item => ({ label: item.year.toString(), value: item.qre }))} 
+          data={(chartData?.qreData || [])
+            .sort((a, b) => a.year - b.year)
+            .map(item => ({ label: item.year.toString(), value: item.qre }))} 
           type="line" 
           color="bg-blue-500" 
         />
         <KPIChart 
           title="Total Federal Credits Over Years" 
-          data={(chartData?.creditData || []).sort((a, b) => a.year - b.year).map(item => ({ label: item.year.toString(), value: item.federalCredit }))} 
+          data={(chartData?.creditData || [])
+            .sort((a, b) => a.year - b.year)
+            .map(item => ({ label: item.year.toString(), value: item.federalCredit }))} 
           type="line" 
           color="bg-green-500" 
         />
         <KPIChart 
           title="Total State Credits Over Years" 
-          data={(chartData?.creditData || []).sort((a, b) => a.year - b.year).map(item => ({ label: item.year.toString(), value: item.stateCredit }))} 
+          data={(chartData?.creditData || [])
+            .sort((a, b) => a.year - b.year)
+            .map(item => ({ label: item.year.toString(), value: item.stateCredit }))} 
           type="line" 
           color="bg-purple-500" 
         />
@@ -1711,466 +1680,51 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
 
       {/* Two Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Federal Credits */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-              <Building2 className="w-5 h-5 mr-2" />
-              Federal Credits
-            </h3>
-            <div className="text-right">
-              <div className="text-sm text-gray-600">Total Federal</div>
-              <div className="text-xl font-bold text-blue-600">
-                {formatCurrency(selectedMethod === 'asc' ? federalCredits.asc.credit : federalCredits.standard.credit)}
-              </div>
-              </div>
-            </div>
+        {/* Federal Credits - INTEGRATED */}
+        <IntegratedFederalCredits
+          businessData={wizardState.business}
+          selectedYear={selectedYearData}
+          calculations={results}
+          selectedMethod={selectedMethod}
+          onMethodChange={setSelectedMethod}
+          corporateTaxRate={corporateTaxRate}
+          use280C={use280C}
+          onUse280CChange={setUse280C}
+          onTaxRateChange={setCorporateTaxRate}
+        />
 
-          {/* Calculation Settings */}
-          <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Method</label>
-                <select
-                  value={selectedMethod}
-                  onChange={(e) => setSelectedMethod(e.target.value as 'standard' | 'asc')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                >
-                  <option value="asc">ASC</option>
-                  <option value="standard">Standard</option>
-                </select>
-          </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tax Rate (%)</label>
-                <input
-                  type="number"
-                  value={corporateTaxRate}
-                  onChange={(e) => setCorporateTaxRate(Number(e.target.value))}
-                  min="0"
-                  max="100"
-                  step="0.1"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                />
-              </div>
-              <div className="flex items-center">
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={use280C}
-                    onChange={(e) => setUse280C(e.target.checked)}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">280C Election</span>
-                </label>
-              </div>
-        </div>
+        {/* State Credits - INTEGRATED */}
+        <IntegratedStateCredits
+          businessData={wizardState.business}
+          selectedYear={selectedYearData}
+          calculations={results}
+          stateCredits={stateCredits}
+          enableStateCredits={enableStateCredits}
+          onEnableStateCreditsChange={setEnableStateCredits}
+          selectedStateMethod={selectedStateMethod}
+          onStateMethodChange={setSelectedStateMethod}
+          availableStateMethods={availableStateMethods}
+          totalStateCredits={totalStateCredits}
+          stateLoading={stateLoading}
+        />
       </div>
 
-          {/* Credit Calculations */}
-        <div className="space-y-4">
-            {/* ASC Credit */}
-            <div className="bg-gray-50 rounded-lg p-4">
-              <div className="flex justify-between items-center mb-2">
-                <span className="font-medium">ASC Credit</span>
-                <span className="text-lg font-semibold text-green-600">{formatCurrency(federalCredits.asc.credit)}</span>
-              </div>
-              <div className="text-xs text-gray-600 space-y-1">
-                <div>Current QRE: {formatCurrency(federalCurrentYearQRE.total)}</div>
-                <div>Avg Prior QRE: {formatCurrency(federalCredits.asc.avgPriorQRE)}</div>
-                <div>Rate: {federalCredits.asc.isStartup ? '6%' : '14%'}</div>
-              </div>
-              
-              {/* ASC Credit Variable Editor */}
-              <div className="mt-4">
-                <div className="flex items-center justify-between mb-3">
-                  <button
-                    onClick={() => setAscVariableEditorExpanded(!ascVariableEditorExpanded)}
-                    className="flex items-center text-sm font-medium text-gray-700 hover:text-gray-900"
-                  >
-                    {ascVariableEditorExpanded ? <ChevronUp className="w-4 h-4 mr-2" /> : <ChevronDown className="w-4 h-4 mr-2" />}
-                    ASC Calculation Variables
-                    {Object.keys(federalManualOverrides).filter(key => ['Current QRE', 'Avg Prior QRE', 'ASC Rate'].includes(key)).length > 0 && (
-                      <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
-                        {Object.keys(federalManualOverrides).filter(key => ['Current QRE', 'Avg Prior QRE', 'ASC Rate'].includes(key)).length} modified
-                      </span>
-                    )}
-                  </button>
-                  {Object.keys(federalManualOverrides).filter(key => ['Current QRE', 'Avg Prior QRE', 'ASC Rate'].includes(key)).length > 0 && (
-                    <button
-                      onClick={() => {
-                        ['Current QRE', 'Avg Prior QRE', 'ASC Rate'].forEach(key => resetFederalVariableOverride(key));
-                      }}
-                      className="text-xs text-red-600 hover:text-red-800"
-                    >
-                      Reset All
-                    </button>
-                  )}
-                </div>
-                
-                {ascVariableEditorExpanded && (
-                  <div className="bg-white rounded-lg p-4 border border-gray-200">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {Object.entries(getASCCreditVariables()).map(([variableName, values]) => {
-                        const isCurrency = variableName === 'Current QRE' || variableName === 'Avg Prior QRE';
-                        const isPercent = variableName === 'ASC Rate';
-                        let helpText = '';
-                        if (variableName === 'Current QRE') helpText = 'Qualified Research Expenses for the current year.';
-                        if (variableName === 'Avg Prior QRE') helpText = 'Average QREs for the 3 years prior to the current year. Used for multi-year ASC (14%). If less than 3 years, single-year ASC (6%) is used.';
-                        if (variableName === 'ASC Rate') helpText = 'ASC rate: 14% if 3+ prior years of QREs, otherwise 6% (startup/single-year).';
-                        return (
-                          <div key={variableName} className="flex flex-col">
-                            <label className="text-xs font-medium text-gray-700 mb-1 flex items-center">
-                              {variableName}
-                              {helpText && (
-                                <span className="ml-1 text-gray-400" title={helpText}>ⓘ</span>
-                              )}
-                            </label>
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="text"
-                                value={isCurrency ? formatCurrency(values.current) : isPercent ? formatPercentage(values.current) : values.current}
-                                onChange={e => {
-                                  let val = e.target.value.replace(/[^\d.\-]/g, '');
-                                  if (isCurrency) val = val.replace(/\$/g, '');
-                                  if (isPercent) val = val.replace(/%/g, '');
-                                  updateFederalVariableOverride(variableName, val);
-                                }}
-                                placeholder={isCurrency ? '$xx,xxx' : isPercent ? 'X.XX%' : ''}
-                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                              />
-                              <span className="text-xs text-gray-400">System: {isCurrency ? formatCurrency(values.system) : isPercent ? formatPercentage(values.system) : values.system}</span>
-                              {federalManualOverrides[variableName] !== undefined && (
-                                <button
-                                  onClick={() => resetFederalVariableOverride(variableName)}
-                                  className="ml-2 text-xs text-red-500 hover:text-red-700"
-                                >
-                                  Reset
-                                </button>
-                              )}
-              </div>
-            </div>
-                        );
-                      })}
-              </div>
-            </div>
-                )}
-          </div>
-
-              <AccordionSection title="ASC Details" details={federalCredits.asc.calculationDetails} />
-            </div>
-
-            {/* Standard Credit */}
-            <div className="bg-gray-50 rounded-lg p-4">
-              <div className="flex justify-between items-center mb-2">
-                <span className="font-medium">Standard Credit</span>
-                <span className="text-lg font-semibold text-green-600">{formatCurrency(federalCredits.standard.credit)}</span>
-              </div>
-              <div className="text-xs text-gray-600 space-y-1">
-                <div>Base %: {Math.max(federalCredits.standard.basePercentage * 100, 3).toFixed(2)}%</div>
-                <div>Base Amount: {formatCurrency(Math.max(federalCredits.standard.fixedBaseAmount, 0.5 * federalCurrentYearQRE.total))}</div>
-                <div>Incremental QRE: {formatCurrency(federalCredits.standard.incrementalQRE)}</div>
-                <div>Rate: 20%</div>
-          </div>
-
-              {/* Standard Credit Variable Editor */}
-              <div className="mt-4">
-                <div className="flex items-center justify-between mb-3">
-                  <button
-                    onClick={() => setStandardVariableEditorExpanded(!standardVariableEditorExpanded)}
-                    className="flex items-center text-sm font-medium text-gray-700 hover:text-gray-900"
-                  >
-                    {standardVariableEditorExpanded ? <ChevronUp className="w-4 h-4 mr-2" /> : <ChevronDown className="w-4 h-4 mr-2" />}
-                    Standard Calculation Variables
-                    {Object.keys(federalManualOverrides).filter(key => ['Current QRE', 'Base Percentage', 'Gross Receipts', 'Standard Rate'].includes(key)).length > 0 && (
-                      <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
-                        {Object.keys(federalManualOverrides).filter(key => ['Current QRE', 'Base Percentage', 'Gross Receipts', 'Standard Rate'].includes(key)).length} modified
-                      </span>
-                    )}
-                  </button>
-                  {Object.keys(federalManualOverrides).filter(key => ['Current QRE', 'Base Percentage', 'Gross Receipts', 'Standard Rate'].includes(key)).length > 0 && (
-                    <button
-                      onClick={() => {
-                        ['Current QRE', 'Base Percentage', 'Gross Receipts', 'Standard Rate'].forEach(key => resetFederalVariableOverride(key));
-                      }}
-                      className="text-xs text-red-600 hover:text-red-800"
-                    >
-                      Reset All
-                    </button>
-                  )}
-            </div>
-                
-                {standardVariableEditorExpanded && (
-                  <div className="bg-white rounded-lg p-4 border border-gray-200">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {Object.entries(getStandardCreditVariables()).map(([variableName, values]) => {
-                        const isCurrency = variableName === 'Current QRE' || variableName === 'Gross Receipts';
-                        const isPercent = variableName === 'Base Percentage' || variableName === 'Standard Rate';
-                        // For Base Percentage, always show the effective (>=3%)
-                        let displayCurrent = values.current;
-                        let displaySystem = values.system;
-                        let helpText = '';
-                        if (variableName === 'Current QRE') helpText = 'Qualified Research Expenses for the current year.';
-                        if (variableName === 'Base Percentage') helpText = 'Greater of: (Avg QREs for up to 4 prior years) / (Avg Gross Receipts for those years), or 3% (IRS minimum).';
-                        if (variableName === 'Gross Receipts') helpText = 'Gross receipts for the current year. Used to determine the base amount.';
-                        if (variableName === 'Standard Rate') helpText = 'Standard credit rate (20%).';
-                        if (variableName === 'Base Percentage') {
-                          displayCurrent = Math.max(values.current, 0.03);
-                          displaySystem = Math.max(values.system, 0.03);
-                        }
-                        return (
-                          <div key={variableName} className="flex flex-col">
-                            <label className="text-xs font-medium text-gray-700 mb-1 flex items-center">
-                              {variableName}
-                              {helpText && (
-                                <span className="ml-1 text-gray-400" title={helpText}>ⓘ</span>
-                              )}
-                            </label>
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="text"
-                                value={isCurrency ? formatCurrency(displayCurrent) : isPercent ? formatPercentage(displayCurrent) : displayCurrent}
-                                onChange={e => {
-                                  let val = e.target.value.replace(/[^\d.\-]/g, '');
-                                  if (isCurrency) val = val.replace(/\$/g, '');
-                                  if (isPercent) val = val.replace(/%/g, '');
-                                  updateFederalVariableOverride(variableName, val);
-                                }}
-                                placeholder={isCurrency ? '$xx,xxx' : isPercent ? 'X.XX%' : ''}
-                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                              />
-                              <span className="text-xs text-gray-400">System: {isCurrency ? formatCurrency(displaySystem) : isPercent ? formatPercentage(displaySystem) : displaySystem}</span>
-                              {federalManualOverrides[variableName] !== undefined && (
-                                <button
-                                  onClick={() => resetFederalVariableOverride(variableName)}
-                                  className="ml-2 text-xs text-red-500 hover:text-red-700"
-                                >
-                                  Reset
-                                </button>
-                              )}
-          </div>
-        </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-      </div>
-
-              <AccordionSection title="Standard Details" details={federalCredits.standard.calculationDetails} />
-                  </div>
-                </div>
-        </div>
-
-        {/* State Credits */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-
-          
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-              <MapPin className="w-5 h-5 mr-2" />
-              {wizardState.business?.state ? `[${wizardState.business.state}] ` : ''}State Credits
-            </h3>
-                <div className="text-right">
-              <div className="text-sm text-gray-600">Total State</div>
-              <div className="text-xl font-bold text-green-600">{formatCurrency(totalStateCredits)}</div>
-                  </div>
-                </div>
-
-          {/* Loading State */}
-          {stateLoading && (
-            <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
-              <p className="text-gray-600 mt-2">Loading state credit calculations...</p>
-              </div>
-          )}
-
-          {/* No Data State */}
-          {!stateLoading && (!stateCredits || stateCredits.length === 0) && (
-            <div className="text-center py-8 text-gray-500">
-              <MapPin className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-              <p className="text-sm">No state credit calculations available</p>
-              <p className="text-xs mt-1">Make sure your business state is set and QRE data is available</p>
-            </div>
-          )}
-
-          {/* State Method Selector */}
-          {!stateLoading && availableStateMethods.length > 0 && (
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Calculation Method
-              </label>
-              <select
-                value={selectedStateMethod}
-                onChange={(e) => setSelectedStateMethod(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {availableStateMethods.filter(method => method !== 'Additional').map(method => (
-                  <option key={method} value={method}>{method}</option>
-                ))}
-              </select>
-          </div>
-          )}
-
-          {/* Variable Editor */}
-          {!stateLoading && stateCredits.length > 0 && (
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <button
-                  onClick={() => setVariableEditorExpanded(!variableEditorExpanded)}
-                  className="flex items-center text-sm font-medium text-gray-700 hover:text-gray-900"
-                >
-                  {variableEditorExpanded ? <ChevronUp className="w-4 h-4 mr-2" /> : <ChevronDown className="w-4 h-4 mr-2" />}
-                  Calculation Variables
-                  {Object.keys(manualOverrides).length > 0 && (
-                    <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
-                      {Object.keys(manualOverrides).length} modified
-                    </span>
-                  )}
-                </button>
-                {Object.keys(manualOverrides).length > 0 && (
-                  <button
-                    onClick={resetAllOverrides}
-                    className="text-xs text-red-600 hover:text-red-800"
-                  >
-                    Reset All
-                  </button>
-                )}
-              </div>
-              
-              {variableEditorExpanded && (
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {Object.entries(getCurrentVariables()).map(([variableName, values]) => {
-                      // Determine formatting type
-                      const isCurrency = variableName === 'QREs' || variableName === 'Gross Receipts' || variableName === 'Basic Payments';
-                      const isPercent = variableName === 'Fixed-Base %';
-                      return (
-                        <div key={variableName} className="flex flex-col">
-                          <label className="text-xs font-medium text-gray-700 mb-1">{variableName}</label>
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="text"
-                              value={isCurrency ? formatCurrency(values.current) : isPercent ? formatPercentage(values.current) : values.current}
-                              onChange={e => {
-                                let val = e.target.value.replace(/[^\d.\-]/g, '');
-                                if (isCurrency) val = val.replace(/\$/g, '');
-                                if (isPercent) val = val.replace(/%/g, '');
-                                updateVariableOverride(variableName, val);
-                              }}
-                              placeholder={isCurrency ? '$xx,xxx' : isPercent ? 'X.XX%' : ''}
-                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                            />
-                            <span className="text-xs text-gray-400">System: {isCurrency ? formatCurrency(values.system) : isPercent ? formatPercentage(values.system) : values.system}</span>
-                            {manualOverrides[variableName] !== undefined && (
-                              <button
-                                onClick={() => resetVariableOverride(variableName)}
-                                className="ml-2 text-xs text-red-500 hover:text-red-700"
-                              >
-                                Reset
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-        </div>
-      )}
-
-          {/* State Credit Result Card(s) */}
-          {!stateLoading && stateCredits.length > 0 && (
-            <div className="space-y-4">
-              
-              {/* Main method card (Standard or Alternative) */}
-              {stateCredits.filter(c => c.method === selectedStateMethod).map((credit, idx) => (
-                <div key={credit.method} className="bg-green-50 rounded-lg p-4 border border-green-200">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="font-medium">{credit.method} State Credit</span>
-                    <span className="text-lg font-semibold text-green-700">{formatCurrency(credit.credit)}</span>
-          </div>
-                  <div className="text-xs text-gray-700 mb-2">
-                    <div><span className="font-semibold">Formula:</span> {credit.formula}</div>
-            </div>
-                  {credit.info && (
-                    <div className="text-xs text-blue-800 bg-blue-50 rounded p-2 mb-2">
-                      <span className="font-semibold">Usage:</span> {credit.info}
-          </div>
-                  )}
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    {credit.refundable && <div><span className="font-semibold">Refundable:</span> {credit.refundable}</div>}
-                    {credit.carryforward && <div><span className="font-semibold">Carryforward:</span> {credit.carryforward}</div>}
-                    {credit.eligible_entities && <div className="col-span-2"><span className="font-semibold">Eligible Entities:</span> {Array.isArray(credit.eligible_entities) ? credit.eligible_entities.join(', ') : credit.eligible_entities}</div>}
-                    {credit.special_notes && <div className="col-span-2"><span className="font-semibold">Notes:</span> {credit.special_notes}</div>}
-                    {credit.formula_correct && <div className="col-span-2"><span className="font-semibold">Formula Correct:</span> {credit.formula_correct}</div>}
-          </div>
-        </div>
-              ))}
-              {/* Additional method card (always shown if present) */}
-              {stateCredits.filter(c => c.method === 'Additional').map((credit, idx) => (
-                <div key={credit.method} className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="font-medium">Additional State Credit</span>
-                    <span className="text-lg font-semibold text-yellow-700">{formatCurrency(credit.credit)}</span>
-      </div>
-                  <div className="text-xs text-gray-700 mb-2">
-                    <div><span className="font-semibold">Formula:</span> {credit.formula}</div>
-                  </div>
-                  {credit.info && (
-                    <div className="text-xs text-blue-800 bg-blue-50 rounded p-2 mb-2">
-                      <span className="font-semibold">Usage:</span> {credit.info}
-                    </div>
-                  )}
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    {credit.refundable && <div><span className="font-semibold">Refundable:</span> {credit.refundable}</div>}
-                    {credit.carryforward && <div><span className="font-semibold">Carryforward:</span> {credit.carryforward}</div>}
-                    {credit.eligible_entities && <div className="col-span-2"><span className="font-semibold">Eligible Entities:</span> {Array.isArray(credit.eligible_entities) ? credit.eligible_entities.join(', ') : credit.eligible_entities}</div>}
-                    {credit.special_notes && <div className="col-span-2"><span className="font-semibold">Notes:</span> {credit.special_notes}</div>}
-                    {credit.formula_correct && <div className="col-span-2"><span className="font-semibold">Formula Correct:</span> {credit.formula_correct}</div>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Debug Information (collapsible) */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="mt-6">
-              <button
-                onClick={() => setShowDebug(!showDebug)}
-                className="flex items-center text-xs text-gray-500 hover:text-gray-700"
-              >
-                {showDebug ? <ChevronUp className="w-4 h-4 mr-1" /> : <ChevronDown className="w-4 h-4 mr-1" />}
-                Debug Information
-              </button>
-              
-              {showDebug && (
-                <div className="mt-2 p-3 bg-gray-100 rounded text-xs">
-                  <pre className="whitespace-pre-wrap">
-                    {JSON.stringify({
-                      stateCredits,
-                      stateCalculations,
-                      availableStateMethods,
-                      selectedStateMethod,
-                      qreBreakdown,
-                      businessState: wizardState.business?.state
-                    }, null, 2)}
-                  </pre>
-          </div>
-              )}
-            </div>
-          )}
-          </div>
-        </div>
-
-      {/* Historical Summary */}
       {historicalCards.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Historical Summary</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {historicalCards.map((card, idx) => (
-              <div key={card.year || idx} className="bg-gradient-to-br from-gray-50 to-white rounded-lg border border-gray-200 p-4">
+          
+          {(() => {
+            const currentYear = new Date().getFullYear();
+            const cutoffYear = currentYear - 8;
+            const recentCards = historicalCards.filter(card => card.year >= cutoffYear);
+            const olderCards = historicalCards.filter(card => card.year < cutoffYear);
+            
+            return (
+              <>
+                {/* Recent Years (within 8 years) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {recentCards.map((card, idx) => (
+              <div key={`${card.id || card.year}-${idx}`} className="bg-gradient-to-br from-gray-50 to-white rounded-lg border border-gray-200 p-4">
                 <div className="flex items-center justify-between mb-3">
                   <div className="text-lg font-bold text-gray-900">{card.year}</div>
                   <span className={`px-2 py-1 rounded-full text-xs font-semibold ${card.isInternal ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>
@@ -2238,7 +1792,100 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
               </div>
             ))}
           </div>
-        </div>
+          
+          {/* Older Years Accordion */}
+          {olderCards.length > 0 && (
+            <div className="mt-6">
+              <button
+                onClick={() => setShowOlderYears(!showOlderYears)}
+                className="flex items-center text-sm text-gray-600 hover:text-gray-800 mb-3"
+              >
+                {showOlderYears ? (
+                  <ChevronDown className="w-4 h-4 mr-2" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 mr-2" />
+                )}
+                Older Years ({olderCards.length} year{olderCards.length !== 1 ? 's' : ''})
+              </button>
+              
+              {showOlderYears && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {olderCards.map((card, idx) => (
+                    <div key={`older-${card.id || card.year}-${idx}`} className="bg-gradient-to-br from-gray-50 to-white rounded-lg border border-gray-200 p-4 opacity-75">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="text-lg font-bold text-gray-900">{card.year}</div>
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${card.isInternal ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>
+                          {card.isInternal ? 'Internal' : 'External'}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">QRE:</span>
+                          <span className="font-semibold">{formatCurrency(card.qre)}</span>
+                        </div>
+                        {card.isInternal && (
+                          <div className="space-y-3">
+                            {/* Horizontal Bar Chart */}
+                            <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+                              <div className="h-full flex">
+                                <div 
+                                  className="bg-blue-500 h-full" 
+                                  style={{ width: `${card.qre > 0 ? (card.employeeQRE / card.qre) * 100 : 0}%` }}
+                                />
+                                <div 
+                                  className="bg-green-500 h-full" 
+                                  style={{ width: `${card.qre > 0 ? (card.contractorQRE / card.qre) * 100 : 0}%` }}
+                                />
+                                <div 
+                                  className="bg-purple-500 h-full" 
+                                  style={{ width: `${card.qre > 0 ? (card.supplyQRE / card.qre) * 100 : 0}%` }}
+                                />
+                              </div>
+                            </div>
+                            
+                            {/* Legend with amounts */}
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between text-xs">
+                                <div className="flex items-center space-x-2">
+                                  <div className="w-3 h-3 bg-blue-500 rounded"></div>
+                                  <span className="text-gray-600">Employees</span>
+                                </div>
+                                <span className="font-medium">{formatCurrency(card.employeeQRE)}</span>
+                              </div>
+                              <div className="flex items-center justify-between text-xs">
+                                <div className="flex items-center space-x-2">
+                                  <div className="w-3 h-3 bg-green-500 rounded"></div>
+                                  <span className="text-gray-600">Contractors</span>
+                                </div>
+                                <span className="font-medium">{formatCurrency(card.contractorQRE)}</span>
+                              </div>
+                              <div className="flex items-center justify-between text-xs">
+                                <div className="flex items-center space-x-2">
+                                  <div className="w-3 h-3 bg-purple-500 rounded"></div>
+                                  <span className="text-gray-600">Supplies</span>
+                                </div>
+                                <span className="font-medium">{formatCurrency(card.supplyQRE)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center pt-2 border-t border-gray-100">
+                          <span className="text-sm text-gray-600">ASC Credit:</span>
+                          <span className="font-semibold text-green-600">
+                            {card.ascCredit !== null ? formatCurrency(card.ascCredit) : '—'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      );
+    })()}
+  </div>
       )}
 
       {/* Action Buttons Section */}

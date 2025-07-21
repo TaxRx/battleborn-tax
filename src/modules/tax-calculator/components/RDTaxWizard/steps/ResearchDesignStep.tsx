@@ -13,6 +13,7 @@ import RoleSnapshot, { RoleSnapshotRef } from './RoleSnapshot';
 import { supabase } from "../../../../../lib/supabase";
 import ResearchReportModal from "../../ResearchReport/ResearchReportModal";
 import { FileText } from "lucide-react";
+import { AppliedPercentageBar, generateSegmentColors } from '../../common/AppliedPercentageBar';
 
 interface ResearchDesignStepProps {
   selectedActivities: Array<{ 
@@ -142,6 +143,8 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
   // Role Snapshot ref for real-time updates
   const roleSnapshotRef = useRef<RoleSnapshotRef>(null);
 
+  // FIXED: Removed problematic debugging useEffect that was causing React hooks error
+
   // Helper function to trigger role snapshot recalculation
   const triggerRoleSnapshotUpdate = (delay: number = 100, context: string = '') => {
     console.log(`🔄 Triggering role snapshot recalculation${context ? ` after ${context}` : ''}...`);
@@ -194,12 +197,15 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
   const pendingUpdatesRef = useRef<Map<string, { stepId: string; percentage: number }>>(new Map());
 
   const debouncedUpdateDatabase = useCallback(async (stepId: string, percentage: number) => {
+    console.log('🔄 [DEBOUNCED UPDATE] Scheduling update for step:', stepId, 'percentage:', percentage);
+    
     // Store the pending update
     pendingUpdatesRef.current.set(stepId, { stepId, percentage });
     
     // Clear existing timeout
     if (databaseUpdateTimeoutRef.current) {
       clearTimeout(databaseUpdateTimeoutRef.current);
+      console.log('🔄 [DEBOUNCED UPDATE] Cleared existing timeout');
     }
     
     // Set new timeout
@@ -207,14 +213,22 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       const updates = Array.from(pendingUpdatesRef.current.values());
       pendingUpdatesRef.current.clear();
       
-      console.log('Executing debounced database updates:', updates);
+      console.log('💾 [DEBOUNCED UPDATE] Executing database updates:', updates);
       
+      // Get current activity at execution time, not closure time
       const currentActivity = activitiesWithSteps[activeActivityIndex];
-      if (!currentActivity) return;
+      if (!currentActivity) {
+        console.error('❌ [DEBOUNCED UPDATE] No current activity found');
+        return;
+      }
+      
+      console.log('💾 [DEBOUNCED UPDATE] Using activity:', currentActivity.activityName, 'ID:', currentActivity.activityId);
       
       // Batch update all pending changes
       for (const update of updates) {
         try {
+          console.log('💾 [DEBOUNCED UPDATE] Updating step:', update.stepId, 'to:', update.percentage, '%');
+          
           const { error } = await supabase
             .from('rd_selected_steps')
             .upsert({
@@ -225,17 +239,32 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
             }, { onConflict: 'business_year_id,step_id' });
             
           if (error) {
-            console.error('Error updating step time percentage:', error);
+            console.error('❌ [DEBOUNCED UPDATE] Error updating step time percentage:', error);
           } else {
-            console.log('Successfully updated step time percentage:', update.stepId, 'to:', update.percentage);
+            console.log('✅ [DEBOUNCED UPDATE] Successfully updated step time percentage:', update.stepId, 'to:', update.percentage);
+            
+            // Update local state to reflect the saved changes
+            setSelectedSteps(prev => 
+              prev.map(s => 
+                s.step_id === update.stepId 
+                  ? { ...s, time_percentage: update.percentage }
+                  : s
+              )
+            );
           }
         } catch (error) {
-          console.error('Error updating step time percentage:', error);
+          console.error('❌ [DEBOUNCED UPDATE] Error updating step time percentage:', error);
         }
       }
       
+      console.log('🔄 [DEBOUNCED UPDATE] Triggering recalculation of applied percentages...');
       // Trigger recalculation after all updates
-      await recalculateAllAppliedPercentages();
+      try {
+        await recalculateAllAppliedPercentages();
+        console.log('✅ [DEBOUNCED UPDATE] Recalculation completed successfully');
+      } catch (error) {
+        console.error('❌ [DEBOUNCED UPDATE] Error during recalculation:', error);
+      }
     }, 500); // 500ms debounce delay
   }, [activitiesWithSteps, activeActivityIndex, effectiveBusinessYearId]);
 
@@ -328,6 +357,19 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       // Load activities with steps and subcomponents
       const activitiesData = await ResearchDesignService.getActivitiesWithSteps(activityIds);
       console.log('ResearchDesignStep: Activities with steps data:', activitiesData);
+      
+      // CRITICAL DEBUGGING: Check if subcomponents are loaded
+      console.log('🔍 [CRITICAL DEBUG] Checking subcomponent data in activitiesData:');
+      activitiesData.forEach((activity, actIndex) => {
+        console.log(`🔍 Activity ${actIndex}: ${activity.activityName}`);
+        console.log(`   - Steps count: ${activity.steps?.length || 0}`);
+        activity.steps?.forEach((step, stepIndex) => {
+          console.log(`   - Step ${stepIndex}: ${step.name}`);
+          console.log(`     - Subcomponents count: ${step.subcomponents?.length || 0}`);
+          console.log(`     - Subcomponents:`, step.subcomponents);
+        });
+      });
+      
       setActivitiesWithSteps(activitiesData);
 
       // Load existing selections
@@ -745,64 +787,170 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     });
   };
 
-  // Step allocation functions
-  const initializeSteps = async (activity: any) => {
+  // Load steps from saved data without overwriting database values
+  const loadStepsFromSavedData = (activity: any) => {
     if (!activity.steps || activity.steps.length === 0) return;
+    
+    console.log('🔄 [LOAD SAVED DATA] Loading UI from saved data for activity:', activity.activityName);
+    console.log('🔄 [LOAD SAVED DATA] Available selectedSteps:', selectedSteps);
+    console.log('🔄 [LOAD SAVED DATA] Activity steps with subcomponents:', activity.steps);
+    
+    const steps: ResearchStep[] = activity.steps.map((step: any, index: number) => {
+      // Find the saved time percentage for this step
+      const savedStep = selectedSteps.find(s => s.step_id === step.id);
+      const savedPercentage = savedStep?.time_percentage || (100 / activity.steps.length); // Fallback to equal if no saved data
+      
+      // CRITICAL FIX: Load non_rd_percentage from database
+      const savedNonRdPercentage = savedStep?.non_rd_percentage || 0;
+      
+      console.log(`🔄 [LOAD SAVED DATA] Step ${step.name}:`, {
+        stepId: step.id,
+        savedPercentage: savedStep?.time_percentage,
+        savedNonRdPercentage: savedStep?.non_rd_percentage,
+        usingPercentage: savedPercentage,
+        usingNonRdPercentage: savedNonRdPercentage,
+        foundInDatabase: !!savedStep,
+        subcomponentsCount: step.subcomponents?.length || 0
+      });
+      
+      return {
+        id: step.id,
+        name: step.name,
+        percentage: savedPercentage,
+        isLocked: false,
+        isEnabled: true,
+        order: index,
+        subcomponents: step.subcomponents || [], // CRITICAL: Ensure subcomponents are included
+        nonRdPercentage: savedNonRdPercentage // FIXED: Load from database
+      };
+    });
+    
+    setResearchSteps(steps);
+    console.log('🔄 [LOAD SAVED DATA] Set research steps from saved data:', steps);
+    console.log('🔄 [CRITICAL FIX] Total subcomponents loaded:', steps.reduce((sum, step) => sum + (step.subcomponents?.length || 0), 0));
+  };
+
+  // Force recalculate - resets to baseline equal distribution
+  const forceRecalculateSteps = async (activity: any) => {
+    console.log('🔄 [FORCE RECALCULATE] Forcing reset to baseline for activity:', activity.activityName);
+    await initializeSteps(activity, true); // Force reset = true
+  };
+
+  // Step allocation functions (for NEW activities or Force Recalculate)
+  const initializeSteps = async (activity: any, forceReset: boolean = false) => {
+    if (!activity.steps || activity.steps.length === 0) {
+      console.log('🚨 [CRITICAL] No steps found for activity:', activity.activityName);
+      return;
+    }
     
     const stepCount = activity.steps.length;
     const equalPercentage = 100 / stepCount;
     
-    const steps: ResearchStep[] = activity.steps.map((step: any, index: number) => ({
-      id: step.id,
-      name: step.name,
-      percentage: equalPercentage,
-      isLocked: false,
-      isEnabled: true,
-      order: index,
-      subcomponents: step.subcomponents || [],
-      nonRdPercentage: 0
-    }));
+    console.log('🔧 [INITIALIZE STEPS] Initializing steps for activity:', activity.activityName);
+    console.log('🔧 [INITIALIZE STEPS] Force reset mode:', forceReset);
+    console.log('🔧 [INITIALIZE STEPS] Activity steps data:', activity.steps);
+    console.log('🔧 [INITIALIZE STEPS] Checking for existing saved time percentages...');
+    console.log('🔧 [INITIALIZE STEPS] selectedSteps:', selectedSteps);
+    
+    const steps: ResearchStep[] = activity.steps.map((step: any, index: number) => {
+      // Check if we have a saved time percentage for this step
+      const savedStep = selectedSteps.find(s => s.step_id === step.id);
+      const savedPercentage = savedStep?.time_percentage;
+      
+      // Use saved percentage if available AND not forcing reset, otherwise use equal distribution
+      const stepPercentage = (savedPercentage !== undefined && !forceReset) ? savedPercentage : equalPercentage;
+      
+      // ENHANCED: Use saved non-R&D percentage if available AND not forcing reset, 
+      // otherwise generate random 15-25% for new steps (as requested by user)
+      let finalNonRdPercentage: number;
+      if (savedStep?.non_rd_percentage !== undefined && !forceReset) {
+        // Use saved value
+        finalNonRdPercentage = savedStep.non_rd_percentage;
+      } else {
+        // NEW FEATURE: Generate random 15-25% Non-R&D percentage for initial step creation
+        finalNonRdPercentage = Math.floor(Math.random() * (25 - 15 + 1)) + 15;
+        console.log(`🎲 [NON-R&D RANDOM] Generated ${finalNonRdPercentage}% Non-R&D for new step: ${step.name}`);
+      }
+      
+      console.log(`🔧 [INITIALIZE STEPS] Step ${step.name}:`, {
+        stepId: step.id,
+        savedPercentage,
+        savedNonRdPercentage: savedStep?.non_rd_percentage,
+        usingPercentage: stepPercentage,
+        usingNonRdPercentage: finalNonRdPercentage,
+        source: savedPercentage !== undefined ? 'SAVED' : 'DEFAULT',
+        nonRdSource: savedStep?.non_rd_percentage !== undefined ? 'SAVED' : 'RANDOM(15-25%)',
+        subcomponentsCount: step.subcomponents?.length || 0,
+        subcomponents: step.subcomponents
+      });
+      
+      return {
+        id: step.id,
+        name: step.name,
+        percentage: stepPercentage,
+        isLocked: false,
+        isEnabled: true,
+        order: index,
+        subcomponents: step.subcomponents || [], // CRITICAL: Ensure subcomponents are included
+        nonRdPercentage: finalNonRdPercentage
+      };
+    });
     
     setResearchSteps(steps);
+    console.log('🔧 [CRITICAL FIX] Total subcomponents loaded in initializeSteps:', steps.reduce((sum, step) => sum + (step.subcomponents?.length || 0), 0));
     
-    // Save step time percentages to database if they don't exist yet
-    console.log('Saving initial step time percentages to database...');
-    console.log('Activity data for initialization:', activity);
+    // Only save to database if we used default values (new steps without saved data)
+    const hasUnsavedSteps = steps.some(step => {
+      const savedStep = selectedSteps.find(s => s.step_id === step.id);
+      return savedStep?.time_percentage === undefined;
+    });
     
-    // Get the correct activity ID from activitiesWithSteps structure
-    const activityId = activity.activityId;
-    console.log('Using activity ID for step initialization:', activityId);
-    
-    for (const step of steps) {
-      try {
-        const { error } = await supabase
-          .from('rd_selected_steps')
-          .upsert({
-            business_year_id: selectedActivityYearId,
-            research_activity_id: activityId,
-            step_id: step.id,
-            time_percentage: step.percentage
-          }, {
-            onConflict: 'business_year_id,step_id'
-          });
-          
-        if (error) {
-          console.error('Error saving step time percentage:', error);
-        } else {
-          console.log('Successfully saved step time percentage for step:', step.id, 'Value:', step.percentage);
+    if (hasUnsavedSteps) {
+      console.log('🔧 [INITIALIZE STEPS] Some steps need to be saved to database...');
+      console.log('Activity data for initialization:', activity);
+      
+      // Get the correct activity ID from activitiesWithSteps structure
+      const activityId = activity.activityId;
+      console.log('Using activity ID for step initialization:', activityId);
+      
+      for (const step of steps) {
+        // Only save if this step doesn't already exist in database
+        const savedStep = selectedSteps.find(s => s.step_id === step.id);
+        if (savedStep?.time_percentage === undefined) {
+          try {
+            const { error } = await supabase
+              .from('rd_selected_steps')
+              .upsert({
+                business_year_id: selectedActivityYearId,
+                research_activity_id: activityId,
+                step_id: step.id,
+                time_percentage: step.percentage,
+                non_rd_percentage: step.nonRdPercentage
+              }, {
+                onConflict: 'business_year_id,step_id'
+              });
+              
+            if (error) {
+              console.error('Error saving step time percentage:', error);
+            } else {
+              console.log('Successfully saved step time percentage for step:', step.id, 'Value:', step.percentage);
+            }
+          } catch (error) {
+            console.error('Error saving step time percentage:', error);
+          }
         }
-      } catch (error) {
-        console.error('Error saving step time percentage:', error);
       }
-    }
-    
-    // Refresh selectedSteps state to include the newly saved data
-    try {
-      const stepsData = await ResearchDesignService.getSelectedSteps(selectedActivityYearId);
-      setSelectedSteps(stepsData);
-      console.log('Refreshed selectedSteps with database data:', stepsData);
-    } catch (error) {
-      console.error('Error refreshing selectedSteps:', error);
+      
+      // Refresh selectedSteps state to include the newly saved data
+      try {
+        const stepsData = await ResearchDesignService.getSelectedSteps(selectedActivityYearId);
+        setSelectedSteps(stepsData);
+        console.log('Refreshed selectedSteps with database data:', stepsData);
+      } catch (error) {
+        console.error('Error refreshing selectedSteps:', error);
+      }
+    } else {
+      console.log('🔧 [INITIALIZE STEPS] All steps already have saved time percentages, no database update needed');
     }
   };
 
@@ -961,28 +1109,18 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       if (!step) return prevSteps;
       
       if (step.isEnabled) {
-        // Disabling step - redistribute its percentage
-        const remainingSteps = prevSteps.filter(s => s.id !== stepId && s.isEnabled);
-        const equalDistribution = remainingSteps.length > 0 ? (100 - step.percentage) / remainingSteps.length : 0;
-        
+        // Disabling step - NO REDISTRIBUTION, just set to 0
         return prevSteps.map(s => {
           if (s.id === stepId) {
             return { ...s, isEnabled: false, percentage: 0 };
-          } else if (s.isEnabled) {
-            return { ...s, percentage: equalDistribution };
           }
           return s;
         });
       } else {
-        // Enabling step - redistribute percentages
-        const enabledSteps = prevSteps.filter(s => s.isEnabled);
-        const equalDistribution = enabledSteps.length > 0 ? 100 / (enabledSteps.length + 1) : 100;
-        
+        // Enabling step - give it a default 10% without redistributing others
         return prevSteps.map(s => {
           if (s.id === stepId) {
-            return { ...s, isEnabled: true, percentage: equalDistribution };
-          } else if (s.isEnabled) {
-            return { ...s, percentage: equalDistribution };
+            return { ...s, isEnabled: true, percentage: 10 };
           }
           return s;
         });
@@ -1145,12 +1283,31 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     });
   };
 
-  // Initialize steps when activity changes
+  // Initialize steps ONLY for completely new activities (not when switching tabs)
   useEffect(() => {
     if (activitiesWithSteps.length > 0 && activeActivityIndex >= 0) {
       const currentActivity = activitiesWithSteps[activeActivityIndex];
       if (currentActivity) {
-        initializeSteps(currentActivity);
+        // CRITICAL FIX: Only initialize if this activity has NO existing step records
+        // This prevents overwriting saved time percentages when switching between activities
+        const activityHasSteps = selectedSteps.some(step => 
+          selectedSteps.some(selectedStep => {
+            // Check if any step from this activity exists in selectedSteps
+            return currentActivity.steps.some(activityStep => activityStep.id === selectedStep.step_id);
+          })
+        );
+        
+        console.log('🔧 [ACTIVITY SWITCH] Activity:', currentActivity.activityName, 'has existing steps:', activityHasSteps);
+        
+        if (!activityHasSteps && selectedSteps.length > 0) {
+          // Only initialize for completely new activities
+          console.log('🔧 [ACTIVITY SWITCH] Initializing NEW activity with default percentages');
+          initializeSteps(currentActivity);
+        } else {
+          console.log('🔧 [ACTIVITY SWITCH] Activity has existing data - preserving saved time percentages');
+          // Load the UI from existing saved data without calling initializeSteps
+          loadStepsFromSavedData(currentActivity);
+        }
       }
     } else if (selectedActivities.length === 0) {
       // Mock data for testing when accessed directly
@@ -1198,7 +1355,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       ];
       setResearchSteps(mockSteps);
     }
-  }, [activitiesWithSteps, activeActivityIndex, selectedActivities.length]);
+  }, [activitiesWithSteps, activeActivityIndex, selectedActivities.length, selectedSteps]);
 
   // Load existing subcomponent data
   useEffect(() => {
@@ -1977,7 +2134,11 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
   };
 
   const handleStepNonRdChange = async (stepId: string, nonRdPercentage: number) => {
-    console.log('Updating step non-R&D percentage:', { stepId, nonRdPercentage, businessYearId });
+    console.log('🔧 [NON-R&D UPDATE] Updating step non-R&D percentage:', { 
+      stepId, 
+      nonRdPercentage, 
+      businessYearId: selectedActivityYearId 
+    });
     
     // Update local state
     setResearchSteps(prev => prev.map(step => 
@@ -1986,27 +2147,35 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
         : step
     ));
 
-    // Save to database - we'll need to create a new table or add a column to existing table
+    // CRITICAL FIX: Save to database using the correct business year ID
     try {
-      // For now, we'll store this in a new table or add to existing step table
-      // This is a placeholder - you may need to adjust based on your database schema
       const { error } = await supabase
-        .from('rd_research_steps')
-        .upsert({
-          business_year_id: businessYearId,
-          step_id: stepId,
+        .from('rd_selected_steps')
+        .update({
           non_rd_percentage: nonRdPercentage
-        }, {
-          onConflict: 'business_year_id,step_id'
-        });
+        })
+        .eq('business_year_id', selectedActivityYearId) // FIXED: Use correct businessYearId
+        .eq('step_id', stepId);
         
       if (error) {
-        console.error('Error updating step non-R&D percentage:', error);
+        console.error('❌ [NON-R&D UPDATE] Error updating step non-R&D percentage:', error);
+        console.error('❌ [NON-R&D UPDATE] Failed update params:', {
+          business_year_id: selectedActivityYearId,
+          step_id: stepId,
+          non_rd_percentage: nonRdPercentage
+        });
       } else {
-        console.log('Successfully updated step non-R&D percentage for step:', stepId);
+        console.log('✅ [NON-R&D UPDATE] Successfully updated step non-R&D percentage for step:', stepId, 'Value:', nonRdPercentage);
+        
+        // Update selectedSteps state to reflect the change
+        setSelectedSteps(prev => prev.map(step => 
+          step.step_id === stepId 
+            ? { ...step, non_rd_percentage: nonRdPercentage }
+            : step
+        ));
       }
     } catch (error) {
-      console.error('Error updating step non-R&D percentage:', error);
+      console.error('❌ [NON-R&D UPDATE] Error updating step non-R&D percentage:', error);
     }
 
     // Redistribute frequencies to account for non-R&D time
@@ -2163,10 +2332,9 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
             console.log(`      🔧 Non-R&D Adjustment: ${nonRdPercent}% non-R&D, reducing applied by factor of ${rdOnlyPercent.toFixed(3)}`);
           }
           
-          // CRITICAL VALIDATION: Applied percentage cannot exceed practice percentage
+          // NO CONSTRAINTS: Applied percentage can exceed practice percentage if needed
           if (applied > practicePercent) {
-            console.log(`      ❌ MATHEMATICAL ERROR: Applied (${applied.toFixed(2)}%) exceeds practice (${practicePercent}%)`);
-            console.log(`         This should be impossible! Check input values.`);
+            console.log(`      ✅ Applied (${applied.toFixed(2)}%) exceeds practice (${practicePercent}%) - this is allowed`);
           }
           
           totalApplied += applied;
@@ -2179,12 +2347,9 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       });
     });
     
-    // FINAL VALIDATION: Total applied should never exceed practice percentage
+    // NO CONSTRAINTS: Total applied can exceed practice percentage if needed for research
     if (totalApplied > practicePercent) {
-      console.log(`🚨 CRITICAL ERROR: Total applied (${totalApplied.toFixed(2)}%) exceeds practice (${practicePercent}%)`);
-      console.log(`   This violates the fundamental constraint that applied ≤ practice`);
-      console.log(`   Capping applied percentage at practice percentage: ${practicePercent}%`);
-      totalApplied = practicePercent;
+      console.log(`✅ Total applied (${totalApplied.toFixed(2)}%) exceeds practice (${practicePercent}%) - this is allowed for research needs`);
     }
     
     const finalResult = +totalApplied.toFixed(2);
@@ -2207,7 +2372,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     'from-pink-500 to-rose-500'
   ];
 
-  // Fetch years with activities for this business
+  // Fetch ALL available business years for this business (not just ones with activities)
   const loadAvailableActivityYears = useCallback(async () => {
     if (!businessId) return;
     // Query all business years for this business
@@ -2220,25 +2385,17 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       setAvailableActivityYears([]);
       return;
     }
-    // For each year, check if there are activities in rd_selected_activities
-    const { data: activities, error: actError } = await supabase
-      .from('rd_selected_activities')
-      .select('business_year_id')
-      .in('business_year_id', years.map(y => y.id));
-    if (actError || !activities) {
-      setAvailableActivityYears([]);
-      return;
-    }
-    const yearIdsWithActivities = new Set(activities.map(a => a.business_year_id));
-    const filteredYears = years.filter(y => yearIdsWithActivities.has(y.id));
-    setAvailableActivityYears(filteredYears);
     
-    // Set the initial selected year to the current year if it exists in the filtered years
-    if (filteredYears.length > 0) {
+    // FIXED: Show ALL business years, not just ones with activities
+    // This allows users to switch to any year, even if no activities are configured yet
+    setAvailableActivityYears(years);
+    
+    // Set the initial selected year to the current year if it exists in the years
+    if (years.length > 0) {
       const currentYear = new Date().getFullYear();
       // First try to find the current year, then fall back to the most recent year
-      const initialYear = filteredYears.find(y => y.year === currentYear) || 
-                         filteredYears[0]; // Years are sorted newest first
+      const initialYear = years.find(y => y.year === currentYear) || 
+                         years[0]; // Years are sorted newest first
       setSelectedActivityYearId(initialYear.id);
       setSelectedActivityYear(initialYear.year);
       console.log('Set initial year to:', initialYear.year, 'ID:', initialYear.id, 'current year:', currentYear);
@@ -2532,6 +2689,8 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     return sum + (selectedStep?.time_percentage || 0);
   }, 0);
 
+  // FIXED: Removed debugging useEffect that was causing React hooks error
+
   return (
     <div className="space-y-6">
       <style dangerouslySetInnerHTML={{ __html: `
@@ -2592,66 +2751,52 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
             </div>
             {/* Enhanced Applied Percentage Stacked Bar - Correlated with SB Data */}
             <div className="mt-6">
-              <div className="flex justify-between text-sm text-blue-100 mb-2">
-                <span>Applied Percentage by Activity (Correlated with SB)</span>
-                <span>{(() => {
-                  const total = selectedActivities.reduce((sum, a) => sum + calculateActivityAppliedPercentage(a), 0);
-                  // Show warning if over 100%
-                  return total > 100 ? 
-                    `${total.toFixed(2)}% ⚠️` : 
-                    `${total.toFixed(2)}%`;
-                })()}</span>
-              </div>
-              <div className="w-full h-5 rounded-full bg-blue-500/30 flex overflow-hidden">
-                {selectedActivities.map((activity, idx) => {
+              {/* 🎯 NEW: Use standardized AppliedPercentageBar component */}
+              {(() => {
+                // Prepare segments for the standardized bar
+                const segments = selectedActivities.map((activity, idx) => {
                   const applied = calculateActivityAppliedPercentage(activity);
                   const practice = getActivityPercentage(activity);
-                  // Normalize width to 100% total for visual display
-                  const totalApplied = selectedActivities.reduce((sum, a) => sum + calculateActivityAppliedPercentage(a), 0);
-                  const width = totalApplied > 0 ? (applied / Math.max(totalApplied, 100)) * 100 : 0;
+                  const colors = generateSegmentColors(selectedActivities.length);
                   
-                  const color = [
-                    'bg-purple-500', 'bg-blue-500', 'bg-green-500', 'bg-orange-500',
-                    'bg-indigo-500', 'bg-teal-500', 'bg-yellow-500', 'bg-pink-500'
-                  ][idx % 8];
-                  
-                  return (
-                    <div
-                      key={activity.id}
-                      className={`${color} h-full flex items-center justify-center transition-all duration-300 ${
-                        applied > practice ? 'animate-pulse' : ''
-                      }`}
-                      style={{ width: `${width}%` }}
-                      title={`${getActivityName(activity)}: Applied ${applied.toFixed(2)}% / Practice ${practice}%`}
-                    >
-                      {width > 8 && (
-                        <span className="text-xs font-semibold text-white px-2 truncate">
-                          {getActivityName(activity)} ({applied.toFixed(2)}%)
-                        </span>
+                  return {
+                    id: activity.id,
+                    name: getActivityName(activity),
+                    value: applied,
+                    color: colors[idx],
+                    percentage: applied // Applied percentage for display
+                  };
+                });
+
+                const totalApplied = selectedActivities.reduce((sum, a) => sum + calculateActivityAppliedPercentage(a), 0);
+                
+                return (
+                  <div className="bg-blue-50 rounded-lg p-4">
+                    <AppliedPercentageBar
+                      segments={segments}
+                      totalValue={totalApplied}
+                      maxValue={100}
+                      title="Applied Percentage by Activity (Correlated with SB)"
+                      subtitle="🔗 Correlated with Supabase data"
+                      height="1.25rem"
+                      showPercentages={true}
+                      showLegend={false} // Skip legend to save space in this context
+                      normalizeToWidth={false} // Show actual percentages
+                      showUnused={true}
+                      className="text-blue-900"
+                    />
+                    
+                    {/* Correlation Status Indicator */}
+                    <div className="flex items-center justify-between mt-2 text-xs text-blue-600">
+                      <span>🔗 Correlated with Supabase data</span>
+                      <span>{selectedSubcomponents.length} subcomponents active</span>
+                      {totalApplied > 100 && (
+                        <span className="text-red-600 font-semibold">⚠️ Exceeds 100%</span>
                       )}
                     </div>
-                  );
-                })}
-                {/* Fill unused portion only if total < 100% */}
-                {(() => {
-                  const totalApplied = selectedActivities.reduce((sum, a) => sum + calculateActivityAppliedPercentage(a), 0);
-                  if (totalApplied < 100) {
-                    return (
-                      <div
-                        className="bg-gray-300 h-full"
-                        style={{ width: `${100 - totalApplied}%` }}
-                        title={`Unused: ${(100 - totalApplied).toFixed(2)}%`}
-                      />
-                    );
-                  }
-                  return null;
-                })()}
-              </div>
-              {/* Correlation Status Indicator */}
-              <div className="flex items-center justify-between mt-2 text-xs text-blue-200">
-                <span>🔗 Correlated with Supabase data</span>
-                <span>{selectedSubcomponents.length} subcomponents active</span>
-              </div>
+                  </div>
+                );
+              })()}
             </div>
             {/* End Applied Percentage Stacked Bar */}
           </div>
@@ -3056,6 +3201,18 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
                               <span>{selectedSubcomponents}/{totalSubcomponents}</span>
                             </div>
                             
+                            {/* Non-R&D Time Chip */}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openNonRdModal(step.id); }}
+                              className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700 border border-orange-200 hover:bg-orange-200 transition-colors flex items-center space-x-1 shadow-sm"
+                              title="Configure Non-R&D Time"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <span>Non-R&D: {step.nonRdPercentage}%</span>
+                            </button>
+                            
                             {/* Compact Toggle Switch */}
                             <button
                               onClick={(e) => { e.stopPropagation(); toggleStepEnabled(step.id); }}
@@ -3115,18 +3272,6 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
                               <div className="flex items-center space-x-2">
                                 <span className="text-xs text-gray-500">Total: {totalSubcomponents}</span>
                                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }}></div>
-                                
-                                {/* Non-R&D Chip */}
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); openNonRdModal(step.id); }}
-                                  className="px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700 border border-orange-200 hover:bg-orange-200 transition-colors flex items-center space-x-1"
-                                  title="Configure Non-R&D Time"
-                                >
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                  </svg>
-                                  <span>Non-R&D: {step.nonRdPercentage}%</span>
-                                </button>
                               </div>
                             </div>
                             <div className="space-y-2">

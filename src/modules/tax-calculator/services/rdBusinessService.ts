@@ -132,18 +132,20 @@ export class RDBusinessService {
       const { data: existingClient } = await supabase
         .from('clients')
         .select('id')
-        .eq('user_id', userId)
+        .eq('created_by', userId)
         .single();
 
       if (existingClient) {
         return existingClient.id;
       }
 
-      // Create new client (only user_id is required)
+      // Create new client (created_by is required)
       const { data: newClient, error } = await supabase
         .from('clients')
         .insert({
-          user_id: userId
+          created_by: userId,
+          full_name: 'R&D Client', // Required field
+          email: `client-${userId}@example.com` // Required field - temporary
         })
         .select('id')
         .single();

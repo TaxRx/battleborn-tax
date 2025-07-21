@@ -1,6 +1,8 @@
 // Report Generator Helper Functions for Clinical Practice Guideline Report
 // aiService removed - using static report generation
 
+import { aiService } from "../../../../services/aiService";
+
 export interface ReportData {
   businessProfile: any;
   selectedActivities: any[];
@@ -277,13 +279,19 @@ export const generateHierarchyTree = (
         <div class="tree-branches">
           ${steps.map(step => {
             const stepSubcomponents = subcomponents.filter(sub => sub.step_id === step.step_id);
+            
+            // Calculate step-level applied percentage by summing subcomponent applied percentages
+            const stepAppliedPercent = stepSubcomponents.reduce((sum, sub) => {
+              return sum + (sub.applied_percentage || 0);
+            }, 0);
+            
             return `
               <div class="tree-node">
                 <div class="node-content">
                   <div class="node-icon">📄</div>
                   <div class="node-text">
                     <div class="node-title">${step.step?.name || 'Research Step'}</div>
-                    <div class="node-subtitle">Time: ${step.time_percentage || 0}% | Applied: ${step.applied_percentage || 0}%</div>
+                    <div class="node-subtitle">Time: ${step.time_percentage || 0}% | Applied: ${stepAppliedPercent.toFixed(2)}%</div>
                   </div>
                 </div>
                 
@@ -296,6 +304,7 @@ export const generateHierarchyTree = (
                           <div class="node-text">
                             <div class="node-title">${sub.rd_research_subcomponents?.name || 'Subcomponent'}</div>
                             <div class="node-subtitle">
+                              Applied: ${(sub.applied_percentage || 0).toFixed(2)}% | 
                               Frequency: ${sub.frequency_percentage}% | 
                               Start: ${sub.start_month}/${sub.start_year}
                             </div>
@@ -331,6 +340,12 @@ export const generateStepsTable = (steps: any[], subcomponents: any[]): string =
         <tbody>
           ${steps.map(step => {
             const stepSubcomponents = subcomponents.filter(sub => sub.step_id === step.step_id);
+            
+            // Calculate step-level applied percentage by summing subcomponent applied percentages
+            const stepAppliedPercent = stepSubcomponents.reduce((sum, sub) => {
+              return sum + (sub.applied_percentage || 0);
+            }, 0);
+            
             return `
               <tr id="step-${step.id}">
                 <td><strong>${step.step?.name || 'Unnamed Step'}</strong></td>
@@ -340,7 +355,7 @@ export const generateStepsTable = (steps: any[], subcomponents: any[]): string =
                   </div>
                   ${step.time_percentage || 0}%
                 </td>
-                <td>${step.applied_percentage || 0}%</td>
+                <td>${stepAppliedPercent.toFixed(2)}%</td>
                 <td>${stepSubcomponents.length}</td>
                 <td><span class="chip chip-success">Active</span></td>
               </tr>

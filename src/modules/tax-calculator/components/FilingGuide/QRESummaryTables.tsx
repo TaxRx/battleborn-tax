@@ -132,14 +132,22 @@ export const QRESummaryTables: React.FC<QRESummaryTablesProps> = ({
               </tr>
             </thead>
             <tbody>
-              {historicalData.map((year: any, index: number) => (
-                <tr key={index}>
-                  <td>{year.year}</td>
-                  <td className="qre-amount">{formatCurrency(year.qre)}</td>
-                  <td className="qre-amount">{formatCurrency(year.gross_receipts)}</td>
-                  <td className="qre-percentage">{formatPercentage((year.qre / year.gross_receipts) * 100)}</td>
-                </tr>
-              ))}
+              {(() => {
+                // Filter to show only report year + previous 3 years
+                const currentYear = selectedYear?.year || new Date().getFullYear();
+                const filteredData = historicalData
+                  .filter((year: any) => year.year <= currentYear && year.year >= (currentYear - 3))
+                  .sort((a: any, b: any) => b.year - a.year); // Sort descending (newest first)
+                
+                return filteredData.map((year: any, index: number) => (
+                  <tr key={index}>
+                    <td>{year.year}</td>
+                    <td className="qre-amount">{formatCurrency(year.qre)}</td>
+                    <td className="qre-amount">{formatCurrency(year.gross_receipts)}</td>
+                    <td className="qre-percentage">{formatPercentage((year.qre / year.gross_receipts) * 100)}</td>
+                  </tr>
+                ));
+              })()}
             </tbody>
           </table>
         </div>
@@ -157,18 +165,17 @@ export const QRESummaryTables: React.FC<QRESummaryTablesProps> = ({
               <ul>
                 {selectedMethod === 'asc' ? (
                   <>
-                    <li>Average Prior QRE: {formatCurrency(calculations.federalCredits.asc?.avgPriorQRE ?? 0)}</li>
-                    <li>Incremental QRE: {formatCurrency(calculations.federalCredits.asc?.incrementalQRE ?? 0)}</li>
-                    <li>Credit Rate: 6%</li>
-                    <li>Calculated Credit: {formatCurrency(calculations.federalCredits.asc?.credit ?? 0)}</li>
+                    <li>Average Prior QRE: <span className="qre-amount">{formatCurrency(calculations.federalCredits.asc?.avgPriorQRE ?? 0)}</span></li>
+                    <li>50% of Average Prior QRE: <span className="qre-amount">{formatCurrency((calculations.federalCredits.asc?.avgPriorQRE ?? 0) * 0.5)}</span></li>
+                    <li>Incremental QRE: <span className="qre-amount">{formatCurrency(calculations.federalCredits.asc?.incrementalQRE ?? 0)}</span></li>
+                    <li><strong>Calculated Credit: <span className="qre-amount">{formatCurrency(calculations.federalCredits.asc?.credit ?? 0)}</span></strong></li>
                   </>
                 ) : (
                   <>
-                    <li>Base Percentage: {formatPercentage((calculations.federalCredits.standard?.basePercentage ?? 0) * 100)}</li>
-                    <li>Fixed Base Amount: {formatCurrency(calculations.federalCredits.standard?.fixedBaseAmount ?? 0)}</li>
-                    <li>Incremental QRE: {formatCurrency(calculations.federalCredits.standard?.incrementalQRE ?? 0)}</li>
-                    <li>Credit Rate: 20%</li>
-                    <li>Calculated Credit: {formatCurrency(calculations.federalCredits.standard?.credit ?? 0)}</li>
+                    <li>Base Percentage: <span className="qre-percentage">{formatPercentage((calculations.federalCredits.standard?.basePercentage ?? 0) * 100)}</span></li>
+                    <li>Fixed Base Amount: <span className="qre-amount">{formatCurrency(calculations.federalCredits.standard?.fixedBaseAmount ?? 0)}</span></li>
+                    <li>Incremental QRE: <span className="qre-amount">{formatCurrency(calculations.federalCredits.standard?.incrementalQRE ?? 0)}</span></li>
+                    <li><strong>Calculated Credit: <span className="qre-amount">{formatCurrency(calculations.federalCredits.standard?.credit ?? 0)}</span></strong></li>
                   </>
                 )}
               </ul>

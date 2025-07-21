@@ -8,7 +8,6 @@ import { StateCreditProForma } from '../StateProForma/StateCreditProForma';
 import { getStateConfig, getAvailableStates, StateConfig } from '../StateProForma';
 import { saveStateProFormaData, loadStateProFormaData, StateCreditDataService } from '../../services/stateCreditDataService';
 import { FederalCreditProForma } from './FederalCreditProForma';
-import { KPICharts } from './KPICharts';
 import { CalculationSpecifics } from './CalculationSpecifics';
 
 interface FilingGuideDocumentProps {
@@ -280,15 +279,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
           </div>
         </div>
         
-        <div id="filing-guide-section-charts">
-          <KPICharts 
-            businessData={businessData}
-            selectedYear={selectedYear}
-            calculations={calculations}
-            selectedMethod={selectedMethod}
-            debugData={debugData}
-          />
-        </div>
+
         
         <div id="filing-guide-section-qre-tables">
           <QRESummaryTables 

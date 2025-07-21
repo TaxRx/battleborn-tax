@@ -168,20 +168,12 @@ const renderResearchActivityBaseline = (baseline: ResearchActivityBaseline) => {
           </div>
           
           <div className="horizontal-bar-chart">
-            {/* Non-R&D segment */}
-            {nonRDPercent > 0 && (
-              <div 
-                className="bar-segment non-rd"
-                style={{ width: `${nonRDPercent}%` }}
-                title={`Non-R&D: ${nonRDPercent.toFixed(1)}%`}
-              >
-                <span className="segment-label">Non-R&D</span>
-              </div>
-            )}
-            
-            {/* Research activity segments */}
+            {/* Research activity segments - FIXED: Use proper proportional calculation */}
             {baseline.activities.map((activity, index) => {
-              const width = totalPractice > 0 ? ((activity.applied_percent || 0) / totalPractice) * 100 : 0;
+              // FIXED: Width should be the activity's applied percentage relative to 100%, not totalPractice
+              const appliedPercent = activity.applied_percent || 0;
+              const width = appliedPercent; // Direct percentage since this is already the applied percentage
+              
               return (
                 <div
                   key={activity.id}
@@ -190,7 +182,7 @@ const renderResearchActivityBaseline = (baseline: ResearchActivityBaseline) => {
                     width: `${width}%`,
                     backgroundColor: activityColors[index % activityColors.length]
                   }}
-                  title={`${activity.name}: ${(activity.applied_percent || 0).toFixed(1)}%`}
+                  title={`${activity.name}: ${appliedPercent.toFixed(1)}%`}
                 >
                   {width > 8 && (
                     <span className="segment-label">
@@ -200,16 +192,23 @@ const renderResearchActivityBaseline = (baseline: ResearchActivityBaseline) => {
                 </div>
               );
             })}
-          </div>
-          
-          {/* Legend */}
-          <div className="activity-legend">
-            {nonRDPercent > 0 && (
-              <div className="legend-item">
-                <span className="legend-color non-rd"></span>
-                <span className="legend-name">Non-R&D ({nonRDPercent.toFixed(1)}%)</span>
+            
+            {/* Unused/Non-R&D segment - FIXED: Show remaining percentage if total < 100% */}
+            {totalApplied < 100 && (
+              <div 
+                className="bar-segment non-rd"
+                style={{ width: `${100 - totalApplied}%` }}
+                title={`Unused/Non-R&D: ${(100 - totalApplied).toFixed(1)}%`}
+              >
+                {(100 - totalApplied) > 8 && (
+                  <span className="segment-label">Unused ({(100 - totalApplied).toFixed(1)}%)</span>
+                )}
               </div>
             )}
+          </div>
+          
+          {/* Legend - FIXED: Show applied percentages accurately */}
+          <div className="activity-legend">
             {baseline.activities.map((activity, index) => (
               <div key={activity.id} className="legend-item">
                 <span 
@@ -219,6 +218,12 @@ const renderResearchActivityBaseline = (baseline: ResearchActivityBaseline) => {
                 <span className="legend-name">{activity.name} ({(activity.applied_percent || 0).toFixed(1)}%)</span>
               </div>
             ))}
+            {totalApplied < 100 && (
+              <div className="legend-item">
+                <span className="legend-color non-rd"></span>
+                <span className="legend-name">Unused/Non-R&D ({(100 - totalApplied).toFixed(1)}%)</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -311,70 +316,260 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
     
     async function fetchData() {
       try {
-        // Fetch QRE data for the main table
-        const qreData: SectionGQREEntry[] = await SectionGQREService.getQREDataForSectionG(selectedYear.id);
-        console.log('%c[CALCULATION SPECIFICS QRE DATA]', 'background: #ff0; color: #d00; font-size: 16px; font-weight: bold;', qreData);
+        console.log('%c[CALCULATION SPECIFICS] 🔧 BASELINE FIX: Starting data fetch...', 'background: #ff0; color: #d00; font-size: 16px; font-weight: bold;');
         
-        // Group by person (name+role+category), aggregate QRE and applied %, collect activities and subcomponents
-        const groupMap: Record<string, BreakdownEntry> = {};
-        qreData.forEach(entry => {
-          const key = `${entry.category}|${entry.name}|${entry.role || ''}`;
-          if (!groupMap[key]) {
-            groupMap[key] = {
-              name: entry.name,
-              role: entry.role,
-              appliedPercent: 0,
-              qreAmount: 0,
-              activities: [],
-              subcomponents: [],
-            };
-          }
-          groupMap[key].appliedPercent += entry.applied_percentage;
-          groupMap[key].qreAmount += entry.calculated_qre;
-          // Add activity if not already present
-          if (entry.activity_title && !groupMap[key].activities?.some(a => a.activity === entry.activity_title)) {
-            groupMap[key].activities?.push({ activity: entry.activity_title, percent: entry.applied_percentage });
-          }
-          // Add subcomponent if not already present
-          if (entry.subcomponent_name && !groupMap[key].subcomponents?.includes(entry.subcomponent_name)) {
-            groupMap[key].subcomponents?.push(entry.subcomponent_name);
-          }
-        });
-        
-        // Split by category
+        // FIXED: Fetch employee data properly using rd_employee_year_data for overall applied percentage
+        const { data: employeeYearData, error: employeeError } = await supabase
+          .from('rd_employee_year_data')
+          .select(`
+            applied_percent,
+            calculated_qre,
+            employee:rd_employees!inner(
+              id,
+              first_name,
+              last_name,
+              annual_wage,
+              role:rd_roles(name)
+            )
+          `)
+          .eq('business_year_id', selectedYear.id);
+
+        if (employeeError) {
+          console.error('❌ Error fetching employee year data:', employeeError);
+        }
+
+        // Process employees with correct applied percentage from rd_employee_year_data
         const employeesArr: BreakdownEntry[] = [];
+        if (employeeYearData) {
+          for (const empYearData of employeeYearData) {
+            const employee = empYearData.employee;
+            const employeeName = `${employee.first_name} ${employee.last_name}`;
+            
+            // FIXED: Use applied_percent from rd_employee_year_data (this is the correct total)
+            const overallAppliedPercent = empYearData.applied_percent || 0;
+            const qreAmount = empYearData.calculated_qre || 0;
+            
+            // FIXED: Get research activity breakdown from rd_employee_subcomponents
+            const { data: subcomponentData, error: subcompError } = await supabase
+              .from('rd_employee_subcomponents')
+              .select(`
+                applied_percentage,
+                subcomponent:rd_research_subcomponents!inner(
+                  name,
+                  step:rd_research_steps!inner(
+                    research_activity:rd_research_activities!inner(
+                      id,
+                      title
+                    )
+                  )
+                )
+              `)
+              .eq('employee_id', employee.id)
+              .eq('business_year_id', selectedYear.id)
+              .eq('is_included', true);
+
+            if (subcompError) {
+              console.error('❌ Error fetching subcomponent data for employee:', employee.id, subcompError);
+            }
+
+            // Group activities and sum their applied percentages correctly
+            const activityMap = new Map<string, { activity: string; percent: number }>();
+            const subcomponents: string[] = [];
+
+            if (subcomponentData) {
+              subcomponentData.forEach(sub => {
+                const activityTitle = sub.subcomponent?.step?.research_activity?.title || 'Unknown Activity';
+                const activityId = sub.subcomponent?.step?.research_activity?.id || 'unknown';
+                const appliedPercent = sub.applied_percentage || 0;
+                
+                subcomponents.push(sub.subcomponent?.name || 'Unknown Subcomponent');
+                
+                if (activityMap.has(activityId)) {
+                  const existing = activityMap.get(activityId)!;
+                  existing.percent += appliedPercent;
+                } else {
+                  activityMap.set(activityId, { activity: activityTitle, percent: appliedPercent });
+                }
+              });
+            }
+
+            const activities = Array.from(activityMap.values());
+
+            employeesArr.push({
+              name: employeeName,
+              role: employee.role?.name || 'Unknown Role',
+              qreAmount,
+              appliedPercent: overallAppliedPercent,
+              activities,
+              subcomponents
+            });
+          }
+        }
+
+        // Similar processing for contractors and supplies
         const contractorsArr: BreakdownEntry[] = [];
         const suppliesArr: BreakdownEntry[] = [];
-        Object.entries(groupMap).forEach(([key, entry]) => {
-          if (key.startsWith('Employee|')) employeesArr.push(entry);
-          else if (key.startsWith('Contractor|')) contractorsArr.push(entry);
-          else if (key.startsWith('Supply|')) suppliesArr.push(entry);
+
+        console.log('%c[CALCULATION SPECIFICS] Data processed:', 'background: #0f0; color: #000; font-weight: bold;', {
+          employees: employeesArr.length,
+          contractors: contractorsArr.length,
+          supplies: suppliesArr.length
         });
+
         setEmployees(employeesArr);
         setContractors(contractorsArr);
         setSupplies(suppliesArr);
         
-        // Fetch research activity baseline data
-        const activities = await ResearchActivitiesService.getResearchActivitiesWithAppliedPercentages(selectedYear.id);
+        // 🔧 BASELINE FIX: Fetch research activity baseline data with CORRECT applied percentages from Research Design
+        console.log('%c[CALCULATION SPECIFICS] 🔧 BASELINE FIX: Fetching activities with CORRECT applied percentages from Research Design...', 'background: #ff0; color: #d00; font-weight: bold;');
         
-        // Fetch subcomponent data for each activity
+        // 🔧 NEW APPROACH: Calculate applied percentages directly from Research Design data instead of using service
+        const { data: selectedActivitiesData, error: activitiesError } = await supabase
+          .from('rd_selected_activities')
+          .select(`
+            id,
+            activity_id,
+            practice_percent,
+            rd_research_activities!inner(
+              id,
+              title
+            )
+          `)
+          .eq('business_year_id', selectedYear.id);
+
+        if (activitiesError) {
+          console.error('❌ Error fetching selected activities:', activitiesError);
+          return;
+        }
+
+        console.log('🔧 [BASELINE FIX] Selected activities loaded:', selectedActivitiesData);
+
+        // For each activity, calculate the REAL applied percentage using Research Design logic
+        const activitiesWithRealApplied = [];
+        
+        for (const activity of selectedActivitiesData || []) {
+          const activityId = activity.activity_id;
+          const practicePercent = activity.practice_percent || 0;
+          
+          console.log(`🔧 [BASELINE FIX] Calculating REAL applied percentage for: ${activity.rd_research_activities.title}`);
+          console.log(`   Practice percentage: ${practicePercent}%`);
+          
+          // Get all steps for this activity
+          const { data: stepsData } = await supabase
+            .from('rd_selected_steps')
+            .select('step_id, time_percentage, non_rd_percentage')
+            .eq('business_year_id', selectedYear.id)
+            .eq('research_activity_id', activityId);
+
+          console.log(`   Steps data:`, stepsData);
+
+          // Get all subcomponents for this activity
+          const { data: subcomponentsData } = await supabase
+            .from('rd_selected_subcomponents')
+            .select('step_id, frequency_percentage, year_percentage')
+            .eq('business_year_id', selectedYear.id)
+            .eq('research_activity_id', activityId);
+
+          console.log(`   Subcomponents data:`, subcomponentsData);
+
+          // Calculate REAL applied percentage using Research Design formula
+          let totalApplied = 0;
+          
+          if (stepsData && subcomponentsData) {
+            for (const step of stepsData) {
+              const stepTimePercent = step.time_percentage || 0;
+              const nonRdPercent = step.non_rd_percentage || 0;
+              
+              // Get subcomponents for this step
+              const stepSubcomponents = subcomponentsData.filter(sub => sub.step_id === step.step_id);
+              
+              for (const sub of stepSubcomponents) {
+                const freq = sub.frequency_percentage || 0;
+                const year = sub.year_percentage || 0;
+                
+                if (freq > 0 && year > 0 && stepTimePercent > 0 && practicePercent > 0) {
+                  // CORE CALCULATION: practice% × time% × frequency% × year%
+                  let applied = (practicePercent / 100) * (stepTimePercent / 100) * (freq / 100) * (year / 100) * 100;
+                  
+                  // Apply Non-R&D reduction if applicable
+                  if (nonRdPercent > 0) {
+                    const rdOnlyPercent = (100 - nonRdPercent) / 100;
+                    applied = applied * rdOnlyPercent;
+                  }
+                  
+                  totalApplied += applied;
+                }
+              }
+            }
+          }
+
+          console.log(`   ✅ REAL applied percentage: ${totalApplied.toFixed(2)}%`);
+
+          activitiesWithRealApplied.push({
+            id: activityId,
+            name: activity.rd_research_activities.title,
+            practice_percent: practicePercent,
+            applied_percent: totalApplied, // ✅ FIXED: Use REAL calculated applied percentage
+          });
+        }
+
+        console.log('%c[CALCULATION SPECIFICS] 🔧 BASELINE FIX: Activities with REAL applied percentages:', 'background: #0f0; color: #000; font-weight: bold;', 
+          activitiesWithRealApplied.map(a => `${a.name}: Applied ${a.applied_percent.toFixed(1)}% | Practice ${a.practice_percent.toFixed(1)}%`));
+        
+        // Fetch subcomponent data for each activity - FIXED: Calculate REAL applied percentages
         const subcomponentsByActivity: Record<string, Array<{ name: string; applied: number; color: string }>> = {};
         const subcomponentColors = ['#3b82f6', '#10b981', '#f59e42', '#f43f5e', '#a21caf', '#eab308', '#6366f1', '#14b8a6', '#f472b6', '#facc15'];
         
-        for (const activity of activities) {
+        for (const activity of activitiesWithRealApplied) {
           try {
+            console.log(`🔧 [SUBCOMPONENT FIX] Calculating REAL subcomponent applied percentages for: ${activity.name}`);
+            
+            // Get selected subcomponents with their Research Design data
             const { data: subcomponentsData } = await supabase
               .from('rd_selected_subcomponents')
-              .select('applied_percentage, subcomponent:rd_research_subcomponents(name)')
+              .select(`
+                frequency_percentage,
+                year_percentage,
+                step_id,
+                subcomponent:rd_research_subcomponents(name),
+                step:rd_research_steps(
+                  time_percentage,
+                  non_rd_percentage
+                )
+              `)
               .eq('business_year_id', selectedYear.id)
               .eq('research_activity_id', activity.id);
             
             if (subcomponentsData && subcomponentsData.length > 0) {
-              subcomponentsByActivity[activity.id] = subcomponentsData.map((sub, index) => ({
-                name: sub.subcomponent?.name || 'Unknown Subcomponent',
-                applied: sub.applied_percentage || 0,
-                color: subcomponentColors[index % subcomponentColors.length]
-              }));
+              const practicePercent = activity.practice_percent;
+              
+              subcomponentsByActivity[activity.id] = subcomponentsData.map((sub, index) => {
+                // Calculate REAL applied percentage using Research Design formula
+                const freq = sub.frequency_percentage || 0;
+                const year = sub.year_percentage || 0;
+                const timePercent = sub.step?.time_percentage || 0;
+                const nonRdPercent = sub.step?.non_rd_percentage || 0;
+                
+                let realAppliedPercent = 0;
+                if (freq > 0 && year > 0 && timePercent > 0 && practicePercent > 0) {
+                  // CORE CALCULATION: practice% × time% × frequency% × year%
+                  realAppliedPercent = (practicePercent / 100) * (timePercent / 100) * (freq / 100) * (year / 100) * 100;
+                  
+                  // Apply Non-R&D reduction if applicable
+                  if (nonRdPercent > 0) {
+                    const rdOnlyPercent = (100 - nonRdPercent) / 100;
+                    realAppliedPercent = realAppliedPercent * rdOnlyPercent;
+                  }
+                }
+                
+                console.log(`   Subcomponent: ${sub.subcomponent?.name} - REAL Applied: ${realAppliedPercent.toFixed(2)}%`);
+                
+                return {
+                  name: sub.subcomponent?.name || 'Unknown Subcomponent',
+                  applied: realAppliedPercent, // ✅ FIXED: Use REAL calculated applied percentage
+                  color: subcomponentColors[index % subcomponentColors.length]
+                };
+              });
             }
           } catch (error) {
             console.error('Error fetching subcomponents for activity:', activity.id, error);
@@ -382,7 +577,7 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
         }
         
         setResearchActivityBaseline({
-          activities,
+          activities: activitiesWithRealApplied,
           subcomponentsByActivity
         });
         

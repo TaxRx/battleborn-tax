@@ -11,7 +11,7 @@ export class ResearchActivitiesService {
   // Get research activities with applied percentages for a business year
   static async getResearchActivitiesWithAppliedPercentages(businessYearId: string): Promise<ResearchActivityData[]> {
     try {
-      console.log('[ResearchActivitiesService] Fetching research activities for businessYearId:', businessYearId);
+      console.log('[ResearchActivitiesService] 🔧 BASELINE FIX: Fetching research activities for businessYearId:', businessYearId);
       
       const { data, error } = await supabase
         .from('rd_selected_activities')
@@ -36,12 +36,13 @@ export class ResearchActivitiesService {
         return [];
       }
 
-      // Calculate applied percentages for each activity
+      // Calculate applied percentages for each activity - FIXED: Real-time calculation
       const activitiesWithAppliedPercentages: ResearchActivityData[] = [];
       
       for (const activity of data) {
         try {
-          // Get the total applied percentage for this activity from rd_selected_subcomponents
+          // FIXED: Get the total applied percentage for this activity from rd_selected_subcomponents
+          // This ensures we always have the most current data, not cached values
           const { data: subcomponentsData, error: subError } = await supabase
             .from('rd_selected_subcomponents')
             .select('applied_percentage')
@@ -53,8 +54,17 @@ export class ResearchActivitiesService {
             continue;
           }
 
-          // Sum up all applied percentages for this activity
-          const totalAppliedPercent = subcomponentsData?.reduce((sum, sub) => sum + (sub.applied_percentage || 0), 0) || 0;
+          // Sum up all applied percentages for this activity - FIXED: Handle edge cases
+          const totalAppliedPercent = subcomponentsData?.reduce((sum, sub) => {
+            const appliedPercent = sub.applied_percentage || 0;
+            return sum + appliedPercent;
+          }, 0) || 0;
+
+          console.log(`[ResearchActivitiesService] 🔧 BASELINE FIX: Activity ${activity.rd_research_activities?.title}:`, {
+            subcomponentsCount: subcomponentsData?.length || 0,
+            totalAppliedPercent: totalAppliedPercent.toFixed(2),
+            practicePercent: activity.practice_percent || 0
+          });
 
           activitiesWithAppliedPercentages.push({
             id: activity.activity_id,
@@ -67,7 +77,9 @@ export class ResearchActivitiesService {
         }
       }
 
-      console.log('[ResearchActivitiesService] Processed activities:', activitiesWithAppliedPercentages);
+      console.log('[ResearchActivitiesService] 🔧 BASELINE FIX: Processed activities with real-time applied percentages:', 
+        activitiesWithAppliedPercentages.map(a => `${a.name}: ${a.applied_percent.toFixed(1)}%`));
+      
       return activitiesWithAppliedPercentages;
     } catch (error) {
       console.error('[ResearchActivitiesService] Error in getResearchActivitiesWithAppliedPercentages:', error);

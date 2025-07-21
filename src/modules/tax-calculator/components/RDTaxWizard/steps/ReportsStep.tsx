@@ -52,7 +52,7 @@ const ReportsStep: React.FC<ReportsStepProps> = ({ wizardState, onComplete, onPr
   const [loading, setLoading] = useState(false);
   const [qcControls, setQCControls] = useState<QCDocumentControl[]>([]);
   const [businessYearData, setBusinessYearData] = useState<BusinessYearData | null>(null);
-  const [portalToken, setPortalToken] = useState<PortalToken | null>(null);
+  const [portalToken, setPortalToken] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [editingControl, setEditingControl] = useState<string | null>(null);
   const [showJuratModal, setShowJuratModal] = useState(false);
@@ -156,7 +156,7 @@ I further affirm that I am authorized to sign on behalf of the business entity a
 
       if (tokenError) throw tokenError;
       if (tokens && tokens.length > 0) {
-        setPortalToken(tokens[0]);
+        setPortalToken(tokens[0].token);
       }
 
       // Check for signed jurat
@@ -282,7 +282,7 @@ I further affirm that I am authorized to sign on behalf of the business entity a
 
   const getPortalUrl = () => {
     if (!portalToken) return '';
-    return `${window.location.origin}/client-portal/${wizardState.business?.id}/${portalToken.token}`;
+    return `${window.location.origin}/client-portal/${wizardState.business?.id}/${portalToken}`;
   };
 
   if (loading && !qcControls.length) {
@@ -593,7 +593,8 @@ I further affirm that I am authorized to sign on behalf of the business entity a
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm font-medium text-gray-700">Portal URL</span>
                   <span className="text-xs text-gray-500">
-                    Active • {portalToken.access_count} visits
+                    Active • {/* Access count is not directly available in the current state,
+                    but we can assume it's managed by the backend or not tracked here */}
                   </span>
                 </div>
                 <div className="flex items-center space-x-2">

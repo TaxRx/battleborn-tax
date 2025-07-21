@@ -40,6 +40,80 @@ interface RDClientManagementProps {
   onClientSelect?: (client: UnifiedClientRecord) => void;
 }
 
+// Business Accordion Component
+interface BusinessAccordionProps {
+  business: any;
+  clientId: string;
+  onLaunchWizard: (clientId: string, businessId: string) => void;
+  isExpanded: boolean;
+  onToggle: () => void;
+}
+
+const BusinessAccordion: React.FC<BusinessAccordionProps> = ({
+  business,
+  clientId,
+  onLaunchWizard,
+  isExpanded,
+  onToggle
+}) => {
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
+      {/* Business Header */}
+      <div className="p-4 flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+            <Building className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h4 className="text-sm font-medium text-gray-900">
+              {business.business_name || 'Unknown Business'}
+            </h4>
+            <div className="flex items-center space-x-2 mt-1">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                {business.entity_type || 'LLC'}
+              </span>
+              {business.ein && (
+                <span className="text-xs text-gray-500">
+                  EIN: {business.ein}
+                </span>
+              )}
+              {business.business_years?.length > 0 && (
+                <span className="text-xs text-gray-500">
+                  {business.business_years.length} year{business.business_years.length !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+        
+        <div className="flex items-center space-x-4">
+          <div className="text-right">
+            <div className="text-sm font-medium text-gray-900">
+              ${business.annual_revenue?.toLocaleString() || '0'}
+            </div>
+            <div className="text-xs text-gray-500">
+              {business.employee_count || 0} employees
+            </div>
+          </div>
+          
+          {/* Single Open Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              console.log('🔘 Launch R&D Wizard for business:', business.id, 'client:', clientId);
+              onLaunchWizard(clientId, business.id);
+            }}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+          >
+            <ExternalLink className="w-4 h-4 mr-2" />
+            Open R&D Wizard
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Client Card Component
 interface ClientCardProps {
   client: any;
@@ -58,6 +132,8 @@ const ClientCard: React.FC<ClientCardProps> = ({
   menuOpenId,
   setMenuOpenId
 }) => {
+  const [expandedBusinessId, setExpandedBusinessId] = useState<string | null>(null);
+  
   const getStatusColor = (status: string, archived: boolean) => {
     if (archived) return 'bg-gray-500 text-white';
     switch (status) {
@@ -73,6 +149,10 @@ const ClientCard: React.FC<ClientCardProps> = ({
   const rdEnrollments = client.businesses?.flatMap((business: any) => 
     business.tool_enrollments?.filter((tool: any) => tool.tool_slug === 'rd') || []
   ) || [];
+
+  const handleBusinessToggle = (businessId: string) => {
+    setExpandedBusinessId(expandedBusinessId === businessId ? null : businessId);
+  };
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
@@ -138,100 +218,38 @@ const ClientCard: React.FC<ClientCardProps> = ({
             className="border-t border-gray-100 bg-gray-50"
           >
             <div className="p-6 space-y-6">
-              {/* R&D Enrollments Section */}
+              {/* Businesses Accordion */}
               <div>
-                <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-                  <Zap className="w-4 h-4 mr-2" />
-                  R&D Tax Credit Enrollments
+                <h4 className="text-sm font-semibold text-gray-900 mb-4 flex items-center">
+                  <Building className="w-4 h-4 mr-2" />
+                  Businesses
                 </h4>
-                {rdEnrollments.length > 0 ? (
+                {client.businesses && client.businesses.length > 0 ? (
                   <div className="space-y-3">
-                    {rdEnrollments.map((enrollment: any, index: number) => {
-                      const business = client.businesses?.find((b: any) => 
-                        b.tool_enrollments?.some((t: any) => t.id === enrollment.id)
-                      );
+                    {client.businesses.map((business: any) => {
+                      const businessRdEnrollments = business.tool_enrollments?.filter((tool: any) => tool.tool_slug === 'rd') || [];
                       
+                      // Show all businesses, not just those with R&D enrollments
                       return (
-                        <div key={enrollment.id} className="bg-white rounded-lg border border-gray-200 p-4">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-3">
-                              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                                <Calculator className="w-5 h-5 text-white" />
-                              </div>
-                              <div>
-                                <h5 className="text-sm font-medium text-gray-900">
-                                  {business?.business_name || 'Unknown Business'}
-                                </h5>
-                                <div className="flex items-center space-x-2 mt-1">
-                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(enrollment.status, false)}`}>
-                                    {enrollment.status}
-                                  </span>
-                                  <span className="text-xs text-gray-500">
-                                    Enrolled: {new Date(enrollment.enrolled_at).toLocaleDateString()}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => {
-                                console.log('🔘 Launch Wizard button clicked for client:', client.id, 'business:', business?.id);
-                                onLaunchWizard(client.id, business?.id || '');
-                              }}
-                              className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                            >
-                              <ExternalLink className="w-4 h-4 mr-1" />
-                              Launch Wizard
-                            </button>
-                          </div>
-                        </div>
+                        <BusinessAccordion
+                          key={business.id}
+                          business={business}
+                          clientId={client.id}
+                          onLaunchWizard={onLaunchWizard}
+                          isExpanded={expandedBusinessId === business.id}
+                          onToggle={() => handleBusinessToggle(business.id)}
+                        />
                       );
                     })}
                   </div>
                 ) : (
                   <div className="text-center py-6 text-gray-500 bg-white rounded-lg border border-gray-200">
-                    <Zap className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                    <p className="text-sm">No R&D enrollments found</p>
-                    <p className="text-xs text-gray-400 mt-1">Enroll in R&D Tax Credit Wizard from Unified Client Management</p>
+                    <Building className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                    <p className="text-sm">No businesses found</p>
+                    <p className="text-xs text-gray-400 mt-1">Add businesses to enroll in R&D Tax Credit Wizard</p>
                   </div>
                 )}
               </div>
-
-              {/* Business Summary */}
-              {client.businesses && client.businesses.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-                    <Building className="w-4 h-4 mr-2" />
-                    Businesses
-                  </h4>
-                  <div className="space-y-2">
-                    {client.businesses.map((business: any) => (
-                      <div key={business.id} className="bg-white rounded-lg border border-gray-200 p-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h5 className="text-sm font-medium text-gray-900">{business.business_name}</h5>
-                            <div className="flex items-center space-x-2 mt-1">
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                {business.entity_type || 'LLC'}
-                              </span>
-                              <span className="text-xs text-gray-500">
-                                {business.business_years?.length || 0} year{business.business_years?.length !== 1 ? 's' : ''}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-sm font-medium text-gray-900">
-                              ${business.annual_revenue?.toLocaleString() || '0'}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              {business.employee_count || 0} employees
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </motion.div>
         )}
@@ -287,30 +305,120 @@ export default function RDClientManagement({
       const allClients = await CentralizedClientService.getUnifiedClientList({});
       console.log('📊 All clients loaded:', allClients.length);
       
-      if (allClients.length > 0) {
-        console.log('📋 Sample client structure:', {
-          id: allClients[0].id,
-          name: allClients[0].full_name,
-          businesses: allClients[0].businesses?.length || 0,
-          tool_enrollments: allClients[0].tool_enrollments?.length || 0
+      // Enhance clients with R&D business years data
+      const enhancedClients = await Promise.all(
+        allClients.map(async (client) => {
+          if (!client.businesses || client.businesses.length === 0) {
+            return client;
+          }
+
+          // For each business, fetch R&D business years
+          const enhancedBusinesses = await Promise.all(
+            client.businesses.map(async (business: any) => {
+              try {
+                // FIXED: Query rd_businesses by client_id instead of business.id
+                // This prevents 406 errors from trying to fetch non-existent records
+                const { data: rdBusinesses, error: rdError } = await supabase
+                  .from('rd_businesses')
+                  .select(`
+                    id,
+                    name,
+                    start_year,
+                    contact_info,
+                    rd_business_years (
+                      id,
+                      year,
+                      total_qre,
+                      gross_receipts,
+                      created_at,
+                      updated_at
+                    )
+                  `)
+                  .eq('client_id', client.id);
+
+                // Find rd_business for this specific business (if any)
+                const rdBusiness = rdBusinesses?.find(rd => 
+                  rd.name === business.business_name || 
+                  rdBusinesses.length === 1 // If only one R&D business for this client
+                );
+
+                if (rdError) {
+                  console.warn(`RLS policy may be blocking access to rd_businesses for client ${client.id}:`, rdError);
+                  return {
+                    ...business,
+                    business_years: business.business_years || []
+                  };
+                }
+
+                if (!rdBusiness) {
+                  // No R&D data for this business
+                  return {
+                    ...business,
+                    business_years: business.business_years || []
+                  };
+                }
+
+                // Merge R&D business years with regular business years
+                const rdBusinessYears = rdBusiness.rd_business_years || [];
+                const existingYears = business.business_years || [];
+
+                // Combine and deduplicate by year
+                const allYears = [...rdBusinessYears];
+                existingYears.forEach((existingYear: any) => {
+                  if (!rdBusinessYears.find(rdYear => rdYear.year === existingYear.year)) {
+                    allYears.push(existingYear);
+                  }
+                });
+
+                return {
+                  ...business,
+                  rd_business_id: rdBusiness.id,
+                  business_years: allYears.sort((a, b) => b.year - a.year) // Sort newest first
+                };
+              } catch (error) {
+                console.error(`Error fetching R&D data for business ${business.id}:`, error);
+                return {
+                  ...business,
+                  business_years: business.business_years || []
+                };
+              }
+            })
+          );
+
+          return {
+            ...client,
+            businesses: enhancedBusinesses
+          };
+        })
+      );
+      
+      console.log('📊 Enhanced clients with R&D data');
+      
+      if (enhancedClients.length > 0) {
+        console.log('📋 Sample enhanced client structure:', {
+          id: enhancedClients[0].id,
+          name: enhancedClients[0].full_name,
+          businesses: enhancedClients[0].businesses?.length || 0,
+          tool_enrollments: enhancedClients[0].tool_enrollments?.length || 0
         });
         
         // Log business structure for first client
-        if (allClients[0].businesses?.length > 0) {
-          console.log('🏢 First business structure:', {
-            id: allClients[0].businesses[0].id,
-            name: allClients[0].businesses[0].business_name,
-            tool_enrollments: allClients[0].businesses[0].tool_enrollments?.length || 0
+        if (enhancedClients[0].businesses?.length > 0) {
+          console.log('🏢 First enhanced business structure:', {
+            id: enhancedClients[0].businesses[0].id,
+            name: enhancedClients[0].businesses[0].business_name,
+            business_years: enhancedClients[0].businesses[0].business_years?.length || 0,
+            tool_enrollments: enhancedClients[0].businesses[0].tool_enrollments?.length || 0
           });
           
-          if (allClients[0].businesses[0].tool_enrollments?.length > 0) {
-            console.log('🔧 Tool enrollments:', allClients[0].businesses[0].tool_enrollments);
+          if (enhancedClients[0].businesses[0].business_years?.length > 0) {
+            console.log('📅 Business years:', enhancedClients[0].businesses[0].business_years);
           }
         }
       }
       
       // Filter to only show clients with R&D enrollments
-      const rdClients = allClients.filter(client => {
+      const rdClients = enhancedClients.filter(client => {
         const hasRdEnrollment = client.businesses?.some((business: any) => 
           business.tool_enrollments?.some((tool: any) => tool.tool_slug === 'rd')
         );
@@ -327,8 +435,8 @@ export default function RDClientManagement({
       
       // TEMPORARY: Show all clients for debugging
       if (rdClients.length === 0) {
-        console.log('⚠️ No R&D clients found, showing all clients for debugging');
-        setClients(allClients);
+        console.log('⚠️ No R&D clients found, showing all enhanced clients for debugging');
+        setClients(enhancedClients);
       } else {
         console.log('✅ Setting R&D clients:', rdClients.length);
         setClients(rdClients);
@@ -345,12 +453,101 @@ export default function RDClientManagement({
     setExpandedClientId(expandedClientId === clientId ? null : clientId);
   };
 
-  const handleLaunchWizard = (clientId: string, businessId: string) => {
+  const handleLaunchWizard = async (clientId: string, businessId: string) => {
     console.log('[RDClientManagement] Launch Wizard called for client:', clientId, 'business:', businessId);
-    // Open R&D wizard modal
-    setSelectedBusinessId(businessId);
-    setShowRDTaxWizard(true);
-    console.log('[RDClientManagement] R&D wizard modal opened');
+    
+    try {
+      // CRITICAL FIX: Find existing R&D businesses by client_id first
+      // This prevents creating duplicates when an R&D business already exists
+      const { data: existingRdBusinesses, error: searchError } = await supabase
+        .from('rd_businesses')
+        .select('id, name, client_id')
+        .eq('client_id', clientId);
+
+      if (searchError) {
+        console.error('[RDClientManagement] Error searching for existing R&D businesses:', searchError);
+        toast.error('Error checking existing R&D data');
+        return;
+      }
+
+      console.log('[RDClientManagement] Found existing R&D businesses for client:', existingRdBusinesses);
+
+      let rdBusinessId: string;
+
+      // Get the centralized business details first
+      const client = clients.find(c => c.id === clientId);
+      const business = client?.businesses?.find(b => b.id === businessId);
+      
+      if (!business) {
+        console.error('[RDClientManagement] Business not found for ID:', businessId);
+        toast.error('Business not found');
+        return;
+      }
+
+      if (existingRdBusinesses && existingRdBusinesses.length > 0) {
+        // FIXED: Find the specific R&D business that matches the selected business
+        let matchingRdBusiness = null;
+        
+        // Try to find R&D business by name match first
+        if (business.business_name) {
+          matchingRdBusiness = existingRdBusinesses.find(rdBiz => 
+            rdBiz.name === business.business_name
+          );
+        }
+        
+        // If no name match and only one R&D business exists, use it
+        if (!matchingRdBusiness && existingRdBusinesses.length === 1) {
+          matchingRdBusiness = existingRdBusinesses[0];
+        }
+        
+        // If multiple R&D businesses and no clear match, let user choose
+        if (!matchingRdBusiness && existingRdBusinesses.length > 1) {
+          const businessNames = existingRdBusinesses.map(b => b.name).join(', ');
+          const confirmed = confirm(
+            `Multiple R&D businesses found for this client: ${businessNames}\n\n` +
+            `Click OK to use the first one, or Cancel to create a new R&D business profile.`
+          );
+          
+          if (confirmed) {
+            matchingRdBusiness = existingRdBusinesses[0];
+          }
+        }
+        
+        if (matchingRdBusiness) {
+          rdBusinessId = matchingRdBusiness.id;
+          console.log('🎯 [RDClientManagement] Using existing R&D business:', matchingRdBusiness.name, 'ID:', rdBusinessId);
+        } else {
+          // Create new R&D business
+          rdBusinessId = businessId;
+          console.log('📝 [RDClientManagement] Will create new R&D business for:', business.business_name);
+        }
+      } else {
+        // No existing R&D businesses - create new one
+        const confirmed = confirm(
+          `No existing R&D data found for this client.\n\n` +
+          `Clicking OK will create a new R&D business profile for "${business.business_name || 'this business'}".\n\n` +
+          `Cancel if you think R&D data should already exist.`
+        );
+        
+        if (!confirmed) {
+          console.log('[RDClientManagement] User cancelled R&D enrollment');
+          return;
+        }
+
+        // Use the centralized business ID as the R&D business ID
+        rdBusinessId = businessId;
+        console.log('📝 [RDClientManagement] Will create new R&D business with ID:', rdBusinessId);
+      }
+      
+      // Open R&D wizard modal with the correct business ID
+      setSelectedBusinessId(rdBusinessId);
+      setShowRDTaxWizard(true);
+      console.log('[RDClientManagement] R&D wizard modal opened with business ID:', rdBusinessId);
+
+    } catch (error) {
+      console.error('[RDClientManagement] Error in handleLaunchWizard:', error);
+      toast.error('Failed to launch R&D wizard');
+    }
   };
 
   const filteredClients = clients.filter(client => {

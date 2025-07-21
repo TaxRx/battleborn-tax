@@ -38,8 +38,8 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
 
       setIsLoading(true);
       try {
+        // Fix: Correct parameter order for getReport - it should be (businessYearId, reportType)
         const cached = await rdReportService.getReport(
-          businessData.id,
           selectedYear.id,
           'FILING_GUIDE'
         );
@@ -165,19 +165,15 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
       // Generate HTML content
       const htmlContent = generateFilingGuideHTML();
       
-      // Save to database
-      await rdReportService.saveReport({
-        business_id: businessData.id,
-        business_year_id: selectedYear.id,
-        type: 'FILING_GUIDE',
-        generated_text: 'Filing Guide Report',
-        ai_version: '1.0',
-        filing_guide: htmlContent
-      });
+      // Fix: Use correct saveReport method signature (businessYearId, htmlContent, reportType)
+      await rdReportService.saveReport(
+        selectedYear.id,
+        htmlContent,
+        'FILING_GUIDE'
+      );
 
-      // Update cached report
+      // Update cached report - Fix: Correct parameter order
       const newReport = await rdReportService.getReport(
-        businessData.id,
         selectedYear.id,
         'FILING_GUIDE'
       );

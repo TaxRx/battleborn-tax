@@ -543,6 +543,260 @@
   line-height: 1.6;
 }
 
+/* QRE Summary Tables */
+.qre-summary-tables {
+  margin: 24px 0;
+}
+
+.qre-table-section {
+  margin-bottom: 32px;
+}
+
+.qre-table-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 16px;
+  border-bottom: 2px solid #e5e7eb;
+  padding-bottom: 8px;
+}
+
+.qre-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.qre-table th {
+  background-color: #f8fafc;
+  color: #374151;
+  font-weight: 600;
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 2px solid #e5e7eb;
+  font-size: 14px;
+}
+
+.qre-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f3f4f6;
+  color: #1f2937;
+  font-size: 14px;
+}
+
+.qre-table tbody tr:hover {
+  background-color: #f9fafb;
+}
+
+.qre-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.qre-total-row {
+  background-color: #f8fafc !important;
+  font-weight: 600;
+}
+
+.qre-total-row td {
+  border-top: 2px solid #e5e7eb;
+  padding: 16px;
+}
+
+.qre-amount {
+  text-align: right;
+  font-family: 'Courier New', monospace;
+  font-weight: 500;
+}
+
+.qre-percentage {
+  text-align: right;
+  font-weight: 500;
+  color: #059669;
+}
+
+.calculation-method-explanation {
+  background-color: #f8fafc;
+  padding: 20px;
+  border-radius: 8px;
+  border-left: 4px solid #6366f1;
+}
+
+.calculation-method-explanation p {
+  margin: 8px 0;
+  color: #374151;
+}
+
+.method-highlight {
+  background-color: #dbeafe;
+  color: #1e40af;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.method-details {
+  margin-top: 16px;
+}
+
+.method-details h4 {
+  color: #1f2937;
+  margin-bottom: 8px;
+  font-size: 16px;
+}
+
+.method-details ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.method-details li {
+  background-color: white;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  border-left: 3px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+}
+
+.warning-box {
+  background-color: #fef3cd;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  padding: 20px;
+  margin: 20px 0;
+}
+
+.warning-box h3 {
+  color: #d97706;
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+
+.warning-box p {
+  color: #92400e;
+  margin-bottom: 12px;
+}
+
+.debug-info {
+  background-color: #f3f4f6;
+  padding: 12px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  margin-top: 12px;
+}
+
+.debug-info pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Enhanced Filing Summary Table Styles */
+.filing-summary-enhanced {
+  margin: 24px 0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.filing-summary-table-enhanced {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.filing-summary-table-enhanced td {
+  padding: 16px 20px;
+  border-bottom: 1px solid #e2e8f0;
+  vertical-align: middle;
+}
+
+.filing-summary-table-enhanced tr:last-child td {
+  border-bottom: none;
+}
+
+.summary-label {
+  width: 35%;
+  color: #4a5568;
+  font-weight: 500;
+}
+
+.summary-value {
+  width: 65%;
+  color: #2d3748;
+  font-weight: 400;
+}
+
+.summary-row-highlight {
+  background-color: #f7fafc;
+}
+
+.summary-row-highlight .summary-value {
+  font-weight: 600;
+  color: #2b6cb0;
+}
+
+.summary-amount {
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+}
+
+.summary-row-total {
+  background-color: #ebf8ff;
+  border-top: 2px solid #3182ce;
+}
+
+.summary-row-total .summary-label {
+  color: #2c5282;
+  font-weight: 700;
+}
+
+.summary-total {
+  font-family: 'Courier New', monospace;
+  font-size: 18px;
+  font-weight: 700;
+  color: #2c5282;
+}
+
+.summary-notes {
+  margin-top: 32px;
+  padding: 20px;
+  background-color: #f0f9ff;
+  border-left: 4px solid #3b82f6;
+  border-radius: 8px;
+}
+
+.summary-notes h4 {
+  margin-bottom: 12px;
+  color: #1e40af;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.summary-notes ul {
+  margin: 0;
+  padding-left: 20px;
+  list-style-type: disc;
+}
+
+.summary-notes li {
+  margin-bottom: 8px;
+  color: #374151;
+  line-height: 1.6;
+}
+
+.summary-notes li:last-child {
+  margin-bottom: 0;
+}
+
 /* Print Styles */
 @media print {
   @page {

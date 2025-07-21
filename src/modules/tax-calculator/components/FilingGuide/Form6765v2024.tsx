@@ -158,6 +158,33 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
         }, 0) || 0;
         setOwnerQREs(totalOwnerQREs);
       }
+
+      // Enhanced: Load comprehensive historical QRE data for better ASC calculations
+      console.log('🔍 [Form 6765v2024] Loading historical QRE data for business:', businessData.id);
+      const { data: historicalQREData, error: historicalError } = await supabase
+        .from('rd_business_years')
+        .select('year, total_qre, gross_receipts')
+        .eq('business_id', businessData.id)
+        .lt('year', selectedYear.year)
+        .order('year', { ascending: false })
+        .limit(10); // Get up to 10 prior years for comprehensive analysis
+
+      if (historicalError) {
+        console.error('Error loading historical QRE data:', historicalError);
+      } else {
+        console.log('📊 [Form 6765v2024] Historical QRE data loaded:', historicalQREData);
+        
+        // Update calculations object with enhanced historical data
+        if (calculations && historicalQREData) {
+          calculations.historicalData = historicalQREData.map(year => ({
+            year: year.year,
+            qre: year.total_qre || 0,
+            gross_receipts: year.gross_receipts || 0
+          }));
+          
+          console.log('🔄 [Form 6765v2024] Enhanced historical data for calculations:', calculations.historicalData);
+        }
+      }
     } catch (error) {
       console.error('Error loading Section E data:', error);
     }
@@ -306,6 +333,27 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
     });
   }, [calculations]);
 
+  // Calculate prior 3 years QRE total for line 21
+  const calculatePrior3YearsQRE = (): number => {
+    if (!calculations?.historicalData || !selectedYear?.year) return 0;
+    
+    const currentYear = selectedYear.year;
+    const priorYears = calculations.historicalData
+      .filter((year: any) => year.year < currentYear && year.year >= (currentYear - 3))
+      .sort((a: any, b: any) => b.year - a.year)
+      .slice(0, 3);
+    
+    console.log('📊 [Form 6765v2024] Prior 3 years QRE calculation:', {
+      currentYear,
+      priorYears,
+      totalQRE: priorYears.reduce((sum: number, year: any) => sum + (year.qre || 0), 0)
+    });
+    
+    return priorYears.reduce((sum: number, year: any) => sum + (year.qre || 0), 0);
+  };
+
+  const prior3YearsQRE = calculatePrior3YearsQRE();
+
   // Section A (lines 1-13) - only show if selectedMethod is 'standard'
   const sectionA: Form6765Section = useMemo(() => ({
     section: 'A',
@@ -341,14 +389,14 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
       { lineNumber: 18, label: 'Add lines 14 and 17', value: getOverrideValue('B', 18) ?? 0, calculatedValue: 0, isEditable: false, dependsOn: [14, 17], formula: 'line14+line17', format: formatCurrency },
       { lineNumber: 19, label: 'Multiply line 18 by 20% (0.20)', value: getOverrideValue('B', 19) ?? 0, calculatedValue: 0, isEditable: false, dependsOn: [18], formula: 'line18*0.20', format: formatCurrency },
       { lineNumber: 20, label: 'Total qualified research expenses (QREs). Enter amount from line 48', value: sectionF[6]?.value || 0, calculatedValue: sectionF[6]?.value || 0, isEditable: false, isLocked: true, dependsOn: [48], format: formatCurrency },
-      { lineNumber: 21, label: 'Enter your total QREs for the prior 3 tax years. If you had no QREs in any 1 of those years, skip lines 22 and 23', value: getOverrideValue('B', 21) ?? 0, calculatedValue: 0, isEditable: true, format: formatCurrency },
+      { lineNumber: 21, label: 'Enter your total QREs for the prior 3 tax years. If you had no QREs in any 1 of those years, skip lines 22 and 23', value: getOverrideValue('B', 21) ?? prior3YearsQRE, calculatedValue: prior3YearsQRE, isEditable: true, format: formatCurrency },
       { lineNumber: 22, label: 'Divide line 21 by 6.0', value: getOverrideValue('B', 22) ?? 0, calculatedValue: 0, isEditable: false, dependsOn: [21], formula: 'line21/6.0', format: formatCurrency },
       { lineNumber: 23, label: 'Subtract line 22 from line 20. If zero or less, enter -0-', value: getOverrideValue('B', 23) ?? 0, calculatedValue: 0, isEditable: false, dependsOn: [20, 22], formula: 'line20-line22', format: formatCurrency },
       { lineNumber: 24, label: 'Multiply line 23 by 14% (0.14). If you skipped lines 22 and 23, multiply line 20 by 6% (0.06)', value: getOverrideValue('B', 24) ?? 0, calculatedValue: 0, isEditable: false, dependsOn: [23, 20], formula: 'line23*0.14 or line20*0.06', format: formatCurrency },
       { lineNumber: 25, label: 'Add lines 19 and 24', value: getOverrideValue('B', 25) ?? 0, calculatedValue: 0, isEditable: false, dependsOn: [19, 24], formula: 'line19+line24', format: formatCurrency },
       { lineNumber: 26, label: 'If you elect to reduce the credit under section 280C, then multiply line 25 by 79%  (0.79).  If not, enter the amount from line 25 and see the line 13 instructions for the statement that must be attached', value: getOverrideValue('B', 26) ?? 0, calculatedValue: 0, isEditable: false, dependsOn: [25], formula: 'line25*0.79 or line25', format: formatCurrency },
     ],
-  }), [selectedMethod, overrides, sectionF[6]?.value]);
+  }), [selectedMethod, overrides, sectionF[6]?.value, prior3YearsQRE]);
 
   // Section C - Current Year Credit
   const sectionC: Form6765Section = useMemo(() => ({

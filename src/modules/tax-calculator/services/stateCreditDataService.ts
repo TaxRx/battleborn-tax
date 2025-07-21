@@ -163,7 +163,7 @@ export class StateCreditDataService {
         throw subError;
       }
 
-      // Get all employees for this business
+      // CRITICAL FIX: Get all employees for this business (without subcomponent relationships first)
       const { data: employees, error: employeesError } = await supabase
         .from('rd_employees')
         .select(`
@@ -171,16 +171,6 @@ export class StateCreditDataService {
           role:rd_roles (
             id,
             name
-          ),
-          subcomponents:rd_employee_subcomponents (
-            subcomponent_id,
-            business_year_id,
-            applied_percentage,
-            time_percentage,
-            practice_percentage,
-            baseline_applied_percent,
-            baseline_practice_percentage,
-            baseline_time_percentage
           )
         `)
         .eq('business_id', businessId);
@@ -190,7 +180,54 @@ export class StateCreditDataService {
         throw employeesError;
       }
 
-      // Get all contractors for this business
+      // CRITICAL FIX: Get employee-subcomponent relationships separately for this specific business year
+      const { data: employeeSubcomponents, error: empSubError } = await supabase
+        .from('rd_employee_subcomponents')
+        .select(`
+          employee_id,
+          subcomponent_id,
+          business_year_id,
+          applied_percentage,
+          time_percentage,
+          practice_percentage,
+          baseline_applied_percent,
+          baseline_practice_percentage,
+          baseline_time_percentage
+        `)
+        .eq('business_year_id', businessYearId);
+
+      if (empSubError) {
+        console.error('❌ Error fetching employee subcomponents:', empSubError);
+        throw empSubError;
+      }
+
+      console.log('🔍 [StateCreditDataService] Employee subcomponents found:', {
+        totalRecords: employeeSubcomponents?.length || 0,
+        businessYearId: businessYearId,
+        sampleData: employeeSubcomponents?.slice(0, 3)
+      });
+
+      // CRITICAL FIX: Create employee lookup with subcomponent relationships
+      const employeeSubcomponentMap = new Map();
+      employeeSubcomponents?.forEach(rel => {
+        if (!employeeSubcomponentMap.has(rel.employee_id)) {
+          employeeSubcomponentMap.set(rel.employee_id, []);
+        }
+        employeeSubcomponentMap.get(rel.employee_id).push(rel);
+      });
+
+      // CRITICAL FIX: Add subcomponents to employees manually
+      const employeesWithSubcomponents = employees?.map(employee => ({
+        ...employee,
+        subcomponents: employeeSubcomponentMap.get(employee.id) || []
+      })) || [];
+
+      console.log('🔍 [StateCreditDataService] Employees with subcomponents:', {
+        totalEmployees: employeesWithSubcomponents?.length || 0,
+        employeesWithSubcomponents: employeesWithSubcomponents?.filter(e => e.subcomponents.length > 0).length || 0
+      });
+
+      // Get all contractors for this business (apply same pattern)
       const { data: contractors, error: contractorsError } = await supabase
         .from('rd_contractors')
         .select(`
@@ -198,16 +235,6 @@ export class StateCreditDataService {
           role:rd_roles (
             id,
             name
-          ),
-          subcomponents:rd_contractor_subcomponents (
-            subcomponent_id,
-            business_year_id,
-            applied_percentage,
-            time_percentage,
-            practice_percentage,
-            baseline_applied_percent,
-            baseline_practice_percentage,
-            baseline_time_percentage
           )
         `)
         .eq('business_id', businessId);
@@ -216,6 +243,42 @@ export class StateCreditDataService {
         console.error('❌ Error fetching contractors:', contractorsError);
         throw contractorsError;
       }
+
+      // Get contractor-subcomponent relationships separately  
+      const { data: contractorSubcomponents, error: contrSubError } = await supabase
+        .from('rd_contractor_subcomponents')
+        .select(`
+          contractor_id,
+          subcomponent_id,
+          business_year_id,
+          applied_percentage,
+          time_percentage,
+          practice_percentage,
+          baseline_applied_percent,
+          baseline_practice_percentage,
+          baseline_time_percentage
+        `)
+        .eq('business_year_id', businessYearId);
+
+      if (contrSubError) {
+        console.error('❌ Error fetching contractor subcomponents:', contrSubError);
+        throw contrSubError;
+      }
+
+      // Create contractor lookup with subcomponent relationships
+      const contractorSubcomponentMap = new Map();
+      contractorSubcomponents?.forEach(rel => {
+        if (!contractorSubcomponentMap.has(rel.contractor_id)) {
+          contractorSubcomponentMap.set(rel.contractor_id, []);
+        }
+        contractorSubcomponentMap.get(rel.contractor_id).push(rel);
+      });
+
+      // Add subcomponents to contractors manually
+      const contractorsWithSubcomponents = contractors?.map(contractor => ({
+        ...contractor,
+        subcomponents: contractorSubcomponentMap.get(contractor.id) || []
+      })) || [];
 
       // Get all supplies for this business
       const { data: supplies, error: suppliesError } = await supabase
@@ -256,7 +319,7 @@ export class StateCreditDataService {
         console.log(`🔍 [StateCreditDataService] Processing subcomponent: ${subcomponentName} for activity: ${researchActivityName}`);
 
         // Add employee entries for this subcomponent
-        for (const employee of employees || []) {
+        for (const employee of employeesWithSubcomponents || []) {
           const employeeSubcomponent = employee.subcomponents?.find(
             sub => sub.subcomponent_id === subcomponent.subcomponent_id && 
                    sub.business_year_id === businessYearId
@@ -296,7 +359,7 @@ export class StateCreditDataService {
         }
 
         // Add contractor entries for this subcomponent
-        for (const contractor of contractors || []) {
+        for (const contractor of contractorsWithSubcomponents || []) {
           const contractorSubcomponent = contractor.subcomponents?.find(
             sub => sub.subcomponent_id === subcomponent.subcomponent_id && 
                    sub.business_year_id === businessYearId
