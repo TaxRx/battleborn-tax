@@ -1980,18 +1980,59 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
   };
 
   // Get or create default role for business
-  const getOrCreateDefaultRole = async (businessId: string) => {
+  const getOrCreateDefaultRole = async (businessId: string, targetBusinessYearId?: string) => {
     try {
-      // First, try to find an existing default role for this business
+      // Use provided targetBusinessYearId or fall back to the component prop
+      const yearId = targetBusinessYearId || businessYearId;
+      
+      if (!yearId) {
+        throw new Error('No business year ID available for default role creation');
+      }
+      
+      // PRIORITY 1: Look for any existing "Research Leader" role in this business year (regardless of is_default)
+      const { data: existingResearchLeader, error: findRLError } = await supabase
+        .from('rd_roles')
+        .select('id, name, baseline_applied_percent, is_default')
+        .eq('business_id', businessId)
+        .eq('business_year_id', yearId)
+        .eq('name', 'Research Leader')
+        .single();
+
+      if (existingResearchLeader && !findRLError) {
+        console.log('✅ Found existing Research Leader role, reusing:', existingResearchLeader);
+        
+        // Update it to be the default if it isn't already
+        if (!existingResearchLeader.is_default) {
+          console.log('🔄 Setting existing Research Leader as default');
+          await supabase
+            .from('rd_roles')
+            .update({ is_default: true })
+            .eq('id', existingResearchLeader.id);
+        }
+        
+        // If the existing role doesn't have a baseline percentage, update it
+        if (!existingResearchLeader.baseline_applied_percent) {
+          console.log('🔄 Adding baseline percentage to existing Research Leader');
+          await supabase
+            .from('rd_roles')
+            .update({ baseline_applied_percent: 25.0 })
+            .eq('id', existingResearchLeader.id);
+        }
+        
+        return existingResearchLeader.id;
+      }
+      
+      // PRIORITY 2: Look for any existing default role (any name)
       const { data: existingDefaultRole, error: findError } = await supabase
         .from('rd_roles')
         .select('id, name, baseline_applied_percent')
         .eq('business_id', businessId)
+        .eq('business_year_id', yearId)
         .eq('is_default', true)
         .single();
 
       if (existingDefaultRole && !findError) {
-        console.log('✅ Found existing default role:', existingDefaultRole);
+        console.log('✅ Found existing default role (non-Research Leader), reusing:', existingDefaultRole);
         
         // If the existing default role doesn't have a baseline percentage, update it
         if (!existingDefaultRole.baseline_applied_percent) {
@@ -2005,12 +2046,13 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         return existingDefaultRole.id;
       }
 
-      // If no default role exists, create one
-      console.log('🔄 Creating default role for business:', businessId);
+      // PRIORITY 3: Create new Research Leader role only if none exists
+      console.log('🔄 No existing Research Leader found, creating new one for business year:', businessId, yearId);
       const { data: newDefaultRole, error: createError } = await supabase
         .from('rd_roles')
         .insert({
           business_id: businessId,
+          business_year_id: yearId,
           name: 'Research Leader',
           is_default: true,
           baseline_applied_percent: 25.0 // Default 25% for Research Leader
@@ -2023,7 +2065,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         throw createError;
       }
 
-      console.log('✅ Created default role:', newDefaultRole);
+      console.log('✅ Created new Research Leader role:', newDefaultRole);
       return newDefaultRole.id;
     } catch (error) {
       console.error('❌ Error in getOrCreateDefaultRole:', error);
@@ -2049,7 +2091,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       // If no role is specified, get or create a default role
       if (!roleId || roleId === '') {
         console.log('🔄 No role specified, getting default role for business:', businessId);
-        roleId = await getOrCreateDefaultRole(businessId);
+        roleId = await getOrCreateDefaultRole(businessId, businessYearId);
         roleName = 'Research Leader'; // Default role name
       } else {
         // Get role details for baseline percentage
@@ -2301,7 +2343,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
   // Calculate QRE totals for each group - FIXED: Add debugging and validation
   const employeeQRE = employeesWithData.reduce((sum, e) => {
     const qre = e.calculated_qre || 0;
-    console.log(`💰 Employee QRE: ${e.first_name} ${e.last_name} = $${qre.toLocaleString()}`);
+    console.log(`�� Employee QRE: ${e.first_name} ${e.last_name} = $${qre.toLocaleString()}`);
     return sum + qre;
   }, 0);
   
@@ -2921,7 +2963,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
             const annualWage = numericWage ? parseFloat(numericWage) : 0;
             
             // Get or create default role (but don't assign it to the employee)
-            const defaultRoleId = await getOrCreateDefaultRole(businessId);
+            const defaultRoleId = await getOrCreateDefaultRole(businessId, targetBusinessYearId);
             
             // Handle optional role assignment ONLY if role is provided and valid
             let assignedRoleId = null;

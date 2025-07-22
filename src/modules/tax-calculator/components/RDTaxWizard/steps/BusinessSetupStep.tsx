@@ -765,8 +765,28 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
           });
         }
 
-        console.log('[BusinessSetupStep] Saving historical data to rd_businesses.historical_data:', updatedHistoricalData);
-        await RDBusinessService.saveHistoricalData(business.id, updatedHistoricalData);
+        console.log('[BusinessSetupStep] Saving historical data to rd_business_years table for year:', year);
+        console.log('[BusinessSetupStep] Business ID:', business?.id);
+        console.log('[BusinessSetupStep] Field:', field, 'Value:', numValue);
+        
+        // Get current data for this year to preserve the other field
+        const currentYearData = updatedHistoricalData.find(h => h.year === year);
+        console.log('[BusinessSetupStep] Current year data:', currentYearData);
+        
+        if (!business?.id) {
+          console.error('[BusinessSetupStep] No business ID available for saving historical data');
+          setErrors(prev => ({
+            ...prev,
+            [`historical-${year}-${field}-save`]: 'Business not found. Please save business information first.'
+          }));
+          return;
+        }
+        
+        await RDBusinessService.saveBusinessYear(business.id, {
+          year: year,
+          grossReceipts: field === 'grossReceipts' ? numValue : (currentYearData?.grossReceipts || 0),
+          qre: field === 'qre' ? numValue : (currentYearData?.qre || 0)
+        });
         console.log('[BusinessSetupStep] Successfully saved historical data for year:', year);
       } catch (error) {
         console.error('[BusinessSetupStep] Error saving historical data in real-time:', error);

@@ -1,7 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Calendar, Download, FileText, CheckCircle, Clock, AlertCircle, Eye, PenTool, User, Building2 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+
+// Create a separate supabase client instance for the portal to avoid conflicts
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
+// Isolated supabase client for client portal only
+const portalSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: false, // Don't persist auth sessions for portal
+    autoRefreshToken: false, // Don't auto-refresh
+    detectSessionInUrl: false // Don't detect sessions in URL
+  }
+});
 
 interface PortalData {
   business_id: string;
@@ -21,21 +35,21 @@ interface DocumentInfo {
   type: string;
   title: string;
   description: string;
-  icon: React.ComponentType<any>;
+  icon: React.ComponentType<{ className?: string }>;
   can_release: boolean;
-  reason: string;
-  jurat_signed: boolean;
-  payment_received: boolean;
-  qc_approved: boolean;
+  reason?: string;
+  jurat_signed?: boolean;
+  payment_received?: boolean;
+  qc_approved?: boolean;
 }
 
 interface JuratSignature {
   id: string;
-  business_year_id: string;
   signer_name: string;
   signer_title: string;
   signer_email: string;
   signed_at: string;
+  ip_address: string;
   jurat_text: string;
 }
 
@@ -90,29 +104,36 @@ I further affirm that I am authorized to sign on behalf of the business entity a
     }
 
     try {
+      console.log('Validating token:', token, 'for business:', businessId);
+      
       // Validate token and get portal data
-      const { data, error } = await supabase.rpc('validate_portal_token', {
+      const { data, error } = await portalSupabase.rpc('validate_portal_token', {
         p_token: token,
         p_ip_address: null // In a real app, you'd pass the client IP
       });
 
+      console.log('Token validation response:', { data, error });
+
       if (error) throw error;
 
       if (!data || data.length === 0 || !data[0].is_valid) {
+        console.log('Token validation failed:', data);
         setError('Invalid or expired portal link');
         setLoading(false);
         return;
       }
 
       const portalInfo = data[0];
+      console.log('Portal info:', portalInfo);
+      
       setPortalData({
         business_id: portalInfo.business_id,
         business_name: portalInfo.business_name,
-        token_id: portalInfo.token_id
+        token_id: token // Use the token from URL params instead
       });
 
       // Load business years
-      const { data: years, error: yearsError } = await supabase
+      const { data: years, error: yearsError } = await portalSupabase
         .from('rd_business_years')
         .select('id, year, qc_status, payment_received, documents_released')
         .eq('business_id', portalInfo.business_id)
@@ -142,7 +163,7 @@ I further affirm that I am authorized to sign on behalf of the business entity a
     try {
       const documentTypes = ['research_report', 'filing_guide', 'allocation_report'];
       const documentPromises = documentTypes.map(async (docType) => {
-        const { data, error } = await supabase.rpc('check_document_release_eligibility', {
+        const { data, error } = await portalSupabase.rpc('check_document_release_eligibility', {
           p_business_year_id: selectedYear.id,
           p_document_type: docType
         });
@@ -175,7 +196,7 @@ I further affirm that I am authorized to sign on behalf of the business entity a
     if (!selectedYear) return;
 
     try {
-      const { data, error } = await supabase
+      const { data, error } = await portalSupabase
         .from('rd_signatures')
         .select('*')
         .eq('business_year_id', selectedYear.id)
@@ -201,7 +222,7 @@ I further affirm that I am authorized to sign on behalf of the business entity a
       const verificationData = `${selectedYear.id}-${signerInfo.name}-${signerInfo.email}-${Date.now()}`;
       const verificationHash = btoa(verificationData);
 
-      const { error } = await supabase
+      const { error } = await portalSupabase
         .from('rd_signatures')
         .insert({
           business_year_id: selectedYear.id,
@@ -245,7 +266,7 @@ I further affirm that I am authorized to sign on behalf of the business entity a
       }
 
       // Get the document from rd_reports table
-      const { data, error } = await supabase
+      const { data, error } = await portalSupabase
         .from('rd_reports')
         .select('generated_html, filing_guide')
         .eq('business_year_id', selectedYear.id)

@@ -597,7 +597,7 @@ I further affirm that I am authorized to sign on behalf of the business entity a
                     but we can assume it's managed by the backend or not tracked here */}
                   </span>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 mb-3">
                   <input
                     type="text"
                     value={getPortalUrl()}
@@ -611,14 +611,27 @@ I further affirm that I am authorized to sign on behalf of the business entity a
                     Copy
                   </button>
                 </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">
+                    Need to update token after database changes?
+                  </span>
+                  <button
+                    onClick={generatePortalToken}
+                    disabled={loading}
+                    className="px-3 py-2 bg-orange-600 text-white text-sm rounded hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? 'Regenerating...' : 'Regenerate Token'}
+                  </button>
+                </div>
               </div>
             ) : (
               <button
                 onClick={generatePortalToken}
-                className="w-full p-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-blue-500 hover:text-blue-600 transition-colors"
+                disabled={loading}
+                className="w-full p-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-blue-500 hover:text-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Share2 className="mx-auto mb-2" size={24} />
-                Generate Client Portal Access
+                {loading ? 'Generating...' : 'Generate Client Portal Access'}
               </button>
             )}
           </div>

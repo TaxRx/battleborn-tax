@@ -186,7 +186,14 @@ export class QCService {
       });
 
       if (error) throw error;
-      return data;
+      
+      // The database function returns an array of objects with {token, expires_at}
+      // We need to extract just the token string
+      if (data && data.length > 0 && data[0].token) {
+        return data[0].token;
+      }
+      
+      return null;
     } catch (error) {
       console.error('Error generating portal token:', error);
       return null;

@@ -17,6 +17,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing required environment variables for Supabase');
 }
 
+// Create and export the supabase client
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
@@ -28,53 +29,50 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: {
     headers: {
       'X-Client-Info': 'tax-calculator@1.0.0',
-      'X-Client-Site': typeof window !== 'undefined' ? window.location.origin : '',
-    }
+    },
+  },
+  db: {
+    schema: 'public',
   },
   realtime: {
     params: {
-      eventsPerSecond: 2
-    }
-  }
+      eventsPerSecond: 2,
+    },
+  },
 });
 
+// Test the connection
 export const testConnection = async () => {
   try {
-    // First check if we have a session
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    
-    if (sessionError) {
-      console.error('Session error:', sessionError);
+    const { data, error } = await supabase.from('rd_businesses').select('count', { count: 'exact', head: true });
+    if (error) {
+      console.error('Supabase connection test failed:', error);
       return false;
     }
-
-    // Try to make a simple query to test the connection
-    const { error: queryError } = await supabase
-      .from('profiles')
-      .select('id')
-      .limit(1)
-      .single();
-
-    // PGRST116 means no rows found, which is fine for a connection test
-    if (queryError && queryError.code !== 'PGRST116') {
-      console.error('Query error:', queryError);
-      return false;
-    }
-
+    console.log('✅ Supabase connection test successful');
     return true;
-  } catch (error) {
-    console.error('Connection test error:', error);
+  } catch (err) {
+    console.error('❌ Supabase connection test error:', err);
     return false;
   }
 };
 
-// Set up auth state change listener with error handling
-supabase.auth.onAuthStateChange((event, session) => {
-  console.log('Auth state changed:', event, {
-    email: session?.user?.email,
-    id: session?.user?.id,
-    timestamp: new Date().toISOString()
-  });
-});
+// Initialize auth state listener only after client is created
+if (supabase) {
+  try {
+    supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth state changed:', event, {
+        email: session?.user?.email,
+        id: session?.user?.id,
+        timestamp: new Date().toISOString()
+      });
+    });
+    console.log('✅ Auth state listener initialized');
+  } catch (error) {
+    console.error('❌ Failed to initialize auth state listener:', error);
+  }
+} else {
+  console.error('❌ Supabase client not initialized - auth listener not set up');
+}
 
 export default supabase;

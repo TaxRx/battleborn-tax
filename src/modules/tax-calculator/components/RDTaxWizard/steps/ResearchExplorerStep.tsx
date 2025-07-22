@@ -1881,7 +1881,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       const { error: subcomponentError } = await supabase
         .from('rd_selected_subcomponents')
         .delete()
-        .eq('business_year_id', selectedBusinessYearId)
+          .eq('business_year_id', selectedBusinessYearId)
         .eq('research_activity_id', activityId);
       
       if (subcomponentError) {
@@ -2056,7 +2056,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
       // CHANGE 2: Check if target year already has data and warn user
       console.log('🔍 [OVERWRITE CHECK] Checking for existing data in target year:', selectedBusinessYearId);
-      
+
       const { data: existingData, error: checkError } = await supabase
         .from('rd_selected_activities')
         .select('id')
@@ -2078,9 +2078,9 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         
         if (!confirm(confirmMessage)) {
           console.log('❌ User cancelled copy due to existing data');
-          return;
-        }
-        
+        return;
+      }
+
         console.log('✅ User confirmed overwrite - proceeding with data deletion');
         
         console.log('🗑️ User confirmed overwrite - deleting existing data...');
@@ -2187,11 +2187,11 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
             }
 
             await supabase
-              .from('rd_selected_activities')
-              .insert({
-                business_year_id: selectedBusinessYearId,
-                activity_id: activity.activity_id,
-                practice_percent: activity.practice_percent,
+            .from('rd_selected_activities')
+            .insert({
+              business_year_id: selectedBusinessYearId,
+              activity_id: activity.activity_id,
+              practice_percent: activity.practice_percent,
                 selected_roles: mappedRoles, // Use mapped roles instead of all roles
                 config: activity.config,
                 research_guidelines: activity.research_guidelines
@@ -2232,7 +2232,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
                 adjustedNonRdPercentage = Math.min(100, adjustedNonRdPercentage + absoluteIncrease);
                 
                 console.log(`📈 ENHANCED PASTEBACK: Adjusting existing non-R&D time for step ${step.step_id}: ${step.non_rd_percentage || 0}% → ${adjustedNonRdPercentage.toFixed(2)}% (+${totalIncrease.toFixed(1)}% total increase)`);
-              } else {
+          } else {
                 // Source has 0% non-R&D time - apply enhanced random base percentage (15-25% + additional)
                 const enhancedBasePercentage = (15 + Math.random() * 10) + additionalIncrease; // 15-25% + additional 5-15%
                 adjustedNonRdPercentage = Math.min(100, enhancedBasePercentage);
@@ -2306,7 +2306,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
                 practice_percent: subcomponent.practice_percent
               });
             console.log(`✅ Copied subcomponent ${subcomponent.subcomponent_id}`);
-          } catch (error) {
+    } catch (error) {
             console.error(`❌ Error copying subcomponent ${subcomponent.subcomponent_id}:`, error);
           }
         }
@@ -2970,8 +2970,8 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-3xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mb-2">
-                Research Explorer
-              </h3>
+          Research Explorer
+        </h3>
               <p className="text-gray-600 text-lg">Configure your research team, activities, and guidelines</p>
               <div className="flex items-center space-x-4 mt-3">
                 <div className="flex items-center space-x-2">
@@ -2996,7 +2996,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
             const isCompleted = getTabCompletionStatus(tab.key);
             
             return (
-              <button
+        <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key as any)}
                 className={`flex-1 p-6 transition-all border-b-4 ${
@@ -3027,7 +3027,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
                     )}
                   </div>
                 </div>
-              </button>
+        </button>
             );
           })}
         </div>

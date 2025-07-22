@@ -27,7 +27,7 @@ import AdvisorDashboard from './components/AdvisorDashboard';
 import ClientDashboard from './components/ClientDashboard';
 import HomePage from './components/HomePage';
 import { useUserStore } from './store/userStore';
-import ClientPortal from './pages/ClientPortal';
+import ClientPortalStandalone from './pages/ClientPortalStandalone';
 
 import ClientList from './components/AdvisorDashboard/ClientList';
 import GroupList from './components/AdvisorDashboard/GroupList';
@@ -304,30 +304,36 @@ const App = () => {
     isAuthenticated, 
     isUserAuthenticated, 
     actualProfileLoading, 
-    pathname: location.pathname
+    pathname: location.pathname,
+    isPublicRoute
   });
   
-  if (!isUserAuthenticated) {
-    if (location.pathname === '/login') {
-      return (
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      );
-    }
-    if (location.pathname === '/') {
-      return (
-        <Routes>
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      );
-    }
-    // For any other route, redirect to home
+  // Allow public routes even when not authenticated
+  if (!isUserAuthenticated && !isPublicRoute) {
     return <Navigate to="/" replace />;
   }
+  
+  // Show login page for unauthenticated users on login route
+  if (!isUserAuthenticated && location.pathname === '/login') {
+    return (
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    );
+  }
+  
+  // Show landing page for unauthenticated users on home route
+  if (!isUserAuthenticated && location.pathname === '/') {
+    return (
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    );
+  }
+
   // For demo mode, skip profile loading check entirely
   if (!demoMode && actualProfileLoading) return <div className="min-h-screen flex items-center justify-center"><div>Loading profile...</div></div>;
   if (!demoMode && profileError) return <ProfileError onRetry={() => window.location.reload()} />;
@@ -338,16 +344,31 @@ const App = () => {
     role: userType || 'client'
   } : profile;
 
+  // Check if this is a client portal route to completely isolate it
+  const isClientPortalRoute = location.pathname.startsWith('/client-portal/');
+
+  // If it's a client portal route, render only the portal (no UserProvider, no main app auth)
+  if (isClientPortalRoute) {
+    return (
+      <Router>
+        <Toaster position="top-right" />
+        <div className="min-h-screen bg-gray-50">
+          <Routes>
+            <Route path="/client-portal/:businessId/:token" element={<ClientPortalStandalone />} />
+          </Routes>
+        </div>
+        <ToastContainer position="top-right" autoClose={5000} />
+      </Router>
+    );
+  }
+
   return (
     <Router>
       <Toaster position="top-right" />
       <UserProvider>
         <div className="min-h-screen bg-gray-50">
           <Routes>
-            {/* Client Portal - Always available (token-based authentication) */}
-            <Route path="/client-portal/:businessId/:token" element={<ClientPortal />} />
-            
-            {/* All other routes */}
+            {/* All main app routes */}
             <Route path="*" element={
               <>
                 {/* Only show Navigation on non-public routes and not on Admin routes */}
