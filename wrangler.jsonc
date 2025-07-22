@@ -1,0 +1,88 @@
+{
+  // Cloudflare Workers configuration for Battle Born Capital Advisors
+  // Frontend deployment with SPA routing support
+  "name": "battleborn-taxapp",
+  "compatibility_date": "2024-07-22",
+  "compatibility_flags": ["nodejs_compat"],
+  
+  // Main worker script (will be generated)
+  "main": "./dist/_worker.js",
+  
+  // Assets configuration for SPA
+  "assets": {
+    "directory": "./dist",
+    "include": ["**/*"],
+    "exclude": ["_worker.js"],
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "single-page-application"
+  },
+  
+  // Environment variables for production
+  "vars": {
+    "ENVIRONMENT": "production",
+    "NODE_ENV": "production"
+  },
+  
+  // Build configuration for GitHub deployment
+  "build": {
+    "command": "npm run build:workers"
+  },
+  
+  // Development configuration
+  "dev": {
+    "port": 8787,
+    "local_protocol": "http",
+    "upstream_protocol": "https"
+  },
+  
+  // Environment-specific configurations
+  "env": {
+    "development": {
+      "name": "battleborn-taxapp-dev",
+      "vars": {
+        "ENVIRONMENT": "development",
+        "NODE_ENV": "development"
+      }
+    },
+    "staging": {
+      "name": "battleborn-taxapp-staging",  
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "NODE_ENV": "production"
+      }
+    },
+    "production": {
+      "name": "battleborn-taxapp-prod",
+      "vars": {
+        "ENVIRONMENT": "production", 
+        "NODE_ENV": "production"
+      },
+      // Production-specific routes (custom domains)
+      // "routes": [
+      //   { "pattern": "taxapp.battleborncapital.com/*", "zone_name": "battleborncapital.com" },
+      //   { "pattern": "app.battleborncapital.com/*", "zone_name": "battleborncapital.com" }
+      // ]
+    }
+  },
+  
+  // Worker limits and performance
+  "limits": {
+    "cpu_ms": 30000
+  },
+  
+  // Analytics and monitoring
+  "analytics_engine_datasets": [
+    {
+      "binding": "ANALYTICS",
+      "dataset": "battleborn_analytics"
+    }
+  ],
+  
+  // Security headers
+  "wrangler": {
+    "experimental": {
+      "local": true
+    } 
+  }
+}
