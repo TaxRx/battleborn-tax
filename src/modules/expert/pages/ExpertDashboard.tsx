@@ -1,6 +1,6 @@
-// Operator Dashboard - Main dashboard for operator accounts
-// File: OperatorDashboard.tsx
-// Purpose: Dashboard portal with same design as admin dashboard but for operators
+// Expert Dashboard - Main dashboard for expert accounts
+// File: ExpertDashboard.tsx
+// Purpose: Dashboard portal with same design as admin/operator dashboards but for experts
 
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
@@ -20,22 +20,16 @@ import {
   Cog,
   Building,
   LogOut,
-  Search
+  Search,
+  Award,
+  Clock,
+  BookOpen
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import useAuthStore from '../../../store/authStore';
 import { useUser } from '../../../context/UserContext';
-import OperatorToolsPage from './OperatorToolsPage';
-import OperatorDashboardOverview from '../components/OperatorDashboardOverview';
-import OperatorAffiliatesPage from './OperatorAffiliatesPage';
-import OperatorClientsPage from './OperatorClientsPage';
-import OperatorExpertsPage from './OperatorExpertsPage';
-// Import tax calculator tools
-import AdminTaxCalculator from '../../admin/components/AdminTaxCalculator';
-import AugustaRuleWizard from '../../../modules/tax-calculator/components/AugustaRuleWizard';
-import { RDTaxCreditDashboard } from '../../../modules/tax-calculator/components/RDTaxCreditDashboard';
 
-const OperatorDashboard: React.FC = () => {
+const ExpertDashboard: React.FC = () => {
   const { user } = useUser();
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -48,17 +42,17 @@ const OperatorDashboard: React.FC = () => {
   const effectiveUser = user ? {
     id: user.id,
     email: user.email || '',
-    full_name: user.user_metadata?.full_name || user.profile?.full_name || 'Operator',
-    role: 'operator',
+    full_name: user.user_metadata?.full_name || user.profile?.full_name || 'Expert',
+    role: 'expert',
     account: user.profile?.account
   } : null;
 
-  // Access control - only allow operator accounts
+  // Access control - only allow expert accounts
   useEffect(() => {
-    console.log('user in operator dashboard', user)
+    console.log('user in expert dashboard', user)
     if(user?.profile){
-      if (user && user.profile?.account?.type !== 'operator') {
-        navigate('/'); // Redirect non-operators
+      if (user && user.profile?.account?.type !== 'expert') {
+        navigate('/'); // Redirect non-experts
         return;
       }
       setLoading(false);
@@ -82,11 +76,11 @@ const OperatorDashboard: React.FC = () => {
   };
 
   const navigationItems = [
-    { name: 'Dashboard', href: '/operator', icon: Home, current: location.pathname === '/operator' },
-    { name: 'Tools', href: '/operator/tools', icon: Cog, current: location.pathname === '/operator/tools' },
-    { name: 'Affiliates', href: '/operator/affiliates', icon: Users, current: location.pathname === '/operator/affiliates' },
-    { name: 'Clients', href: '/operator/clients', icon: Building, current: location.pathname === '/operator/clients' },
-    { name: 'Experts', href: '/operator/experts', icon: UserCheck, current: location.pathname === '/operator/experts' },
+    { name: 'Dashboard', href: '/expert', icon: Home, current: location.pathname === '/expert' },
+    { name: 'Assignments', href: '/expert/assignments', icon: FileText, current: location.pathname === '/expert/assignments' },
+    { name: 'Consultations', href: '/expert/consultations', icon: Users, current: location.pathname === '/expert/consultations' },
+    { name: 'Reports', href: '/expert/reports', icon: BarChart3, current: location.pathname === '/expert/reports' },
+    { name: 'Knowledge Base', href: '/expert/knowledge', icon: BookOpen, current: location.pathname === '/expert/knowledge' },
   ];
 
   const getPageTitle = () => {
@@ -96,7 +90,7 @@ const OperatorDashboard: React.FC = () => {
 
   const getBreadcrumbs = () => {
     const pathSegments = location.pathname.split('/').filter(Boolean);
-    const breadcrumbs = [{ name: 'Operator', href: '/operator' }];
+    const breadcrumbs = [{ name: 'Expert', href: '/expert' }];
     
     if (pathSegments.length > 1) {
       const currentItem = navigationItems.find(item => item.current);
@@ -114,7 +108,7 @@ const OperatorDashboard: React.FC = () => {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-emerald-500"></div>
-          <p className="mt-4 text-lg text-slate-600">Loading operator dashboard...</p>
+          <p className="mt-4 text-lg text-slate-600">Loading expert dashboard...</p>
         </div>
       </div>
     );
@@ -146,12 +140,12 @@ const OperatorDashboard: React.FC = () => {
         <div className="sidebar-header-modern">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg flex items-center justify-center">
+              <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg flex items-center justify-center">
                 <span className="text-white font-bold text-sm">BB</span>
               </div>
               <div>
                 <h1 className="text-heading-sm text-slate-900">BattleBorn</h1>
-                <p className="text-body-sm text-slate-500">Operator Portal</p>
+                <p className="text-body-sm text-slate-500">Expert Portal</p>
               </div>
             </div>
             <button
@@ -166,12 +160,12 @@ const OperatorDashboard: React.FC = () => {
         {/* User Profile Section */}
         <div className="px-6 py-4 border-b border-slate-200">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
-              <User className="h-5 w-5 text-white" />
+            <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-full flex items-center justify-center">
+              <Award className="h-5 w-5 text-white" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-body-md font-medium text-slate-900 truncate">{effectiveUser.full_name}</p>
-              <p className="text-body-sm text-slate-500">Operator</p>
+              <p className="text-body-sm text-slate-500">Expert</p>
               {effectiveUser.account?.name && (
                 <p className="text-body-xs text-slate-400 truncate">{effectiveUser.account.name}</p>
               )}
@@ -268,18 +262,13 @@ const OperatorDashboard: React.FC = () => {
         {/* Page Content */}
         <main className="p-4 sm:p-6 lg:p-8">
           <Routes>
-            <Route path="/" element={<OperatorDashboardOverview />} />
-            <Route path="/tools" element={<OperatorToolsPage />} />
-            <Route path="/affiliates" element={<OperatorAffiliatesPage />} />
-            <Route path="/clients" element={<OperatorClientsPage />} />
-            <Route path="/experts" element={<OperatorExpertsPage />} />
+            <Route path="/" element={<ExpertDashboardOverview />} />
+            <Route path="/assignments" element={<ExpertAssignmentsPage />} />
+            <Route path="/consultations" element={<ExpertConsultationsPage />} />
+            <Route path="/reports" element={<ExpertReportsPage />} />
+            <Route path="/knowledge" element={<ExpertKnowledgePage />} />
             
-            {/* Tax Tools Routes */}
-            <Route path="/tax-calculator" element={<AdminTaxCalculator />} />
-            <Route path="/tax-tools/augusta-rule" element={<AugustaRuleWizard onClose={() => navigate('/operator/tools')} />} />
-            <Route path="/tax-tools/rd-credit" element={<RDTaxCreditDashboard />} />
-            
-            <Route path="*" element={<Navigate to="/operator" replace />} />
+            <Route path="*" element={<Navigate to="/expert" replace />} />
           </Routes>
         </main>
       </div>
@@ -287,4 +276,98 @@ const OperatorDashboard: React.FC = () => {
   );
 };
 
-export default OperatorDashboard;
+// Dashboard Overview Component
+const ExpertDashboardOverview: React.FC = () => {
+  return (
+    <div className="space-y-6">
+      <div className="bg-white rounded-lg border border-slate-200 p-6">
+        <h2 className="text-xl font-semibold text-slate-900 mb-4">Welcome to Expert Portal</h2>
+        <p className="text-slate-600">
+          Provide expert consultations, manage client assignments, and share your knowledge with our platform.
+        </p>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="bg-white rounded-lg border border-slate-200 p-6">
+          <div className="flex items-center">
+            <div className="p-2 bg-indigo-100 rounded-lg">
+              <FileText className="h-6 w-6 text-indigo-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-slate-600">Active Assignments</p>
+              <p className="text-2xl font-semibold text-slate-900">0</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg border border-slate-200 p-6">
+          <div className="flex items-center">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <Users className="h-6 w-6 text-blue-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-slate-600">Consultations</p>
+              <p className="text-2xl font-semibold text-slate-900">0</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg border border-slate-200 p-6">
+          <div className="flex items-center">
+            <div className="p-2 bg-green-100 rounded-lg">
+              <Clock className="h-6 w-6 text-green-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-slate-600">Hours This Month</p>
+              <p className="text-2xl font-semibold text-slate-900">0</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg border border-slate-200 p-6">
+          <div className="flex items-center">
+            <div className="p-2 bg-orange-100 rounded-lg">
+              <Award className="h-6 w-6 text-orange-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-slate-600">Expert Rating</p>
+              <p className="text-2xl font-semibold text-slate-900">5.0</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Placeholder components for different pages
+const ExpertAssignmentsPage: React.FC = () => (
+  <div className="bg-white rounded-lg border border-slate-200 p-6">
+    <h2 className="text-xl font-semibold text-slate-900 mb-4">Assignments</h2>
+    <p className="text-slate-600">Client assignments coming soon...</p>
+  </div>
+);
+
+const ExpertConsultationsPage: React.FC = () => (
+  <div className="bg-white rounded-lg border border-slate-200 p-6">
+    <h2 className="text-xl font-semibold text-slate-900 mb-4">Consultations</h2>
+    <p className="text-slate-600">Consultation management coming soon...</p>
+  </div>
+);
+
+const ExpertReportsPage: React.FC = () => (
+  <div className="bg-white rounded-lg border border-slate-200 p-6">
+    <h2 className="text-xl font-semibold text-slate-900 mb-4">Reports</h2>
+    <p className="text-slate-600">Expert reports coming soon...</p>
+  </div>
+);
+
+const ExpertKnowledgePage: React.FC = () => (
+  <div className="bg-white rounded-lg border border-slate-200 p-6">
+    <h2 className="text-xl font-semibold text-slate-900 mb-4">Knowledge Base</h2>
+    <p className="text-slate-600">Knowledge base coming soon...</p>
+  </div>
+);
+
+export default ExpertDashboard;

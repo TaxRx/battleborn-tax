@@ -17,6 +17,8 @@ import ResetPasswordPage from './pages/ResetPasswordPage';
 import EnhancedClientDashboard from './components/EnhancedClientDashboard';
 import PartnerDashboard from './modules/partner/pages/PartnerDashboard'; // Import the new component
 import OperatorDashboard from './modules/operator/pages/OperatorDashboard';
+import AffiliateDashboard from './modules/affiliate/pages/NewAffiliateDashboard';
+import ExpertDashboard from './modules/expert/pages/ExpertDashboard';
 
 // Component to handle role-based redirects
 const RoleBasedRedirect: React.FC = () => {
@@ -66,6 +68,14 @@ const RoleBasedRedirect: React.FC = () => {
   if (finalAccountType === 'partner') {
     console.log('RoleBasedRedirect: Redirecting to /partner');
     return <Navigate to="/partner" replace />;
+  }
+  if (finalAccountType === 'affiliate') {
+    console.log('RoleBasedRedirect: Redirecting to /affiliate');
+    return <Navigate to="/affiliate" replace />;
+  }
+  if (finalAccountType === 'expert') {
+    console.log('RoleBasedRedirect: Redirecting to /expert');
+    return <Navigate to="/expert" replace />;
   }
   if (finalAccountType === 'client') {
     console.log('RoleBasedRedirect: Redirecting to /client');
@@ -156,6 +166,18 @@ const AppContent: React.FC = () => {
               <Route 
                 path="/operator/*" 
                 element={<OperatorDashboard />} 
+              />
+
+              {/* Affiliate Routes */}
+              <Route 
+                path="/affiliate/*" 
+                element={<AffiliateDashboard />} 
+              />
+
+              {/* Expert Routes */}
+              <Route 
+                path="/expert/*" 
+                element={<ExpertDashboard />} 
               />
 
               {/* Client Routes */}

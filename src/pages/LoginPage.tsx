@@ -4,6 +4,7 @@ import { authService, AuthUser } from '../services/authService';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import useAuthStore from '../store/authStore';
 import { useUser } from '../context/UserContext';
+import { supabase } from '../lib/supabase';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -12,20 +13,34 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  const { login } = useAuthStore();
+  const { login, logout } = useAuthStore();
   const { setUser } = useUser();
 
   useEffect(() => {
-    // Check if user is already logged in
-    const checkSession = async () => {
-      const user = await authService.getCurrentUser();
-      if (user) {
-        const redirectPath = authService.getRedirectPath(user);
-        navigate(redirectPath);
+    // Force logout when visiting login page
+    const forceLogout = async () => {
+      try {
+        // Clear auth store
+        logout();
+        
+        // Clear user context
+        setUser(null);
+        
+        // Sign out from Supabase (don't wait for it)
+        supabase.auth.signOut().catch(error => console.error('Supabase signOut error:', error));
+        
+        // Clear any cached data
+        localStorage.clear();
+        sessionStorage.clear();
+        
+        console.log('Forced logout on login page visit');
+      } catch (error) {
+        console.error('Error during forced logout:', error);
       }
     };
-    checkSession();
-  }, [navigate]);
+    
+    forceLogout();
+  }, [navigate, logout, setUser]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

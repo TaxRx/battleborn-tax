@@ -86,9 +86,23 @@ const AdminDashboard: React.FC = () => {
     role: 'admin'
   } : null;
 
+  // Access control - only allow admin accounts
   useEffect(() => {
-    loadDashboardData();
-  }, []);
+    console.log('user in admin dashboard', user)
+    if(user?.profile){
+      if (user && user.profile?.account?.type !== 'admin') {
+        navigate('/'); // Redirect non-admins
+        return;
+      }
+      setLoading(false);
+    }
+  }, [user, navigate]);
+
+  useEffect(() => {
+    if (user?.profile?.account?.type === 'admin') {
+      loadDashboardData();
+    }
+  }, [user]);
 
   const loadDashboardData = async () => {
     setLoading(true);
