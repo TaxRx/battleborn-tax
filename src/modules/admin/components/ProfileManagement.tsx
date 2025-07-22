@@ -165,8 +165,9 @@ export const ProfileManagement: React.FC<ProfileManagementProps> = ({
     );
   };
 
-  const getRoleBadge = (role: string, isAdmin: boolean) => {
-    if (isAdmin) {
+  const getRoleBadge = (role: string) => {
+    // Admin role detection based on role string
+    if (role === 'admin') {
       return (
         <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">
           <Shield className="h-3 w-3 mr-1" />
@@ -356,7 +357,7 @@ export const ProfileManagement: React.FC<ProfileManagementProps> = ({
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        {getRoleBadge(profile.role || 'user', profile.is_admin)}
+                        {getRoleBadge(profile.role || 'user')}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {getStatusBadge(profile.status)}

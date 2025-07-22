@@ -72,10 +72,7 @@ export interface Profile {
   email: string;
   full_name?: string;
   role?: string;
-  is_admin: boolean;
   account_id?: string;
-  admin_role?: string;
-  access_level?: string;
   status: 'active' | 'inactive' | 'suspended' | 'pending' | 'locked';
   phone?: string;
   avatar_url?: string;
@@ -301,10 +298,7 @@ class AdminAccountService {
           email,
           full_name,
           role,
-          is_admin,
           account_id,
-          admin_role,
-          access_level,
           status,
           phone,
           avatar_url,
@@ -391,10 +385,7 @@ class AdminAccountService {
           email,
           full_name,
           role,
-          is_admin,
           account_id,
-          admin_role,
-          access_level,
           status,
           phone,
           avatar_url,
@@ -426,10 +417,7 @@ class AdminAccountService {
     full_name?: string;
     role?: string;
     account_id: string;
-    access_level?: string;
     phone?: string;
-    is_admin?: boolean;
-    admin_role?: string;
     admin_notes?: string;
   }): Promise<{ success: boolean; profile?: Profile; message: string }> {
     try {
@@ -449,10 +437,7 @@ class AdminAccountService {
           full_name: profileData.full_name?.trim() || null,
           role: profileData.role || 'user',
           account_id: profileData.account_id,
-          access_level: profileData.access_level || 'client',
           phone: profileData.phone?.trim() || null,
-          is_admin: profileData.is_admin || false,
-          admin_role: profileData.admin_role || null,
           admin_notes: profileData.admin_notes?.trim() || null,
           status: 'pending', // New profiles start as pending
           auth_sync_status: 'pending',
@@ -484,8 +469,7 @@ class AdminAccountService {
         description: `Profile "${profile.email}" was created`,
         metadata: { 
           email: profile.email,
-          role: profile.role,
-          accessLevel: profile.access_level
+          role: profile.role
         }
       });
 
@@ -507,10 +491,7 @@ class AdminAccountService {
     email?: string;
     full_name?: string;
     role?: string;
-    access_level?: string;
     phone?: string;
-    is_admin?: boolean;
-    admin_role?: string;
     admin_notes?: string;
     status?: string;
   }): Promise<{ success: boolean; profile?: Profile; message: string }> {
@@ -552,10 +533,7 @@ class AdminAccountService {
       if (updates.email !== undefined) updateData.email = updates.email.trim().toLowerCase();
       if (updates.full_name !== undefined) updateData.full_name = updates.full_name?.trim() || null;
       if (updates.role !== undefined) updateData.role = updates.role;
-      if (updates.access_level !== undefined) updateData.access_level = updates.access_level;
       if (updates.phone !== undefined) updateData.phone = updates.phone?.trim() || null;
-      if (updates.is_admin !== undefined) updateData.is_admin = updates.is_admin;
-      if (updates.admin_role !== undefined) updateData.admin_role = updates.admin_role || null;
       if (updates.admin_notes !== undefined) updateData.admin_notes = updates.admin_notes?.trim() || null;
       if (updates.status !== undefined) updateData.status = updates.status;
 
@@ -741,7 +719,6 @@ class AdminAccountService {
     full_name?: string;
     role?: string;
     account_id: string;
-    access_level?: string;
     phone?: string;
   }, isUpdate: boolean = false, profileId?: string): Promise<{ 
     isValid: boolean; 

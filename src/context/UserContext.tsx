@@ -8,7 +8,6 @@ interface UserProfile {
   email: string;
   full_name?: string;
   role?: string;
-  is_admin?: boolean;
   account_id?: string;
   created_at?: string;
   updated_at?: string;

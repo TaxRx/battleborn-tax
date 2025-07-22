@@ -5,7 +5,6 @@ export interface UserProfile {
   email: string;
   full_name?: string;
   role: 'admin' | 'user';
-  is_admin?: boolean;  // Deprecated, use account.type instead
   account_id: string;
   created_at: string;
   updated_at: string;
@@ -102,18 +101,8 @@ class AuthService {
       const clientUsers = data.clientUsers || [];
       const accountType = profile.account?.type;
 
-      // If account data is missing due to RLS issues, determine type from access_level fallback
-      let determinedAccountType = accountType;
-      if (!accountType && profile.access_level) {
-        // Map old access_level to new account types
-        switch (profile.access_level) {
-          case 'operator': determinedAccountType = 'admin'; break;
-          case 'partner': determinedAccountType = 'operator'; break;
-          case 'affiliate': determinedAccountType = 'affiliate'; break;
-          case 'client': determinedAccountType = 'client'; break;
-          default: determinedAccountType = 'client'; break;
-        }
-      }
+      // Use account type or default to client
+      const determinedAccountType = accountType || 'client';
 
       // Determine user types based on account type
       const isAdmin = determinedAccountType === 'admin';
@@ -357,18 +346,8 @@ class AuthService {
       const clientUsers = data.user.clientUsers || [];
       const accountType = profile.account?.type;
 
-      // If account data is missing due to RLS issues, determine type from access_level fallback
-      let determinedAccountType = accountType;
-      if (!accountType && profile.access_level) {
-        // Map old access_level to new account types
-        switch (profile.access_level) {
-          case 'operator': determinedAccountType = 'admin'; break;
-          case 'partner': determinedAccountType = 'operator'; break;
-          case 'affiliate': determinedAccountType = 'affiliate'; break;
-          case 'client': determinedAccountType = 'client'; break;
-          default: determinedAccountType = 'client'; break;
-        }
-      }
+      // Use account type or default to client
+      const determinedAccountType = accountType || 'client';
 
       // Determine user types based on account type
       const isAdmin = determinedAccountType === 'admin';
