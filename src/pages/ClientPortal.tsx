@@ -4,6 +4,7 @@ import { Calendar, Download, FileText, CheckCircle, Clock, AlertCircle, Eye, Pen
 
 // Create a separate supabase client instance for the portal
 import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase'; // Import main authenticated client
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -21,6 +22,7 @@ interface PortalData {
   business_id: string;
   business_name: string;
   user_id: string;
+  token_id?: string;
 }
 
 interface BusinessYear {
@@ -62,6 +64,16 @@ const ClientPortal: React.FC = () => {
   const [businessYears, setBusinessYears] = useState<BusinessYear[]>([]);
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [selectedYear, setSelectedYear] = useState<BusinessYear | null>(null);
+  
+  // Jurat signature state variables
+  const [juratSignatures, setJuratSignatures] = useState<JuratSignature[]>([]);
+  const [showJuratModal, setShowJuratModal] = useState(false);
+  const [signerInfo, setSignerInfo] = useState({
+    name: '',
+    title: '',
+    email: ''
+  });
+  const [juratText, setJuratText] = useState('');
 
   // Check for admin preview mode
   const searchParams = new URLSearchParams(window.location.search);
@@ -75,6 +87,16 @@ const ClientPortal: React.FC = () => {
     previewBusinessId, 
     previewToken 
   });
+
+  // Get the appropriate supabase client based on mode
+  const getSupabaseClient = () => {
+    if (isAdminPreview) {
+      // Use authenticated admin client for preview mode
+      return supabase;
+    }
+    // Use portal client for normal client authentication
+    return portalSupabase;
+  };
 
   const validateSessionAndLoadData = async () => {
     if (!userId) {
@@ -100,6 +122,16 @@ const ClientPortal: React.FC = () => {
           setLoading(false);
           return;
         }
+        
+        // Check if admin is properly authenticated for preview
+        const { data: { session }, error: adminSessionError } = await supabase.auth.getSession();
+        if (adminSessionError || !session?.user) {
+          setError('Admin authentication required for preview mode.');
+          setLoading(false);
+          return;
+        }
+        
+        console.log('🔐 [ClientPortal] Admin authenticated, proceeding with preview');
         
         // Load business data directly for admin preview
         await loadBusinessDataForPreview(previewBusinessId);
@@ -128,7 +160,8 @@ const ClientPortal: React.FC = () => {
       }
 
       // Fetch business data based on the authenticated user's client_id
-      const { data: clientBusiness, error: businessError } = await portalSupabase
+      const client = getSupabaseClient();
+      const { data: clientBusiness, error: businessError } = await client
         .from('rd_businesses')
         .select(`
           id,
@@ -139,17 +172,8 @@ const ClientPortal: React.FC = () => {
             year,
             gross_receipts,
             total_qre,
-            final_credit_amount,
-            jurat_signed_at,
-            jurat_signed_by,
-            jurat_signature_image_path
-          ),
-          rd_documents (
-            id,
-            file_name,
-            file_path,
-            document_type,
-            uploaded_at
+            created_at,
+            updated_at
           )
         `)
         .eq('client_id', session.user.id) // Assuming client_id in rd_businesses matches auth.users.id
@@ -173,7 +197,7 @@ const ClientPortal: React.FC = () => {
 
       setPortalData(transformedData);
       setBusinessYears(clientBusiness.rd_business_years || []);
-      setDocuments(clientBusiness.rd_documents || []);
+      setDocuments([]); // Documents will be loaded via loadDocumentStatus()
       if (clientBusiness.rd_business_years.length > 0) {
         setSelectedYear(clientBusiness.rd_business_years[0]);
       }
@@ -191,8 +215,8 @@ const ClientPortal: React.FC = () => {
     try {
       console.log('👀 [ClientPortal] Loading business data for admin preview:', businessId);
       
-      // Use regular supabase client to fetch business data
-      const { data: clientBusiness, error: businessError } = await portalSupabase
+      // Use authenticated admin supabase client for preview (has proper permissions)
+      const { data: clientBusiness, error: businessError } = await supabase
         .from('rd_businesses')
         .select(`
           id,
@@ -203,17 +227,8 @@ const ClientPortal: React.FC = () => {
             year,
             gross_receipts,
             total_qre,
-            final_credit_amount,
-            jurat_signed_at,
-            jurat_signed_by,
-            jurat_signature_image_path
-          ),
-          rd_documents (
-            id,
-            file_name,
-            file_path,
-            document_type,
-            uploaded_at
+            created_at,
+            updated_at
           )
         `)
         .eq('id', businessId)
@@ -221,7 +236,13 @@ const ClientPortal: React.FC = () => {
 
       if (businessError) {
         console.error('❌ Error fetching business data for preview:', businessError);
-        throw new Error('Could not load business data for preview.');
+        console.error('❌ Error details:', {
+          code: businessError.code,
+          message: businessError.message,
+          details: businessError.details,
+          hint: businessError.hint
+        });
+        throw new Error(`Could not load business data for preview: ${businessError.message}`);
       }
 
       if (!clientBusiness) {
@@ -239,7 +260,7 @@ const ClientPortal: React.FC = () => {
 
       setPortalData(transformedData);
       setBusinessYears(clientBusiness.rd_business_years || []);
-      setDocuments(clientBusiness.rd_documents || []);
+      setDocuments([]); // Documents will be loaded via loadDocumentStatus()
       if (clientBusiness.rd_business_years.length > 0) {
         setSelectedYear(clientBusiness.rd_business_years[0]);
       }
@@ -268,8 +289,9 @@ const ClientPortal: React.FC = () => {
 
     try {
       const documentTypes = ['research_report', 'filing_guide', 'allocation_report'];
+      const client = getSupabaseClient();
       const documentPromises = documentTypes.map(async (docType) => {
-        const { data, error } = await portalSupabase.rpc('check_document_release_eligibility', {
+        const { data, error } = await client.rpc('check_document_release_eligibility', {
           p_business_year_id: selectedYear.id,
           p_document_type: docType
         });
@@ -302,7 +324,8 @@ const ClientPortal: React.FC = () => {
     if (!selectedYear) return;
 
     try {
-      const { data, error } = await portalSupabase
+      const client = getSupabaseClient();
+      const { data, error } = await client
         .from('rd_signatures')
         .select('*')
         .eq('business_year_id', selectedYear.id)
@@ -328,7 +351,8 @@ const ClientPortal: React.FC = () => {
       const verificationData = `${selectedYear.id}-${signerInfo.name}-${signerInfo.email}-${Date.now()}`;
       const verificationHash = btoa(verificationData);
 
-      const { error } = await portalSupabase
+      const client = getSupabaseClient();
+      const { error } = await client
         .from('rd_signatures')
         .insert({
           business_year_id: selectedYear.id,
@@ -372,7 +396,8 @@ const ClientPortal: React.FC = () => {
       }
 
       // Get the document from rd_reports table
-      const { data, error } = await portalSupabase
+      const client = getSupabaseClient();
+      const { data, error } = await client
         .from('rd_reports')
         .select('generated_html, filing_guide')
         .eq('business_year_id', selectedYear.id)

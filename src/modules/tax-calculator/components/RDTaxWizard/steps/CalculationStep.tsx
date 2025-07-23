@@ -1387,9 +1387,10 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
   // Effect to check state gross receipts requirements and load existing data
   useEffect(() => {
     const checkGrossReceiptsRequirements = async () => {
-      if (!wizardState.business?.state || !selectedYearData) return;
+      // Use consistent business state determination (same as state credits calculation)
+      const businessState = wizardState.business?.domicile_state || wizardState.business?.contact_info?.state || wizardState.business?.state || 'CA';
       
-      const businessState = wizardState.business.state;
+      if (!businessState || !selectedYearData) return;
       const requiresGrossReceipts = stateRequiresGrossReceipts(businessState);
       setShowStateGrossReceipts(requiresGrossReceipts);
       
@@ -1435,7 +1436,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
     };
     
     checkGrossReceiptsRequirements();
-  }, [wizardState.business?.state, selectedYearData?.id]);
+  }, [wizardState.business?.domicile_state, wizardState.business?.contact_info?.state, wizardState.business?.state, selectedYearData?.id]);
 
   // State gross receipts saving functionality
   const saveStateGrossReceipts = async (grossReceiptsData: {[year: string]: number}) => {
