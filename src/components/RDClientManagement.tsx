@@ -45,6 +45,7 @@ import { BusinessService } from '../services/businessService';
 import { formatCurrency } from '../utils/formatting';
 import { useNavigationSidebar } from '../hooks/useNavigationSidebar';
 import ModularResearchActivityManager from './research-activity-manager/ModularResearchActivityManager';
+import RDTaxWizard from '../modules/tax-calculator/components/RDTaxWizard/RDTaxWizard';
 
 interface RDClientManagementProps {
   onClientSelect?: (client: UnifiedClientRecord) => void;

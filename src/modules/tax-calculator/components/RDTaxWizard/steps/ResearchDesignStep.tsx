@@ -222,7 +222,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
         return;
       }
       
-      console.log('💾 [DEBOUNCED UPDATE] Using activity:', currentActivity.activityName, 'ID:', currentActivity.activityId);
+      console.log('💾 [DEBOUNCED UPDATE] Using activity:', currentActivity.title || currentActivity.activityName, 'ID:', currentActivity.id || currentActivity.activityId);
       
       // Batch update all pending changes
       for (const update of updates) {
@@ -233,7 +233,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
             .from('rd_selected_steps')
             .upsert({
               business_year_id: effectiveBusinessYearId,
-              research_activity_id: currentActivity.activityId,
+              research_activity_id: currentActivity.id || currentActivity.activityId,
               step_id: update.stepId,
               time_percentage: update.percentage
             }, { onConflict: 'business_year_id,step_id' });
@@ -384,7 +384,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       // Check if we need to initialize steps for any activities
       const existingStepActivityIds = stepsData.map(step => step.research_activity_id);
       const activitiesNeedingSteps = activitiesData.filter(activity => 
-        !existingStepActivityIds.includes(activity.activityId)
+        !existingStepActivityIds.includes(activity.id || activity.activityId)
       );
 
       console.log('Activities needing steps initialization:', activitiesNeedingSteps);
@@ -441,8 +441,8 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       
       // Debug: Log the structure of activitiesWithSteps
       console.log('ResearchDesignStep: activitiesWithSteps structure:', activitiesData.map(activity => ({
-        activityId: activity.activityId,
-        activityName: activity.activityName,
+        activityId: activity.id || activity.activityId,
+        activityName: activity.title || activity.activityName,
         stepsCount: activity.steps?.length || 0,
         steps: activity.steps?.map(step => ({
           id: step.id,
@@ -541,7 +541,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     const { data: activityData, error: activityError } = await supabase
       .from('rd_selected_activities')
       .select('practice_percent')
-      .eq('activity_id', currentActivity.activityId)
+      .eq('activity_id', currentActivity.id || currentActivity.activityId)
       .eq('business_year_id', selectedActivityYearId)
       .single();
     
@@ -551,7 +551,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     }
     
     const practicePercent = activityData?.practice_percent || 0;
-    console.log('✅ FIXED: Using practice percent from DATABASE:', practicePercent, 'for activity:', currentActivity.activityId);
+    console.log('✅ FIXED: Using practice percent from DATABASE:', practicePercent, 'for activity:', currentActivity.id || currentActivity.activityId);
     
     const selectedStep = selectedSteps.find(s => s.step_id === stepId);
     const stepTimePercent = selectedStep?.time_percentage ?? 0;
@@ -731,7 +731,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
         .from('rd_selected_steps')
         .upsert({
           business_year_id: selectedActivityYearId,
-          research_activity_id: activitiesWithSteps[activeActivityIndex]?.activityId,
+          research_activity_id: activitiesWithSteps[activeActivityIndex]?.id || activitiesWithSteps[activeActivityIndex]?.activityId,
           step_id: stepId,
           time_percentage: timePercentage
         }, { onConflict: 'business_year_id,step_id' });
@@ -910,8 +910,14 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       console.log('Activity data for initialization:', activity);
       
       // Get the correct activity ID from activitiesWithSteps structure
-      const activityId = activity.activityId;
+      // Fix: Use correct property name based on ResearchDesignService.getActivitiesWithSteps return structure
+      const activityId = activity.id || activity.activityId;
       console.log('Using activity ID for step initialization:', activityId);
+      
+      if (!activityId) {
+        console.error('❌ [INITIALIZE STEPS] No activity ID found, skipping initialization for activity:', activity);
+        return;
+      }
       
       for (const step of steps) {
         // Only save if this step doesn't already exist in database
@@ -1133,7 +1139,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       if (updatedStep) {
         const stepData = {
           business_year_id: businessYearId,
-          research_activity_id: currentActivity.activityId,
+          research_activity_id: currentActivity.id || currentActivity.activityId,
           step_id: stepId,
           time_percentage: updatedStep.percentage,
           applied_percentage: 0
@@ -1231,7 +1237,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
           .from('rd_selected_steps')
           .upsert({
             business_year_id: businessYearId,
-            research_activity_id: currentActivity.activityId,
+            research_activity_id: currentActivity.id || currentActivity.activityId,
             step_id: step.id,
             time_percentage: step.isEnabled ? equalDistribution : 0
           }, {

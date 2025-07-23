@@ -147,6 +147,7 @@ interface QuickEmployeeEntry {
   wage: string;
   role_id: string;
   is_owner: boolean;
+  use_actualization: boolean;
 }
 
 interface EmployeeWithExpenses {
@@ -163,6 +164,22 @@ interface EmployeeWithExpenses {
   applied_percentage?: number;
 }
 
+// Actualization utility function to apply random variations to subcomponent percentages
+const applyActualizationVariations = (basePercentage: number): number => {
+  if (basePercentage === 0) return 0; // Don't vary zero percentages
+
+  // Generate random variation between -25% and +15%
+  const minVariation = -0.25; // -25%
+  const maxVariation = 0.15;  // +15%
+  const randomVariation = Math.random() * (maxVariation - minVariation) + minVariation;
+
+  // Apply variation to base percentage
+  const variedPercentage = basePercentage * (1 + randomVariation);
+
+  // Ensure the result is not negative and rounds to 2 decimal places
+  return Math.max(0, Math.round(variedPercentage * 100) / 100);
+};
+
 const QuickEmployeeEntryForm: React.FC<{
   onAdd: (employee: QuickEmployeeEntry) => void;
   roles: Role[];
@@ -172,7 +189,8 @@ const QuickEmployeeEntryForm: React.FC<{
     last_name: '',
     wage: '',
     role_id: '',
-    is_owner: false
+    is_owner: false,
+    use_actualization: true
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -186,7 +204,8 @@ const QuickEmployeeEntryForm: React.FC<{
         last_name: '',
         wage: '',
         role_id: '',
-        is_owner: false
+        is_owner: false,
+        use_actualization: true
       });
     } else {
       console.log('❌ QuickEmployeeEntryForm - Form validation failed:', {
@@ -280,7 +299,7 @@ const QuickEmployeeEntryForm: React.FC<{
           </select>
         </div>
         
-        <div className="flex items-center">
+        <div className="flex flex-col space-y-2">
           <label className="flex items-center cursor-pointer">
             <input
               type="checkbox"
@@ -289,6 +308,17 @@ const QuickEmployeeEntryForm: React.FC<{
               className="mr-2 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
             />
             <span className="text-sm font-medium text-gray-700">Is Owner</span>
+          </label>
+          <label className="flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.use_actualization}
+              onChange={(e) => setFormData(prev => ({ ...prev, use_actualization: e.target.checked }))}
+              className="mr-2 w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
+            />
+            <span className="text-sm font-medium text-gray-700" title="Apply random variations (-25% to +15%) to subcomponent percentages for more realistic allocation">
+              Actualization
+            </span>
           </label>
         </div>
         
@@ -895,19 +925,25 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
   };
 
   const updateActivityEnabled = (activityId: string, isEnabled: boolean) => {
-    setActivities(prev => prev.map(activity => {
-      if (activity.id === activityId) {
-        return {
-          ...activity,
-          isEnabled,
-          subcomponents: activity.subcomponents.map(sub => ({
-            ...sub,
-            isIncluded: isEnabled ? sub.isIncluded : false
-          }))
-        };
-      }
-      return activity;
-    }));
+    setActivities(prev => {
+      const updated = prev.map(activity => {
+        if (activity.id === activityId) {
+          return {
+            ...activity,
+            isEnabled,
+            subcomponents: activity.subcomponents.map(sub => ({
+              ...sub,
+              isIncluded: isEnabled ? sub.isIncluded : false
+            }))
+          };
+        }
+        return activity;
+      });
+      
+      // Auto-save the updated values
+      autoSaveAllocations(updated);
+      return updated;
+    });
   };
 
   const updateActivityPracticePercentage = (activityId: string, percentage: number) => {
@@ -929,34 +965,127 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
         const totalResearchTime = enabledActivities.reduce((sum, a) => sum + a.practicePercentage, 0);
         const scaleFactor = availableForResearch / totalResearchTime;
         
-        return updated.map(activity => {
+        const redistributed = updated.map(activity => {
           if (activity.isEnabled) {
             return { ...activity, practicePercentage: Math.round(activity.practicePercentage * scaleFactor * 100) / 100 };
           }
           return activity;
         });
+        
+        // Auto-save the redistributed values
+        autoSaveAllocations(redistributed);
+        return redistributed;
       }
       
+      // Auto-save the updated values
+      autoSaveAllocations(updated);
       return updated;
     });
   };
 
   const updateSubcomponentTimePercentage = (activityId: string, subcomponentId: string, percentage: number) => {
-    setActivities(prev => prev.map(activity => {
-      if (activity.id === activityId) {
-        return {
-          ...activity,
-          subcomponents: activity.subcomponents.map(sub => {
-            if (sub.id === subcomponentId) {
-              // Allow up to 100% for any subcomponent, not limited by baseline
-              return { ...sub, timePercentage: Math.max(0, Math.min(percentage, 100)) };
+    setActivities(prev => {
+      const updated = prev.map(activity => {
+        if (activity.id === activityId) {
+          return {
+            ...activity,
+            subcomponents: activity.subcomponents.map(sub => {
+              if (sub.id === subcomponentId) {
+                // Allow up to 100% for any subcomponent, not limited by baseline
+                return { ...sub, timePercentage: Math.max(0, Math.min(percentage, 100)) };
+              }
+              return sub;
+            })
+          };
+        }
+        return activity;
+      });
+      
+      // Auto-save the updated values
+      autoSaveAllocations(updated);
+      return updated;
+    });
+  };
+
+  // Auto-save allocations without UI feedback - runs in background
+  const autoSaveAllocations = async (activitiesData: any[]) => {
+    if (!employee || !businessYearId) return;
+    
+    try {
+      // Calculate and save allocations for enabled activities (same logic as saveAllocations)
+      for (const activity of activitiesData) {
+        if (activity.isEnabled) {
+          for (const subcomponent of activity.subcomponents) {
+            if (subcomponent.isIncluded) {
+              // Calculate applied percentage using modal's formula: Practice% × Year% × Frequency% × Time%
+              const appliedPercentage = (activity.practicePercentage / 100) * 
+                                     (subcomponent.yearPercentage / 100) * 
+                                     (subcomponent.frequencyPercentage / 100) * 
+                                     (subcomponent.timePercentage / 100) * 100;
+              
+              // Update database with new calculated values
+              const upsertData: any = {
+                employee_id: employee.id,
+                business_year_id: businessYearId,
+                subcomponent_id: subcomponent.id,
+                time_percentage: subcomponent.timePercentage,
+                applied_percentage: appliedPercentage, // This will make roster match modal
+                practice_percentage: activity.practicePercentage,
+                year_percentage: subcomponent.yearPercentage,
+                frequency_percentage: subcomponent.frequencyPercentage,
+                is_included: subcomponent.isIncluded,
+                updated_at: new Date().toISOString()
+              };
+
+              await supabase
+                .from('rd_employee_subcomponents')
+                .upsert(upsertData, {
+                  onConflict: 'employee_id,business_year_id,subcomponent_id'
+                });
             }
-            return sub;
-          })
-        };
+          }
+        }
       }
-      return activity;
-    }));
+      
+      // Update the total applied percentage in rd_employee_year_data
+      const totalAppliedPercentage = activitiesData.reduce((total: number, activity: any) => {
+        if (activity.isEnabled) {
+          return total + activity.subcomponents.reduce((actTotal: number, sub: any) => {
+            if (sub.isIncluded) {
+              const appliedPercentage = (activity.practicePercentage / 100) * 
+                                     (sub.yearPercentage / 100) * 
+                                     (sub.frequencyPercentage / 100) * 
+                                     (sub.timePercentage / 100) * 100;
+              return actTotal + appliedPercentage;
+            }
+            return actTotal;
+          }, 0);
+        }
+        return total;
+      }, 0);
+
+      // Update rd_employee_year_data with the new total
+      const annualWage = employee.annual_wage || 0;
+      const calculatedQRE = Math.round((annualWage * totalAppliedPercentage) / 100);
+
+      await supabase
+        .from('rd_employee_year_data')
+        .upsert({
+          employee_id: employee.id,
+          business_year_id: businessYearId,
+          applied_percent: totalAppliedPercentage,
+          calculated_qre: calculatedQRE,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'employee_id,business_year_id'
+        });
+
+      // Trigger roster refresh
+      onUpdate?.();
+
+    } catch (error) {
+      console.error('❌ Error in auto-save:', error);
+    }
   };
 
   const saveAllocations = async () => {
@@ -1426,20 +1555,26 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
                                     type="checkbox"
                                     checked={subcomponent.isIncluded}
                                     onChange={(e) => {
-                                      setActivities(prev => prev.map(a => {
-                                        if (a.id === activity.id) {
-                                          return {
-                                            ...a,
-                                            subcomponents: a.subcomponents.map(s => {
-                                              if (s.id === subcomponent.id) {
-                                                return { ...s, isIncluded: e.target.checked };
-                                              }
-                                              return s;
-                                            })
-                                          };
-                                        }
-                                        return a;
-                                      }));
+                                      setActivities(prev => {
+                                        const updated = prev.map(a => {
+                                          if (a.id === activity.id) {
+                                            return {
+                                              ...a,
+                                              subcomponents: a.subcomponents.map(s => {
+                                                if (s.id === subcomponent.id) {
+                                                  return { ...s, isIncluded: e.target.checked };
+                                                }
+                                                return s;
+                                              })
+                                            };
+                                          }
+                                          return a;
+                                        });
+                                        
+                                        // Auto-save the updated values
+                                        autoSaveAllocations(updated);
+                                        return updated;
+                                      });
                                     }}
                                     disabled={!activity.isEnabled}
                                     className="w-3 h-3 text-blue-600 rounded focus:ring-blue-500 disabled:opacity-50"
@@ -1539,6 +1674,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
   const [csvImporting, setCsvImporting] = useState(false);
   const [csvError, setCsvError] = useState<string | null>(null);
   const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvUseActualization, setCsvUseActualization] = useState(true);
   // Allocation Report Modal State
   const [showAllocationReport, setShowAllocationReport] = useState(false);
   // Add state to track the current year for display
@@ -2191,12 +2327,36 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                 }
 
                 // Use data from rd_selected_subcomponents (the source of truth)
-                const stepTimePercentage = selectedSubcomponent?.time_percentage || 0;
-                const baselinePracticePercentage = selectedSubcomponent?.practice_percent || activity.practice_percent || 0;
-                const yearPercentage = selectedSubcomponent?.year_percentage || 100;
-                const frequencyPercentage = selectedSubcomponent?.frequency_percentage || 100;
+                let stepTimePercentage = selectedSubcomponent?.time_percentage || 0;
+                let baselinePracticePercentage = selectedSubcomponent?.practice_percent || activity.practice_percent || 0;
+                let yearPercentage = selectedSubcomponent?.year_percentage || 100;
+                let frequencyPercentage = selectedSubcomponent?.frequency_percentage || 100;
                 
-                // Calculate baseline applied percentage: Practice% × Year% × Frequency% × Time%
+                // Apply actualization variations if enabled
+                if (employeeData.use_actualization) {
+                  stepTimePercentage = applyActualizationVariations(stepTimePercentage);
+                  baselinePracticePercentage = applyActualizationVariations(baselinePracticePercentage);
+                  yearPercentage = applyActualizationVariations(yearPercentage);
+                  frequencyPercentage = applyActualizationVariations(frequencyPercentage);
+                  
+                  console.log('🎲 Applied actualization variations:', {
+                    subcomponent: subcomponent.subcomponent_id,
+                    original: {
+                      time: selectedSubcomponent?.time_percentage || 0,
+                      practice: selectedSubcomponent?.practice_percent || activity.practice_percent || 0,
+                      year: selectedSubcomponent?.year_percentage || 100,
+                      frequency: selectedSubcomponent?.frequency_percentage || 100
+                    },
+                    actualized: {
+                      time: stepTimePercentage,
+                      practice: baselinePracticePercentage,
+                      year: yearPercentage,
+                      frequency: frequencyPercentage
+                    }
+                  });
+                }
+                
+                // Calculate applied percentage: Practice% × Year% × Frequency% × Time%
                 const baselineAppliedPercentage = (baselinePracticePercentage / 100) * 
                                                (yearPercentage / 100) * 
                                                (frequencyPercentage / 100) * 
@@ -3047,21 +3207,61 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                 console.log(`✅ Found ${selectedSubcomponents.length} subcomponents for role ${roleName}`);
                 
                 // Create employee subcomponent relationships with baseline values
-                const employeeSubcomponentData = selectedSubcomponents.map((subcomponent: any) => ({
-                  employee_id: newEmployee.id,
-                  subcomponent_id: subcomponent.subcomponent_id,
-                  business_year_id: targetBusinessYearId,
-                  time_percentage: subcomponent.time_percentage || 0,
-                  applied_percentage: subcomponent.applied_percentage || 0,
-                  is_included: true,
-                  baseline_applied_percent: subcomponent.applied_percentage || 0,
-                  practice_percentage: subcomponent.practice_percent || 0,
-                  year_percentage: subcomponent.year_percentage || 0,
-                  frequency_percentage: subcomponent.frequency_percentage || 0,
-                  baseline_practice_percentage: subcomponent.practice_percent || 0,
-                  baseline_time_percentage: subcomponent.time_percentage || 0,
-                  user_id: userId
-                }));
+                const employeeSubcomponentData = selectedSubcomponents.map((subcomponent: any) => {
+                  let timePercentage = subcomponent.time_percentage || 0;
+                  let practicePercentage = subcomponent.practice_percent || 0;
+                  let yearPercentage = subcomponent.year_percentage || 0;
+                  let frequencyPercentage = subcomponent.frequency_percentage || 0;
+                  let appliedPercentage = subcomponent.applied_percentage || 0;
+
+                  // Apply actualization variations if enabled
+                  if (csvUseActualization) {
+                    timePercentage = applyActualizationVariations(timePercentage);
+                    practicePercentage = applyActualizationVariations(practicePercentage);
+                    yearPercentage = applyActualizationVariations(yearPercentage);
+                    frequencyPercentage = applyActualizationVariations(frequencyPercentage);
+                    
+                    // Recalculate applied percentage with actualized values
+                    appliedPercentage = (practicePercentage / 100) * 
+                                      (yearPercentage / 100) * 
+                                      (frequencyPercentage / 100) * 
+                                      (timePercentage / 100) * 100;
+                    
+                    console.log('🎲 CSV Applied actualization variations:', {
+                      subcomponent: subcomponent.subcomponent_id,
+                      original: {
+                        time: subcomponent.time_percentage || 0,
+                        practice: subcomponent.practice_percent || 0,
+                        year: subcomponent.year_percentage || 0,
+                        frequency: subcomponent.frequency_percentage || 0,
+                        applied: subcomponent.applied_percentage || 0
+                      },
+                      actualized: {
+                        time: timePercentage,
+                        practice: practicePercentage,
+                        year: yearPercentage,
+                        frequency: frequencyPercentage,
+                        applied: appliedPercentage
+                      }
+                    });
+                  }
+
+                  return {
+                    employee_id: newEmployee.id,
+                    subcomponent_id: subcomponent.subcomponent_id,
+                    business_year_id: targetBusinessYearId,
+                    time_percentage: timePercentage,
+                    applied_percentage: appliedPercentage,
+                    is_included: true,
+                    baseline_applied_percent: subcomponent.applied_percentage || 0,
+                    practice_percentage: practicePercentage,
+                    year_percentage: yearPercentage,
+                    frequency_percentage: frequencyPercentage,
+                    baseline_practice_percentage: subcomponent.practice_percent || 0,
+                    baseline_time_percentage: subcomponent.time_percentage || 0,
+                    user_id: userId
+                  };
+                });
 
                 const { error: insertError } = await supabase
                   .from('rd_employee_subcomponents')
@@ -3351,21 +3551,34 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                   </p>
                 </div>
                 <div className="flex items-center space-x-3">
-                  <label className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg cursor-pointer border border-blue-200 hover:bg-blue-200 transition-colors font-medium">
-                    Import Employees (CSV)
-                    <input
-                      type="file"
-                      accept=".csv"
-                      className="hidden"
-                      onChange={e => {
-                        if (e.target.files && e.target.files[0]) {
-                          setCsvFile(e.target.files[0]);
-                          handleCSVImport(e.target.files[0]);
-                        }
-                      }}
-                      disabled={csvImporting}
-                    />
-                  </label>
+                  <div className="flex flex-col space-y-2">
+                    <label className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg cursor-pointer border border-blue-200 hover:bg-blue-200 transition-colors font-medium">
+                      Import Employees (CSV)
+                      <input
+                        type="file"
+                        accept=".csv"
+                        className="hidden"
+                        onChange={e => {
+                          if (e.target.files && e.target.files[0]) {
+                            setCsvFile(e.target.files[0]);
+                            handleCSVImport(e.target.files[0]);
+                          }
+                        }}
+                        disabled={csvImporting}
+                      />
+                    </label>
+                    <label className="flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={csvUseActualization}
+                        onChange={(e) => setCsvUseActualization(e.target.checked)}
+                        className="mr-2 w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                      />
+                      <span className="text-sm font-medium text-gray-700" title="Apply random variations (-25% to +15%) to imported employee subcomponent percentages">
+                        CSV Actualization
+                      </span>
+                    </label>
+                  </div>
                   {csvImporting && <span className="text-blue-600 text-sm">Importing...</span>}
                   {csvError && <span className="text-red-600 text-sm">{csvError}</span>}
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs">
