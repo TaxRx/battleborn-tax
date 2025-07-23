@@ -62,6 +62,15 @@ const ReportsStep: React.FC<ReportsStepProps> = ({ wizardState, onComplete, onPr
   const [editingNotes, setEditingNotes] = useState<{ [key: string]: boolean }>({});
   const [releaseToggles, setReleaseToggles] = useState<{ [key: string]: boolean }>({});
   
+  // QC Approver Modal states
+  const [showQCApproverModal, setShowQCApproverModal] = useState(false);
+  const [pendingToggleType, setPendingToggleType] = useState<string | null>(null);
+  const [qcApproverForm, setQcApproverForm] = useState({
+    name: '',
+    credentials: '',
+    password: ''
+  });
+  
   // Jurat document management
   const [juratUploaded, setJuratUploaded] = useState(false);
   const [juratUploadDate, setJuratUploadDate] = useState<string | null>(null);
@@ -109,11 +118,44 @@ I further affirm that I am authorized to sign on behalf of the business entity a
     checkAdminAndLoadData();
   }, [wizardState.selectedYear?.id]);
 
+  // Initialize QC controls if they don't exist
+  const initializeQCControls = async () => {
+    if (!wizardState.selectedYear?.id) return;
+
+    const documentTypes = [
+      { type: 'research_report', requires_jurat: false, requires_payment: false },
+      { type: 'filing_guide', requires_jurat: true, requires_payment: true },
+      { type: 'allocation_report', requires_jurat: false, requires_payment: false }
+    ];
+
+    for (const doc of documentTypes) {
+      const { error } = await supabase
+        .from('rd_qc_document_controls')
+        .upsert({
+          business_year_id: wizardState.selectedYear.id,
+          document_type: doc.type,
+          requires_jurat: doc.requires_jurat,
+          requires_payment: doc.requires_payment,
+          is_released: false
+        }, { 
+          onConflict: 'business_year_id,document_type',
+          ignoreDuplicates: false
+        });
+
+      if (error) {
+        console.error(`Error initializing QC control for ${doc.type}:`, error);
+      }
+    }
+  };
+
   const loadReportsData = async () => {
     if (!wizardState.selectedYear?.id) return;
 
     setLoading(true);
     try {
+      // First, ensure QC controls exist
+      await initializeQCControls();
+
       // Load QC document controls
       const { data: controls, error: controlsError } = await supabase
         .from('rd_qc_document_controls')
@@ -193,28 +235,285 @@ I further affirm that I am authorized to sign on behalf of the business entity a
     }
   };
 
-  // Toggle document release status
-  const toggleRelease = async (documentType: string) => {
+  // Generate HTML report content
+  const generateReportHTML = async (documentType: string): Promise<string> => {
+    try {
+      // This is a simplified HTML generation - you can expand this based on your needs
+      const businessName = wizardState.business?.business_name || 'Business';
+      const year = wizardState.selectedYear?.year || new Date().getFullYear();
+      
+      // Get current R&D calculations and data
+      const { data: calculations, error: calcError } = await supabase
+        .from('rd_federal_credit_results')
+        .select('*')
+        .eq('business_year_id', wizardState.selectedYear?.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (calcError) {
+        console.error('Error fetching calculations:', calcError);
+      }
+
+      const calcData = calculations?.[0] || {};
+      
+      let htmlContent = '';
+      
+      if (documentType === 'research_report') {
+        htmlContent = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>R&D Research Report - ${businessName} - ${year}</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+              .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+              .section { margin-bottom: 30px; }
+              .section h2 { color: #333; border-bottom: 1px solid #ccc; padding-bottom: 10px; }
+              .summary-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+              .summary-table th, .summary-table td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+              .summary-table th { background-color: #f5f5f5; font-weight: bold; }
+              .amount { text-align: right; font-weight: bold; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>Research & Development Tax Credit Report</h1>
+              <h2>${businessName}</h2>
+              <h3>Tax Year ${year}</h3>
+              <p>Generated on: ${new Date().toLocaleDateString()}</p>
+            </div>
+            
+            <div class="section">
+              <h2>Executive Summary</h2>
+              <p>This report documents the qualified research activities and expenses for ${businessName} during the ${year} tax year, supporting the federal and state R&D tax credit claims.</p>
+            </div>
+            
+            <div class="section">
+              <h2>Federal Credit Summary</h2>
+              <table class="summary-table">
+                <tr>
+                  <th>Description</th>
+                  <th>Amount</th>
+                </tr>
+                <tr>
+                  <td>Qualified Research Expenses (QRE)</td>
+                  <td class="amount">$${(calcData.total_qre || 0).toLocaleString()}</td>
+                </tr>
+                <tr>
+                  <td>Federal R&D Credit</td>
+                  <td class="amount">$${(calcData.total_credit || 0).toLocaleString()}</td>
+                </tr>
+              </table>
+            </div>
+            
+            <div class="section">
+              <h2>QC Approval</h2>
+              <p><strong>Approved by:</strong> [QC Approver Name]</p>
+              <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+              <p><strong>Status:</strong> Approved for Release</p>
+            </div>
+          </body>
+          </html>
+        `;
+      } else if (documentType === 'filing_guide') {
+        htmlContent = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Filing Guide - ${businessName} - ${year}</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+              .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+              .section { margin-bottom: 30px; }
+              .section h2 { color: #333; border-bottom: 1px solid #ccc; padding-bottom: 10px; }
+              .checklist { list-style-type: none; padding: 0; }
+              .checklist li { margin: 10px 0; padding: 10px; background: #f9f9f9; border-left: 4px solid #007cba; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>R&D Tax Credit Filing Guide</h1>
+              <h2>${businessName}</h2>
+              <h3>Tax Year ${year}</h3>
+              <p>Generated on: ${new Date().toLocaleDateString()}</p>
+            </div>
+            
+            <div class="section">
+              <h2>Filing Instructions</h2>
+              <p>This guide provides step-by-step instructions for claiming your R&D tax credits on your federal and state tax returns.</p>
+            </div>
+            
+            <div class="section">
+              <h2>Required Forms and Filing Steps</h2>
+              <ul class="checklist">
+                <li>✓ Complete Form 6765 - Credit for Increasing Research Activities</li>
+                <li>✓ Attach supporting documentation for qualified research expenses</li>
+                <li>✓ Include state-specific forms if applicable</li>
+                <li>✓ Maintain detailed records for potential audit</li>
+              </ul>
+            </div>
+            
+            <div class="section">
+              <h2>Credit Amounts</h2>
+              <p><strong>Federal R&D Credit:</strong> $${(calcData.total_credit || 0).toLocaleString()}</p>
+              <p><strong>Total QRE:</strong> $${(calcData.total_qre || 0).toLocaleString()}</p>
+            </div>
+          </body>
+          </html>
+        `;
+      } else {
+        // Default HTML for other document types
+        htmlContent = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>${documentType.replace('_', ' ').toUpperCase()} - ${businessName}</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+              .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>${documentType.replace('_', ' ').toUpperCase()}</h1>
+              <h2>${businessName}</h2>
+              <p>Generated on: ${new Date().toLocaleDateString()}</p>
+            </div>
+          </body>
+          </html>
+        `;
+      }
+      
+      return htmlContent;
+    } catch (error) {
+      console.error('Error generating HTML:', error);
+      return `<html><body><h1>Error generating report</h1><p>${error}</p></body></html>`;
+    }
+  };
+
+  // Get user's IP address
+  const getUserIPAddress = async (): Promise<string> => {
+    try {
+      const response = await fetch('https://api.ipify.org?format=json');
+      const data = await response.json();
+      return data.ip || 'unknown';
+    } catch (error) {
+      console.error('Error getting IP address:', error);
+      return 'unknown';
+    }
+  };
+
+  // Handle QC approval submission
+  const handleQCApproval = async () => {
+    if (!pendingToggleType || !qcApproverForm.name || !qcApproverForm.credentials) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
     try {
       setLoading(true);
-      const newStatus = !releaseToggles[documentType];
-      
-      await supabase
+      const newStatus = !releaseToggles[pendingToggleType];
+      const ipAddress = await getUserIPAddress();
+      const approvalDate = new Date().toISOString();
+
+      // Generate HTML report if toggling ON
+      let generatedHTML = '';
+      if (newStatus) {
+        generatedHTML = await generateReportHTML(pendingToggleType);
+        
+        // Save HTML to rd_reports table
+        const { error: reportError } = await supabase
+          .from('rd_reports')
+          .upsert({
+            business_year_id: wizardState.selectedYear?.id,
+            business_id: wizardState.business?.id,
+            type: pendingToggleType,
+            generated_html: generatedHTML,
+            qc_approved_by: qcApproverForm.name,
+            qc_approved_at: approvalDate,
+            qc_approver_ip: ipAddress,
+            generated_text: `QC approved report for ${pendingToggleType}`,
+            ai_version: 'manual_qc_v1.0'
+          }, {
+            onConflict: 'business_year_id,type'
+          });
+
+        if (reportError) {
+          console.error('Error saving report HTML:', reportError);
+        }
+      }
+
+      // Update QC controls with approver information
+      const { error } = await supabase
         .from('rd_qc_document_controls')
         .update({
           is_released: newStatus,
-          released_at: newStatus ? new Date().toISOString() : null,
-          updated_at: new Date().toISOString()
+          released_at: newStatus ? approvalDate : null,
+          qc_approver_name: newStatus ? qcApproverForm.name : null,
+          qc_approver_credentials: newStatus ? qcApproverForm.credentials : null,
+          qc_approved_date: newStatus ? approvalDate : null,
+          qc_approver_ip_address: newStatus ? ipAddress : null,
+          updated_at: approvalDate
         })
-        .eq('business_year_id', wizardState.selectedYear.id)
-        .eq('document_type', documentType);
+        .eq('business_year_id', wizardState.selectedYear?.id)
+        .eq('document_type', pendingToggleType);
 
-      setReleaseToggles(prev => ({ ...prev, [documentType]: newStatus }));
+      if (error) throw error;
+
+      // Update local state
+      setReleaseToggles(prev => ({ ...prev, [pendingToggleType]: newStatus }));
+      
+      // Close modal and reset form
+      setShowQCApproverModal(false);
+      setPendingToggleType(null);
+      setQcApproverForm({ name: '', credentials: '', password: '' });
+      
       await loadReportsData();
+      
+      alert(`Document ${pendingToggleType} ${newStatus ? 'released' : 'unreleased'} successfully!`);
+      
     } catch (error) {
-      console.error('Error toggling release status:', error);
+      console.error('Error processing QC approval:', error);
+      alert('Error processing QC approval. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Toggle document release status with QC approval
+  const toggleRelease = async (documentType: string) => {
+    const currentStatus = releaseToggles[documentType];
+    
+    // If turning ON, require QC approval
+    if (!currentStatus) {
+      setPendingToggleType(documentType);
+      setShowQCApproverModal(true);
+    } else {
+      // If turning OFF, confirm and process immediately
+      if (confirm(`Are you sure you want to unreleased the ${documentType}?`)) {
+        try {
+          setLoading(true);
+          
+          const { error } = await supabase
+            .from('rd_qc_document_controls')
+            .update({
+              is_released: false,
+              released_at: null,
+              updated_at: new Date().toISOString()
+            })
+            .eq('business_year_id', wizardState.selectedYear?.id)
+            .eq('document_type', documentType);
+
+          if (error) throw error;
+
+          setReleaseToggles(prev => ({ ...prev, [documentType]: false }));
+          await loadReportsData();
+        } catch (error) {
+          console.error('Error toggling release status:', error);
+        } finally {
+          setLoading(false);
+        }
+      }
     }
   };
 
@@ -864,6 +1163,96 @@ I further affirm that I am authorized to sign on behalf of the business entity a
           selectedYear={wizardState.selectedYear}
           calculations={wizardState.calculations}
         />
+      )}
+
+      {/* QC Approver Modal */}
+      {showQCApproverModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg max-w-md w-full mx-4">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">QC Approver Authentication</h3>
+              <p className="text-sm text-gray-600 mt-1">
+                Approving release of: <strong>{pendingToggleType?.replace('_', ' ')}</strong>
+              </p>
+            </div>
+            
+            <div className="px-6 py-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Approver Name *
+                </label>
+                <input
+                  type="text"
+                  value={qcApproverForm.name}
+                  onChange={(e) => setQcApproverForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter your full name"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Credentials/Employee ID *
+                </label>
+                <input
+                  type="text"
+                  value={qcApproverForm.credentials}
+                  onChange={(e) => setQcApproverForm(prev => ({ ...prev, credentials: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter your employee ID or credentials"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Verification Password
+                </label>
+                <input
+                  type="password"
+                  value={qcApproverForm.password}
+                  onChange={(e) => setQcApproverForm(prev => ({ ...prev, password: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter verification password"
+                />
+              </div>
+              
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-yellow-700">
+                      This action will generate HTML report content and log your approval with timestamp and IP address for audit purposes.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowQCApproverModal(false);
+                  setPendingToggleType(null);
+                  setQcApproverForm({ name: '', credentials: '', password: '' });
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleQCApproval}
+                disabled={loading || !qcApproverForm.name || !qcApproverForm.credentials}
+                className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Processing...' : 'Approve & Release'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
