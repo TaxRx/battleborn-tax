@@ -73,6 +73,17 @@ const steps = [
 const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startStep = 0, isModal }) => {
   console.log('🎯 RDTaxWizard component loaded with props:', { businessId, startStep });
   
+  // Get businessId from URL params if not provided as prop
+  const urlParams = getUrlParams();
+  const effectiveBusinessId = businessId || urlParams.businessId;
+  
+  console.log('🎯 RDTaxWizard effective businessId:', {
+    propBusinessId: businessId,
+    urlBusinessId: urlParams.businessId,
+    effectiveBusinessId: effectiveBusinessId,
+    urlParamsAll: urlParams
+  });
+  
   const [wizardState, setWizardState] = useState<WizardState>({
     currentStep: startStep,
     business: null,
@@ -108,10 +119,10 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
 
   // CRITICAL: Reset wizard state when businessId changes to prevent data leakage
   useEffect(() => {
-    console.log('🔄 Business ID changed, resetting wizard state:', { businessId });
+    console.log('🔄 Business ID changed, resetting wizard state:', { effectiveBusinessId });
     
     // Only reset if this is actually a different business (not initial load)
-    if (lastBusinessIdRef.current && businessId !== lastBusinessIdRef.current) {
+    if (lastBusinessIdRef.current && effectiveBusinessId !== lastBusinessIdRef.current) {
       console.log('🔄 Different business detected, forcing complete component reset');
       
       // Force component remount by changing key - this unmounts and remounts all child components
@@ -136,10 +147,10 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
     setLoading(false);
     
     // Update ref for next comparison
-    lastBusinessIdRef.current = businessId || '';
+    lastBusinessIdRef.current = effectiveBusinessId || '';
     
     console.log('✅ Wizard state reset for new business');
-  }, [businessId, startStep]);
+  }, [effectiveBusinessId, startStep]);
 
   // Get current user ID on component mount
   useEffect(() => {
@@ -157,183 +168,81 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
     getCurrentUser();
   }, []);
 
-  // Load business data from URL parameters or props
+  // Load existing business data if businessId is provided
   useEffect(() => {
     const loadBusinessData = async () => {
-      console.log('🔄 loadBusinessData called');
+      console.log('🔍 RDTaxWizard - Starting to load business data for effectiveBusinessId:', effectiveBusinessId);
       
-      // Get URL parameters
-      const urlParams = getUrlParams();
-      const urlBusinessId = urlParams.businessId;
-      const urlClientId = urlParams.clientId;
-      
-      console.log('📋 URL parameters:', { urlBusinessId, urlClientId });
-      
-      // Use businessId from props or URL parameters
-      const targetBusinessId = businessId || urlBusinessId;
-      
-      console.log('🎯 Target business ID:', targetBusinessId);
-      
-      if (!targetBusinessId) {
-        console.log('No business ID provided, starting fresh wizard');
+      if (!effectiveBusinessId) {
+        console.log('🔍 RDTaxWizard - No effectiveBusinessId provided, skipping business data load');
         return;
       }
 
+      setLoading(true);
+      setError(null);
+      
       try {
-        // First, try to find the business in the R&D system
-        const { data: rdBusiness, error: rdError } = await supabase
-          .from('rd_businesses')
-          .select('*, rd_business_years(*)')
-          .eq('id', targetBusinessId)
-          .maybeSingle();
-
-        if (rdError) {
-          console.error('Error loading R&D business:', rdError);
-          throw rdError;
-        }
-
-        if (rdBusiness) {
-          console.log('✅ Found existing R&D business:', rdBusiness);
-          
-          // Find the current year (2025) or the most recent year
-          const currentYear = new Date().getFullYear();
-          const businessYears = rdBusiness.rd_business_years || [];
-          const currentYearData = businessYears.find(by => by.year === currentYear) || 
-                                 businessYears.sort((a, b) => b.year - a.year)[0] || 
-                                 null;
-          
-          console.log('📅 Setting selected year to:', currentYearData?.year || 'none');
-          
-          setWizardState(prev => ({
-            ...prev,
-            business: rdBusiness,
-            selectedYear: currentYearData
-          }));
-          return;
-        }
-
-        // If not found in R&D system, check if it's a business from the unified system
-        console.log('🔍 Business not found in R&D system, checking unified system...');
+        console.log('🔍 RDTaxWizard - Fetching business data from database...');
         
-        const { data: unifiedBusiness, error: unifiedError } = await supabase
-          .from('businesses')
+        const { data: business, error } = await supabase
+          .from('rd_businesses')
           .select(`
             *,
-            clients (
-              id,
-              full_name,
-              email
-            )
+            rd_business_years (*)
           `)
-          .eq('id', targetBusinessId)
-          .maybeSingle();
+          .eq('id', effectiveBusinessId)
+          .single();
 
-        if (unifiedError) {
-          console.error('Error loading unified business:', unifiedError);
-          throw unifiedError;
+        console.log('🔍 RDTaxWizard - Database query result:', { business, error });
+
+        if (error) {
+          console.error('🔍 RDTaxWizard - Database error:', error);
+          throw error;
         }
 
-        if (unifiedBusiness) {
-          console.log('✅ Found business in unified system:', unifiedBusiness);
-          // Use clientId from unifiedBusiness.clients.id
-          const clientId = unifiedBusiness.clients?.id;
-          if (!clientId) {
-            throw new Error('Unified business is missing clientId');
-          }
-          // Enroll business in rd_businesses
-          try {
-            console.log('[RDTaxWizard] Calling enrollBusinessFromExisting', { businessId: unifiedBusiness.id, clientId });
-            const newRdBusiness = await RDBusinessService.enrollBusinessFromExisting(unifiedBusiness.id, clientId);
-            console.log('[RDTaxWizard] enrollBusinessFromExisting result', newRdBusiness);
-            
-            // CRITICAL FIX: Check if business years already exist before creating new ones
-            const { data: existingBusinessYears, error: existingYearsError } = await supabase
-              .from('rd_business_years')
-              .select('*')
-              .eq('business_id', newRdBusiness.id)
-              .order('year', { ascending: false });
-
-            if (existingYearsError) {
-              console.error('Error checking existing business years:', existingYearsError);
-              throw existingYearsError;
-            }
-
-            console.log('📊 Existing business years found:', existingBusinessYears?.length || 0);
-            
-            let currentYearData = null;
-            const currentYear = new Date().getFullYear();
-            
-            if (existingBusinessYears && existingBusinessYears.length > 0) {
-              // Use existing business years - find current year or most recent
-              currentYearData = existingBusinessYears.find(by => by.year === currentYear) || 
-                               existingBusinessYears[0];
-              console.log('✅ Using existing business year:', currentYearData.year);
-            } else {
-              // Only create a new business year if none exist
-              console.log('📅 No existing business years found, creating default for', currentYear);
-              const { data: businessYear, error: yearError } = await supabase
-                .from('rd_business_years')
-                .insert({
-                  business_id: newRdBusiness.id,
-                  year: currentYear,
-                  gross_receipts: unifiedBusiness.annual_revenue || 0,
-                  total_qre: 0
-                })
-                .select()
-                .single();
-
-              if (yearError) {
-                console.error('Error creating R&D business year:', yearError);
-                throw yearError;
-              }
-
-              console.log('✅ Created new R&D business year:', businessYear);
-              currentYearData = businessYear;
-            }
-
-            // Set the wizard state with the business and existing/new business years
-            setWizardState(prev => ({
+        if (business) {
+          console.log('🔍 RDTaxWizard - Business data loaded successfully:', {
+            businessId: business.id,
+            businessName: business.name,
+            contact_info: business.contact_info,
+            contact_info_state: business.contact_info?.state,
+            domicile_state: business.domicile_state,
+            legacy_state: business.state,
+            business_years_count: business.rd_business_years?.length || 0
+          });
+          
+          setWizardState(prev => {
+            const updatedState = {
               ...prev,
-              business: {
-                ...newRdBusiness,
-                rd_business_years: existingBusinessYears || [currentYearData]
-              },
-              selectedYear: currentYearData
-            }));
-          } catch (error) {
-            console.error('Error enrolling business in rd_businesses:', error, { businessId: unifiedBusiness.id, clientId });
-            throw error;
-          }
+              business: business,
+              selectedYear: business.rd_business_years?.[0] || null
+            };
+            
+            console.log('🔍 RDTaxWizard - Updated wizard state with business:', {
+              business_id: updatedState.business?.id,
+              business_name: updatedState.business?.name,
+              business_contact_info: updatedState.business?.contact_info,
+              selectedYear_id: updatedState.selectedYear?.id,
+              selectedYear_year: updatedState.selectedYear?.year
+            });
+            
+            return updatedState;
+          });
         } else {
-          // If not found in either system, create a new R&D business
-          console.log('Creating new R&D business for business ID:', targetBusinessId);
-          
-          // Get current user ID
-          const { data: { user } } = await supabase.auth.getUser();
-          const userId = user?.id;
-          
-          if (!userId) {
-            throw new Error('User not authenticated');
-          }
-
-          // Create a new R&D business
-          try {
-            console.log('[RDTaxWizard] Cannot create new business without existing business ID', { businessId, clientId });
-            throw new Error('Cannot create new R&D business without existing business ID');
-          } catch (error) {
-            console.error('[RDTaxWizard] Error enrolling business', error);
-            throw error;
-          }
+          console.warn('🔍 RDTaxWizard - No business data returned from database');
+          setError('No business found with the provided ID');
         }
-
       } catch (error) {
-        console.error('Error loading business data:', error);
-        toast.error('Error loading business data. Please try again.');
+        console.error('🔍 RDTaxWizard - Error loading business data:', error);
+        setError(`Failed to load business data: ${error.message}`);
+      } finally {
+        setLoading(false);
+        console.log('🔍 RDTaxWizard - Business data loading completed');
       }
     };
 
     loadBusinessData();
-  }, [businessId]);
+  }, [effectiveBusinessId]);
 
   // Load client and businesses data
   useEffect(() => {
@@ -505,7 +414,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
             onUpdate={(updates) => updateWizardState(updates)}
             onNext={handleNext}
             onPrevious={handlePrevious}
-            businessId={businessId}
+            businessId={effectiveBusinessId}
             businessYearId={wizardState.selectedYear?.id}
             parentSelectedYear={wizardState.selectedYear?.year}
           />
@@ -845,7 +754,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
                           const { data: newYear } = await supabase
                             .from('rd_business_years')
                             .insert({
-                              business_id: businessId,
+                              business_id: effectiveBusinessId,
                               year: year,
                               gross_receipts: 0,
                               total_qre: 0
@@ -872,7 +781,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
                         const { data: existingYear } = await supabase
                           .from('rd_business_years')
                           .select('id, year')
-                          .eq('business_id', businessId)
+                          .eq('business_id', effectiveBusinessId)
                           .eq('year', year)
                           .single();
                         

@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseAdmin } from '../lib/supabase';
 
 export interface QCStatus {
   qc_status: string;
@@ -178,26 +178,89 @@ export class QCService {
     }
   }
 
-  // Generate portal token for a business
-  async generatePortalToken(businessId: string): Promise<string | null> {
+  // Generate magic link for client portal access
+  async generateMagicLink(businessId: string): Promise<string | null> {
     try {
-      const { data, error } = await supabase.rpc('generate_portal_token', {
-        p_business_id: businessId
+      console.log('🔗 [QCService] Starting magic link generation for business:', businessId);
+
+      // Check if admin client is available
+      if (!supabaseAdmin) {
+        console.error('❌ [QCService] Admin client not available - service key required');
+        throw new Error('Magic link generation requires admin permissions. Please configure VITE_SUPABASE_SERVICE_KEY.');
+      }
+
+      // First, get the business and its associated client email
+      const { data: business, error: businessError } = await supabase
+        .from('rd_businesses')
+        .select(`
+          id,
+          client_id,
+          name,
+          clients:client_id (
+            id,
+            email,
+            full_name
+          )
+        `)
+        .eq('id', businessId)
+        .single();
+
+      if (businessError) {
+        console.error('❌ [QCService] Error fetching business:', businessError);
+        throw businessError;
+      }
+
+      if (!business?.clients?.email) {
+        console.error('❌ [QCService] No client email found for business:', business);
+        throw new Error('No client email found for this business');
+      }
+
+      console.log('📧 [QCService] Generating magic link for:', business.clients.email);
+
+      // Generate magic link using Supabase Admin API with service key
+      const { data, error } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'magiclink',
+        email: business.clients.email,
+        options: {
+          redirectTo: `${window.location.origin}/client-portal/${business.clients.id}`,
+          data: {
+            client_id: business.clients.id,
+            business_id: businessId
+          }
+        }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ [QCService] Error generating magic link:', error);
+        throw error;
+      }
+
+      if (!data.properties?.action_link) {
+        console.error('❌ [QCService] No action link returned from Supabase');
+        throw new Error('No action link returned from Supabase');
+      }
+
+      console.log('✅ [QCService] Magic link generated successfully');
+      return data.properties.action_link;
+
+    } catch (error) {
+      console.error('❌ [QCService] Error generating magic link:', error);
       
-      // The database function returns an array of objects with {token, expires_at}
-      // We need to extract just the token string
-      if (data && data.length > 0 && data[0].token) {
-        return data[0].token;
+      // If it's a specific admin permission error, provide helpful message
+      if (error.message?.includes('User not allowed') || error.message?.includes('403')) {
+        throw new Error('Magic link generation requires admin permissions. Please ensure the service key is properly configured.');
       }
       
-      return null;
-    } catch (error) {
-      console.error('Error generating portal token:', error);
-      return null;
+      throw error;
     }
+  }
+
+  // Legacy method - kept for backward compatibility but deprecated
+  async generatePortalToken(businessId: string): Promise<string | null> {
+    console.warn('generatePortalToken is deprecated. Use generateMagicLink instead.');
+    const magicLink = await this.generateMagicLink(businessId);
+    // Extract just a mock token for display purposes if needed
+    return magicLink ? 'magic-link-generated' : null;
   }
 
   // Get portal token for a business

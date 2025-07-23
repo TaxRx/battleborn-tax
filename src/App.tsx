@@ -268,10 +268,35 @@ const App = () => {
     
     if (!demoMode) {
       // Listen for auth state changes
-      const authSubscription = supabase.auth.onAuthStateChange((event, session) => {
+      const authSubscription = supabase.auth.onAuthStateChange(async (event, session) => {
         setIsAuthenticated(!!session);
         if (session && session.user) {
           fetchProfile(session.user.id, session.user.email);
+          
+          // Handle Magic Link authentication - redirect to client portal
+          if (event === 'SIGNED_IN') {
+            try {
+              // Get the user's business by finding their client record
+              const { data: client, error: clientError } = await supabase
+                .from('clients')
+                .select('id')
+                .eq('user_id', session.user.id)
+                .single();
+
+              if (clientError) {
+                console.log('No client record found for user, treating as admin login');
+                return;
+              }
+
+              if (client) {
+                // Redirect to client portal
+                navigate(`/client-portal/${session.user.id}`);
+                return;
+              }
+            } catch (error) {
+              console.error('Error checking user type after Magic Link login:', error);
+            }
+          }
         } else {
           clearProfile();
         }
@@ -292,7 +317,7 @@ const App = () => {
         subscription.unsubscribe();
       }
     };
-  }, [setProfile, clearProfile, setTaxInfo, demoMode]);
+  }, [setProfile, clearProfile, setTaxInfo, demoMode, navigate]);
 
   // UI logic - check both Supabase auth and demo mode
   const isUserAuthenticated = isAuthenticated || localAuth || demoMode;
@@ -354,7 +379,7 @@ const App = () => {
         <Toaster position="top-right" />
         <div className="min-h-screen bg-gray-50">
           <Routes>
-            <Route path="/client-portal/:businessId/:token" element={<ClientPortalStandalone />} />
+            <Route path="/client-portal/:userId" element={<ClientPortalStandalone />} />
           </Routes>
         </div>
         <ToastContainer position="top-right" autoClose={5000} />

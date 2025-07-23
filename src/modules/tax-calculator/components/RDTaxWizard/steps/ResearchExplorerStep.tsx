@@ -1754,7 +1754,9 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
           activity_id: activity.id,
           practice_percent: equalShare,
           selected_roles: defaultRoles,
-          config: {}
+          config: {},
+          // Snapshot fields for future-proofing
+          activity_title_snapshot: activity.title
         });
       if (error) throw error;
     } catch (error) {

@@ -15,8 +15,19 @@ export const IntegratedStateCredits: React.FC<IntegratedStateCreditsProps> = ({
   businessData,
   wizardState
 }) => {
-  // Get business state from wizardState like CalculationStep does (not from database)
-  const businessState = wizardState?.business?.state || wizardState?.business?.contact_info?.state || 'CA';
+  // Get business state from wizardState like CalculationStep does (prioritize domicile_state, then contact_info.state)
+  const businessState = wizardState?.business?.domicile_state || wizardState?.business?.contact_info?.state || wizardState?.business?.state || 'CA';
+  
+  console.log('🔍 IntegratedStateCredits - Full wizardState.business object:', wizardState?.business);
+  console.log('🔍 IntegratedStateCredits - Business state determination:', {
+    domicile_state: wizardState?.business?.domicile_state,
+    contact_info_state: wizardState?.business?.contact_info?.state,
+    contact_info_full: wizardState?.business?.contact_info,
+    legacy_state: wizardState?.business?.state,
+    final_businessState: businessState,
+    wizardState_keys: wizardState ? Object.keys(wizardState) : 'wizardState is null/undefined',
+    business_keys: wizardState?.business ? Object.keys(wizardState.business) : 'business is null/undefined'
+  });
   
   // Use business state for this form
   const [state, setState] = useState(businessState);

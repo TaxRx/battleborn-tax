@@ -66,7 +66,7 @@ const BattleBornApp: React.FC = () => {
             element={<div className="p-8 text-center">Login Page (Coming Soon)</div>} 
           />
           <Route 
-            path="/client-portal/:businessId/:token" 
+            path="/client-portal/:userId" 
             element={<ClientPortal />} 
           />
 

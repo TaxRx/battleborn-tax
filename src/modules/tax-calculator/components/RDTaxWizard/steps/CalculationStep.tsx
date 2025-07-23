@@ -9,6 +9,8 @@ import { FilingGuideModal } from '../../FilingGuide/FilingGuideModal';
 import AllocationReportModal from '../../AllocationReport/AllocationReportModal';
 import { IntegratedFederalCredits } from './IntegratedFederalCredits';
 import { IntegratedStateCredits } from './IntegratedStateCredits';
+import { FederalCreditProForma } from '../../FilingGuide/FederalCreditProForma';
+import { useUser } from '../../../../../context/UserContext';
 
 // Standardized rounding functions
 const roundToDollar = (value: number): number => Math.round(value);
@@ -229,6 +231,9 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
   onNext,
   onPrevious
 }) => {
+  // Get user information for userId
+  const { user } = useUser();
+  
   const [results, setResults] = useState<CalculationResults | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -972,9 +977,19 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       try {
         console.log('🔍 State Credits - Loading from Pro Forma calculations with correct field mapping...');
         
-        // Get business state from wizardState (same as how we determine it above)
-        const businessState = wizardState.business?.state || wizardState.business?.contact_info?.state || 'CA';
+        // Get business state from wizardState (prioritize domicile_state, then contact_info.state)
+        const businessState = wizardState.business?.domicile_state || wizardState.business?.contact_info?.state || wizardState.business?.state || 'CA';
         console.log('🔍 State Credits - Business state from wizardState:', businessState);
+        console.log('🔍 State Credits - Full wizardState.business object:', wizardState?.business);
+        console.log('🔍 State Credits - Business state determination:', {
+          domicile_state: wizardState.business?.domicile_state,
+          contact_info_state: wizardState.business?.contact_info?.state,
+          contact_info_full: wizardState.business?.contact_info,
+          legacy_state: wizardState.business?.state,
+          final_businessState: businessState,
+          wizardState_keys: wizardState ? Object.keys(wizardState) : 'wizardState is null/undefined',
+          business_keys: wizardState?.business ? Object.keys(wizardState.business) : 'business is null/undefined'
+        });
         
         // Use enhanced StateProFormaCalculationService to get REAL state credit from correct field
         const proFormaResult = await StateProFormaCalculationService.getAllStateCreditsFromProForma(
@@ -1694,18 +1709,49 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
         />
 
         {/* State Credits - INTEGRATED */}
+        {(() => {
+          console.log('🔍 CalculationStep - About to render IntegratedStateCredits with props:', {
+            businessData: wizardState.business,
+            businessData_keys: wizardState.business ? Object.keys(wizardState.business) : 'business is null/undefined',
+            businessData_contact_info: wizardState.business?.contact_info,
+            businessData_contact_info_state: wizardState.business?.contact_info?.state,
+            selectedYear: selectedYearData,
+            selectedYear_keys: selectedYearData ? Object.keys(selectedYearData) : 'selectedYear is null/undefined',
+            wizardState_keys: wizardState ? Object.keys(wizardState) : 'wizardState is null/undefined',
+            wizardState_business: wizardState.business,
+            wizardState_business_id: wizardState.business?.id,
+            wizardState_business_name: wizardState.business?.name
+          });
+          return null;
+        })()}
         <IntegratedStateCredits
           businessData={wizardState.business}
           selectedYear={selectedYearData}
+          wizardState={wizardState}
+        />
+      </div>
+
+      {/* Federal Pro Forma Section - Now Visible on Calculations Page */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+            <span className="text-blue-600 font-semibold text-sm">📝</span>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Federal Form 6765 Pro Forma</h3>
+            <p className="text-sm text-gray-600">
+              IRS Form 6765 calculation worksheet for detailed federal credit analysis
+            </p>
+          </div>
+        </div>
+
+        <FederalCreditProForma
+          businessData={wizardState.business}
+          selectedYear={selectedYearData}
           calculations={results}
-          stateCredits={stateCredits}
-          enableStateCredits={enableStateCredits}
-          onEnableStateCreditsChange={setEnableStateCredits}
-          selectedStateMethod={selectedStateMethod}
-          onStateMethodChange={setSelectedStateMethod}
-          availableStateMethods={availableStateMethods}
-          totalStateCredits={totalStateCredits}
-          stateLoading={stateLoading}
+          clientId={wizardState.business?.client_id || 'demo'}
+          userId={user?.id}
+          selectedMethod={selectedMethod}
         />
       </div>
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Download, Eye, Settings, Share2, CheckCircle, Clock, AlertCircle, User, Calendar, DollarSign, Lock, Unlock, Upload, Save, Edit, Check, X } from 'lucide-react';
+import { FileText, Download, Eye, Settings, Share2, CheckCircle, Clock, AlertCircle, User, Calendar, DollarSign, Lock, Unlock, Upload, Save, Edit, Check, X, ExternalLink } from 'lucide-react';
 import { supabase } from '../../../../../lib/supabase';
 import { FilingGuideModal } from '../../FilingGuide/FilingGuideModal';
 import ResearchReportModal from '../../ResearchReport/ResearchReportModal';
@@ -52,7 +52,7 @@ const ReportsStep: React.FC<ReportsStepProps> = ({ wizardState, onComplete, onPr
   const [loading, setLoading] = useState(false);
   const [qcControls, setQCControls] = useState<QCDocumentControl[]>([]);
   const [businessYearData, setBusinessYearData] = useState<BusinessYearData | null>(null);
-  const [portalToken, setPortalToken] = useState<string | null>(null);
+  const [magicLink, setMagicLink] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [editingControl, setEditingControl] = useState<string | null>(null);
   const [showJuratModal, setShowJuratModal] = useState(false);
@@ -146,18 +146,7 @@ I further affirm that I am authorized to sign on behalf of the business entity a
       if (businessYearError) throw businessYearError;
       setBusinessYearData(businessYear);
 
-      // Load portal token if exists
-      const { data: tokens, error: tokenError } = await supabase
-        .from('rd_client_portal_tokens')
-        .select('*')
-        .eq('business_id', wizardState.business?.id)
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (tokenError) throw tokenError;
-      if (tokens && tokens.length > 0) {
-        setPortalToken(tokens[0].token);
-      }
+      // Magic Links are generated on-demand, no need to load from database
 
       // Check for signed jurat
       const { data: signatures, error: sigError } = await supabase
@@ -266,23 +255,46 @@ I further affirm that I am authorized to sign on behalf of the business entity a
     }
   };
 
-  const generatePortalToken = async () => {
+  const generateMagicLink = async () => {
     if (!wizardState.business?.id) return;
 
     try {
       setLoading(true);
-      const token = await qcService.generatePortalToken(wizardState.business.id);
-      setPortalToken(token);
+      const magicLinkUrl = await qcService.generateMagicLink(wizardState.business.id);
+      setMagicLink(magicLinkUrl);
     } catch (error) {
-      console.error('Error generating portal token:', error);
+      console.error('Error generating magic link:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const getPortalUrl = () => {
-    if (!portalToken) return '';
-    return `${window.location.origin}/client-portal/${wizardState.business?.id}/${portalToken}`;
+  const getMagicLinkUrl = () => {
+    return magicLink || '';
+  };
+
+  // Preview client portal for admin
+  const previewClientPortal = async () => {
+    if (!wizardState.business?.client_id) {
+      console.error('No client ID found for business');
+      return;
+    }
+
+    try {
+      // Open client portal in new tab with admin preview parameters
+      const adminPreviewParams = new URLSearchParams({
+        admin_preview: 'true',
+        business_id: wizardState.business.id,
+        preview_token: Date.now().toString() // Simple timestamp token for preview verification
+      });
+      
+      const portalUrl = `${window.location.origin}/client-portal/${wizardState.business.client_id}?${adminPreviewParams.toString()}`;
+      console.log('🔍 [ReportsStep] Opening admin preview:', portalUrl);
+      
+      window.open(portalUrl, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      console.error('Error opening client portal preview:', error);
+    }
   };
 
   if (loading && !qcControls.length) {
@@ -588,24 +600,23 @@ I further affirm that I am authorized to sign on behalf of the business entity a
               Client Portal Management
             </h3>
 
-            {portalToken ? (
+            {magicLink ? (
               <div className="bg-white rounded-lg p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-gray-700">Portal URL</span>
+                  <span className="text-sm font-medium text-gray-700">Magic Link URL</span>
                   <span className="text-xs text-gray-500">
-                    Active • {/* Access count is not directly available in the current state,
-                    but we can assume it's managed by the backend or not tracked here */}
+                    One-time access link
                   </span>
                 </div>
                 <div className="flex items-center space-x-2 mb-3">
                   <input
                     type="text"
-                    value={getPortalUrl()}
+                    value={getMagicLinkUrl()}
                     readOnly
                     className="flex-1 p-2 text-sm border border-gray-300 rounded bg-gray-50"
                   />
                   <button
-                    onClick={() => navigator.clipboard.writeText(getPortalUrl())}
+                    onClick={() => navigator.clipboard.writeText(getMagicLinkUrl())}
                     className="px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
                   >
                     Copy
@@ -613,26 +624,51 @@ I further affirm that I am authorized to sign on behalf of the business entity a
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-gray-500">
-                    Need to update token after database changes?
+                    Generate a new secure access link for the client
                   </span>
-                  <button
-                    onClick={generatePortalToken}
-                    disabled={loading}
-                    className="px-3 py-2 bg-orange-600 text-white text-sm rounded hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {loading ? 'Regenerating...' : 'Regenerate Token'}
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={previewClientPortal}
+                      disabled={!wizardState.business?.client_id}
+                      className="px-3 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                      title="Preview client portal as admin"
+                    >
+                      <ExternalLink size={14} />
+                      Preview Portal
+                    </button>
+                    <button
+                      onClick={generateMagicLink}
+                      disabled={loading}
+                      className="px-3 py-2 bg-orange-600 text-white text-sm rounded hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {loading ? 'Generating...' : 'Generate New Link'}
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : (
-              <button
-                onClick={generatePortalToken}
-                disabled={loading}
-                className="w-full p-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-blue-500 hover:text-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Share2 className="mx-auto mb-2" size={24} />
-                {loading ? 'Generating...' : 'Generate Client Portal Access'}
-              </button>
+              <div className="space-y-3">
+                <button
+                  onClick={generateMagicLink}
+                  disabled={loading}
+                  className="w-full p-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-blue-500 hover:text-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Share2 className="mx-auto mb-2" size={24} />
+                  {loading ? 'Generating...' : 'Generate Client Portal Access'}
+                </button>
+                
+                <div className="flex justify-center">
+                  <button
+                    onClick={previewClientPortal}
+                    disabled={!wizardState.business?.client_id}
+                    className="px-4 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    title="Preview client portal as admin"
+                  >
+                    <ExternalLink size={16} />
+                    Preview Client Portal
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </>

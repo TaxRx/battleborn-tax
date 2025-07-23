@@ -28,17 +28,30 @@ import {
   Plus,
   FileText,
   Briefcase,
-  Home,
-  Settings,
-  RefreshCw,
   ExternalLink,
+  Settings,
+  Loader,
+  Database,
+  RefreshCw,
   Zap
 } from 'lucide-react';
-import RDTaxWizard from '../modules/tax-calculator/components/RDTaxWizard/RDTaxWizard';
+import { ClientDetailModal } from './ClientDetailModal';
+import { UnifiedClientDashboard } from './UnifiedClientDashboard';
+import { 
+  RDTaxWizardBusiness,
+  ResearchDesignService
+} from '../modules/tax-calculator/services/researchDesignService';
+import { BusinessService } from '../services/businessService';
+import { formatCurrency } from '../utils/formatting';
+import { useNavigationSidebar } from '../hooks/useNavigationSidebar';
+import ModularResearchActivityManager from './research-activity-manager/ModularResearchActivityManager';
 
 interface RDClientManagementProps {
   onClientSelect?: (client: UnifiedClientRecord) => void;
 }
+
+// Tab types
+type TabType = 'clients' | 'activities';
 
 // Business Accordion Component
 interface BusinessAccordionProps {
@@ -272,14 +285,18 @@ export default function RDClientManagement({
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
   const [showRDTaxWizard, setShowRDTaxWizard] = useState(false);
   const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TabType>('clients');
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const [selectedBusinessForActivities, setSelectedBusinessForActivities] = useState<string | null>(null);
 
   // Load clients on component mount
   useEffect(() => {
     console.log('🔄 RDClientManagement useEffect triggered');
-    loadClients();
-  }, []);
+    if (activeTab === 'clients') {
+      loadClients();
+    }
+  }, [activeTab]);
 
   // Handle URL parameters for launching R&D wizard
   useEffect(() => {
@@ -561,16 +578,186 @@ export default function RDClientManagement({
     return nameA.localeCompare(nameB);
   });
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <RefreshCw className="w-8 h-8 mx-auto mb-4 text-gray-400 animate-spin" />
-          <p className="text-gray-600">Loading R&D clients...</p>
-        </div>
-      </div>
-    );
-  }
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'clients':
+        return (
+          <div className="space-y-6">
+            {/* Search and Filters */}
+            <div className="bg-white border border-gray-200 rounded-lg">
+              <div className="p-4">
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <div className="flex-1">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <input
+                        type="text"
+                        placeholder="Search R&D clients..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                      <option value="all">All Status</option>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                      <option value="completed">Completed</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                    <button
+                      onClick={loadClients}
+                      className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    >
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Client List */}
+            <div className="bg-white border border-gray-200 rounded-lg">
+              {loading ? (
+                <div className="text-center py-12">
+                  <RefreshCw className="w-8 h-8 mx-auto mb-4 text-gray-400 animate-spin" />
+                  <p className="text-gray-600">Loading R&D clients...</p>
+                </div>
+              ) : (
+                <div className="grid gap-6 p-6">
+                  {filteredClients.map((client) => (
+                    <ClientCard
+                      key={client.id}
+                      client={client}
+                      onExpand={handleExpandClient}
+                      onLaunchWizard={handleLaunchWizard}
+                      isExpanded={expandedClientId === client.id}
+                      menuOpenId={menuOpenId}
+                      setMenuOpenId={setMenuOpenId}
+                    />
+                  ))}
+
+                  {filteredClients.length === 0 && (
+                    <div className="text-center py-12">
+                      <Zap className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">No R&D clients found</h3>
+                      <p className="text-gray-600 mb-6">
+                        {searchTerm || statusFilter !== 'all' 
+                          ? 'Try adjusting your search or filter criteria.'
+                          : 'No clients are currently enrolled in R&D Tax Credit Wizard.'
+                        }
+                      </p>
+                      {!searchTerm && statusFilter === 'all' && (
+                        <div className="text-sm text-gray-500">
+                          <p>Enroll clients in R&D Tax Credit Wizard from the Unified Client Management dashboard.</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+
+      case 'activities':
+        return (
+          <div className="space-y-6">
+            {/* Business Selection for Activity Management */}
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Activity Management Scope</h3>
+                  <p className="text-sm text-gray-600">
+                    Choose whether to manage global activities or business-specific activities for IP protection
+                  </p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="border rounded-lg p-4">
+                  <div className="flex items-center space-x-3">
+                    <Users className="w-8 h-8 text-blue-600" />
+                    <div>
+                      <h4 className="font-medium text-gray-900">Global Activities</h4>
+                      <p className="text-sm text-gray-600">
+                        Manage activities available to all clients
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSelectedBusinessForActivities(null)}
+                    className={`mt-3 w-full px-4 py-2 rounded-md transition-colors ${
+                      selectedBusinessForActivities === null
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {selectedBusinessForActivities === null ? 'Currently Selected' : 'Select Global'}
+                  </button>
+                </div>
+                
+                <div className="border rounded-lg p-4">
+                  <div className="flex items-center space-x-3">
+                    <Building className="w-8 h-8 text-purple-600" />
+                    <div>
+                      <h4 className="font-medium text-gray-900">Business-Specific Activities</h4>
+                      <p className="text-sm text-gray-600">
+                        Manage activities for specific client businesses (IP protection)
+                      </p>
+                    </div>
+                  </div>
+                  <select
+                    value={selectedBusinessForActivities || ''}
+                    onChange={(e) => setSelectedBusinessForActivities(e.target.value || null)}
+                    className="mt-3 w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500"
+                  >
+                    <option value="">Select a business...</option>
+                    {clients.flatMap(client => 
+                      client.businesses?.map(business => (
+                        <option key={business.id} value={business.id}>
+                          {business.business_name} ({client.full_name})
+                        </option>
+                      )) || []
+                    )}
+                  </select>
+                </div>
+              </div>
+              
+              {selectedBusinessForActivities && (
+                <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                  <div className="flex items-center space-x-2">
+                    <Building className="w-4 h-4 text-purple-600" />
+                    <span className="text-sm font-medium text-purple-800">
+                      Managing activities for: {
+                        clients.flatMap(c => c.businesses || [])
+                          .find(b => b.id === selectedBusinessForActivities)?.business_name
+                      }
+                    </span>
+                  </div>
+                  <p className="text-xs text-purple-600 mt-1">
+                    Activities created here will only be visible to this specific business for IP protection
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Research Activity Manager */}
+            <ModularResearchActivityManager businessId={selectedBusinessForActivities} />
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -581,7 +768,7 @@ export default function RDClientManagement({
             <div>
               <h1 className="text-2xl font-bold text-gray-900">R&D Tax Credit Management</h1>
               <p className="mt-1 text-sm text-gray-500">
-                Manage clients enrolled in R&D Tax Credit Wizard
+                Manage clients enrolled in R&D Tax Credit Wizard and research activity database
                 {clients.length > 0 && clients[0]?.tool_enrollments?.length === 0 && (
                   <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                     Debug Mode - Showing All Clients
@@ -590,14 +777,7 @@ export default function RDClientManagement({
               </p>
             </div>
             <div className="flex items-center space-x-3">
-              <button
-                onClick={loadClients}
-                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Refresh
-              </button>
-              {clients.length > 0 && clients[0]?.tool_enrollments?.length === 0 && (
+              {activeTab === 'clients' && clients.length > 0 && clients[0]?.tool_enrollments?.length === 0 && (
                 <button
                   onClick={async () => {
                     const client = clients[0];
@@ -628,75 +808,40 @@ export default function RDClientManagement({
               )}
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Search and Filters */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input
-                  type="text"
-                  placeholder="Search R&D clients..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                />
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+          {/* Tab Navigation */}
+          <div className="mt-6">
+            <nav className="flex space-x-8" aria-label="Tabs">
+              <button
+                onClick={() => setActiveTab('clients')}
+                className={`${
+                  activeTab === 'clients'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2`}
               >
-                <option value="all">All Status</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
+                <Users className="w-4 h-4" />
+                <span>Client Management</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('activities')}
+                className={`${
+                  activeTab === 'activities'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2`}
+              >
+                <Database className="w-4 h-4" />
+                <span>Research Activities</span>
+              </button>
+            </nav>
           </div>
         </div>
       </div>
 
-      {/* Client List */}
+      {/* Tab Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid gap-6">
-          {filteredClients.map((client) => (
-            <ClientCard
-              key={client.id}
-              client={client}
-              onExpand={handleExpandClient}
-              onLaunchWizard={handleLaunchWizard}
-              isExpanded={expandedClientId === client.id}
-              menuOpenId={menuOpenId}
-              setMenuOpenId={setMenuOpenId}
-            />
-          ))}
-        </div>
-
-        {filteredClients.length === 0 && !loading && (
-          <div className="text-center py-12">
-            <Zap className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No R&D clients found</h3>
-            <p className="text-gray-600 mb-6">
-              {searchTerm || statusFilter !== 'all' 
-                ? 'Try adjusting your search or filter criteria.'
-                : 'No clients are currently enrolled in R&D Tax Credit Wizard.'
-              }
-            </p>
-            {!searchTerm && statusFilter === 'all' && (
-              <div className="text-sm text-gray-500">
-                <p>Enroll clients in R&D Tax Credit Wizard from the Unified Client Management dashboard.</p>
-              </div>
-            )}
-          </div>
-        )}
+        {renderTabContent()}
       </div>
 
       {/* R&D Tax Wizard Modal */}

@@ -591,7 +591,7 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
     }
 
     // Auto-save for specific fields with debouncing
-    if (['website', 'naicsCode', 'entityType', 'ein', 'businessName', 'startYear'].includes(field) && business?.id) {
+    if (['website', 'naicsCode', 'entityType', 'ein', 'businessName', 'startYear', 'address', 'city', 'state', 'zip'].includes(field) && business?.id) {
       // Clear existing timer for this field
       if (debounceTimers[field]) {
         clearTimeout(debounceTimers[field]);
@@ -620,16 +620,47 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
           } else if (field === 'startYear') {
             updateData.start_year = parseInt(value);
             console.log('[BusinessSetupStep] Auto-saving start year:', value);
+          } else if (['address', 'city', 'state', 'zip'].includes(field)) {
+            // For address fields, we need to update the contact_info JSONB column
+            const currentContactInfo = business?.contact_info || {};
+            const updatedContactInfo = {
+              ...currentContactInfo,
+              [field]: value
+            };
+            updateData.contact_info = updatedContactInfo;
+            console.log('[BusinessSetupStep] Auto-saving contact info field:', field, 'value:', value);
+            console.log('[BusinessSetupStep] Updated contact_info:', updatedContactInfo);
+            
+            // Store the updated contact info for later use
+            updateData._updatedContactInfo = updatedContactInfo;
           }
 
-          await RDBusinessService.updateBusiness(business.id, updateData);
-          console.log('[BusinessSetupStep] Auto-save successful for', field);
+          if (Object.keys(updateData).length > 0) {
+            // Store the updated contact info for later use before sending to database
+            const tempUpdatedContactInfo = updateData._updatedContactInfo;
+            delete updateData._updatedContactInfo; // Clean up temp property
+            
+            const updatedBusiness = await RDBusinessService.updateBusiness(business.id, updateData);
+            console.log('[BusinessSetupStep] Auto-save successful for', field);
+            
+            // Update the local business state to prevent useEffect from overwriting with stale data
+            if (tempUpdatedContactInfo) {
+              // Update the business prop through the onUpdate callback to keep parent state in sync
+              onUpdate({ 
+                business: {
+                  ...business,
+                  contact_info: tempUpdatedContactInfo
+                }
+              });
+              console.log('[BusinessSetupStep] Updated local business state with new contact_info');
+            }
+          }
         } catch (error) {
-          console.error('[BusinessSetupStep] Error auto-saving', field + ':', error);
+          console.error('[BusinessSetupStep] Auto-save failed for', field, ':', error);
         }
-      }, 1000);
+      }, 1000); // 1 second debounce
 
-      debounceTimers[field] = timer;
+      setDebounceTimers(prev => ({ ...prev, [field]: timer }));
     }
   };
 

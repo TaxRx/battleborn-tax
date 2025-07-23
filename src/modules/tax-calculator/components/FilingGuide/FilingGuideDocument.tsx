@@ -46,10 +46,22 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
   // Debug output (collapsible)
   const [showDebug, setShowDebug] = React.useState(false);
 
-  const [state, setState] = useState('CA');
+  // Extract business state from business data (same logic as CalculationStep and IntegratedStateCredits)
+  const businessState = businessData?.domicile_state || businessData?.contact_info?.state || businessData?.state || 'CA';
+  
+  const [state, setState] = useState(businessState);
   const [method, setMethod] = useState('standard');
   const [stateProFormaData, setStateProFormaData] = useState<Record<string, number>>({});
   const [isLoadingData, setIsLoadingData] = useState(false);
+
+  // Update state when business data changes
+  useEffect(() => {
+    const newBusinessState = businessData?.domicile_state || businessData?.contact_info?.state || businessData?.state || 'CA';
+    if (newBusinessState !== state) {
+      setState(newBusinessState);
+      console.log('[FilingGuideDocument] Updated state to business address state:', newBusinessState);
+    }
+  }, [businessData, state]);
 
   const availableStates = getAvailableStates();
   const currentStateConfig = getStateConfig(state);

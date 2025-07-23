@@ -1,22 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 import { Calendar, Download, FileText, CheckCircle, Clock, AlertCircle, Eye, PenTool, User, Building2 } from 'lucide-react';
 
-// Completely isolated supabase client for portal only
+// Supabase client for portal with auth enabled
 const PORTAL_SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 const PORTAL_SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 const portalClient = createClient(PORTAL_SUPABASE_URL, PORTAL_SUPABASE_KEY, {
   auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-    detectSessionInUrl: false,
-    storage: {
-      getItem: () => null,
-      setItem: () => {},
-      removeItem: () => {}
-    }
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
   }
 });
 
@@ -35,37 +30,51 @@ interface BusinessYear {
 }
 
 const ClientPortalStandalone: React.FC = () => {
-  const { businessId, token } = useParams<{ businessId: string; token: string }>();
+  const { userId } = useParams<{ userId: string }>();
+  const navigate = useNavigate();
   const [business, setBusiness] = useState<Business | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tokenValid, setTokenValid] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    const validateTokenAndLoadData = async () => {
+    const checkAuthAndLoadData = async () => {
       try {
-        console.log('🔐 Validating token:', { businessId, token: token?.substring(0, 10) + '...' });
+        console.log('🔐 Checking authentication for userId:', userId);
         
-        if (!businessId || !token) {
-          throw new Error('Missing business ID or token');
+        // Check if user is authenticated
+        const { data: { session }, error: sessionError } = await portalClient.auth.getSession();
+        
+        if (sessionError) {
+          throw new Error('Failed to get session');
         }
 
-        // Step 1: Validate token
-        const { data: validationData, error: validationError } = await portalClient
-          .rpc('validate_portal_token', {
-            token_value: token,
-            business_uuid: businessId
-          });
-
-        console.log('🔐 Token validation result:', { validationData, validationError });
-
-        if (validationError || !validationData) {
-          throw new Error('Invalid or expired token');
+        if (!session || !session.user) {
+          // Redirect to login if not authenticated
+          setError('Please use the magic link provided by your advisor to access this portal.');
+          setLoading(false);
+          return;
         }
 
-        setTokenValid(true);
+        // Verify the authenticated user matches the requested userId
+        if (session.user.id !== userId) {
+          throw new Error('Access denied: You can only access your own portal.');
+        }
 
-        // Step 2: Load business data
+        setIsAuthenticated(true);
+
+        // Get client record for this user
+        const { data: client, error: clientError } = await portalClient
+          .from('clients')
+          .select('id')
+          .eq('user_id', userId)
+          .single();
+
+        if (clientError || !client) {
+          throw new Error('Client record not found');
+        }
+
+        // Load business data for this client
         const { data: businessData, error: businessError } = await portalClient
           .from('rd_businesses')
           .select(`
@@ -79,7 +88,7 @@ const ClientPortalStandalone: React.FC = () => {
               state_credit
             )
           `)
-          .eq('id', businessId)
+          .eq('client_id', client.id)
           .single();
 
         console.log('📊 Business data loaded:', { businessData, businessError });
@@ -97,8 +106,8 @@ const ClientPortalStandalone: React.FC = () => {
       }
     };
 
-    validateTokenAndLoadData();
-  }, [businessId, token]);
+    checkAuthAndLoadData();
+  }, [userId, navigate]);
 
   // Loading state
   if (loading) {
@@ -113,7 +122,7 @@ const ClientPortalStandalone: React.FC = () => {
   }
 
   // Error state
-  if (error || !tokenValid || !business) {
+  if (error || !isAuthenticated || !business) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="bg-white p-8 rounded-lg shadow-md max-w-md w-full mx-4">
@@ -121,10 +130,10 @@ const ClientPortalStandalone: React.FC = () => {
             <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
             <h1 className="text-xl font-bold text-gray-900 mb-2">Access Denied</h1>
             <p className="text-gray-600 mb-4">
-              {error || 'This link has expired or is invalid.'}
+              {error || 'Unable to access this portal.'}
             </p>
             <p className="text-sm text-gray-500">
-              Please contact your advisor for a new access link.
+              Please contact your advisor for a new magic link.
             </p>
           </div>
         </div>

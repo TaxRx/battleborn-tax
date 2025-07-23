@@ -10,13 +10,20 @@ import {
 
 export class ResearchDesignService {
   // Fetch steps for a specific research activity from rd_research_steps
-  static async getStepsForActivity(activityId: string): Promise<ResearchStep[]> {
-    console.log('ResearchDesignService: Fetching steps for activity:', activityId);
+  static async getStepsForActivity(activityId: string, activeOnly: boolean = true): Promise<ResearchStep[]> {
+    console.log('ResearchDesignService: Fetching steps for activity:', activityId, 'activeOnly:', activeOnly);
     
-    const { data: steps, error } = await supabase
+    let query = supabase
       .from('rd_research_steps')
       .select('*')
       .eq('research_activity_id', activityId);
+
+    // Filter by active status for new selections
+    if (activeOnly) {
+      query = query.eq('is_active', true);
+    }
+
+    const { data: steps, error } = await query.order('step_order');
 
     console.log('ResearchDesignService: Steps query result:', { steps, error });
 
@@ -29,11 +36,18 @@ export class ResearchDesignService {
   }
 
   // Fetch subcomponents for a specific step from rd_research_subcomponents
-  static async getSubcomponentsForStep(stepId: string): Promise<ResearchSubcomponent[]> {
-    const { data: subcomponents, error } = await supabase
+  static async getSubcomponentsForStep(stepId: string, activeOnly: boolean = true): Promise<ResearchSubcomponent[]> {
+    let query = supabase
       .from('rd_research_subcomponents')
       .select('*')
       .eq('step_id', stepId);
+
+    // Filter by active status for new selections
+    if (activeOnly) {
+      query = query.eq('is_active', true);
+    }
+
+    const { data: subcomponents, error } = await query.order('subcomponent_order');
 
     if (error) {
       console.error('Error fetching subcomponents:', error);
@@ -44,29 +58,38 @@ export class ResearchDesignService {
   }
 
   // Get activities with their steps and subcomponents
-  static async getActivitiesWithSteps(activityIds: string[]): Promise<ResearchActivityWithSteps[]> {
+  static async getActivitiesWithSteps(activityIds: string[], businessId?: string): Promise<ResearchActivityWithSteps[]> {
     const activities: ResearchActivityWithSteps[] = [];
 
     for (const activityId of activityIds) {
-      // Get activity details
-      const { data: activity, error: activityError } = await supabase
+      // Get activity details with business-specific filtering
+      let activityQuery = supabase
         .from('rd_research_activities')
         .select('*')
         .eq('id', activityId)
-        .single();
+        .eq('is_active', true); // Only show active activities for new selections
+
+      // Filter by business access (global activities + business-specific ones)
+      if (businessId) {
+        activityQuery = activityQuery.or(`business_id.is.null,business_id.eq.${businessId}`);
+      } else {
+        activityQuery = activityQuery.is('business_id', null);
+      }
+
+      const { data: activity, error: activityError } = await activityQuery.single();
 
       if (activityError || !activity) {
         console.error('Error fetching activity:', activityError);
         continue;
       }
 
-      // Get steps for this activity
-      const steps = await this.getStepsForActivity(activityId);
+      // Get steps for this activity (active only)
+      const steps = await this.getStepsForActivity(activityId, true);
       const stepsWithSubcomponents: StepWithSubcomponents[] = [];
 
-      // Get subcomponents for each step
+      // Get subcomponents for each step (active only)
       for (const step of steps) {
-        const subcomponents = await this.getSubcomponentsForStep(step.id);
+        const subcomponents = await this.getSubcomponentsForStep(step.id, true);
         stepsWithSubcomponents.push({
           ...step,
           subcomponents
@@ -74,8 +97,8 @@ export class ResearchDesignService {
       }
 
       activities.push({
-        activityId,
-        activityName: activity.title,
+        id: activity.id,
+        title: activity.title,
         steps: stepsWithSubcomponents
       });
     }
