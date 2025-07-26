@@ -257,10 +257,8 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
             *,
             clients (
               id,
-              business_name,
-              first_name,
-              last_name,
-              company_name
+              full_name,
+              email
             )
           `)
           .eq('id', wizardState.business.id)
@@ -312,13 +310,11 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
   // 🔧 FIXED: Use exact same logic as working IntegratedStateCredits for footer display
   useEffect(() => {
     const calculateRealStateCredits = async () => {
-      // Use consistent business state determination (same as CalculationStep)
-      const businessState = wizardState.business?.domicile_state || wizardState.business?.contact_info?.state || wizardState.business?.state || 'CA';
-      
-      if (!wizardState.selectedYear?.id || !businessState) {
+      // Use same conditions as IntegratedStateCredits - only need selectedYear and business state
+      if (!wizardState.selectedYear?.id || !wizardState.business?.state) {
         console.log('🔍 Footer State Credits - Missing data:', {
           selectedYearId: wizardState.selectedYear?.id,
-          businessState: businessState,
+          businessState: wizardState.business?.state,
           fullBusiness: wizardState.business
         });
         setRealStateCredits(0);
@@ -328,9 +324,11 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
       try {
         console.log('🔍 Footer State Credits - Starting calculation with:', {
           selectedYearId: wizardState.selectedYear?.id,
-          businessState: businessState,
+          businessState: wizardState.business?.state,
           wizardStep: wizardState.currentStep
         });
+        
+        const businessState = wizardState.business?.state || wizardState.business?.contact_info?.state || 'CA';
         console.log('🔍 Footer State Credits - Business state:', businessState);
         
         // 🔧 EXACT SAME LOGIC as IntegratedStateCredits - Step 1: Load base QRE data 
@@ -364,7 +362,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
       console.log('🔍 Footer State Credits - Skipping calculation, not on calculation step yet:', wizardState.currentStep);
       setRealStateCredits(0);
     }
-  }, [wizardState.selectedYear?.id, wizardState.business?.domicile_state, wizardState.business?.contact_info?.state, wizardState.business?.state, wizardState.currentStep]); // Added currentStep to dependencies
+  }, [wizardState.selectedYear?.id, wizardState.business?.state, wizardState.currentStep]); // Added currentStep to dependencies
 
   const handleNext = () => {
     if (wizardState.currentStep < steps.length - 1) {
@@ -482,37 +480,35 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
         {/* Header - Updated to match Dark Blue Gradient */}
         <div className="bg-gradient-to-r from-[#1a1a3f] to-[#2d2d67] text-white p-6 flex-shrink-0">
           <div className="flex justify-between items-start">
+            {/* Left Side: Client Name and Business Selector */}
             <div className="flex-1">
-              <h2 className="text-2xl font-bold">R&D Tax Credit Wizard</h2>
-              <p className="text-blue-100">
-                Step {wizardState.currentStep + 1} of {steps.length}: {steps[wizardState.currentStep].title}
-              </p>
-            </div>
-            
-            {/* Client Name and Business Selector - Right Aligned */}
-            <div className="text-right">
               {clientData && (
-                <>
+                <div className="mb-4">
+                  {/* Show CLIENT NAME (not business name) */}
                   <div className="text-lg font-semibold text-white mb-1">
-                    {clientData.company_name || `${clientData.first_name} ${clientData.last_name}`}
+                    {clientData.full_name || 'Unknown Client'}
                   </div>
-                  <div className="relative">
+                  {/* Business Selector Dropdown */}
+                  <div className="relative inline-block">
                     <button
                       onClick={() => setShowBusinessSelector(!showBusinessSelector)}
                       className="flex items-center space-x-2 text-blue-200 hover:text-white transition-colors"
                     >
                       <span className="text-sm">
-                        {wizardState.business?.name || 'Business Name'}
+                        {wizardState.business?.name || 'Select Business'}
                       </span>
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
                     </button>
                     
-                    {/* Business Dropdown */}
-                    {showBusinessSelector && availableBusinesses.length > 1 && (
-                      <div ref={businessSelectorRef} className="absolute right-0 top-full mt-2 bg-white rounded-lg shadow-lg border border-gray-200 min-w-60 z-50">
+                    {/* Business Dropdown - Show all affiliated businesses */}
+                    {showBusinessSelector && availableBusinesses.length > 0 && (
+                      <div ref={businessSelectorRef} className="absolute left-0 top-full mt-2 bg-white rounded-lg shadow-lg border border-gray-200 min-w-60 z-50">
                         <div className="py-1">
+                          <div className="px-4 py-2 text-xs font-semibold text-gray-500 bg-gray-50 border-b border-gray-100">
+                            {clientData.full_name}'s Businesses
+                          </div>
                           {availableBusinesses.map((business) => (
                             <button
                               key={business.id}
@@ -528,20 +524,32 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
                                   : 'text-gray-700'
                               }`}
                             >
-                              <div className="font-medium">{business.name}</div>
-                              {business.contact_info?.state && (
-                                <div className="text-xs text-gray-500">{business.contact_info.state}</div>
-                              )}
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="font-medium">{business.name}</div>
+                                  {business.contact_info?.state && (
+                                    <div className="text-xs text-gray-500">{business.contact_info.state}</div>
+                                  )}
+                                </div>
+                                {business.id === wizardState.business?.id && (
+                                  <div className="text-blue-600">
+                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                    </svg>
+                                  </div>
+                                )}
+                              </div>
                             </button>
                           ))}
                         </div>
                       </div>
                     )}
                   </div>
-                </>
+                </div>
               )}
             </div>
             
+            {/* Right Side: Close Button (if modal) */}
             {isModal && (
               <button
                 onClick={onClose}

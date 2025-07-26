@@ -12,6 +12,7 @@ import { PA_PROFORMA_LINES } from '../components/StateProForma/pa';
 import { VA_PROFORMA_LINES } from '../components/StateProForma/va';
 import { FL_PROFORMA_LINES } from '../components/StateProForma/fl';
 import { NC_PROFORMA_LINES } from '../components/StateProForma/nc';
+import { AZ_PROFORMA_LINES, AZ_ALTERNATIVE_LINES } from '../components/StateProForma/az';
 import { SC_PROFORMA_LINES } from '../components/StateProForma/sc';
 import { TN_PROFORMA_LINES } from '../components/StateProForma/tn';
 import { ID_PROFORMA_LINES } from '../components/StateProForma/id';
@@ -27,6 +28,7 @@ import { ND_PROFORMA_LINES } from '../components/StateProForma/nd';
 import { MO_PROFORMA_LINES } from '../components/StateProForma/mo';
 import { MT_PROFORMA_LINES } from '../components/StateProForma/mt';
 import { NH_PROFORMA_LINES } from '../components/StateProForma/nh';
+import { UT_PROFORMA_LINES, UT_ALTERNATIVE_LINES } from '../components/StateProForma/ut';
 
 /**
  * Real State Pro Forma Calculation Service
@@ -49,6 +51,7 @@ export class StateProFormaCalculationService {
     VA: { standard: VA_PROFORMA_LINES, finalField: 'vaFinalCredit' },
     FL: { standard: FL_PROFORMA_LINES, finalField: 'flFinalCredit' },
     NC: { standard: NC_PROFORMA_LINES, finalField: 'ncFinalCredit' },
+    AZ: { standard: AZ_PROFORMA_LINES, alternative: AZ_ALTERNATIVE_LINES, finalField: 'azFinalCredit', altFinalField: 'azAltCredit' },
     SC: { standard: SC_PROFORMA_LINES, finalField: 'scFinalCredit' },
     TN: { standard: TN_PROFORMA_LINES, finalField: 'tnFinalCredit' },
     ID: { standard: ID_PROFORMA_LINES, finalField: 'idFinalCredit' },
@@ -64,6 +67,7 @@ export class StateProFormaCalculationService {
     MO: { standard: MO_PROFORMA_LINES, finalField: 'moFinalCredit' },
     MT: { standard: MT_PROFORMA_LINES, finalField: 'mtFinalCredit' },
     NH: { standard: NH_PROFORMA_LINES, finalField: 'nhFinalCredit' },
+    UT: { standard: UT_PROFORMA_LINES, alternative: UT_ALTERNATIVE_LINES, finalField: 'utFinalCredit', altFinalField: 'utAltCredit' },
   };
 
   /**

@@ -8,12 +8,14 @@ interface IntegratedStateCreditsProps {
   selectedYear: any;
   businessData: any;
   wizardState: any; // Get business state from wizard state like CalculationStep does
+  qreDataHash?: string; // Hash of QRE data to trigger reload when data changes
 }
 
 export const IntegratedStateCredits: React.FC<IntegratedStateCreditsProps> = ({
   selectedYear,
   businessData,
-  wizardState
+  wizardState,
+  qreDataHash
 }) => {
   // Get business state from wizardState like CalculationStep does (prioritize domicile_state, then contact_info.state)
   const businessState = wizardState?.business?.domicile_state || wizardState?.business?.contact_info?.state || wizardState?.business?.state || 'CA';
@@ -76,6 +78,7 @@ export const IntegratedStateCredits: React.FC<IntegratedStateCreditsProps> = ({
       try {
         setLoading(true);
         console.log('🔍 IntegratedStateCredits - Loading base QRE data AND calculating real pro forma credit for state:', state);
+        console.log('🔧 IntegratedStateCredits - QRE Data Hash:', qreDataHash);
         
         // 🔧 Step 1: Load base QRE data for the form (same as Filing Guide)
         const baseQREData = await StateCreditDataService.getAggregatedQREData(selectedYear.id);
@@ -117,7 +120,7 @@ export const IntegratedStateCredits: React.FC<IntegratedStateCreditsProps> = ({
     };
 
     loadProFormaData();
-  }, [selectedYear?.id, state, method]);
+  }, [selectedYear?.id, state, method, qreDataHash]);
 
   // Update state when business state changes from wizard
   useEffect(() => {

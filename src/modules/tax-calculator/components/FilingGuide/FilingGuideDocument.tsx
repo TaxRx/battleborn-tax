@@ -9,6 +9,7 @@ import { getStateConfig, getAvailableStates, StateConfig } from '../StateProForm
 import { saveStateProFormaData, loadStateProFormaData, StateCreditDataService } from '../../services/stateCreditDataService';
 import { FederalCreditProForma } from './FederalCreditProForma';
 import { CalculationSpecifics } from './CalculationSpecifics';
+import { supabase } from '../../lib/supabase';
 
 interface FilingGuideDocumentProps {
   businessData: any;
@@ -25,6 +26,14 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
   selectedMethod,
   debugData
 }) => {
+  // State for locked QRE values
+  const [lockedQREValues, setLockedQREValues] = useState<{
+    employee_qre: number;
+    contractor_qre: number;
+    supply_qre: number;
+    qre_locked: boolean;
+  } | null>(null);
+
   const currentDate = new Date().toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
@@ -39,9 +48,66 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
   // eslint-disable-next-line no-console
   console.log('%c[FILING GUIDE] calculations:', 'background: #fffb00; color: #000; font-weight: bold; padding: 2px 8px;', calculations);
   // eslint-disable-next-line no-console
+  console.log('%c[FILING GUIDE] calculations.currentYearQRE:', 'background: #ff6b00; color: #fff; font-weight: bold; padding: 2px 8px;', calculations?.currentYearQRE);
+  // eslint-disable-next-line no-console
   console.log('%c[FILING GUIDE] selectedMethod:', 'background: #fffb00; color: #000; font-weight: bold; padding: 2px 8px;', selectedMethod);
   // eslint-disable-next-line no-console
   console.log('%c[FILING GUIDE] debugData:', 'background: #fffb00; color: #000; font-weight: bold; padding: 2px 8px;', debugData);
+
+  // Load locked QRE values for the selected year
+  useEffect(() => {
+    const loadLockedQREValues = async () => {
+      if (!selectedYear?.id) return;
+      
+      try {
+        console.log('🔒 FilingGuideDocument - Loading locked QRE values for year:', selectedYear.id);
+        
+        const { data, error } = await supabase
+          .from('rd_business_years')
+          .select('employee_qre, contractor_qre, supply_qre, qre_locked')
+          .eq('id', selectedYear.id)
+          .single();
+
+        if (error) {
+          if (error.code === 'PGRST116') {
+            console.warn('🔒 FilingGuideDocument - QRE columns not available, using calculated values');
+            setLockedQREValues(null);
+          } else {
+            console.error('❌ FilingGuideDocument - Error loading locked QRE values:', error);
+            setLockedQREValues(null);
+          }
+          return;
+        }
+
+        if (data) {
+          const qreValues = {
+            employee_qre: data.employee_qre || 0,
+            contractor_qre: data.contractor_qre || 0,
+            supply_qre: data.supply_qre || 0,
+            qre_locked: data.qre_locked || false
+          };
+          
+          console.log('🔒 FilingGuideDocument - Loaded QRE values:', qreValues);
+          setLockedQREValues(qreValues);
+        }
+      } catch (error) {
+        console.error('❌ FilingGuideDocument - Error loading locked QRE values:', error);
+        setLockedQREValues(null);
+      }
+    };
+
+    loadLockedQREValues();
+  }, [selectedYear?.id]);
+
+  // CRITICAL: Alert if calculations.currentYearQRE is missing
+  if (!calculations?.currentYearQRE) {
+    // eslint-disable-next-line no-console
+    console.error('%c🚨 [FILING GUIDE] CRITICAL: calculations.currentYearQRE is missing! This will break Form6765 QRE auto-population!', 'background: #ff0000; color: #fff; font-weight: bold; padding: 4px 8px;', {
+      calculations: calculations,
+      hasCalculations: !!calculations,
+      calculationsKeys: calculations ? Object.keys(calculations) : 'no calculations object'
+    });
+  }
 
   // Debug output (collapsible)
   const [showDebug, setShowDebug] = React.useState(false);
@@ -322,6 +388,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
           clientId={businessData?.client_id || 'demo'}
           userId={businessData?.user_id}
           selectedMethod={selectedMethod}
+          lockedQREValues={lockedQREValues}
         />
       </div>
 

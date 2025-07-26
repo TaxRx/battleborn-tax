@@ -78,18 +78,18 @@ export class AIService {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4',
         messages: [
           {
             role: 'system',
-            content: 'You are a healthcare industry expert specializing in clinical practice guidelines and R&D tax credit compliance. Provide detailed, professional responses with proper formatting using markdown.'
+            content: 'You are a healthcare industry expert specializing in clinical practice guidelines and R&D tax credit compliance. Provide detailed, professional responses with proper formatting using markdown. Focus on practical implementation steps that integrate specific staff roles and responsibilities. Include detailed workflows, timelines, and measurable outcomes for each step.'
           },
           {
             role: 'user',
             content: prompt
           }
         ],
-        max_tokens: 1500,
+        max_tokens: 2500,
         temperature: 0.7
       })
     });
@@ -121,21 +121,50 @@ export class AIService {
       ? availableRoles.map(role => role.name).join(', ')
       : 'Medical Staff, Administrative Staff, Research Coordinators';
     
-    const prompt = `Generate professional clinical practice guidelines for implementing "${subcomponentName}" in a healthcare setting.
+    const prompt = `Generate comprehensive clinical practice guidelines for implementing "${subcomponentName}" in a healthcare setting for R&D tax credit documentation purposes.
 
 Subcomponent Description: ${description}
 
 Available Staff Roles: ${roleNames}
 
-Please provide:
-1. Step-by-step implementation guidelines with clear headings
-2. For each step, specify which staff roles should be involved from the available roles listed above
-3. Use professional medical/clinical language
-4. Format with proper markdown headings (### for steps)
-5. Include bullet points for role assignments under each step
-6. Focus on practical implementation in a clinical environment
+Please provide detailed implementation guidelines that include:
 
-Format the response with clear markdown structure and ensure role assignments use only the provided role names.`;
+1. **Pre-Implementation Planning** (### Planning Phase)
+   - Risk assessment and mitigation strategies
+   - Resource allocation requirements
+   - Timeline development (specific weeks/months)
+   - Role-specific training requirements
+   - Measurable success criteria
+
+2. **Implementation Steps** (### Step 1, ### Step 2, etc.)
+   - Detailed 5-7 implementation steps with specific actions
+   - For each step, specify:
+     * Primary responsible roles from the available list
+     * Supporting roles and their specific contributions
+     * Time allocation estimates (hours/week per role)
+     * Documentation requirements for R&D compliance
+     * Quality control checkpoints
+     * Risk factors and mitigation steps
+
+3. **Monitoring & Documentation** (### Monitoring Phase)
+   - Key performance indicators (KPIs)
+   - Documentation protocols for R&D substantiation
+   - Regular review schedules
+   - Compliance verification methods
+
+4. **Optimization & Continuous Improvement** (### Optimization Phase)
+   - Performance review criteria
+   - Feedback collection methods
+   - Process refinement protocols
+   - Staff development opportunities
+
+Format requirements:
+- Use markdown headings (### for main sections)
+- Include specific role assignments with time commitments
+- Add implementation timelines
+- Focus on measurable, documentable activities
+- Ensure all roles from the available list are meaningfully integrated
+- Include R&D tax credit compliance considerations`;
 
     try {
       const content = await this.generateContent(prompt);

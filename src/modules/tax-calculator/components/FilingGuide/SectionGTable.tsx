@@ -186,11 +186,11 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
             // Generate static description based on the line49fContext
             description = `The company evaluated ${line49fContext.subcomponent_count} ${line49fContext.subcomponent_groups} to resolve technical uncertainty in ${line49fContext.research_activity_name}. Experimental testing was conducted using systematic research methodologies within the ${line49fContext.industry} industry. ${line49fContext.guideline_notes || 'Research activities were performed in accordance with established protocols and regulatory requirements.'}`;
             
-            // Save to rd_federal_credit table
+            // Save to rd_federal_credit table (validate research_activity_id first)
             await saveToFederalCreditTable({
               business_year_id: selectedYear.id,
               client_id: clientId,
-              research_activity_id: activity.activity_id,
+              research_activity_id: activity.activity_id, // This will be validated in saveToFederalCreditTable
               research_activity_name: activity.activity_title,
               direct_research_wages: activity.direct_research_wages || 0,
               supplies_expenses: activity.supplies_expenses || 0,
@@ -318,13 +318,29 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
         console.log('[SECTION G DEBUG] Using valid business year ID:', validBusinessYear.id);
       }
       
+      // Validate research_activity_id exists before saving
+      let validResearchActivityId = data.research_activity_id;
+      if (data.research_activity_id) {
+        const { data: researchActivityCheck, error: researchActivityError } = await supabase
+          .from('rd_research_activities')
+          .select('id')
+          .eq('id', data.research_activity_id)
+          .single();
+        
+        if (researchActivityError || !researchActivityCheck) {
+          console.log('[SECTION G WARNING] research_activity_id does not exist:', data.research_activity_id);
+          console.log('[SECTION G WARNING] Saving without research_activity_id reference');
+          validResearchActivityId = null; // Set to null to avoid foreign key violation
+        }
+      }
+      
       // Now save to rd_federal_credit table
       const { error: insertError } = await supabase
         .from('rd_federal_credit')
         .insert({
           business_year_id: data.business_year_id,
           client_id: data.client_id,
-          research_activity_id: data.research_activity_id,
+          research_activity_id: validResearchActivityId,
           research_activity_name: data.research_activity_name,
           direct_research_wages: data.direct_research_wages,
           supplies_expenses: data.supplies_expenses,
@@ -432,7 +448,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
                   await saveToFederalCreditTable({
                     business_year_id: selectedYear.id,
                     client_id: clientId,
-                    research_activity_id: row.id,
+                    research_activity_id: row.id, // This will be validated in saveToFederalCreditTable
                     research_activity_name: row.name,
                     direct_research_wages: row.wages || 0,
                     supplies_expenses: row.supplies || 0,

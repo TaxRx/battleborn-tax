@@ -530,12 +530,34 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
     '#6366F1', // indigo-500
   ];
 
-  // Load data only when modal opens
+  // AGGRESSIVE STATE CLEARING AND FRESH DATA LOADING
   useEffect(() => {
     if (isOpen && employee) {
-      loadAllocationData();
+      console.log('🔄 MODAL OPENING for employee:', employee.first_name, employee.last_name, employee.id);
+      console.log('🔄 Employee object:', employee);
+      
+      // AGGRESSIVE: Clear ALL state immediately
+      setLoading(true);
+      setActivities([]);
+      setTotalAllocated(0);
+      setNonRdPercentage(0);
+      setExpandedActivity(null);
+      
+      // Force a delay to ensure state is cleared before loading
+      setTimeout(() => {
+        console.log('🔄 Starting fresh data load after state clear...');
+        loadAllocationData();
+      }, 100);
+    } else if (!isOpen) {
+      console.log('🔄 Modal closing - aggressive state clearing');
+      // Aggressive clearing when modal closes
+      setLoading(false);
+      setActivities([]);
+      setTotalAllocated(0);
+      setNonRdPercentage(0);  
+      setExpandedActivity(null);
     }
-  }, [isOpen, employee]);
+  }, [isOpen, employee?.id]); // CHANGED: Depend on employee.id specifically
 
   // Recalculate total when non-R&D percentage changes
   useEffect(() => {
@@ -548,7 +570,9 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
       return;
     }
     
-    console.log('🔍 loadAllocationData called for employee:', employee.id, 'role:', employee.role?.id);
+    console.log('🔄 FRESH LOAD: Loading allocation data for employee:', employee.first_name, employee.last_name, employee.id);
+    console.log('🔄 Employee role:', employee.role?.id, employee.role?.name);
+    console.log('🔄 Business year:', businessYearId);
     
     if (!businessYearId) {
       console.log('⚠️ No businessYearId provided to loadAllocationData');
@@ -556,9 +580,16 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
       return;
     }
     
+    // AGGRESSIVE: Ensure completely fresh start - no cached data
+    console.log('🧹 AGGRESSIVE CLEAN: Clearing all modal state before loading fresh data');
+    setActivities([]);
+    setTotalAllocated(0);
+    setNonRdPercentage(0);
+    setExpandedActivity(null);
     setLoading(true);
+    
     try {
-      console.log('🔍 Loading allocation data for employee:', employee.id, 'role:', employee.role?.id);
+      console.log('🔍 LOADING FRESH DATA for employee:', employee.id, 'role:', employee.role?.id);
       
       if (!supabase) {
         console.error('❌ Supabase client not available');
@@ -750,7 +781,11 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
 
         console.log('📋 Found subcomponents for activity:', subcomponents?.length);
 
-        // Get employee's current allocations for this activity
+        // Get employee's current allocations for this activity - MUST BE EMPLOYEE-SPECIFIC
+        console.log('🔍 LOADING ALLOCATIONS FOR SPECIFIC EMPLOYEE:', employee.id, employee.first_name, employee.last_name);
+        console.log('🔍 Business Year ID:', businessYearId);
+        console.log('🔍 Subcomponent IDs to filter:', subcomponents?.map(s => s.subcomponent_id));
+        
         const { data: employeeAllocations, error: allocError } = await supabase
           .from('rd_employee_subcomponents')
           .select('*')
@@ -763,7 +798,8 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
           // Continue without employee allocations
         }
 
-        console.log('📋 Found employee allocations:', employeeAllocations?.length);
+        console.log('📋 EMPLOYEE-SPECIFIC ALLOCATIONS LOADED:', employeeAllocations?.length);
+        console.log('📋 Allocation data:', employeeAllocations);
 
         const subcomponentAllocations: SubcomponentAllocation[] = (subcomponents || []).map(sub => {
           const employeeAlloc = employeeAllocations?.find(ea => ea.subcomponent_id === sub.subcomponent_id);
@@ -811,27 +847,40 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
 
       console.log('📋 Final activitiesWithSubcomponents:', activitiesWithSubcomponents);
       
+      console.log('🎯 FINAL VERIFICATION: Setting activities for employee:', employee.first_name, employee.last_name, employee.id);
+      console.log('🎯 Activities being set:', activitiesWithSubcomponents);
+      
       setActivities(activitiesWithSubcomponents);
       calculateTotalAllocated(activitiesWithSubcomponents);
       
-      console.log('✅ Allocation data loaded:', activitiesWithSubcomponents);
+      console.log('✅ FRESH DATA LOADED and SET for employee:', employee.first_name, employee.last_name);
+      console.log('✅ Activities loaded:', activitiesWithSubcomponents.length);
+      console.log('✅ Modal state should now be employee-specific!');
     } catch (error) {
-      console.error('❌ Error in loadAllocationData:', error);
-      // Set empty activities as fallback
+      console.error('❌ Error in loadAllocationData for employee:', employee.first_name, employee.last_name, error);
+      // AGGRESSIVE FALLBACK: Ensure no stale data remains
+      console.log('🧹 ERROR FALLBACK: Clearing all state due to loading error');
       setActivities([]);
+      setTotalAllocated(0);
+      setNonRdPercentage(0);
+      setExpandedActivity(null);
       calculateTotalAllocated([]);
     } finally {
       setLoading(false);
+      console.log('✅ Loading complete for employee:', employee.first_name, employee.last_name);
     }
   };
 
   const calculateTotalAllocated = (activitiesData: ResearchActivityAllocation[]) => {
+    console.log('🧮 Calculating total allocation for:', activitiesData.length, 'activities');
     const total = activitiesData.reduce((sum, activity) => {
       if (activity.isEnabled) {
+        console.log('📊 Activity enabled:', activity.name, 'Practice%:', activity.practicePercentage);
         return sum + activity.practicePercentage;
       }
       return sum;
     }, 0) + nonRdPercentage;
+    console.log('🧮 Total calculated:', total, '% (including', nonRdPercentage, '% non-R&D)');
     setTotalAllocated(total);
   };
 
@@ -940,8 +989,8 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
         return activity;
       });
       
-      // Auto-save the updated values
-      autoSaveAllocations(updated);
+      // REMOVED: Auto-save - only save when user clicks Save button
+      calculateTotalAllocated(updated);
       return updated;
     });
   };
@@ -972,13 +1021,13 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
           return activity;
         });
         
-        // Auto-save the redistributed values
-        autoSaveAllocations(redistributed);
+        // REMOVED: Auto-save - only save when user clicks Save button
+        calculateTotalAllocated(redistributed);
         return redistributed;
       }
       
-      // Auto-save the updated values
-      autoSaveAllocations(updated);
+      // REMOVED: Auto-save - only save when user clicks Save button
+      calculateTotalAllocated(updated);
       return updated;
     });
   };
@@ -1001,99 +1050,30 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
         return activity;
       });
       
-      // Auto-save the updated values
-      autoSaveAllocations(updated);
+      // REMOVED: Auto-save - only save when user clicks Save button
+      calculateTotalAllocated(updated);
       return updated;
     });
   };
 
-  // Auto-save allocations without UI feedback - runs in background
+  // DISABLED: Auto-save functionality - allocations now only save when Save button is clicked
   const autoSaveAllocations = async (activitiesData: any[]) => {
-    if (!employee || !businessYearId) return;
-    
-    try {
-      // Calculate and save allocations for enabled activities (same logic as saveAllocations)
-      for (const activity of activitiesData) {
-        if (activity.isEnabled) {
-          for (const subcomponent of activity.subcomponents) {
-            if (subcomponent.isIncluded) {
-              // Calculate applied percentage using modal's formula: Practice% × Year% × Frequency% × Time%
-              const appliedPercentage = (activity.practicePercentage / 100) * 
-                                     (subcomponent.yearPercentage / 100) * 
-                                     (subcomponent.frequencyPercentage / 100) * 
-                                     (subcomponent.timePercentage / 100) * 100;
-              
-              // Update database with new calculated values
-              const upsertData: any = {
-                employee_id: employee.id,
-                business_year_id: businessYearId,
-                subcomponent_id: subcomponent.id,
-                time_percentage: subcomponent.timePercentage,
-                applied_percentage: appliedPercentage, // This will make roster match modal
-                practice_percentage: activity.practicePercentage,
-                year_percentage: subcomponent.yearPercentage,
-                frequency_percentage: subcomponent.frequencyPercentage,
-                is_included: subcomponent.isIncluded,
-                updated_at: new Date().toISOString()
-              };
-
-              await supabase
-                .from('rd_employee_subcomponents')
-                .upsert(upsertData, {
-                  onConflict: 'employee_id,business_year_id,subcomponent_id'
-                });
-            }
-          }
-        }
-      }
-      
-      // Update the total applied percentage in rd_employee_year_data
-      const totalAppliedPercentage = activitiesData.reduce((total: number, activity: any) => {
-        if (activity.isEnabled) {
-          return total + activity.subcomponents.reduce((actTotal: number, sub: any) => {
-            if (sub.isIncluded) {
-              const appliedPercentage = (activity.practicePercentage / 100) * 
-                                     (sub.yearPercentage / 100) * 
-                                     (sub.frequencyPercentage / 100) * 
-                                     (sub.timePercentage / 100) * 100;
-              return actTotal + appliedPercentage;
-            }
-            return actTotal;
-          }, 0);
-        }
-        return total;
-      }, 0);
-
-      // Update rd_employee_year_data with the new total
-      const annualWage = employee.annual_wage || 0;
-      const calculatedQRE = Math.round((annualWage * totalAppliedPercentage) / 100);
-
-      await supabase
-        .from('rd_employee_year_data')
-        .upsert({
-          employee_id: employee.id,
-          business_year_id: businessYearId,
-          applied_percent: totalAppliedPercentage,
-          calculated_qre: calculatedQRE,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'employee_id,business_year_id'
-        });
-
-      // Trigger roster refresh
-      onUpdate?.();
-
-    } catch (error) {
-      console.error('❌ Error in auto-save:', error);
-    }
+    // DISABLED: All changes are now batched until the Save button is clicked
+    console.log('⚠️ autoSaveAllocations called but is disabled - use Save button instead');
   };
 
   const saveAllocations = async () => {
     if (!employee) return;
     
+    // Utility function to apply 80% threshold rule (local to modal)
+    const applyEightyPercentThreshold = (appliedPercentage: number): number => {
+      return appliedPercentage >= 80 ? 100 : appliedPercentage;
+    };
+    
     setLoading(true);
     try {
-      console.log('💾 Saving allocations for employee:', employee.id);
+      console.log('💾 BATCH SAVE: Saving all allocation changes for employee:', employee.id);
+      console.log('🎯 All UI changes are now batched and saved only when Save button is clicked');
       
       // FIRST: Save activity enabled states to rd_selected_activities
       for (const activity of activities) {
@@ -1222,13 +1202,16 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
       // CRITICAL FIX: Always use calculated total, never fall back to baseline
       const finalAppliedPercentage = totalAppliedPercentage; // NO baseline fallback
       const annualWage = employee.annual_wage || 0;
-      const calculatedQRE = Math.round((annualWage * finalAppliedPercentage) / 100);
+      // Apply 80% threshold rule for QRE calculation in allocation modal
+      const qreAppliedPercentage = applyEightyPercentThreshold(finalAppliedPercentage);
+      const calculatedQRE = Math.round((annualWage * qreAppliedPercentage) / 100);
 
       console.log('📊 Final calculations:', {
         appliedPercentage: finalAppliedPercentage,
+        qreAppliedPercentageWith80Threshold: qreAppliedPercentage,
         annualWage: annualWage,
         calculatedQRE: calculatedQRE,
-        note: 'NO baseline constraints applied'
+        note: 'Applied 80% threshold rule for QRE calculation'
       });
 
       // Update rd_employee_year_data with exact calculated values
@@ -1348,6 +1331,16 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
 
   if (!isOpen || !employee) return null;
 
+  // DEBUG: Confirm which employee data is being rendered
+  console.log('🎯 MODAL RENDER: Showing allocation modal for:', employee.first_name, employee.last_name, employee.id);
+  console.log('🎯 MODAL RENDER: Activities count:', activities.length);
+  console.log('🎯 MODAL RENDER: Loading state:', loading);
+
+  // BLOCK RENDERING until we have fresh data loaded for this specific employee
+  if (loading || activities.length === 0) {
+    console.log('🔄 BLOCKING RENDER: Still loading data for employee:', employee.first_name, employee.last_name);
+  }
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto">
@@ -1369,7 +1362,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
           {loading ? (
             <div className="flex items-center justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <span className="ml-2 text-gray-600">Loading allocations...</span>
+              <span className="ml-2 text-gray-600">Loading fresh allocation data for {employee.first_name} {employee.last_name}...</span>
             </div>
           ) : (
             <>
@@ -1571,8 +1564,8 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
                                           return a;
                                         });
                                         
-                                        // Auto-save the updated values
-                                        autoSaveAllocations(updated);
+                                        // REMOVED: Auto-save - only save when user clicks Save button
+                                        calculateTotalAllocated(updated);
                                         return updated;
                                       });
                                     }}
@@ -1679,6 +1672,12 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
   const [showAllocationReport, setShowAllocationReport] = useState(false);
   // Add state to track the current year for display
   const [displayYear, setDisplayYear] = useState<number>(new Date().getFullYear());
+  
+  // QRE Locked Values State
+  const [lockedEmployeeQRE, setLockedEmployeeQRE] = useState<number>(0);
+  const [lockedContractorQRE, setLockedContractorQRE] = useState<number>(0);
+  const [lockedSupplyQRE, setLockedSupplyQRE] = useState<number>(0);
+  const [qreLocked, setQreLocked] = useState<boolean>(false);
 
   console.log('🔍 EmployeeSetupStep - Component props:', {
     businessYearId,
@@ -1689,7 +1688,248 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
   // Note: Data isolation is now handled by parent component via key prop
   // which forces complete component remount when switching businesses
 
-  const loadData = async () => {
+  // Load QRE locked values from database
+  const loadQREValues = async (businessYearId: string) => {
+    try {
+      console.log('🔍 Loading QRE values for business year:', businessYearId);
+      
+      const { data, error } = await supabase
+        .from('rd_business_years')
+        .select('employee_qre, contractor_qre, supply_qre, qre_locked')
+        .eq('id', businessYearId)
+        .single();
+
+      if (error) {
+        console.error('❌ Error loading QRE values:', error);
+        // If columns don't exist, that's expected for old records
+        if (error.message?.includes('column') || error.code === 'PGRST116') {
+          console.log('ℹ️ QRE columns not yet available for this business year - using defaults');
+          setLockedEmployeeQRE(0);
+          setLockedContractorQRE(0);
+          setLockedSupplyQRE(0);
+          setQreLocked(false);
+        }
+        return;
+      }
+
+      if (data) {
+        console.log('💾 CRITICAL: Loading QRE values from database for year:', businessYearId);
+        console.log('💾 Database values:', data);
+        setLockedEmployeeQRE(data.employee_qre || 0);
+        setLockedContractorQRE(data.contractor_qre || 0);
+        setLockedSupplyQRE(data.supply_qre || 0);
+        setQreLocked(data.qre_locked || false);
+        console.log('✅ QRE state updated:', {
+          employee: data.employee_qre || 0,
+          contractor: data.contractor_qre || 0,
+          supply: data.supply_qre || 0,
+          locked: data.qre_locked || false
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error loading QRE values:', error);
+    }
+  };
+
+  // Verify database migration has been applied
+  const verifyDatabaseMigration = async () => {
+    try {
+      console.log('🔍 Verifying database migration...');
+      
+      // Try to query the new columns
+      const { data, error } = await supabase
+        .from('rd_business_years')
+        .select('id, employee_qre, contractor_qre, supply_qre, qre_locked')
+        .limit(1);
+
+      if (error) {
+        console.error('❌ Database migration verification failed:', error);
+        if (error.message?.includes('column') || error.code === 'PGRST116') {
+          toast.error('⚠️ Database migration not applied! Please run: supabase/migrations/20250122000002_add_locked_qre_fields.sql');
+          return false;
+        }
+      } else {
+        console.log('✅ Database migration verified - QRE columns exist');
+        return true;
+      }
+    } catch (error) {
+      console.error('❌ Error verifying database migration:', error);
+      return false;
+    }
+    return false;
+  };
+
+  // Save QRE locked values to database
+  const saveQREValues = async () => {
+    if (!selectedYear) return;
+
+    try {
+      const { error } = await supabase
+        .from('rd_business_years')
+        .update({
+          employee_qre: lockedEmployeeQRE,
+          contractor_qre: lockedContractorQRE,
+          supply_qre: lockedSupplyQRE,
+          qre_locked: qreLocked,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedYear);
+
+      if (error) {
+        console.error('❌ Error saving QRE values:', error);
+        toast.error('Failed to save QRE values');
+        return;
+      }
+
+      toast.success('✅ QRE values saved successfully');
+      console.log('✅ Saved QRE values:', {
+        employee_qre: lockedEmployeeQRE,
+        contractor_qre: lockedContractorQRE,
+        supply_qre: lockedSupplyQRE,
+        qre_locked: qreLocked
+      });
+
+      // CRITICAL: Trigger recalculation of federal credits when QRE values change
+      if (onUpdate) {
+        console.log('🔄 Triggering federal credit recalculation due to QRE lock change');
+        onUpdate({ qreValuesChanged: true });
+      }
+    } catch (error) {
+      console.error('❌ Error saving QRE values:', error);
+      toast.error('Failed to save QRE values');
+    }
+  };
+
+  // Handle locking QRE values - when user clicks lock, capture current calculated values
+  const handleQRELockToggle = async () => {
+    if (!qreLocked) {
+      // User is locking - capture current calculated values
+      // Calculate current QRE values from state
+      const currentEmployeeQRE = employeesWithData.reduce((sum, e) => sum + (e.calculated_qre || 0), 0);
+      const currentContractorQRE = contractorsWithData.reduce((sum, c) => sum + (c.calculated_qre || 0), 0);
+      const currentSupplyQRE = supplies.reduce((sum, s) => sum + (s.calculated_qre || 0), 0);
+      
+      console.log('🔒 Locking QRE values at current calculated amounts:', {
+        employee: currentEmployeeQRE,
+        contractor: currentContractorQRE,
+        supply: currentSupplyQRE
+      });
+      setLockedEmployeeQRE(currentEmployeeQRE);
+      setLockedContractorQRE(currentContractorQRE);
+      setLockedSupplyQRE(currentSupplyQRE);
+      setQreLocked(true);
+      
+      // Auto-save when locking
+      if (selectedYear) {
+        try {
+          console.log('💾 Attempting to save QRE lock for business year:', selectedYear);
+          console.log('💾 Data to save:', {
+            employee_qre: employeeQRE,
+            contractor_qre: contractorQRE,
+            supply_qre: supplyQRE,
+            qre_locked: true
+          });
+
+          // Verify database migration first
+          const migrationOK = await verifyDatabaseMigration();
+          if (!migrationOK) {
+            return;
+          }
+
+          // First check if the business year exists
+          const { data: existingYear, error: checkError } = await supabase
+            .from('rd_business_years')
+            .select('id, employee_qre, contractor_qre, supply_qre, qre_locked')
+            .eq('id', selectedYear)
+            .single();
+
+          if (checkError) {
+            console.error('❌ Error checking business year existence:', checkError);
+            toast.error('Business year not found');
+            return;
+          }
+
+          console.log('✅ Business year exists:', existingYear);
+
+          // Attempt the update
+          const { data: updateData, error: updateError } = await supabase
+            .from('rd_business_years')
+            .update({
+              employee_qre: currentEmployeeQRE,
+              contractor_qre: currentContractorQRE,
+              supply_qre: currentSupplyQRE,
+              qre_locked: true,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', selectedYear)
+            .select();
+
+          if (updateError) {
+            console.error('❌ Error saving QRE lock:', updateError);
+            console.error('❌ Full error details:', JSON.stringify(updateError, null, 2));
+            
+            // Check if it's a column missing error
+            if (updateError.message?.includes('column') || updateError.code === 'PGRST116') {
+              toast.error('QRE columns not available. Please run the database migration first.');
+            } else {
+              toast.error(`Failed to save QRE lock: ${updateError.message}`);
+            }
+          } else {
+            console.log('✅ Successfully saved QRE lock:', updateData);
+            toast.success('✅ QRE values locked successfully');
+            
+            // CRITICAL: Trigger federal credit recalculation
+            if (onUpdate) {
+              console.log('🔄 Triggering federal credit recalculation due to QRE LOCK');
+              onUpdate({ qreValuesChanged: true });
+            }
+          }
+        } catch (error) {
+          console.error('❌ Unexpected error saving QRE lock:', error);
+          toast.error('Unexpected error saving QRE lock');
+        }
+      }
+    } else {
+      // User is unlocking - switch back to dynamic calculations
+      console.log('🔓 Unlocking QRE values - will use live calculations');
+      setQreLocked(false);
+      
+      // Auto-save unlock state
+      if (selectedYear) {
+        try {
+          console.log('💾 Attempting to save QRE unlock for business year:', selectedYear);
+
+          const { error } = await supabase
+            .from('rd_business_years')
+            .update({
+              qre_locked: false,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', selectedYear);
+
+          if (error) {
+            console.error('❌ Error saving QRE unlock:', error);
+            console.error('❌ Full error details:', JSON.stringify(error, null, 2));
+            toast.error(`Failed to save QRE unlock: ${error.message}`);
+          } else {
+            console.log('✅ Successfully saved QRE unlock');
+            toast.success('✅ QRE values unlocked - using live calculations');
+            
+            // CRITICAL: Trigger federal credit recalculation
+            if (onUpdate) {
+              console.log('🔄 Triggering federal credit recalculation due to QRE UNLOCK');
+              onUpdate({ qreValuesChanged: true });
+            }
+          }
+        } catch (error) {
+          console.error('❌ Unexpected error saving QRE unlock:', error);
+          toast.error('Unexpected error saving QRE unlock');
+        }
+      }
+    }
+  };
+
+  const loadData = async (yearIdOverride?: string) => {
     console.log('🔄 EmployeeSetupStep - loadData started');
     setLoading(true);
     
@@ -1710,11 +1950,20 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         }
       }
 
+      // Determine which year to use for data loading
+      const targetYearId = yearIdOverride || selectedYear || businessYearId;
+      console.log('🎯 EmployeeSetupStep - Loading data for year:', targetYearId, {
+        yearIdOverride,
+        selectedYear,
+        businessYearId,
+        finalChoice: targetYearId
+      });
+
       // Load roles with baseline_applied_percent
       const { data: rolesData, error: rolesError } = await supabase
         .from('rd_roles')
         .select('id, name, baseline_applied_percent')
-        .eq('business_year_id', selectedYear || businessYearId);
+        .eq('business_year_id', targetYearId);
 
       if (rolesError) {
         console.error('❌ EmployeeSetupStep - Error loading roles:', rolesError);
@@ -1723,7 +1972,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       }
 
       // Load employees with calculated QRE - CORRECT: Filter by employees who have data for the selected year
-      const currentBusinessYearId = selectedYear || businessYearId;
+      const currentBusinessYearId = targetYearId;
       console.log('🔍 Loading employees for specific year only:', currentBusinessYearId);
       
       // First, get employees who have year data for the selected year
@@ -1758,7 +2007,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         setEmployeesWithData([]);
       } else {
         // FIXED: Load year-specific data separately to prevent data leakage
-        const currentBusinessYearId = selectedYear || businessYearId;
+        const currentBusinessYearId = targetYearId;
         console.log('🔍 Loading employee data for specific year:', currentBusinessYearId);
         
         // Calculate QRE for each employee using ONLY data from the selected year
@@ -1896,11 +2145,15 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           // If no stored data, calculate from subcomponents
           if (!calculatedQRE && totalAppliedPercentage > 0) {
             actualAppliedPercentage = totalAppliedPercentage;
-            calculatedQRE = Math.round((annualWage * actualAppliedPercentage) / 100);
+            // Apply 80% threshold rule for QRE calculation
+            const qreAppliedPercentage = applyEightyPercentThreshold(actualAppliedPercentage);
+            calculatedQRE = Math.round((annualWage * qreAppliedPercentage) / 100);
           } else if (!calculatedQRE) {
             // Fall back to baseline if no subcomponent data
             actualAppliedPercentage = baselinePercent;
-            calculatedQRE = Math.round((annualWage * actualAppliedPercentage) / 100);
+            // Apply 80% threshold rule for QRE calculation
+            const qreAppliedPercentage = applyEightyPercentThreshold(actualAppliedPercentage);
+            calculatedQRE = Math.round((annualWage * qreAppliedPercentage) / 100);
           }
           
           console.log(`🔍 Employee ${employee.first_name} ${employee.last_name}:`, {
@@ -1911,12 +2164,16 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
             subcomponentsCount: subcomponents.length
           });
 
+          // UNIFIED: Use modal calculation method for Applied%
+          const modalAppliedPercentage = await calculateEmployeeAppliedPercentage(employee.id);
+          const finalAppliedPercentage = modalAppliedPercentage > 0 ? modalAppliedPercentage : actualAppliedPercentage;
+          
           return {
             ...employee,
             role: role, // Include the year-specific role data
             calculated_qre: calculatedQRE,
             baseline_applied_percent: baselinePercent,
-            applied_percentage: actualAppliedPercentage,
+            applied_percentage: finalAppliedPercentage, // UNIFIED: Always shows modal calculation
             year_data: yearData ? [yearData] : [],
             subcomponents: subcomponents
           };
@@ -1932,28 +2189,57 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       }
       } // Close the else block for employeeIdsForYear.length > 0
 
-      // Load contractors
+      // YEAR-SPECIFIC loading to prevent data leakage between years
+      // Note: Using targetYearId defined earlier in function
+
+      // Load contractors - YEAR-SPECIFIC to prevent leakage
+      console.log('🔒 LOADING CONTRACTORS with STRICT YEAR ISOLATION for:', targetYearId);
+      console.log('🧹 Clearing contractor state to prevent cross-year contamination');
+      setContractorsWithData([]); // Clear before loading to prevent momentary leakage
+      
       try {
-        const contractors = await ContractorManagementService.getContractors(selectedYear || businessYearId);
+        const contractors = await ContractorManagementService.getContractors(targetYearId);
+        console.log(`🔒 CONTRACTORS STRICTLY LOADED for year ${targetYearId}:`, contractors.length, 'contractors');
+        
+        // Log contractor details for debugging
+        contractors.forEach(c => {
+          console.log(`🔍 Contractor: ${c.first_name} ${c.last_name} - QRE: $${(c.calculated_qre || 0).toLocaleString()}`);
+        });
+        
+        console.log('✅ All contractors properly isolated for year:', targetYearId);
         setContractorsWithData(contractors);
       } catch (error) {
         console.error('❌ EmployeeSetupStep - Error loading contractors:', error);
+        setContractorsWithData([]); // Ensure empty state on error
       }
 
-      // Load expenses
+      // Load expenses - YEAR-SPECIFIC to prevent leakage
+      console.log('💰 LOADING EXPENSES for specific year:', targetYearId);
+      console.log('💰 Clearing any existing expense state before fresh load');
+      setExpenses([]); // Clear before loading to prevent momentary leakage
+      
       const { data: expensesData, error: expensesError } = await supabase
         .from('rd_expenses')
         .select('*')
-        .eq('business_year_id', selectedYear || businessYearId);
+        .eq('business_year_id', targetYearId);
 
       if (expensesError) {
         console.error('❌ EmployeeSetupStep - Error loading expenses:', expensesError);
+        setExpenses([]); // Ensure empty state on error
       } else {
+        console.log('💰 EXPENSES LOADED for year', targetYearId, ':', expensesData?.length || 0, 'expenses');
+        console.log('💰 Expense data:', expensesData);
         setExpenses(expensesData || []);
       }
 
-      // Load supplies with subcomponents for the selected year
+      // Load supplies with subcomponents for the selected year - YEAR-SPECIFIC to prevent leakage
+      console.log('🛠️ LOADING SUPPLIES for specific year:', targetYearId);
+      console.log('🛠️ Current supplies state before loading:', supplies.length, 'supplies');
+      console.log('🛠️ Clearing any existing supply state before fresh load');
+      setSupplies([]); // Clear before loading to prevent momentary leakage
+      
       try {
+        console.log('🛠️ QUERY: Looking for supply subcomponents for business_year_id:', targetYearId);
         const { data: supplySubcomponents, error: supplyError } = await supabase
           .from('rd_supply_subcomponents')
           .select(`
@@ -1965,46 +2251,94 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
               business_id
             )
           `)
-          .eq('business_year_id', selectedYear || businessYearId);
+          .eq('business_year_id', targetYearId);
+        
+        console.log('🛠️ QUERY RESULT:', {
+          error: supplyError,
+          dataLength: supplySubcomponents?.length || 0,
+          firstItem: supplySubcomponents?.[0] || 'none'
+        });
+        
+        console.log('🔍 EmployeeSetupStep supply loading analysis:', {
+          targetYear: targetYearId,
+          foundSubcomponents: supplySubcomponents?.length || 0,
+          hasError: !!supplyError,
+          message: (supplySubcomponents?.length || 0) === 0 ? 'No supply allocations found for this year - newly added supplies will have 0 subcomponents until allocated' : 'Found existing supply allocations'
+        });
 
         if (supplyError) {
           console.error('❌ EmployeeSetupStep - Error loading supply subcomponents:', supplyError);
+          setSupplies([]); // Ensure empty state on error
         } else {
-          // Group supplies by supply_id and calculate QRE
-          const suppliesMap = new Map();
-          (supplySubcomponents || []).forEach(ssc => {
-            const supply = ssc.supply;
-            if (!supply) return;
+          console.log('✅ EmployeeSetupStep - Found supply subcomponents:', supplySubcomponents?.length || 0, 'records');
+          
+          if ((supplySubcomponents?.length || 0) === 0) {
+            console.log('🔍 EmployeeSetupStep - No supply subcomponents for year', targetYearId, '- setting empty supplies array');
+            setSupplies([]);
+          } else {
+            console.log('🔄 EmployeeSetupStep - Processing supply subcomponents for year', targetYearId);
+            // Group supplies by supply_id and calculate QRE
+            const suppliesMap = new Map();
+            (supplySubcomponents || []).forEach(ssc => {
+              const supply = ssc.supply;
+              if (!supply) return;
+              
+              if (!suppliesMap.has(supply.id)) {
+                suppliesMap.set(supply.id, {
+                  ...supply,
+                  subcomponents: [],
+                  total_qre: 0
+                });
+              }
+              
+              const supplyEntry = suppliesMap.get(supply.id);
+              supplyEntry.subcomponents.push(ssc);
+              
+              // Calculate QRE for this subcomponent
+              const amountApplied = ssc.amount_applied || 0;
+              const appliedPercentage = ssc.applied_percentage || 0;
+              const supplyCost = supply.annual_cost || 0;
+              const supplyQRE = amountApplied > 0 ? amountApplied : (supplyCost * appliedPercentage / 100);
+              
+              supplyEntry.total_qre += Math.round(supplyQRE);
+            });
             
-            if (!suppliesMap.has(supply.id)) {
-              suppliesMap.set(supply.id, {
+            const suppliesWithQRE = Array.from(suppliesMap.values()).map(supply => {
+              // Calculate total applied percentage from all subcomponents
+              const totalAppliedPercentage = supply.subcomponents.reduce((sum: number, ssc: any) => {
+                return sum + (ssc.applied_percentage || 0);
+              }, 0);
+              
+              console.log(`🔍 Supply ${supply.name}: annual_cost=${supply.annual_cost}, appliedPercentage=${totalAppliedPercentage}%, QRE=${supply.total_qre}`);
+              
+              return {
                 ...supply,
-                subcomponents: [],
-                total_qre: 0
-              });
-            }
+                calculated_qre: supply.total_qre,
+                applied_percentage: totalAppliedPercentage, // For display in "Applied %" column
+                cost_amount: supply.annual_cost // For display in "Total Amount" column
+              };
+            });
             
-            const supplyEntry = suppliesMap.get(supply.id);
-            supplyEntry.subcomponents.push(ssc);
+            console.log('🛠️ SUPPLIES LOADED for year', targetYearId, ':', suppliesWithQRE.length, 'supplies');
+            console.log('🛠️ Supply data:', suppliesWithQRE);
+            console.log('🛠️ CRITICAL: Setting supplies state with year-isolated data');
+            setSupplies(suppliesWithQRE);
             
-            // Calculate QRE for this subcomponent
-            const amountApplied = ssc.amount_applied || 0;
-            const appliedPercentage = ssc.applied_percentage || 0;
-            const supplyCost = supply.annual_cost || 0;
-            const supplyQRE = amountApplied > 0 ? amountApplied : (supplyCost * appliedPercentage / 100);
-            
-            supplyEntry.total_qre += Math.round(supplyQRE);
-          });
-          
-          const suppliesWithQRE = Array.from(suppliesMap.values()).map(supply => ({
-            ...supply,
-            calculated_qre: supply.total_qre
-          }));
-          
-          setSupplies(suppliesWithQRE);
+            // Log supply details for debugging leakage
+            suppliesWithQRE.forEach((supply, index) => {
+              console.log(`🛠️ Supply ${index + 1}: ${supply.name} - QRE: $${(supply.calculated_qre || 0).toLocaleString()}`);
+            });
+          }
         }
       } catch (error) {
         console.error('❌ EmployeeSetupStep - Error loading supplies:', error);
+        setSupplies([]); // Ensure empty state on error
+        console.log('🛠️ EmployeeSetupStep supply loading failed - supplies set to empty array');
+      }
+      
+      // Load QRE values for the selected year
+      if (targetYearId) {
+        await loadQREValues(targetYearId);
       }
     } catch (error) {
       console.error('❌ EmployeeSetupStep - Error in loadData:', error);
@@ -2016,19 +2350,34 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
   };
 
   useEffect(() => {
-    console.log('🔄 EmployeeSetupStep - useEffect triggered, businessId:', businessId, 'selectedYear:', selectedYear);
+    console.log('🔄 YEAR CHANGE DETECTED - businessId:', businessId, 'selectedYear:', selectedYear);
     
-    // CRITICAL FIX: Clear all state when year changes to prevent data leakage
+    // AGGRESSIVE: Clear ALL state immediately when year changes to prevent data leakage
     if (selectedYear) {
-      console.log('🔄 Clearing state for year change to prevent data corruption');
-      setEmployeesWithData([]);
-      setContractorsWithData([]);
-      setSupplies([]);
-      setExpenses([]);
-      setRoles([]);
+      console.log('🧹 AGGRESSIVE STATE CLEARING for year change to prevent data leakage');
+      console.log('🧹 Previous expenses count:', expenses.length);
+      console.log('🧹 Previous employees count:', employeesWithData.length);
+      console.log('🧹 Previous contractors count:', contractorsWithData.length);
+      console.log('🧹 Previous supplies count:', supplies.length);
       
-      // Load data for the specific year
-      loadData();
+             // IMMEDIATE state clearing - no delays
+       setLoading(true);
+       setEmployeesWithData([]);
+       setContractorsWithData([]);
+       setSupplies([]);
+       setExpenses([]); // CRITICAL: Clear expenses immediately
+       setRoles([]);
+       setSelectedEmployee(null);
+       setSelectedContractor(null);
+       setShowEmployeeDetailModal(false);
+       setShowContractorDetailModal(false);
+       setActiveTab('employees'); // Reset to employees tab to prevent showing stale data on other tabs
+      
+      console.log('🧹 State cleared, loading fresh data for year:', selectedYear);
+      // Small delay to ensure state is cleared before loading
+      setTimeout(() => {
+        loadData(selectedYear || businessYearId);
+      }, 100);
     }
   }, [businessId, selectedYear]);
 
@@ -2427,11 +2776,20 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
   };
 
   const handleEditEmployee = (employee: EmployeeWithExpenses) => {
-    console.log('🔧 EmployeeSetupStep - handleEditEmployee called with:', employee);
-    console.log('🔧 EmployeeSetupStep - Setting selectedEmployee and showEmployeeDetailModal to true');
-    setSelectedEmployee(employee);
-    setShowEmployeeDetailModal(true);
-    console.log('🔧 EmployeeSetupStep - State should now be updated');
+    console.log('🎯 OPENING ALLOCATION MODAL for employee:', employee.first_name, employee.last_name, employee.id);
+    console.log('🎯 Employee object being selected:', employee);
+    console.log('🎯 Current applied_percentage:', employee.applied_percentage);
+    
+    // Clear any previous selection first
+    setSelectedEmployee(null);
+    setShowEmployeeDetailModal(false);
+    
+    // Small delay to ensure state is cleared, then set new employee
+    setTimeout(() => {
+      console.log('🎯 Setting new employee after state clear...');
+      setSelectedEmployee(employee);
+      setShowEmployeeDetailModal(true);
+    }, 50);
   };
 
   const handleDeleteEmployee = async (employeeId: string) => {
@@ -2500,43 +2858,25 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     }
   };
 
-  // Calculate QRE totals for each group - FIXED: Add debugging and validation
-  const employeeQRE = employeesWithData.reduce((sum, e) => {
-    const qre = e.calculated_qre || 0;
-    console.log(`�� Employee QRE: ${e.first_name} ${e.last_name} = $${qre.toLocaleString()}`);
-    return sum + qre;
-  }, 0);
-  
-  const contractorQRE = contractorsWithData.reduce((sum, c) => {
-    const qre = c.calculated_qre || 0;
-    console.log(`💰 Contractor QRE: Contractor ${c.id} = $${qre.toLocaleString()}`);
-    return sum + qre;
-  }, 0);
-  
-  const supplyQRE = supplies.reduce((sum, s) => {
-    const qre = s.calculated_qre || 0;
-    console.log(`💰 Supply QRE: ${s.name} = $${qre.toLocaleString()}`);
-    return sum + qre;
-  }, 0);
-  
-  const totalQRE = employeeQRE + contractorQRE + supplyQRE;
-  
-  console.log(`💰 TOTAL QRE Breakdown for ${selectedYear}:`, {
-    employees: `$${employeeQRE.toLocaleString()}`,
-    contractors: `$${contractorQRE.toLocaleString()}`,
-    supplies: `$${supplyQRE.toLocaleString()}`,
-    total: `$${totalQRE.toLocaleString()}`
-  });
 
-  console.log('📊 EmployeeSetupStep - Render state:', {
-    loading,
-    employeesWithDataLength: employeesWithData.length,
-    rolesLength: roles.length,
-    selectedYear,
-    businessId,
-    showEmployeeDetailModal,
-    selectedEmployee: selectedEmployee?.id
-  });
+
+
+  // THROTTLED: Only log render state occasionally to reduce log spam
+  const logRenderState = React.useRef<NodeJS.Timeout>();
+  React.useEffect(() => {
+    if (logRenderState.current) clearTimeout(logRenderState.current);
+    logRenderState.current = setTimeout(() => {
+      console.log('📊 EmployeeSetupStep - Render state:', {
+        loading,
+        employeesWithDataLength: employeesWithData.length,
+        rolesLength: roles.length,
+        selectedYear,
+        businessId,
+        showEmployeeDetailModal,
+        selectedEmployee: selectedEmployee?.id
+      });
+    }, 2000);
+  }, [loading, employeesWithData.length, roles.length, selectedYear, businessId, showEmployeeDetailModal, selectedEmployee?.id]);
 
   // Function to recalculate QRE for all employees
   const recalculateAllQRE = async () => {
@@ -2568,8 +2908,9 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         // Use actual applied percentage if available, otherwise use baseline
         const actualAppliedPercentage = totalAppliedPercentage > 0 ? totalAppliedPercentage : baselinePercent;
         
-        // Calculate QRE using actual applied percentage
-        const calculatedQRE = Math.round((annualWage * actualAppliedPercentage) / 100);
+        // Apply 80% threshold rule and calculate QRE
+        const qreAppliedPercentage = applyEightyPercentThreshold(actualAppliedPercentage);
+        const calculatedQRE = Math.round((annualWage * qreAppliedPercentage) / 100);
         
         // Update employee year data with new QRE
         const { error } = await supabase
@@ -2655,8 +2996,17 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       // Use actual applied percentage if available, otherwise use baseline
       const actualAppliedPercentage = totalAppliedPercentage > 0 ? totalAppliedPercentage : baselinePercent;
       
-      // Calculate QRE using actual applied percentage
-      const calculatedQRE = Math.round((newWage * actualAppliedPercentage) / 100);
+              // Apply 80% threshold rule and calculate QRE
+        const qreAppliedPercentage = applyEightyPercentThreshold(actualAppliedPercentage);
+        const calculatedQRE = Math.round((newWage * qreAppliedPercentage) / 100);
+        
+        console.log('💰 UpdateEmployeeWage - QRE calculation with 80% threshold:', {
+          employeeId,
+          newWage,
+          originalAppliedPercentage: actualAppliedPercentage,
+          qreAppliedPercentageWith80Threshold: qreAppliedPercentage,
+          calculatedQRE
+        });
       
       // Update employee year data with new QRE
       const { error: yearDataError } = await supabase
@@ -3040,6 +3390,74 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
   };
 
   // CSV Import Handler
+  // FIXED: Sync Applied % calculations after CSV import to match modal logic
+  const syncAppliedPercentagesAfterCSV = async () => {
+    try {
+      console.log('🔄 Starting Applied % sync after CSV import...');
+      
+      // Get all employee year data that was just imported
+      const { data: employeeYearData, error } = await supabase
+        .from('rd_employee_year_data')
+        .select(`
+          id,
+          employee_id,
+          business_year_id,
+          applied_percent,
+          rd_employees(first_name, last_name)
+        `)
+        .eq('business_year_id', businessYearId);
+      
+      if (error) {
+        console.error('❌ Error fetching employee year data for sync:', error);
+        return;
+      }
+      
+      for (const empYear of employeeYearData || []) {
+        // Calculate applied percentage using modal logic
+        const { data: subcomponents, error: subError } = await supabase
+          .from('rd_employee_subcomponents')
+          .select('*')
+          .eq('employee_id', empYear.employee_id)
+          .eq('business_year_id', empYear.business_year_id);
+        
+        if (subError) {
+          console.error('❌ Error fetching subcomponents for sync:', subError);
+          continue;
+        }
+        
+        // Calculate total applied percentage using modal formula: Practice% × Year% × Frequency% × Time%
+        let totalAppliedPercentage = 0;
+        
+        for (const sub of subcomponents || []) {
+          if (sub.is_included) {
+            const appliedPercentage = (sub.practice_percentage / 100) * 
+                                   (sub.year_percentage / 100) * 
+                                   (sub.frequency_percentage / 100) * 
+                                   (sub.time_percentage / 100) * 100;
+            totalAppliedPercentage += appliedPercentage;
+          }
+        }
+        
+        // Update rd_employee_year_data with synced applied percentage
+        const { error: updateError } = await supabase
+          .from('rd_employee_year_data')
+          .update({ applied_percent: totalAppliedPercentage })
+          .eq('id', empYear.id);
+        
+        if (updateError) {
+          console.error('❌ Error updating applied percentage for sync:', updateError);
+        } else {
+          const employee = Array.isArray(empYear.rd_employees) ? empYear.rd_employees[0] : empYear.rd_employees;
+          console.log(`✅ Synced Applied % for ${employee?.first_name} ${employee?.last_name}: ${totalAppliedPercentage.toFixed(2)}%`);
+        }
+      }
+      
+      console.log('✅ Applied % sync complete!');
+    } catch (error) {
+      console.error('❌ Error in Applied % sync:', error);
+    }
+  };
+
   const handleCSVImport = async (file: File) => {
     setCsvImporting(true);
     setCsvError(null);
@@ -3052,11 +3470,21 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         let errorCount = 0;
         let invalidYearCount = 0;
         let rolesAssignedCount = 0;
+        let detailedErrors: Array<{employee: string, error: string, row: number}> = [];
+        
+        // FIXED: Global actualization cache to ensure same actualized values across all employees/years
+        const globalActualizationCache: { [key: string]: any } = {};
         
         console.log('🔍 CSV Import - Processing', rows.length, 'rows');
         console.log('📋 CSV Headers detected:', results.meta.fields);
         
-        for (const row of rows) {
+        // Add progress tracking and throttling variables
+        let processedCount = 0;
+        let lastProgressUpdate = Date.now();
+        
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          processedCount++;
           const firstName = row['First Name'] || row['first_name'] || row['firstName'];
           const lastName = row['Last Name'] || row['last_name'] || row['lastName'];
           const wage = row['Wage'] || row['wage'] || '';
@@ -3091,6 +3519,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           let targetBusinessYearId: string;
           
           // Find existing business year or create new one
+          console.log(`🔍 Looking for business year ${yearNumber} in available years:`, availableYears.map(y => `${y.year} (${y.id})`));
           const targetYear = availableYears.find(y => y.year === yearNumber);
           if (targetYear) {
             targetBusinessYearId = targetYear.id;
@@ -3123,7 +3552,9 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
             const annualWage = numericWage ? parseFloat(numericWage) : 0;
             
             // Get or create default role (but don't assign it to the employee)
+            console.log(`🔧 Getting default role for business: ${businessId}, year: ${targetBusinessYearId}`);
             const defaultRoleId = await getOrCreateDefaultRole(businessId, targetBusinessYearId);
+            console.log(`✅ Default role ID: ${defaultRoleId}`);
             
             // Handle optional role assignment ONLY if role is provided and valid
             let assignedRoleId = null;
@@ -3139,6 +3570,15 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
             }
             
             // Create employee record (without role assignment by default)
+            console.log(`👤 Inserting employee data:`, {
+              business_id: businessId,
+              first_name: firstName.trim(),
+              last_name: lastName.trim(),
+              role_id: assignedRoleId,
+              is_owner: false,
+              annual_wage: annualWage
+            });
+            
             const { data: newEmployee, error: employeeError } = await supabase
               .from('rd_employees')
               .insert({
@@ -3154,8 +3594,11 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
 
             if (employeeError) {
               console.error('❌ Error creating employee:', employeeError);
-              throw employeeError;
+              console.error('❌ Full error details:', JSON.stringify(employeeError, null, 2));
+              throw new Error(`Database error: ${employeeError.message} (Code: ${employeeError.code})`);
             }
+            
+            console.log(`✅ Employee created with ID: ${newEmployee.id}`);
 
             // Create employee year data with proper role-based calculations
             let baselinePercent = 0;
@@ -3214,36 +3657,60 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                   let frequencyPercentage = subcomponent.frequency_percentage || 0;
                   let appliedPercentage = subcomponent.applied_percentage || 0;
 
-                  // Apply actualization variations if enabled
+                  // FIXED: Apply actualization variations if enabled - using global cache for consistency
                   if (csvUseActualization) {
-                    timePercentage = applyActualizationVariations(timePercentage);
-                    practicePercentage = applyActualizationVariations(practicePercentage);
-                    yearPercentage = applyActualizationVariations(yearPercentage);
-                    frequencyPercentage = applyActualizationVariations(frequencyPercentage);
+                    // Create a unique key for this subcomponent across all years and employees
+                    const cacheKey = `${subcomponent.subcomponent_id}_${targetBusinessYearId}`;
                     
-                    // Recalculate applied percentage with actualized values
-                    appliedPercentage = (practicePercentage / 100) * 
-                                      (yearPercentage / 100) * 
-                                      (frequencyPercentage / 100) * 
-                                      (timePercentage / 100) * 100;
+                    if (!globalActualizationCache[cacheKey]) {
+                      // First time seeing this subcomponent+year combination - calculate actualized values once
+                      globalActualizationCache[cacheKey] = {
+                        timePercentage: applyActualizationVariations(timePercentage),
+                        practicePercentage: applyActualizationVariations(practicePercentage),
+                        yearPercentage: applyActualizationVariations(yearPercentage),
+                        frequencyPercentage: applyActualizationVariations(frequencyPercentage),
+                        original: {
+                          time: timePercentage,
+                          practice: practicePercentage,
+                          year: yearPercentage,
+                          frequency: frequencyPercentage,
+                          applied: appliedPercentage
+                        }
+                      };
+                      
+                      // Calculate applied percentage with actualized values
+                      globalActualizationCache[cacheKey].appliedPercentage = (
+                        globalActualizationCache[cacheKey].practicePercentage / 100
+                      ) * (
+                        globalActualizationCache[cacheKey].yearPercentage / 100
+                      ) * (
+                        globalActualizationCache[cacheKey].frequencyPercentage / 100
+                      ) * (
+                        globalActualizationCache[cacheKey].timePercentage / 100
+                      ) * 100;
+                      
+                      console.log('🎲 CSV FIRST-TIME actualization for key:', cacheKey, {
+                        subcomponent: subcomponent.subcomponent_id,
+                        year: targetBusinessYearId,
+                        original: globalActualizationCache[cacheKey].original,
+                        actualized: {
+                          time: globalActualizationCache[cacheKey].timePercentage,
+                          practice: globalActualizationCache[cacheKey].practicePercentage,
+                          year: globalActualizationCache[cacheKey].yearPercentage,
+                          frequency: globalActualizationCache[cacheKey].frequencyPercentage,
+                          applied: globalActualizationCache[cacheKey].appliedPercentage
+                        }
+                      });
+                    }
                     
-                    console.log('🎲 CSV Applied actualization variations:', {
-                      subcomponent: subcomponent.subcomponent_id,
-                      original: {
-                        time: subcomponent.time_percentage || 0,
-                        practice: subcomponent.practice_percent || 0,
-                        year: subcomponent.year_percentage || 0,
-                        frequency: subcomponent.frequency_percentage || 0,
-                        applied: subcomponent.applied_percentage || 0
-                      },
-                      actualized: {
-                        time: timePercentage,
-                        practice: practicePercentage,
-                        year: yearPercentage,
-                        frequency: frequencyPercentage,
-                        applied: appliedPercentage
-                      }
-                    });
+                    // Use cached actualized values for ALL employees with this subcomponent+year
+                    timePercentage = globalActualizationCache[cacheKey].timePercentage;
+                    practicePercentage = globalActualizationCache[cacheKey].practicePercentage;
+                    yearPercentage = globalActualizationCache[cacheKey].yearPercentage;
+                    frequencyPercentage = globalActualizationCache[cacheKey].frequencyPercentage;
+                    appliedPercentage = globalActualizationCache[cacheKey].appliedPercentage;
+                    
+                    console.log('🎲 CSV USING CACHED actualization for employee:', firstName, lastName, 'key:', cacheKey);
                   }
 
                   return {
@@ -3280,17 +3747,58 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
             successCount++;
             console.log(`✅ Successfully imported employee ${firstName} ${lastName} into year ${yearNumber} (${targetBusinessYearId})`);
             
+            // Throttle updates to once per second and show progress
+            const now = Date.now();
+            if (now - lastProgressUpdate >= 1000) { // 1 second
+              console.log(`📊 Progress: ${processedCount}/${rows.length} employees processed (${successCount} successful, ${errorCount} failed)`);
+              lastProgressUpdate = now;
+              
+              // Add small delay to prevent UI chaos
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
           } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
             console.error(`❌ Failed to import employee ${firstName} ${lastName}:`, error);
+            detailedErrors.push({
+              employee: `${firstName} ${lastName}`,
+              error: errorMessage,
+              row: typeof row._rowNumber === 'number' ? row._rowNumber : 0
+            });
             errorCount++;
           }
         }
         
+        // FIXED: After all employees imported, sync Applied % calculations to match modal logic
+        console.log('🔄 CSV Import complete. Syncing Applied % calculations...');
+        await syncAppliedPercentagesAfterCSV();
+        
         setCsvImporting(false);
         setCsvFile(null);
         
-        // Reload data to show new employees
-        await loadData();
+        // REMOVED: Don't reload data immediately to prevent UI chaos
+        console.log('⏳ Skipping immediate data reload to prevent UI flashing during import...');
+        
+        // DEBUG: Check if employees actually exist in database
+        const { data: allEmployees, error: debugError } = await supabase
+          .from('rd_employees')
+          .select('id, first_name, last_name, business_id')
+          .eq('business_id', businessId);
+        
+        if (!debugError && allEmployees) {
+          console.log(`🔍 DEBUG: Total employees in database for business ${businessId}:`, allEmployees.length);
+          console.log('🔍 DEBUG: Employee list:', allEmployees.map(e => `${e.first_name} ${e.last_name} (${e.id})`));
+        } else {
+          console.error('🔍 DEBUG: Error checking employees:', debugError);
+        }
+        
+        // Add delay before final data reload to prevent UI chaos
+        console.log('⏳ Waiting 2 seconds before final data reload to prevent UI flashing...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Now reload data once at the end
+        console.log('🔄 Final data reload after CSV import completion...');
+        await loadData(selectedYear || businessYearId);
         
         // Show comprehensive summary
         let summary = `Import complete: ${successCount} employees imported successfully`;
@@ -3301,12 +3809,16 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         console.log('📊 Import Summary:', summary);
         
         // Show success message
-        const summaryMessage = `✅ ${successCount} employees imported across multiple years${rolesAssignedCount > 0 ? `. ${rolesAssignedCount} employees had roles assigned.` : '. All employees created without roles - assign roles manually as needed.'}`;
+        const summaryMessage = `✅ ${successCount} employees imported across multiple years${rolesAssignedCount > 0 ? `. ${rolesAssignedCount} employees had roles assigned.` : '. All employees created without roles - assign roles manually as needed.'}\n\n💡 Use the "View Year" dropdown to switch between years and see all your imported employees.\n\n🎯 Import complete - UI flashing has been reduced!`;
         toast?.success?.(summaryMessage) || console.log(summaryMessage);
         
         if (errorCount > 0) {
-          const errorMessage = `⚠️ ${errorCount} employees failed to import. Check console for details.`;
+          const errorDetails = detailedErrors.map(err => `Row ${err.row}: ${err.employee} - ${err.error}`).join('\n');
+          const errorMessage = `⚠️ ${errorCount} employees failed to import:\n\n${errorDetails}\n\nCheck console for full details.`;
           toast?.error?.(errorMessage) || console.error(errorMessage);
+          
+          // Also log detailed errors for debugging
+          console.error('📋 Detailed CSV Import Errors:', detailedErrors);
         }
       },
       error: (err: any) => {
@@ -3322,9 +3834,9 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     if (!businessId) return;
     try {
       console.log('🔄 Adding supply:', supplyData);
-      await SupplyManagementService.addSupply(supplyData, businessId);
-      // Reload supplies (call your loadData or similar function)
-      await loadData();
+      await SupplyManagementService.addSupply(supplyData, businessId, selectedYear || businessYearId);
+      // Reload supplies (call your loadData or similar function)  
+      await loadData(selectedYear || businessYearId);
       console.log('✅ Supply added successfully');
     } catch (error) {
       console.error('❌ Error adding supply:', error);
@@ -3346,7 +3858,8 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       
       // Reload data for the new year
       console.log('🔄 EmployeeSetupStep - Reloading data for new year:', businessYearId);
-      loadData();
+      loadData(businessYearId);
+      loadQREValues(businessYearId);
     }
   }, [businessYearId, selectedYear, availableYears]);
 
@@ -3360,6 +3873,111 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       }
     }
   }, [availableYears, selectedYear]);
+
+  // Calculate QRE totals using useMemo for performance and availability throughout component
+  const { employeeQRE, contractorQRE, supplyQRE, totalQRE } = React.useMemo(() => {
+    // Check if using locked QRE values
+    if (qreLocked) {
+      const total = lockedEmployeeQRE + lockedContractorQRE + lockedSupplyQRE;
+      console.log(`🔒 Using LOCKED QRE values for year ${displayYear}:`, {
+        employees: `$${lockedEmployeeQRE.toLocaleString()}`,
+        contractors: `$${lockedContractorQRE.toLocaleString()}`,
+        supplies: `$${lockedSupplyQRE.toLocaleString()}`,
+        total: `$${total.toLocaleString()}`
+      });
+      return {
+        employeeQRE: lockedEmployeeQRE,
+        contractorQRE: lockedContractorQRE,
+        supplyQRE: lockedSupplyQRE,
+        totalQRE: total
+      };
+    } else {
+      // Calculate from data - THROTTLED: Reduce excessive logging
+      const empQRE = employeesWithData.reduce((sum, e, index) => {
+        const qre = e.calculated_qre || 0;
+        // Only log first 3 employees to prevent spam
+        if (index < 3) {
+          console.log(`💰 Employee QRE: ${e.first_name} ${e.last_name} = $${qre.toLocaleString()}`);
+        } else if (index === 3 && employeesWithData.length > 3) {
+          console.log(`💰 ... and ${employeesWithData.length - 3} more employees (logging throttled)`);
+        }
+        return sum + qre;
+      }, 0);
+      
+      const contrQRE = contractorsWithData.reduce((sum, c, index) => {
+        const qre = c.calculated_qre || 0;
+        // Only log first contractor to prevent spam
+        if (index === 0 && contractorsWithData.length > 0) {
+          console.log(`💰 Contractor QRE: ${contractorsWithData.length} contractors, total = $${contractorsWithData.reduce((s, ct) => s + (ct.calculated_qre || 0), 0).toLocaleString()}`);
+        }
+        return sum + qre;
+      }, 0);
+      
+      const suppQRE = supplies.reduce((sum, s, index) => {
+        const qre = s.calculated_qre || 0;
+        // Only log first supply to prevent spam
+        if (index === 0 && supplies.length > 0) {
+          console.log(`💰 Supply QRE: ${supplies.length} supplies, total = $${supplies.reduce((s, sp) => s + (sp.calculated_qre || 0), 0).toLocaleString()}`);
+        }
+        return sum + qre;
+      }, 0);
+      
+      const total = empQRE + contrQRE + suppQRE;
+      
+      return {
+        employeeQRE: empQRE,
+        contractorQRE: contrQRE,
+        supplyQRE: suppQRE,
+        totalQRE: total
+      };
+    }
+  }, [qreLocked, lockedEmployeeQRE, lockedContractorQRE, lockedSupplyQRE, employeesWithData, contractorsWithData, supplies, displayYear]);
+
+  // UNIFIED: Calculate Applied% using the EXACT same method as allocation modal
+  const calculateEmployeeAppliedPercentage = async (employeeId: string): Promise<number> => {
+    try {
+      // Get employee subcomponent allocations with activity data
+      const { data: subcomponentAllocations, error } = await supabase
+        .from('rd_employee_subcomponents')
+        .select('*')
+        .eq('employee_id', employeeId)
+        .eq('business_year_id', selectedYear || businessYearId);
+      
+      if (error) {
+        console.error('❌ Error loading subcomponent allocations:', error);
+        return 0;
+      }
+      
+      if (!subcomponentAllocations || subcomponentAllocations.length === 0) {
+        return 0;
+      }
+      
+      let totalAppliedPercentage = 0;
+      
+      // Calculate using EXACT modal formula: Practice% × Year% × Frequency% × Time%
+      for (const alloc of subcomponentAllocations) {
+        if (alloc.is_included) {
+          const appliedPercentage = (alloc.practice_percentage / 100) * 
+                                 (alloc.year_percentage / 100) * 
+                                 (alloc.frequency_percentage / 100) * 
+                                 (alloc.time_percentage / 100) * 100;
+          totalAppliedPercentage += appliedPercentage;
+        }
+      }
+      
+      return +totalAppliedPercentage.toFixed(2);
+    } catch (error) {
+      console.error('❌ Error calculating employee applied percentage:', error);
+      return 0;
+    }
+  };
+  
+  // Utility function to apply 80% threshold rule (matches display logic)
+  const applyEightyPercentThreshold = (appliedPercentage: number): number => {
+    return appliedPercentage >= 80 ? 100 : appliedPercentage;
+  };
+
+
 
   if (loading) {
     console.log('⏳ EmployeeSetupStep - Rendering loading state');
@@ -3406,8 +4024,66 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                   <div className="text-sm text-blue-100">Roles</div>
                 </div>
               </div>
-              {/* Header without Year Selector - now controlled by parent wizard */}
+              {/* Year Selector for Employee Step */}
               <div className="flex flex-col md:items-end mt-4 md:mt-0">
+                <div className="flex items-center space-x-4 mb-2">
+                  <label className="text-sm font-medium text-blue-100">View Year:</label>
+                  <select
+                    value={selectedYear}
+                    onChange={async (e) => {
+                      const newYearId = e.target.value;
+                      const yearData = availableYears.find(y => y.id === newYearId);
+                      
+                      console.log(`🔄 CRITICAL: Manual year switch from ${selectedYear} to ${newYearId}`);
+                      console.log('🧹 FORCING complete data isolation for new year');
+                      
+                      // CRITICAL: Reset ALL state to prevent data leakage
+                      setSelectedYear(newYearId);
+                      if (yearData) {
+                        setDisplayYear(yearData.year);
+                      }
+                      
+                      // CRITICAL: Clear all cached data immediately to prevent leakage
+                      console.log('🧹 CRITICAL: Clearing ALL cached data before year switch');
+                      console.log('🧹 Previous supplies:', supplies.length, 'supplies');
+                      setEmployeesWithData([]);
+                      setContractorsWithData([]);
+                      setSupplies([]);
+                      setExpenses([]);
+                      console.log('🧹 ✅ All cached data cleared');
+                      
+                      // CRITICAL: Reset QRE locked state to prevent cross-year contamination
+                      console.log('🔒 RESETTING QRE state to prevent year contamination');
+                      setLockedEmployeeQRE(0);
+                      setLockedContractorQRE(0);
+                      setLockedSupplyQRE(0);
+                      setQreLocked(false);
+                      
+                      // CRITICAL: Force complete data reload for new year
+                      console.log('💾 FORCING complete data reload for year:', newYearId);
+                      setLoading(true);
+                      
+                      try {
+                        // Load all data for the new year - CRITICAL: Pass newYearId to prevent stale state
+                        await loadData(newYearId);
+                        // Load QRE values for the new year
+                        await loadQREValues(newYearId);
+                        console.log('✅ Year switch complete - data fully isolated');
+                      } catch (error) {
+                        console.error('❌ Error during year switch:', error);
+                      } finally {
+                        setLoading(false);
+                      }
+                    }}
+                    className="px-3 py-1 bg-white/10 border border-white/20 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/50"
+                  >
+                    {availableYears.map(year => (
+                      <option key={year.id} value={year.id} className="bg-gray-800 text-white">
+                        {year.year}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div className="text-right text-blue-100">
                   <p className="text-sm">Total QRE: {formatCurrency(totalQRE)}</p>
                   <p className="text-xs opacity-75">{employeesWithData.length + contractorsWithData.length + supplies.length} items</p>
@@ -3443,6 +4119,188 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Annual QRE Values - Visible on All Tabs */}
+      <div className="mb-6 p-4 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-lg">
+        <div className="flex items-center justify-between mb-4">
+          <h4 className="text-lg font-semibold text-emerald-800">Annual QRE Values ({displayYear})</h4>
+          <button
+            onClick={handleQRELockToggle}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center space-x-2 ${
+              qreLocked 
+                ? 'bg-red-100 text-red-700 hover:bg-red-200' 
+                : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+            }`}
+          >
+            {qreLocked ? (
+              <>
+                <Check className="w-4 h-4" />
+                <span>Locked</span>
+              </>
+            ) : (
+              <>
+                <Edit className="w-4 h-4" />
+                <span>Click to Lock</span>
+              </>
+            )}
+          </button>
+        </div>
+        
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-emerald-700 mb-2">Employee QRE</label>
+            <div className={`w-full px-3 py-2 border rounded-lg text-right ${
+              qreLocked 
+                ? 'border-emerald-300 bg-white' 
+                : 'border-gray-300 bg-gray-100 cursor-not-allowed'
+            }`}>
+              {qreLocked ? (
+                <input
+                  type="text"
+                  value={formatCurrency(lockedEmployeeQRE)}
+                  onChange={async (e) => {
+                    // Extract number from formatted currency string
+                    const numericValue = parseFloat(e.target.value.replace(/[$,]/g, '')) || 0;
+                    setLockedEmployeeQRE(numericValue);
+                    
+                    // CRITICAL FIX: Auto-save QRE values when manually edited
+                    if (selectedYear) {
+                      try {
+                        await supabase
+                          .from('rd_business_years')
+                          .update({
+                            employee_qre: numericValue,
+                            updated_at: new Date().toISOString()
+                          })
+                          .eq('id', selectedYear);
+                        console.log('💾 ✅ Auto-saved Employee QRE for year', selectedYear, ':', numericValue);
+                      } catch (error) {
+                        console.error('❌ Error auto-saving Employee QRE:', error);
+                      }
+                    }
+                  }}
+                  className="w-full bg-transparent border-0 text-right focus:outline-none"
+                  placeholder="$0"
+                />
+              ) : (
+                <span className="text-gray-700">{formatCurrency(employeeQRE)}</span>
+              )}
+            </div>
+            <p className="text-xs text-emerald-600 mt-1">
+              {qreLocked ? 'Locked value' : 'Live calculated value'}
+            </p>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-emerald-700 mb-2">Contractor QRE</label>
+            <div className={`w-full px-3 py-2 border rounded-lg text-right ${
+              qreLocked 
+                ? 'border-emerald-300 bg-white' 
+                : 'border-gray-300 bg-gray-100 cursor-not-allowed'
+            }`}>
+              {qreLocked ? (
+                <input
+                  type="text"
+                  value={formatCurrency(lockedContractorQRE)}
+                  onChange={async (e) => {
+                    // Extract number from formatted currency string
+                    const numericValue = parseFloat(e.target.value.replace(/[$,]/g, '')) || 0;
+                    setLockedContractorQRE(numericValue);
+                    
+                    // CRITICAL FIX: Auto-save QRE values when manually edited
+                    if (selectedYear) {
+                      try {
+                        await supabase
+                          .from('rd_business_years')
+                          .update({
+                            contractor_qre: numericValue,
+                            updated_at: new Date().toISOString()
+                          })
+                          .eq('id', selectedYear);
+                        console.log('💾 ✅ Auto-saved Contractor QRE for year', selectedYear, ':', numericValue);
+                      } catch (error) {
+                        console.error('❌ Error auto-saving Contractor QRE:', error);
+                      }
+                    }
+                  }}
+                  className="w-full bg-transparent border-0 text-right focus:outline-none"
+                  placeholder="$0"
+                />
+              ) : (
+                <span className="text-gray-700">{formatCurrency(contractorQRE)}</span>
+              )}
+            </div>
+            <p className="text-xs text-emerald-600 mt-1">
+              {qreLocked ? 'Locked value' : 'Live calculated value'}
+            </p>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-emerald-700 mb-2">Supply QRE</label>
+            <div className={`w-full px-3 py-2 border rounded-lg text-right ${
+              qreLocked 
+                ? 'border-emerald-300 bg-white' 
+                : 'border-gray-300 bg-gray-100 cursor-not-allowed'
+            }`}>
+              {qreLocked ? (
+                <input
+                  type="text"
+                  value={formatCurrency(lockedSupplyQRE)}
+                  onChange={async (e) => {
+                    // Extract number from formatted currency string
+                    const numericValue = parseFloat(e.target.value.replace(/[$,]/g, '')) || 0;
+                    setLockedSupplyQRE(numericValue);
+                    
+                    // CRITICAL FIX: Auto-save QRE values when manually edited
+                    if (selectedYear) {
+                      try {
+                        await supabase
+                          .from('rd_business_years')
+                          .update({
+                            supply_qre: numericValue,
+                            updated_at: new Date().toISOString()
+                          })
+                          .eq('id', selectedYear);
+                        console.log('💾 ✅ Auto-saved Supply QRE for year', selectedYear, ':', numericValue);
+                      } catch (error) {
+                        console.error('❌ Error auto-saving Supply QRE:', error);
+                      }
+                    }
+                  }}
+                  className="w-full bg-transparent border-0 text-right focus:outline-none"
+                  placeholder="$0"
+                />
+              ) : (
+                <span className="text-gray-700">{formatCurrency(supplyQRE)}</span>
+              )}
+            </div>
+            <p className="text-xs text-emerald-600 mt-1">
+              {qreLocked ? 'Locked value' : 'Live calculated value'}
+            </p>
+          </div>
+        </div>
+        
+        <div className="mt-4 flex items-center justify-between">
+          <div className="text-sm text-emerald-700">
+            <strong>Total QRE: {formatCurrency(qreLocked ? (lockedEmployeeQRE + lockedContractorQRE + lockedSupplyQRE) : totalQRE)}</strong>
+          </div>
+          {qreLocked && (
+            <button
+              onClick={saveQREValues}
+              className="px-3 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition-colors text-sm"
+            >
+              Save QRE Values
+            </button>
+          )}
+        </div>
+        
+        <p className="text-xs text-emerald-600 mt-2">
+          {qreLocked 
+            ? '🔒 Values are locked and override calculations. Click "Locked" to unlock and use live data.' 
+            : '📊 Values update automatically as data changes. Click "Click to Lock" when satisfied to freeze values.'
+          }
+        </p>
       </div>
 
       {/* Action Bar */}
@@ -3538,6 +4396,8 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         <div className="p-6">
           {activeTab === 'employees' && (
             <div>
+
+              
               <div className="mb-6 flex items-center justify-between">
                 <div>
                   <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">
@@ -3592,6 +4452,8 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                     </div>
                   </div>
                 </div>
+
+
               </div>
               {employeesWithData.length === 0 ? (
                 <div className="text-center py-12">
@@ -3634,8 +4496,9 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                     <button 
                       onClick={() => handleSort('applied_percentage')}
                       className="text-center hover:text-blue-600 transition-colors flex items-center justify-center"
+                      title="Applied% calculated using allocation modal method - always matches modal values"
                     >
-                      Applied %
+                      Applied % 🎯
                       <span className="text-xs ml-1">{getSortIcon('applied_percentage')}</span>
                     </button>
                     <div className="text-right">Actions</div>
@@ -3646,9 +4509,9 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                     // Remove isCustom and chip logic
                     // Owner dot logic
                     const isOwner = employee.is_owner;
-                    // Applied % color logic
+                    // UNIFIED: Applied % using modal calculation method (stored in applied_percentage during sync)
                     let appliedColor = "text-blue-700";
-                    let appliedValue = Number(employee.applied_percentage);
+                    let appliedValue = Number(employee.applied_percentage || 0);
                     let appliedDisplay = appliedValue.toFixed(2);
                     if (appliedValue >= 80) {
                       appliedColor = "text-black";
@@ -3706,8 +4569,8 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                         <div className="text-center text-lg font-semibold text-purple-700">
                           {formatCurrency(employee.calculated_qre)}
                         </div>
-                        {/* Applied % Column */}
-                        <div className={`text-center text-lg font-semibold ${appliedColor}`}>
+                        {/* Applied % Column - UNIFIED: Now matches allocation modal exactly */}
+                        <div className={`text-center text-lg font-semibold ${appliedColor}`} title="Applied% calculated using allocation modal method">
                           {appliedDisplay}%
                         </div>
                         {/* Actions Column */}
@@ -3886,12 +4749,59 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           {activeTab === 'supplies' && (
             <SupplySetupStep
               supplies={supplies}
-              onUpdate={updates => {
-                if (updates.supplies) setSupplies(updates.supplies);
+              onUpdate={async (updates) => {
+                console.log('🔍 SupplySetupStep onUpdate called with:', updates);
+                console.log('🔍 Current supplies.length:', supplies.length);
+                console.log('🔍 Update flags:', {
+                  hasSupplyDataChanged: !!updates.supplyDataChanged,
+                  hasSupplyDataReloaded: !!updates.supplyDataReloaded,
+                  hasSupplies: !!updates.supplies,
+                  suppliesCount: updates.supplies?.length || 0
+                });
+                
+                // CRITICAL FIX: Only allow specific types of updates from SupplySetupStep
+                if (updates.supplyDataChanged) {
+                  console.log('🔄 SupplySetupStep requested data reload (supply added/edited) - reloading EmployeeSetupStep data');
+                  await loadData(selectedYear || businessYearId);
+                } else if (updates.supplies !== undefined) {
+                  console.log('📊 SupplySetupStep provided', updates.supplies?.length || 0, 'supplies');
+                  
+                  // CRITICAL: Only allow SupplySetupStep updates if EmployeeSetupStep hasn't loaded year-specific data yet
+                  // Check if EmployeeSetupStep has completed its supply loading
+                  const hasEmployeeStepData = supplies.length > 0;
+                                     const supplyStepSuppliesWithQRE = (updates.supplies || []).filter((s: any) => s.calculated_qre > 0);
+                   const supplyStepSuppliesZeroQRE = (updates.supplies || []).filter((s: any) => s.calculated_qre === 0);
+                  
+                  console.log('📊 SupplySetupStep analysis:', {
+                    totalSupplies: updates.supplies?.length || 0,
+                    withQRE: supplyStepSuppliesWithQRE.length,
+                    withZeroQRE: supplyStepSuppliesZeroQRE.length
+                  });
+                  
+                                     // CRITICAL FIX: Supplies should behave like employees/contractors - only show year-specific supplies
+                   // EmployeeSetupStep loads supplies via rd_supply_subcomponents (year-specific)
+                   // SupplySetupStep loads ALL business supplies (business-wide)
+                   // We should NEVER allow SupplySetupStep to override EmployeeSetupStep's year-filtered data
+                   
+                   if (updates.supplyDataChanged) {
+                     // Only allow when SupplySetupStep explicitly requests a data reload (after adding/editing)
+                     console.log('✅ ALLOWING: SupplySetupStep requested data reload (supply added/edited)');
+                     // This will trigger loadData() above, which loads year-specific supplies properly
+                   } else {
+                     // Block all other SupplySetupStep updates to maintain year isolation
+                     console.log('🚫 BLOCKED: SupplySetupStep trying to override EmployeeSetupStep year-specific supply data');
+                     console.log('🔒 Supplies should only show for the year they belong to (like employees/contractors)');
+                     console.log('📊 EmployeeSetupStep handles year-specific supply loading via rd_supply_subcomponents');
+                     console.log('📊 SupplySetupStep provides business-wide data which breaks year isolation');
+                     // Don't update supplies - maintain EmployeeSetupStep's year-specific data
+                   }
+                } else {
+                  console.log('🔍 SupplySetupStep update ignored (no supply data in updates)');
+                }
               }}
               onNext={onNext}
               onPrevious={onPrevious}
-              businessYearId={businessYearId}
+              businessYearId={selectedYear || businessYearId} // CRITICAL: Use selectedYear for consistency
               businessId={businessId}
             />
           )}
@@ -4122,11 +5032,13 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         </button>
       </div>
 
-      {/* Manage Allocations Modal */}
+      {/* Manage Allocations Modal - KEY PROP FORCES FRESH REMOUNT PER EMPLOYEE */}
       {showEmployeeDetailModal && selectedEmployee && (
         <ManageAllocationsModal
+          key={`allocation-modal-${selectedEmployee.id}-${selectedYear}`}
           isOpen={showEmployeeDetailModal}
           onClose={() => {
+            console.log('🔄 Closing allocation modal for:', selectedEmployee.first_name, selectedEmployee.last_name);
             setShowEmployeeDetailModal(false);
             setSelectedEmployee(null);
           }}

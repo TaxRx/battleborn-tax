@@ -3,6 +3,11 @@ import { RDExpense, RDContractor, RDSupply, EmployeeWithExpenses } from '../type
 
 export class ExpenseManagementService {
   
+  // Utility function to apply 80% threshold rule (matches display logic)
+  private static applyEightyPercentThreshold(appliedPercentage: number): number {
+    return appliedPercentage >= 80 ? 100 : appliedPercentage;
+  }
+
   // Create expense records for an employee across all their subcomponents
   static async createEmployeeExpenses(
     employeeId: string,
@@ -565,8 +570,21 @@ export class ExpenseManagementService {
 
           if (employeeSubcomponent) {
             const annualWage = employee.annual_wage || 0;
-            const appliedDollarAmount = Math.round((annualWage * (employeeSubcomponent.applied_percentage || 0)) / 100);
+            const originalAppliedPercentage = employeeSubcomponent.applied_percentage || 0;
+            // Apply 80% threshold rule for QRE calculation
+            const qreAppliedPercentage = this.applyEightyPercentThreshold(originalAppliedPercentage);
+            const appliedDollarAmount = Math.round((annualWage * qreAppliedPercentage) / 100);
             const calculatedQRE = appliedDollarAmount;
+
+            console.log('🧮 [CSV Export] Employee calculation:', {
+              name: `${employee.first_name} ${employee.last_name}`,
+              annual_wage: annualWage,
+              original_applied_percentage: originalAppliedPercentage,
+              qre_applied_percentage_with_80_threshold: qreAppliedPercentage,
+              applied_dollar_amount: appliedDollarAmount,
+              calculated_qre: calculatedQRE,
+              calculation_method: 'Math.round(wage * (applied_percentage >= 80 ? 100 : applied_percentage) / 100)'
+            });
 
             const row = [
               subcomponentName,
@@ -606,9 +624,22 @@ export class ExpenseManagementService {
 
           if (contractorSubcomponent) {
             const annualCost = contractor.amount || 0;
-            const appliedDollarAmount = Math.round((annualCost * (contractorSubcomponent.applied_percentage || 0)) / 100);
+            const originalAppliedPercentage = contractorSubcomponent.applied_percentage || 0;
+            // Apply 80% threshold rule for contractor calculation
+            const qreAppliedPercentage = this.applyEightyPercentThreshold(originalAppliedPercentage);
+            const appliedDollarAmount = Math.round((annualCost * qreAppliedPercentage) / 100);
             // Calculate QRE (65% reduction for contractors)
             const calculatedQRE = Math.round(appliedDollarAmount * 0.65);
+
+            console.log('🧮 [CSV Export] Contractor calculation:', {
+              name: `${contractor.first_name} ${contractor.last_name}`,
+              annual_cost: annualCost,
+              original_applied_percentage: originalAppliedPercentage,
+              qre_applied_percentage_with_80_threshold: qreAppliedPercentage,
+              applied_dollar_amount: appliedDollarAmount,
+              calculated_qre_with_65_percent: calculatedQRE,
+              calculation_method: 'Math.round(Math.round(cost * (applied_percentage >= 80 ? 100 : applied_percentage) / 100) * 0.65)'
+            });
 
             const row = [
               subcomponentName,

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Download, Eye, Settings, Share2, CheckCircle, Clock, AlertCircle, User, Calendar, DollarSign, Lock, Unlock, Upload, Save, Edit, Check, X, ExternalLink } from 'lucide-react';
+import { FileText, Download, Eye, Settings, Share2, CheckCircle, Clock, AlertCircle, User, Calendar, DollarSign, Lock, Unlock, Upload, Save, Edit, Check, X, ExternalLink, PenTool } from 'lucide-react';
 import { supabase } from '../../../../../lib/supabase';
 import { FilingGuideModal } from '../../FilingGuide/FilingGuideModal';
 import ResearchReportModal from '../../ResearchReport/ResearchReportModal';
 import AllocationReportModal from '../../AllocationReport/AllocationReportModal';
+import SignatureCapture from '../../SignatureCapture/SignatureCapture';
 import { qcService } from '../../../services/qcService';
 
 interface ReportsStepProps {
@@ -57,6 +58,16 @@ const ReportsStep: React.FC<ReportsStepProps> = ({ wizardState, onComplete, onPr
   const [editingControl, setEditingControl] = useState<string | null>(null);
   const [showJuratModal, setShowJuratModal] = useState(false);
   
+  // Year selector state
+  const [availableYears, setAvailableYears] = useState<Array<{id: string, year: number}>>([]);
+  const [selectedYearId, setSelectedYearId] = useState<string>(wizardState.selectedYear?.id || '');
+  
+  // Jurat signature state
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [signatureData, setSignatureData] = useState<any>(null);
+  const [editingJurat, setEditingJurat] = useState(false);
+  const [showJuratPreview, setShowJuratPreview] = useState(false);
+  
   // QC Notes and editing states
   const [qcNotes, setQcNotes] = useState<{ [key: string]: string }>({});
   const [editingNotes, setEditingNotes] = useState<{ [key: string]: boolean }>({});
@@ -78,17 +89,47 @@ const ReportsStep: React.FC<ReportsStepProps> = ({ wizardState, onComplete, onPr
   const [editingJuratNotes, setEditingJuratNotes] = useState(false);
 
   // Default jurat text
-  const [juratText, setJuratText] = useState(`Jurat and Attestation of R&D Tax Credit Documentation
+  const [juratText, setJuratText] = useState(`R&D Credit Review Statement and Jurat
+I, the undersigned, hereby confirm that I have reviewed the summary of research activities and the associated time and expense allocations provided as part of the R&D tax credit study prepared for my business.
 
-I, the undersigned, hereby declare under penalty of perjury that:
+To the best of my knowledge and belief, the information I provided during the study is accurate and complete. I understand that these materials are used to support the calculation of a federal and/or state research credit, and that any estimates or time allocations are based on reasonable methods, including sample-based studies and professional judgment where applicable.
 
-I have reviewed the information submitted through the Direct Research platform (or associated systems) related to my business's qualification and participation in research and development activities for the purposes of claiming the federal and applicable state R&D tax credits under Internal Revenue Code §41 and related Treasury Regulations.
+I acknowledge that I had the opportunity to review and revise the report prior to finalization, and I approve its use for tax reporting purposes.`);
 
-To the best of my knowledge and belief, all facts, statements, data, time allocations, and supporting information provided are true, correct, and complete.
+  // Load available years for year selector
+  useEffect(() => {
+    const loadAvailableYears = async () => {
+      if (!wizardState.business?.id) return;
+      
+      try {
+        const { data: years, error } = await supabase
+          .from('rd_business_years')
+          .select('id, year')
+          .eq('business_id', wizardState.business.id)
+          .order('year', { ascending: false });
+        
+        if (error) throw error;
+        
+        if (years) {
+          setAvailableYears(years);
+          if (!selectedYearId && years.length > 0) {
+            setSelectedYearId(years[0].id);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading available years:', error);
+      }
+    };
+    
+    loadAvailableYears();
+  }, [wizardState.business?.id]);
 
-I understand that the documentation and data submitted will be used to calculate tax credits that may be claimed on my federal and/or state tax returns and that knowingly submitting false or misleading information may subject me to penalties under federal and state law.
-
-I further affirm that I am authorized to sign on behalf of the business entity and that I take full responsibility for the accuracy of the submission.`);
+  // Reload QC data when year changes
+  useEffect(() => {
+    if (selectedYearId) {
+      loadReportsData();
+    }
+  }, [selectedYearId]);
 
   // Check if user is admin and load data
   useEffect(() => {
@@ -106,8 +147,9 @@ I further affirm that I am authorized to sign on behalf of the business entity a
           setIsAdmin(profile?.is_admin || false);
         }
 
-        // Load QC controls and business year data
-        if (wizardState.selectedYear?.id) {
+            // Load QC controls and business year data
+    const yearIdToLoad = selectedYearId || wizardState.selectedYear?.id;
+    if (yearIdToLoad) {
           await loadReportsData();
         }
       } catch (error) {
@@ -119,8 +161,8 @@ I further affirm that I am authorized to sign on behalf of the business entity a
   }, [wizardState.selectedYear?.id]);
 
   // Initialize QC controls if they don't exist
-  const initializeQCControls = async () => {
-    if (!wizardState.selectedYear?.id) return;
+  const initializeQCControls = async (yearId: string) => {
+    if (!yearId) return;
 
     const documentTypes = [
       { type: 'research_report', requires_jurat: false, requires_payment: false },
@@ -132,7 +174,7 @@ I further affirm that I am authorized to sign on behalf of the business entity a
       const { error } = await supabase
         .from('rd_qc_document_controls')
         .upsert({
-          business_year_id: wizardState.selectedYear.id,
+          business_year_id: yearId,
           document_type: doc.type,
           requires_jurat: doc.requires_jurat,
           requires_payment: doc.requires_payment,
@@ -149,18 +191,19 @@ I further affirm that I am authorized to sign on behalf of the business entity a
   };
 
   const loadReportsData = async () => {
-    if (!wizardState.selectedYear?.id) return;
+    const yearIdToLoad = selectedYearId || wizardState.selectedYear?.id;
+    if (!yearIdToLoad) return;
 
     setLoading(true);
     try {
       // First, ensure QC controls exist
-      await initializeQCControls();
+      await initializeQCControls(yearIdToLoad);
 
       // Load QC document controls
       const { data: controls, error: controlsError } = await supabase
         .from('rd_qc_document_controls')
         .select('*')
-        .eq('business_year_id', wizardState.selectedYear.id);
+        .eq('business_year_id', yearIdToLoad);
 
       if (controlsError) throw controlsError;
       const controlsData = controls || [];
@@ -182,7 +225,7 @@ I further affirm that I am authorized to sign on behalf of the business entity a
       const { data: businessYear, error: businessYearError } = await supabase
         .from('rd_business_years')
         .select('qc_status, qc_approved_by, qc_approved_at, qc_notes, payment_received, payment_received_at, payment_amount, documents_released, documents_released_at')
-        .eq('id', wizardState.selectedYear.id)
+        .eq('id', yearIdToLoad)
         .single();
 
       if (businessYearError) throw businessYearError;
@@ -194,7 +237,7 @@ I further affirm that I am authorized to sign on behalf of the business entity a
       const { data: signatures, error: sigError } = await supabase
         .from('rd_signatures')
         .select('*')
-        .eq('business_year_id', wizardState.selectedYear.id)
+        .eq('business_year_id', yearIdToLoad)
         .eq('signature_type', 'jurat')
         .order('signed_at', { ascending: false })
         .limit(1);
@@ -213,6 +256,9 @@ I further affirm that I am authorized to sign on behalf of the business entity a
 
   // Save QC notes for a document type
   const saveQCNotes = async (documentType: string) => {
+    const yearIdToSave = selectedYearId || wizardState.selectedYear?.id;
+    if (!yearIdToSave) return;
+    
     try {
       setLoading(true);
       
@@ -223,7 +269,7 @@ I further affirm that I am authorized to sign on behalf of the business entity a
           qc_reviewed_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
-        .eq('business_year_id', wizardState.selectedYear.id)
+        .eq('business_year_id', yearIdToSave)
         .eq('document_type', documentType);
 
       setEditingNotes(prev => ({ ...prev, [documentType]: false }));
@@ -519,6 +565,9 @@ I further affirm that I am authorized to sign on behalf of the business entity a
 
   // Save Jurat notes
   const saveJuratNotes = async () => {
+    const yearIdToSave = selectedYearId || wizardState.selectedYear?.id;
+    if (!yearIdToSave) return;
+    
     try {
       setLoading(true);
       
@@ -526,7 +575,7 @@ I further affirm that I am authorized to sign on behalf of the business entity a
       const { error } = await supabase
         .from('rd_qc_document_controls')
         .upsert({
-          business_year_id: wizardState.selectedYear.id,
+          business_year_id: yearIdToSave,
           document_type: 'jurat',
           qc_review_notes: juratNotes,
           qc_reviewed_at: new Date().toISOString(),
@@ -1104,6 +1153,24 @@ I further affirm that I am authorized to sign on behalf of the business entity a
 
            <div className="space-y-3">
              <button
+               onClick={() => setShowJuratPreview(true)}
+               className="w-full flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+             >
+               <Eye className="mr-2" size={16} />
+               Preview Jurat
+             </button>
+             
+             {!juratUploaded && (
+               <button
+                 onClick={() => setShowSignatureModal(true)}
+                 className="w-full flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+               >
+                 <PenTool className="mr-2" size={16} />
+                 Sign Jurat
+               </button>
+             )}
+             
+             <button
                onClick={() => setShowJuratModal(true)}
                className="w-full flex items-center justify-center px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 transition-colors"
              >
@@ -1115,13 +1182,39 @@ I further affirm that I am authorized to sign on behalf of the business entity a
        </div>
 
       {/* Navigation */}
-      <div className="flex justify-between pt-6">
+      <div className="flex justify-between items-center pt-6">
         <button
           onClick={onPrevious}
           className="px-6 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-50"
         >
           Previous
         </button>
+        
+        {/* Year Selector for QC */}
+        <div className="flex items-center space-x-2">
+          <label className="text-sm font-medium text-gray-700">QC Year:</label>
+          <select
+            value={selectedYearId}
+            onChange={(e) => {
+              const newYearId = e.target.value;
+              setSelectedYearId(newYearId);
+              
+              // Clear current state to force fresh data load
+              setQCControls([]);
+              setBusinessYearData(null);
+              setJuratUploaded(false);
+              setJuratUploadDate(null);
+              
+              console.log(`QC year changed to year ID: ${newYearId}`);
+            }}
+            className="px-3 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {availableYears.map(year => (
+              <option key={year.id} value={year.id}>{year.year}</option>
+            ))}
+          </select>
+        </div>
+        
         <button
           onClick={onComplete}
           className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
@@ -1129,6 +1222,88 @@ I further affirm that I am authorized to sign on behalf of the business entity a
           Complete Setup
         </button>
       </div>
+
+      {/* Jurat Preview Modal */}
+      {showJuratPreview && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-900">Jurat Statement Preview</h2>
+                <button
+                  onClick={() => setShowJuratPreview(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="mb-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">Statement Text</h3>
+                  <button
+                    onClick={() => setEditingJurat(!editingJurat)}
+                    className="flex items-center px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded"
+                  >
+                    {editingJurat ? <Check className="w-4 h-4 mr-1" /> : <Edit className="w-4 h-4 mr-1" />}
+                    {editingJurat ? 'Save' : 'Edit'}
+                  </button>
+                </div>
+
+                {editingJurat ? (
+                  <textarea
+                    value={juratText}
+                    onChange={(e) => setJuratText(e.target.value)}
+                    className="w-full h-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter jurat text..."
+                  />
+                ) : (
+                  <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                    <div className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">
+                      {juratText}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => setShowJuratPreview(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200"
+                >
+                  Close
+                </button>
+                {!juratUploaded && (
+                  <button
+                    onClick={() => {
+                      setShowJuratPreview(false);
+                      setShowSignatureModal(true);
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700"
+                  >
+                    Proceed to Sign
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Signature Modal */}
+      <SignatureCapture
+        isOpen={showSignatureModal}
+        onClose={() => setShowSignatureModal(false)}
+        onSigned={(signatureData) => {
+          setSignatureData(signatureData);
+          setJuratUploaded(true);
+          setJuratUploadDate(signatureData.signedAt);
+          console.log('Jurat signed:', signatureData);
+        }}
+        juratText={juratText}
+        businessYearId={selectedYearId}
+        clientName={wizardState.business?.name}
+      />
 
       {/* Modals */}
       {isFilingGuideOpen && (

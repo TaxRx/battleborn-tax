@@ -27,16 +27,16 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
   const [showInstructions, setShowInstructions] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const csvTemplate = `title,category,area,focus,description,general_description,goal,hypothesis,alternatives,uncertainties,developmental_process,primary_goal,expected_outcome_type,cpt_codes,cdt_codes,alternative_paths
-"Advanced MRI Analysis","Medical Technology","Diagnostic Imaging","MRI Enhancement","Development of advanced MRI analysis algorithms","Creating innovative approaches to enhance MRI imaging quality and diagnostic accuracy","Improve diagnostic precision through enhanced imaging","We hypothesize that machine learning algorithms can significantly improve MRI image clarity","Alternative approaches include CT enhancement or ultrasound improvements","Uncertain about FDA approval timeline and computational requirements","Following iterative development with clinical validation phases","Primary goal is to achieve 95% diagnostic accuracy improvement","Improved diagnostic imaging software platform","70553, 70551, 70552","","Machine learning integration, cloud-based processing, hybrid imaging approaches"
-"Robotic Surgery Platform","Medical Technology","Surgical Robotics","Precision Surgery","Development of next-generation robotic surgical platform","Creating precise robotic systems for minimally invasive surgical procedures","Enhance surgical precision and reduce patient recovery time","We believe robotic assistance will reduce surgical complications by 40%","Manual laparoscopic techniques, traditional open surgery","Regulatory approval complexity and surgeon training requirements","Multi-phase development with prototype testing and clinical trials","Achieve sub-millimeter surgical precision with haptic feedback","FDA-approved surgical robotic system","64568, 64569, 64570","D7210, D7220","AI-assisted guidance, modular instrument design, real-time imaging integration"`;
+  const csvTemplate = `research_activity,category,area,focus,step,subcomponent,hint,general_description,goal,hypothesis,alternatives,uncertainties,developmental_process,primary_goal,expected_outcome_type,cpt_codes,cdt_codes,alternative_paths
+"Advanced MRI Analysis","Medical Technology","Diagnostic Imaging","MRI Enhancement","Algorithm Development","Pattern Recognition Module","Focus on edge detection and noise reduction","Creating innovative approaches to enhance MRI imaging quality and diagnostic accuracy","Improve diagnostic precision through enhanced imaging","We hypothesize that machine learning algorithms can significantly improve MRI image clarity","Alternative approaches include CT enhancement or ultrasound improvements","Uncertain about FDA approval timeline and computational requirements","Following iterative development with clinical validation phases","Primary goal is to achieve 95% diagnostic accuracy improvement","Improved diagnostic imaging software platform","70553, 70551, 70552","","Machine learning integration, cloud-based processing, hybrid imaging approaches"
+"Robotic Surgery Platform","Medical Technology","Surgical Robotics","Precision Surgery","Instrument Control","Haptic Feedback System","Implement force feedback with sub-newton precision","Creating precise robotic systems for minimally invasive surgical procedures","Enhance surgical precision and reduce patient recovery time","We believe robotic assistance will reduce surgical complications by 40%","Manual laparoscopic techniques, traditional open surgery","Regulatory approval complexity and surgeon training requirements","Multi-phase development with prototype testing and clinical trials","Achieve sub-millimeter surgical precision with haptic feedback","FDA-approved surgical robotic system","64568, 64569, 64570","D7210, D7220","AI-assisted guidance, modular instrument design, real-time imaging integration"`;
 
   const requiredColumns = [
-    'title', 'category', 'area', 'focus'
+    'research_activity', 'category', 'area', 'focus', 'step', 'subcomponent'
   ];
 
   const optionalColumns = [
-    'description', 'general_description', 'goal', 'hypothesis', 'alternatives', 
+    'hint', 'general_description', 'goal', 'hypothesis', 'alternatives', 
     'uncertainties', 'developmental_process', 'primary_goal', 'expected_outcome_type', 
     'cpt_codes', 'cdt_codes', 'alternative_paths'
   ];
@@ -46,7 +46,7 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'research_activities_template.csv';
+    a.download = 'research_subcomponents_template.csv';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -202,49 +202,101 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
 
           const focusId = await findOrCreateFilterEntries(row);
 
-          // Create the research activity
-          const activityData = {
-            title: row.title.trim(),
-            focus_id: focusId,
-            is_active: true,
-            default_roles: {},
-            default_steps: {},
-            ...(businessId && { business_id: businessId })
-          };
-
-          const { data: activity, error: activityError } = await supabase
+          // Find or create the research activity
+          let { data: existingActivity, error: activityFindError } = await supabase
             .from('rd_research_activities')
-            .insert(activityData)
             .select('id')
+            .eq('title', row.research_activity.trim())
+            .eq('focus_id', focusId)
             .single();
 
-          if (activityError) throw activityError;
-
-          // Create default step if we have additional data
-          if (row.description || row.general_description) {
-            const stepData = {
-              research_activity_id: activity.id,
-              name: 'Research Implementation',
-              description: row.description || 'Imported research step',
-              step_order: 1,
-              is_active: true
+          let activityId;
+          if (activityFindError || !existingActivity) {
+            // Create new research activity
+            const activityData = {
+              title: row.research_activity.trim(),
+              focus_id: focusId,
+              is_active: true,
+              default_roles: {},
+              default_steps: {},
+              ...(businessId && { business_id: businessId })
             };
 
-            const { data: step, error: stepError } = await supabase
-              .from('rd_research_steps')
-              .insert(stepData)
+            const { data: newActivity, error: activityError } = await supabase
+              .from('rd_research_activities')
+              .insert(activityData)
               .select('id')
               .single();
 
-            if (stepError) throw stepError;
+            if (activityError) throw activityError;
+            activityId = newActivity.id;
+          } else {
+            activityId = existingActivity.id;
+          }
+
+          // Find or create the step
+          if (row.step && row.subcomponent) {
+            // Check if step already exists for this activity
+            let { data: existingStep, error: stepFindError } = await supabase
+              .from('rd_research_steps')
+              .select('id')
+              .eq('research_activity_id', activityId)
+              .eq('name', row.step.trim())
+              .single();
+
+            let stepId;
+            if (stepFindError || !existingStep) {
+              // Get the current max step order for this activity
+              const { data: maxOrderStep } = await supabase
+                .from('rd_research_steps')
+                .select('step_order')
+                .eq('research_activity_id', activityId)
+                .order('step_order', { ascending: false })
+                .limit(1)
+                .single();
+
+              const nextOrder = (maxOrderStep?.step_order || 0) + 1;
+
+              // Create new step
+              const stepData = {
+                research_activity_id: activityId,
+                name: row.step.trim(),
+                description: row.general_description || '',
+                step_order: nextOrder,
+                is_active: true
+              };
+
+              const { data: newStep, error: stepError } = await supabase
+                .from('rd_research_steps')
+                .insert(stepData)
+                .select('id')
+                .single();
+
+              if (stepError) throw stepError;
+              stepId = newStep.id;
+            } else {
+              stepId = existingStep.id;
+            }
+
+            // Get the current max subcomponent order for this step
+            const { data: maxOrderSubcomponent } = await supabase
+              .from('rd_research_subcomponents')
+              .select('subcomponent_order')
+              .eq('step_id', stepId)
+              .order('subcomponent_order', { ascending: false })
+              .limit(1)
+              .single();
+
+            const nextSubOrder = (maxOrderSubcomponent?.subcomponent_order || 0) + 1;
 
             // Create subcomponent with detailed data
             const subcomponentData = {
-              step_id: step.id,
-              name: `${row.title} - Main Component`,
-              description: row.description || '',
-              subcomponent_order: 1,
+              step_id: stepId,
+              name: row.subcomponent.trim(),
+              description: row.general_description || '',
+              subcomponent_order: nextSubOrder,
               is_active: true,
+              hint: row.hint || '',
               general_description: row.general_description || '',
               goal: row.goal || '',
               hypothesis: row.hypothesis || '',

@@ -7,6 +7,7 @@ import {
   Clock, Building2, FileCheck, Microscope
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { AIService } from '../../../../services/aiService';
 import './ResearchReportModal.css';
 import {
   generateTableOfContents,
@@ -144,17 +145,31 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
     }
   }, [isOpen, businessYearId]);
 
-  // Set up window functions for iframe communication
+  // Add window functions for iframe communication
   useEffect(() => {
-    if (showPreview) {
-      (window as any).regenerateAISection = regenerateAISection;
-      (window as any).editAIPrompt = editAIPrompt;
-    }
+    // Make regenerateAISection available to iframe
+    (window as any).regenerateAISection = regenerateAISection;
+    (window as any).editAIPrompt = editAIPrompt;
+    
+    // Cleanup on unmount
     return () => {
       delete (window as any).regenerateAISection;
       delete (window as any).editAIPrompt;
     };
-  }, [showPreview]);
+  }, []);
+
+  // Function to clean up existing markdown formatting in cached reports
+  const cleanupExistingFormatting = (htmlContent: string): string => {
+    return htmlContent
+      // Fix **bold** formatting that wasn't properly converted
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      // Fix any remaining markdown patterns
+      .replace(/^\*\*(.+?)\*\*:$/gm, '<h4 class="ai-step-title">$1:</h4>')
+      // Fix bullet points that might not be properly formatted
+      .replace(/^[\-\*] (.+)$/gm, '<li>$1</li>')
+      // Wrap orphaned <li> elements
+      .replace(/(<li>.*?<\/li>)(?:\s*<li>.*?<\/li>)*/g, '<ul>$&</ul>');
+  };
 
   const loadData = async () => {
     try {
@@ -163,24 +178,8 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
       
       console.log('🔍 Loading data for businessYearId:', businessYearId);
 
-      // Check for cached report first
-      setLoadingMessage('Checking for existing report...');
-      const { data: existingReport } = await supabase
-        .from('rd_reports')
-        .select('*')
-        .eq('business_year_id', businessYearId)
-        .eq('type', 'RESEARCH_SUMMARY')
-        .single();
-      
-      if (existingReport && existingReport.generated_html) {
-        console.log('✅ Found cached report, loading preview');
-        setCachedReport(existingReport);
-        setGeneratedReport(existingReport.generated_html);
-        setShowPreview(true);
-        setLoadingMessage('Report loaded from cache');
-      }
-
-      // Load business profile
+      // Load business profile with category FIRST (before checking cache)
+      setLoadingMessage('Loading business profile...');
       const { data: yearData, error: yearError } = await supabase
         .from('rd_business_years')
         .select(`
@@ -190,7 +189,11 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
             entity_type,
             domicile_state,
             start_year,
-            contact_info
+            contact_info,
+            category:category_id (
+              id,
+              name
+            )
           )
         `)
         .eq('id', businessYearId)
@@ -204,6 +207,59 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
 
       setBusinessProfile(yearData?.business);
       console.log('✅ Business profile loaded:', yearData?.business?.name);
+      console.log('🏷️ Business category loaded:', {
+        categoryId: yearData?.business?.category?.id,
+        categoryName: yearData?.business?.category?.name,
+        businessName: yearData?.business?.name
+      });
+
+      // NOW check for cached report (after we know the category)
+      const categoryName = yearData?.business?.category?.name?.toLowerCase();
+      const isSoftwareReport = categoryName === 'software';
+      
+      console.log('🔍 Category analysis:', {
+        categoryName,
+        isSoftwareReport,
+        expectedReportType: isSoftwareReport ? 'Software R&D Documentation' : 'Clinical Practice Guideline'
+      });
+
+      setLoadingMessage('Checking for existing report...');
+      const { data: existingReport } = await supabase
+        .from('rd_reports')
+        .select('*')
+        .eq('business_year_id', businessYearId)
+        .eq('type', 'RESEARCH_SUMMARY')
+        .single();
+      
+      // Only use cached report if it matches the current category expectations
+      if (existingReport && existingReport.generated_html) {
+        const reportHtml = existingReport.generated_html;
+        const containsSoftwareTitle = reportHtml.includes('Software Development R&D Documentation');
+        const containsHealthcareTitle = reportHtml.includes('Clinical Practice Guideline Report');
+        
+        const cacheMatchesCategory = isSoftwareReport ? containsSoftwareTitle : containsHealthcareTitle;
+        
+        console.log('🔍 Cache analysis:', {
+          reportExists: true,
+          containsSoftwareTitle,
+          containsHealthcareTitle,
+          isSoftwareReport,
+          cacheMatchesCategory
+        });
+        
+        if (cacheMatchesCategory) {
+          console.log('✅ Found valid cached report for current category, loading preview');
+          setCachedReport(existingReport);
+          setGeneratedReport(cleanupExistingFormatting(existingReport.generated_html));
+          setShowPreview(true);
+          setLoadingMessage('Report loaded from cache');
+        } else {
+          console.log('🔄 Cached report doesn\'t match current category, will regenerate');
+          setLoadingMessage('Category changed, regenerating report...');
+        }
+      } else {
+        console.log('📝 No cached report found, will generate new');
+      }
 
       // Load selected activities with names
       const { data: activitiesData, error: activitiesError } = await supabase
@@ -376,12 +432,24 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
       selectedSubcomponents
     };
 
+    // Determine report type based on business category
+    const categoryName = businessProfile?.category?.name?.toLowerCase();
+    const isSoftwareReport = categoryName === 'software';
+    
+    const reportTitle = isSoftwareReport 
+      ? 'Software Development R&D Documentation'
+      : 'Clinical Practice Guideline Report';
+    
+    const reportSubtitle = isSoftwareReport
+      ? 'Research & Development Tax Credit Substantiation'
+      : 'Research & Development Documentation';
+
     let report = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Clinical Practice Guideline Report</title>
+  <title>${reportTitle}</title>
   <style>
     ${getReportStyles()}
   </style>
@@ -393,8 +461,8 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
     <div class="report-main-content">
       <div class="report-header">
         <div class="header-content">
-          <h1 class="report-main-title">Clinical Practice Guideline Report</h1>
-          <h2 class="report-subtitle">Research & Development Documentation</h2>
+          <h1 class="report-main-title">${reportTitle}</h1>
+          <h2 class="report-subtitle">${reportSubtitle}</h2>
           <div class="report-date">Generated: ${new Date().toLocaleDateString()}</div>
         </div>
       </div>
@@ -450,7 +518,7 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
 
       ${(await Promise.all(
         Array.from(activitiesMap.entries()).map(([activityId, data], index) => {
-          return generateActivitySection(activityId, data, index, businessRoles);
+          return generateActivitySection(activityId, data, index, businessRoles, isSoftwareReport ? 'software' : 'healthcare', businessProfile);
         })
       )).join('')}
 
@@ -604,36 +672,64 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
 
       const subData = subcomponent.rd_research_subcomponents || subcomponent;
       
-      // Generate static best practices content
+      // Detect business type for appropriate content generation
+      const categoryName = businessProfile?.category?.name?.toLowerCase();
+      const isSoftwareReport = categoryName === 'software';
+
+      console.log('🤖 Calling AI for content regeneration:', {
+        componentName: subData.name,
+        category: categoryName,
+        isSoftwareReport
+      });
+
+      // Generate context-appropriate prompt for AI
       const componentName = subData.name || subData.general_description || 'Subcomponent';
       const description = subData.general_description || subData.description || '';
       
-      const newContent = `<h4>Best Practices for ${componentName}</h4>
-<p><strong>Research Component Overview:</strong><br>
-${description || 'Detailed research component focused on systematic investigation and development activities.'}</p>
+      const prompt = isSoftwareReport ? 
+        `Generate comprehensive IRS R&D tax credit documentation for "${componentName}" in a software development environment.
 
-<h5>Key Best Practices:</h5>
-<ul>
-  <li><strong>Documentation Standards:</strong> Maintain comprehensive records of all research activities, methodologies, and findings</li>
-  <li><strong>Quality Assurance:</strong> Implement systematic review processes and validation procedures</li>
-  <li><strong>Resource Management:</strong> Optimize allocation of personnel, equipment, and materials for maximum research efficiency</li>
-  <li><strong>Compliance Management:</strong> Ensure adherence to regulatory requirements and industry standards</li>
-  <li><strong>Continuous Improvement:</strong> Regular assessment and refinement of research processes and methodologies</li>
-</ul>
+Component Description: ${description}
 
-<h5>Performance Metrics:</h5>
-<ul>
-  <li>Research milestone completion rates</li>
-  <li>Quality of deliverables and outcomes</li>
-  <li>Resource utilization efficiency</li>
-  <li>Compliance audit results</li>
-  <li>Innovation impact assessment</li>
-</ul>`;
+Development Team Roles: ${businessRoles.map(role => role.name).join(', ')}
 
-      // Update the HTML with new content
+Please provide:
+1. Technical uncertainty documentation and challenges addressed
+2. Process of experimentation details (iterations, testing, alternatives)
+3. Qualified purpose demonstration (functionality, performance, reliability improvements)
+4. Technological nature evidence (computer science/engineering principles)
+5. Specific role assignments with time allocation estimates
+6. Documentation requirements for IRS audit defense
+
+Format the response with proper HTML headings (h4, h5) and lists (ul, li) for integration into a research report.` :
+        `Generate professional clinical practice guidelines for implementing "${componentName}" in a healthcare setting.
+
+Subcomponent Description: ${description}
+
+Available Staff Roles: ${businessRoles.map(role => role.name).join(', ')}
+
+Please provide:
+1. Step-by-step implementation guidelines with clear headings
+2. For each step, specify which staff roles should be involved
+3. Use professional medical/clinical language
+4. Include bullet points for role assignments under each step
+5. Quality assurance and documentation requirements
+
+Format the response with proper HTML headings (h4, h5) and lists (ul, li) for integration into a research report.`;
+
+      // Call AI service
+      const aiResponse = await AIService.getInstance().generateResearchContent(prompt, {
+        businessCategory: categoryName || 'healthcare',
+        componentName,
+        availableRoles: businessRoles
+      });
+
+      console.log('✅ AI response received, updating report');
+
+      // Update the HTML with AI-generated content
       const updatedHTML = generatedReport.replace(
         new RegExp(`<div class="best-practices-content">.*?</div>`, 's'),
-        `<div class="best-practices-content">${formatAIContent(newContent)}</div>`
+        `<div class="best-practices-content">${formatAIContent(aiResponse)}</div>`
       );
 
       setGeneratedReport(updatedHTML);
@@ -668,9 +764,28 @@ ${description || 'Detailed research component focused on systematic investigatio
     const subcomponent = selectedSubcomponents.find(sub => sub.id === subcomponentId);
     if (!subcomponent) return;
 
+    // Detect business type for appropriate prompt generation
+    const categoryName = businessProfile?.category?.name?.toLowerCase();
+    const isSoftwareReport = categoryName === 'software';
+
     const subData = subcomponent.rd_research_subcomponents || subcomponent;
     setEditingSubcomponentId(subcomponentId);
-    setEditPrompt(`Generate professional clinical practice guidelines for implementing "${subData.name || 'this subcomponent'}" in a healthcare setting.
+    
+    const prompt = isSoftwareReport ? 
+      `Generate comprehensive IRS R&D tax credit documentation for "${subData.name || 'this development component'}" in a software development environment.
+
+Component Description: ${subData.general_description || subData.description || ''}
+
+Development Team Roles: ${businessRoles.map(role => role.name).join(', ')}
+
+Please provide:
+1. Technical uncertainty documentation and challenges addressed
+2. Process of experimentation details (iterations, testing, alternatives)
+3. Qualified purpose demonstration (functionality, performance, reliability improvements)
+4. Technological nature evidence (computer science/engineering principles)
+5. Specific role assignments with time allocation estimates
+6. Documentation requirements for IRS audit defense` :
+      `Generate professional clinical practice guidelines for implementing "${subData.name || 'this subcomponent'}" in a healthcare setting.
 
 Subcomponent Description: ${subData.general_description || subData.description || ''}
 
@@ -681,7 +796,9 @@ Please provide:
 2. For each step, specify which staff roles should be involved
 3. Use professional medical/clinical language
 4. Format with proper markdown headings
-5. Include bullet points for role assignments under each step`);
+5. Include bullet points for role assignments under each step`;
+
+    setEditPrompt(prompt);
     setShowEditModal(true);
   };
 
@@ -691,33 +808,29 @@ Please provide:
       setIsLoading(true);
       setShowEditModal(false);
 
-      // Generate static content based on prompt
-      const newContent = `<h4>Custom Research Analysis</h4>
-<p><strong>Analysis Prompt:</strong> ${editPrompt}</p>
-<p><strong>Generated Response:</strong></p>
-<p>Based on the research parameters and methodology outlined, this analysis provides comprehensive insights into the specified research area. The findings demonstrate adherence to established research protocols and regulatory compliance requirements.</p>
+      // Get category info for context
+      const categoryName = businessProfile?.category?.name?.toLowerCase();
+      const isSoftwareReport = categoryName === 'software';
 
-<h5>Key Findings:</h5>
-<ul>
-  <li>Research activities align with established industry standards</li>
-  <li>Methodology demonstrates systematic approach to investigation</li>
-  <li>Documentation supports R&D tax credit qualification requirements</li>
-  <li>Quality assurance measures ensure reliable outcomes</li>
-</ul>
+      console.log('🤖 Calling AI with custom prompt:', {
+        promptLength: editPrompt.length,
+        category: categoryName,
+        isSoftwareReport
+      });
 
-<h5>Recommendations:</h5>
-<ul>
-  <li>Continue systematic documentation of research processes</li>
-  <li>Maintain regular review and validation procedures</li>
-  <li>Ensure ongoing compliance with regulatory requirements</li>
-  <li>Optimize resource allocation for maximum research efficiency</li>
-</ul>`;
+      // Call AI service with the custom prompt
+      const aiResponse = await AIService.getInstance().generateResearchContent(editPrompt, {
+        businessCategory: categoryName || 'healthcare',
+        componentName: editingSubcomponentId || 'Custom Content',
+        availableRoles: businessRoles
+      });
 
-      // Update the HTML with new content for the specific subcomponent
-      const subcomponentElement = `id="${editingSubcomponentId}"`;
+      console.log('✅ AI response received for custom prompt, updating report');
+
+      // Update the HTML with AI-generated content
       const updatedHTML = generatedReport.replace(
         new RegExp(`<div class="best-practices-content">.*?</div>`, 's'),
-        `<div class="best-practices-content">${formatAIContent(newContent)}</div>`
+        `<div class="best-practices-content">${formatAIContent(aiResponse)}</div>`
       );
 
       setGeneratedReport(updatedHTML);
@@ -801,6 +914,76 @@ Please provide:
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const handlePDFDownload = async () => {
+    if (!generatedReport) {
+      setError('Please generate report first');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      // Import html2pdf dynamically
+      const html2pdf = (await import('html2pdf.js')).default;
+      
+      // Create a temporary container for the document
+      const container = document.createElement('div');
+      container.className = 'research-report-pdf-container';
+      container.innerHTML = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>Research Report - ${businessProfile?.name || 'Unknown'}</title>
+            <style>${getReportStyles()}</style>
+          </head>
+          <body>
+            ${generatedReport}
+          </body>
+        </html>
+      `;
+      
+      // Add to DOM temporarily (hidden)
+      container.style.position = 'absolute';
+      container.style.left = '-9999px';
+      container.style.top = '-9999px';
+      document.body.appendChild(container);
+      
+      // Configure PDF options
+      const pdfOptions = {
+        margin: [0.5, 0.5, 0.5, 0.5], // top, right, bottom, left in inches
+        filename: `Research_Report_${businessProfile?.name?.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { 
+          scale: 2,
+          useCORS: true,
+          letterRendering: true,
+          scrollX: 0,
+          scrollY: 0,
+          windowWidth: 1200,
+          windowHeight: 800
+        },
+        jsPDF: { 
+          unit: 'in', 
+          format: 'letter', 
+          orientation: 'portrait' 
+        },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      };
+      
+      // Generate PDF
+      await html2pdf().from(container).set(pdfOptions).save();
+      
+      // Clean up
+      document.body.removeChild(container);
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      setError('Failed to generate PDF. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const getReportStyles = () => {
@@ -1113,7 +1296,9 @@ Please provide:
         <div className="research-report-modal-header">
           <h2>
             <FileText />
-            Clinical Practice Guideline Report Generator
+            {businessProfile?.category?.name?.toLowerCase() === 'software' 
+              ? 'Research Summary Report' 
+              : 'Clinical Practice Guideline Report Generator'}
           </h2>
           <button onClick={onClose} className="modal-close-button">
             <X />
@@ -1236,9 +1421,23 @@ Please provide:
                     About This Report
                   </h4>
                   <p style={{ color: '#0369a1', lineHeight: '1.6' }}>
-                    This comprehensive Clinical Practice Guideline report will document all qualified research 
-                    activities in accordance with IRC Section 41 requirements. The report includes detailed 
-                    hierarchical structures, visual guides, compliance summaries, and documentation checklists.
+                    {businessProfile?.category?.name?.toLowerCase() === 'software' ? (
+                      <>This comprehensive Software R&D Documentation report will document all qualified research 
+                      activities in accordance with IRC Section 41 requirements. The report includes detailed 
+                      hierarchical structures, technical documentation, compliance summaries, and IRS audit defense materials.
+                      <br /><br />
+                      <strong>GitHub Integration:</strong> {businessProfile?.github_token ? (
+                        <span className="text-green-600">✓ Configured - Repository analysis enabled for this client</span>
+                      ) : (
+                        <>To enable GitHub repository analysis and commit tracking, add your GitHub token in the 
+                        Business Setup step under "GitHub Access Token". This will automatically generate repository summaries, 
+                        commit analysis, and development activity tracking for R&D substantiation.</>
+                      )}</>
+                    ) : (
+                      <>This comprehensive Clinical Practice Guideline report will document all qualified research 
+                      activities in accordance with IRC Section 41 requirements. The report includes detailed 
+                      hierarchical structures, visual guides, compliance summaries, and documentation checklists.</>
+                    )}
                   </p>
                 </div>
               </div>
@@ -1275,6 +1474,10 @@ Please provide:
               <button onClick={handleDownload} className="action-button action-button-primary">
                 <Download />
                 Download HTML
+              </button>
+              <button onClick={handlePDFDownload} className="action-button action-button-primary">
+                <FileText />
+                Download PDF
               </button>
             </>
           )}

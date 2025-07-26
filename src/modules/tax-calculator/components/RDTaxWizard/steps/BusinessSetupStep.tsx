@@ -3,6 +3,7 @@ import { RDBusinessService } from '../../../services/rdBusinessService';
 import { BusinessSetupData, HistoricalData } from '../../../types/rdTypes';
 import { supabase } from '../../../../../lib/supabase';
 import { Building2, MapPin, Calendar, Info, Image, Upload, BarChart3, ChevronRight, AlertTriangle } from 'lucide-react';
+import { formatCurrency } from '../../../../../utils/formatting';
 
 interface BusinessSetupStepProps {
   business: any;
@@ -23,6 +24,7 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
     businessName: business?.name || '',
     ein: business?.ein || '',
     entityType: business?.entityType || 'LLC',
+    categoryId: business?.category_id || '',
     startYear: business?.startYear || '',
     taxYear: selectedYear?.year || new Date().getFullYear(),
     address: business?.address || '',
@@ -32,6 +34,7 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
     website: business?.website || '',
     naicsCode: business?.naics || '',
     imagePath: business?.image_path || '',
+    githubToken: business?.github_token || '',
     historicalDataInputs: {} as Record<string, { grossReceipts?: string; qre?: string }>
   });
 
@@ -43,6 +46,7 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [debounceTimers, setDebounceTimers] = useState<Record<string, NodeJS.Timeout>>({});
+  const [categories, setCategories] = useState<Array<{id: string, name: string}>>([]);
   
   // Logo upload state
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -59,8 +63,9 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
     { value: 'OTHER', label: 'Other' }
   ];
 
-  // NAICS codes for dental and medical offices
+  // NAICS codes organized by industry
   const naicsCodes = [
+    // Healthcare & Medical
     { value: '621210', label: 'Dental Office (621210)' },
     { value: '621111', label: 'Medical Office (621111)' },
     { value: '621310', label: 'Offices of Chiropractors (621310)' },
@@ -68,7 +73,125 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
     { value: '621330', label: 'Offices of Mental Health Practitioners (621330)' },
     { value: '621340', label: 'Offices of Physical, Occupational and Speech Therapists (621340)' },
     { value: '621391', label: 'Offices of Podiatrists (621391)' },
-    { value: '621399', label: 'Offices of All Other Miscellaneous Health Practitioners (621399)' }
+    { value: '621399', label: 'Offices of All Other Miscellaneous Health Practitioners (621399)' },
+    { value: '621420', label: 'Outpatient Mental Health and Substance Abuse Centers (621420)' },
+    { value: '621498', label: 'All Other Outpatient Care Centers (621498)' },
+    { value: '622110', label: 'General Medical and Surgical Hospitals (622110)' },
+    { value: '623110', label: 'Nursing Care Facilities (623110)' },
+    
+    // Software & Technology
+    { value: '541511', label: 'Custom Computer Programming Services (541511)' },
+    { value: '541512', label: 'Computer Systems Design Services (541512)' },
+    { value: '541513', label: 'Computer Facilities Management Services (541513)' },
+    { value: '541519', label: 'Other Computer Related Services (541519)' },
+    { value: '518210', label: 'Data Processing, Hosting, and Related Services (518210)' },
+    { value: '334111', label: 'Electronic Computer Manufacturing (334111)' },
+    { value: '334112', label: 'Computer Storage Device Manufacturing (334112)' },
+    { value: '334118', label: 'Computer Terminal and Other Computer Peripheral Equipment Manufacturing (334118)' },
+    { value: '334413', label: 'Semiconductor and Related Device Manufacturing (334413)' },
+    { value: '541715', label: 'Research and Development in the Physical, Engineering, and Life Sciences (541715)' },
+    
+    // Financial Services
+    { value: '522110', label: 'Commercial Banking (522110)' },
+    { value: '522120', label: 'Savings Institutions (522120)' },
+    { value: '522130', label: 'Credit Unions (522130)' },
+    { value: '522210', label: 'Credit Card Issuing (522210)' },
+    { value: '522220', label: 'Sales Financing (522220)' },
+    { value: '522291', label: 'Consumer Lending (522291)' },
+    { value: '522292', label: 'Real Estate Credit (522292)' },
+    { value: '522298', label: 'All Other Nondepository Credit Intermediation (522298)' },
+    { value: '522310', label: 'Mortgage and Nonmortgage Loan Brokers (522310)' },
+    { value: '522320', label: 'Financial Transactions Processing, Reserve, and Clearinghouse Activities (522320)' },
+    { value: '522390', label: 'Other Activities Related to Credit Intermediation (522390)' },
+    { value: '523110', label: 'Investment Banking and Securities Dealing (523110)' },
+    { value: '523120', label: 'Securities Brokerage (523120)' },
+    { value: '523130', label: 'Commodity Contracts Dealing (523130)' },
+    { value: '523140', label: 'Commodity Contracts Brokerage (523140)' },
+    { value: '523210', label: 'Securities and Commodity Exchanges (523210)' },
+    { value: '523910', label: 'Miscellaneous Intermediation (523910)' },
+    { value: '523920', label: 'Portfolio Management (523920)' },
+    { value: '523930', label: 'Investment Advice (523930)' },
+    { value: '523991', label: 'Trust, Fiduciary, and Custody Activities (523991)' },
+    { value: '523999', label: 'Miscellaneous Financial Investment Activities (523999)' },
+    { value: '524113', label: 'Direct Life Insurance Carriers (524113)' },
+    { value: '524114', label: 'Direct Health and Medical Insurance Carriers (524114)' },
+    { value: '524126', label: 'Direct Property and Casualty Insurance Carriers (524126)' },
+    { value: '524127', label: 'Direct Title Insurance Carriers (524127)' },
+    { value: '524128', label: 'Other Direct Insurance (except Life, Health, and Medical) Carriers (524128)' },
+    { value: '524130', label: 'Reinsurance Carriers (524130)' },
+    { value: '524210', label: 'Insurance Agencies and Brokerages (524210)' },
+    { value: '524291', label: 'Claims Adjusting (524291)' },
+    { value: '524292', label: 'Third Party Administration of Insurance and Pension Funds (524292)' },
+    { value: '524298', label: 'All Other Insurance Related Activities (524298)' },
+    
+    // Consulting Services
+    { value: '541110', label: 'Offices of Lawyers (541110)' },
+    { value: '541211', label: 'Offices of Certified Public Accountants (541211)' },
+    { value: '541213', label: 'Tax Preparation Services (541213)' },
+    { value: '541214', label: 'Payroll Services (541214)' },
+    { value: '541219', label: 'Other Accounting Services (541219)' },
+    { value: '541310', label: 'Architectural Services (541310)' },
+    { value: '541320', label: 'Landscape Architectural Services (541320)' },
+    { value: '541330', label: 'Engineering Services (541330)' },
+    { value: '541340', label: 'Drafting Services (541340)' },
+    { value: '541350', label: 'Building Inspection Services (541350)' },
+    { value: '541360', label: 'Geophysical Surveying and Mapping Services (541360)' },
+    { value: '541370', label: 'Surveying and Mapping (except Geophysical) Services (541370)' },
+    { value: '541380', label: 'Testing Laboratories (541380)' },
+    { value: '541410', label: 'Interior Design Services (541410)' },
+    { value: '541420', label: 'Industrial Design Services (541420)' },
+    { value: '541430', label: 'Graphic Design Services (541430)' },
+    { value: '541490', label: 'Other Specialized Design Services (541490)' },
+    { value: '541611', label: 'Administrative Management and General Management Consulting Services (541611)' },
+    { value: '541612', label: 'Human Resources Consulting Services (541612)' },
+    { value: '541613', label: 'Marketing Consulting Services (541613)' },
+    { value: '541614', label: 'Process, Physical Distribution, and Logistics Consulting Services (541614)' },
+    { value: '541618', label: 'Other Management Consulting Services (541618)' },
+    { value: '541620', label: 'Environmental Consulting Services (541620)' },
+    { value: '541690', label: 'Other Scientific and Technical Consulting Services (541690)' },
+    { value: '541710', label: 'Research and Development in the Physical, Engineering, and Life Sciences (541710)' },
+    { value: '541720', label: 'Research and Development in the Social Sciences and Humanities (541720)' },
+    { value: '541810', label: 'Advertising Agencies (541810)' },
+    { value: '541820', label: 'Public Relations Agencies (541820)' },
+    { value: '541830', label: 'Media Buying Agencies (541830)' },
+    { value: '541840', label: 'Media Representatives (541840)' },
+    { value: '541850', label: 'Display Advertising (541850)' },
+    { value: '541860', label: 'Direct Mail Advertising (541860)' },
+    { value: '541870', label: 'Advertising Material Distribution Services (541870)' },
+    { value: '541890', label: 'Other Services Related to Advertising (541890)' },
+    { value: '541910', label: 'Marketing Research and Public Opinion Polling (541910)' },
+    { value: '541921', label: 'Photography Studios, Portrait (541921)' },
+    { value: '541922', label: 'Commercial Photography (541922)' },
+    { value: '541930', label: 'Translation and Interpretation Services (541930)' },
+    { value: '541940', label: 'Veterinary Services (541940)' },
+    { value: '541990', label: 'All Other Professional, Scientific, and Technical Services (541990)' },
+    
+    // Real Estate & Property Management
+    { value: '531110', label: 'Lessors of Residential Buildings and Dwellings (531110)' },
+    { value: '531120', label: 'Lessors of Nonresidential Buildings (except Miniwarehouses) (531120)' },
+    { value: '531130', label: 'Lessors of Miniwarehouses and Self-Storage Units (531130)' },
+    { value: '531190', label: 'Lessors of Other Real Estate Property (531190)' },
+    { value: '531210', label: 'Offices of Real Estate Agents and Brokers (531210)' },
+    { value: '531311', label: 'Residential Property Managers (531311)' },
+    { value: '531312', label: 'Nonresidential Property Managers (531312)' },
+    { value: '531320', label: 'Offices of Real Estate Appraisers (531320)' },
+    { value: '531390', label: 'Other Activities Related to Real Estate (531390)' },
+    
+    // Manufacturing & Industrial
+    { value: '311111', label: 'Dog and Cat Food Manufacturing (311111)' },
+    { value: '311119', label: 'Other Animal Food Manufacturing (311119)' },
+    { value: '321113', label: 'Sawmills (321113)' },
+    { value: '325412', label: 'Pharmaceutical Preparation Manufacturing (325412)' },
+    { value: '336411', label: 'Aircraft Manufacturing (336411)' },
+    { value: '337110', label: 'Wood Kitchen Cabinet and Countertop Manufacturing (337110)' },
+    
+    // Other Business Services
+    { value: '811121', label: 'Automotive Body, Paint, and Interior Repair and Maintenance (811121)' },
+    { value: '811111', label: 'General Automotive Repair (811111)' },
+    { value: '722511', label: 'Full-Service Restaurants (722511)' },
+    { value: '722513', label: 'Limited-Service Restaurants (722513)' },
+    { value: '238220', label: 'Plumbing, Heating, and Air-Conditioning Contractors (238220)' },
+    { value: '238210', label: 'Electrical Contractors and Other Wiring Installation Contractors (238210)' }
   ];
 
   const states = [
@@ -272,7 +395,18 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
     const currentYear = parseInt(formData.taxYear);
     const startYear = parseInt(formData.startYear);
     
-    if (!currentYear || !startYear) return [];
+    // Reduced logging frequency - only log when there's an issue
+    // console.log('🔍 [BusinessSetupStep] generateHistoricalYears called:', {
+    //   currentYear,
+    //   startYear,
+    //   taxYear: formData.taxYear,
+    //   startYearForm: formData.startYear
+    // });
+    
+    if (!currentYear || !startYear) {
+      console.log('🚨 [BusinessSetupStep] Missing currentYear or startYear, returning empty array');
+      return [];
+    }
     
     const years: number[] = [];
     
@@ -284,8 +418,51 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
       years.push(year);
     }
     
+    console.log('📊 [BusinessSetupStep] Generated historical years:', {
+      startFromYear,
+      currentYear,
+      years,
+      totalYears: years.length
+    });
+    
     return years;
   };
+
+  // Load research categories on mount
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        console.log('🏷️ [BusinessSetupStep] Loading categories...');
+        const { data, error } = await supabase
+          .from('rd_research_categories')
+          .select('id, name')
+          .order('name');
+        
+        if (error) {
+          console.error('🚨 [BusinessSetupStep] Error loading categories:', error);
+          return;
+        }
+        
+        console.log('🏷️ [BusinessSetupStep] Categories loaded:', data);
+        console.log('🏷️ [BusinessSetupStep] Categories detailed:', data?.map(c => ({id: c.id, name: c.name})));
+        setCategories(data || []);
+      } catch (error) {
+        console.error('🚨 [BusinessSetupStep] Error loading categories:', error);
+      }
+    };
+
+    loadCategories();
+  }, []);
+
+  // Debug formData changes (reduced frequency)
+  useEffect(() => {
+    if (formData.categoryId && formData.businessName) {
+      console.log('🔍 [BusinessSetupStep] Form data changed:', {
+        categoryId: formData.categoryId,
+        businessName: formData.businessName
+      });
+    }
+  }, [formData.categoryId, formData.businessName]);
 
   // Initialize historical data when start year or tax year changes
   useEffect(() => {
@@ -302,7 +479,7 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
   // Load latest business and years from Supabase on mount and whenever business changes
   useEffect(() => {
     const fetchBusinessAndYears = async () => {
-      console.log('[BusinessSetupStep] Starting to fetch business and years data', { 
+      console.log('🔍 [BusinessSetupStep] Starting to fetch business and years data', { 
         businessId: business?.id, 
         userId 
       });
@@ -312,38 +489,54 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
         let latestBusiness = null;
         if (business?.id) {
           // Always fetch the latest business and years from Supabase by business.id
-          console.log('[BusinessSetupStep] Fetching business by ID:', business.id);
+          console.log('🔍 [BusinessSetupStep] Fetching business by ID:', business.id);
           latestBusiness = await RDBusinessService.getBusiness(business.id);
         } else if (userId) {
           // Fallback: fetch by userId
-          console.log('[BusinessSetupStep] Fetching business by userId:', userId);
+          console.log('🔍 [BusinessSetupStep] Fetching business by userId:', userId);
           latestBusiness = await RDBusinessService.getBusinessByUser(userId);
         }
         
         console.log('[BusinessSetupStep] Fetched business data:', latestBusiness);
         
         if (latestBusiness) {
-          setFormData(prev => ({
-            ...prev,
-            businessName: latestBusiness.name || '',
-            ein: latestBusiness.ein || '',
-            entityType: latestBusiness.entity_type || 'LLC',
-            startYear: latestBusiness.start_year?.toString() || '',
-            address: latestBusiness.contact_info?.address || '',
-            city: latestBusiness.contact_info?.city || '',
-            state: latestBusiness.contact_info?.state || '',
-            zip: latestBusiness.contact_info?.zip || '',
-            website: latestBusiness.website || '',
-            naicsCode: latestBusiness.naics || '',
-            imagePath: latestBusiness.image_path || '',
-            historicalDataInputs: latestBusiness.historical_data?.reduce((acc, yearData) => {
-              acc[yearData.year.toString()] = {
-                grossReceipts: (yearData.gross_receipts || yearData.grossReceipts)?.toString() || '',
-                qre: yearData.qre?.toString() || ''
-              };
-              return acc;
-            }, {} as Record<string, { grossReceipts?: string; qre?: string }>) || {}
-          }));
+          console.log('🏷️ [BusinessSetupStep] Loading business category:', {
+            category_id: latestBusiness.category_id,
+            business_name: latestBusiness.name
+          });
+          
+          setFormData(prev => {
+            const newFormData = {
+              ...prev,
+              businessName: latestBusiness.name || '',
+              ein: latestBusiness.ein || '',
+              entityType: latestBusiness.entity_type || 'LLC',
+              categoryId: latestBusiness.category_id || '',
+              startYear: latestBusiness.start_year?.toString() || '',
+              address: latestBusiness.contact_info?.address || '',
+              city: latestBusiness.contact_info?.city || '',
+              state: latestBusiness.contact_info?.state || '',
+              zip: latestBusiness.contact_info?.zip || '',
+              website: latestBusiness.website || '',
+              naicsCode: latestBusiness.naics || '',
+              imagePath: latestBusiness.image_path || '',
+              githubToken: latestBusiness.github_token || '',
+              historicalDataInputs: latestBusiness.historical_data?.reduce((acc, yearData) => {
+                acc[yearData.year.toString()] = {
+                  grossReceipts: (yearData.gross_receipts || yearData.grossReceipts)?.toString() || '',
+                  qre: yearData.qre?.toString() || ''
+                };
+                return acc;
+              }, {} as Record<string, { grossReceipts?: string; qre?: string }>) || {}
+            };
+            
+            console.log('🏷️ [BusinessSetupStep] Form data after loading business:', {
+              categoryId: newFormData.categoryId,
+              businessName: newFormData.businessName
+            });
+            
+            return newFormData;
+          });
           
           // Set logo preview if image path exists
           if (latestBusiness.image_path) {
@@ -356,17 +549,45 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
           
           // Load historical data from rd_businesses.historical_data JSONB column
           if (latestBusiness.historical_data && Array.isArray(latestBusiness.historical_data) && latestBusiness.historical_data.length > 0) {
-            console.log('[BusinessSetupStep] Found historical data:', latestBusiness.historical_data);
+            console.log('📊 [BusinessSetupStep] Found historical data in JSONB column:', latestBusiness.historical_data);
             const transformedHistoricalData = latestBusiness.historical_data.map((yearData: any) => ({
               year: yearData.year,
               grossReceipts: yearData.gross_receipts || yearData.grossReceipts || 0,
               qre: yearData.qre || 0
             }));
-            console.log('[BusinessSetupStep] Transformed historical data:', transformedHistoricalData);
+            console.log('📊 [BusinessSetupStep] Transformed historical data:', transformedHistoricalData);
             setHistoricalData(transformedHistoricalData);
           } else {
-            console.log('[BusinessSetupStep] No historical data found, initializing empty array');
-            setHistoricalData([]);
+            console.log('🔍 [BusinessSetupStep] No historical data in JSONB column, checking rd_business_years table...');
+            
+            // Fallback: Load from rd_business_years table
+            try {
+              const { data: businessYears, error: businessYearsError } = await supabase
+                .from('rd_business_years')
+                .select('year, gross_receipts, total_qre')
+                .eq('business_id', latestBusiness.id)
+                .order('year', { ascending: true });
+
+              if (businessYearsError) {
+                console.error('🚨 [BusinessSetupStep] Error loading from rd_business_years:', businessYearsError);
+                setHistoricalData([]);
+              } else if (businessYears && businessYears.length > 0) {
+                console.log('📊 [BusinessSetupStep] Found historical data in rd_business_years table:', businessYears);
+                const transformedHistoricalData = businessYears.map((yearData: any) => ({
+                  year: yearData.year,
+                  grossReceipts: yearData.gross_receipts || 0,
+                  qre: yearData.total_qre || 0
+                }));
+                console.log('📊 [BusinessSetupStep] Transformed rd_business_years data:', transformedHistoricalData);
+                setHistoricalData(transformedHistoricalData);
+              } else {
+                console.log('🔍 [BusinessSetupStep] No historical data found in either location, initializing empty array');
+                setHistoricalData([]);
+              }
+            } catch (error) {
+              console.error('🚨 [BusinessSetupStep] Exception loading rd_business_years:', error);
+              setHistoricalData([]);
+            }
           }
         } else {
           console.log('[BusinessSetupStep] No business data found');
@@ -424,6 +645,10 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
       newErrors.ein = 'EIN is required';
     } else if (!/^\d{2}-\d{7}$/.test(formData.ein)) {
       newErrors.ein = 'EIN must be in format XX-XXXXXXX';
+    }
+
+    if (!formData.categoryId) {
+      newErrors.categoryId = 'Business category is required';
     }
 
     if (!formData.startYear) {
@@ -515,6 +740,7 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
         name: formData.businessName,
         ein: formData.ein,
         entity_type: formData.entityType,
+        category_id: formData.categoryId || null,
         start_year: parseInt(formData.startYear),
         domicile_state: formData.state,
         contact_info: {
@@ -525,13 +751,19 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
         },
         website: formData.website,
         naics: formData.naicsCode,
-        image_path: formData.imagePath
+        image_path: formData.imagePath,
+        github_token: formData.githubToken || null
       };
 
-      console.log('[BusinessSetupStep] Saving business updates:', businessUpdates);
+      console.log('[BusinessSetupStep] Final save - business updates:', businessUpdates);
+      console.log('🏷️ [BusinessSetupStep] Final save - category should already be saved via auto-save:', {
+        categoryId: formData.categoryId,
+        categoryInUpdates: businessUpdates.category_id
+      });
 
       if (business?.id) {
         await RDBusinessService.updateBusiness(business.id, businessUpdates);
+        console.log('✅ [BusinessSetupStep] Final business update completed (category already auto-saved)!');
       } else {
         console.error('[BusinessSetupStep] No business ID available for saving');
         throw new Error('No business ID available');
@@ -567,6 +799,17 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
   };
 
   const handleInputChange = (field: string, value: string) => {
+    console.log(`🔄 [BusinessSetupStep] Field changed: ${field} = ${value}`);
+    
+    if (field === 'categoryId') {
+      const selectedCategory = categories.find(c => c.id === value);
+      console.log('🏷️ [BusinessSetupStep] Category changed:', {
+        categoryId: value,
+        categoryName: selectedCategory?.name,
+        availableCategories: categories.map(c => ({id: c.id, name: c.name}))
+      });
+    }
+    
     setFormData(prev => ({
       ...prev,
       [field]: value
@@ -591,7 +834,7 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
     }
 
     // Auto-save for specific fields with debouncing
-    if (['website', 'naicsCode', 'entityType', 'ein', 'businessName', 'startYear', 'address', 'city', 'state', 'zip'].includes(field) && business?.id) {
+    if (['website', 'naicsCode', 'entityType', 'ein', 'businessName', 'startYear', 'address', 'city', 'state', 'zip', 'categoryId', 'githubToken'].includes(field) && business?.id) {
       // Clear existing timer for this field
       if (debounceTimers[field]) {
         clearTimeout(debounceTimers[field]);
@@ -620,6 +863,16 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
           } else if (field === 'startYear') {
             updateData.start_year = parseInt(value);
             console.log('[BusinessSetupStep] Auto-saving start year:', value);
+          } else if (field === 'categoryId') {
+            updateData.category_id = value || null;
+            const selectedCategory = categories.find(c => c.id === value);
+            console.log('[BusinessSetupStep] Auto-saving business category:', {
+              categoryId: value,
+              categoryName: selectedCategory?.name
+            });
+          } else if (field === 'githubToken') {
+            updateData.github_token = value;
+            console.log('[BusinessSetupStep] Auto-saving GitHub token:', value);
           } else if (['address', 'city', 'state', 'zip'].includes(field)) {
             // For address fields, we need to update the contact_info JSONB column
             const currentContactInfo = business?.contact_info || {};
@@ -653,6 +906,15 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
                 }
               });
               console.log('[BusinessSetupStep] Updated local business state with new contact_info');
+            } else if (field === 'categoryId') {
+              // Update the business prop with the new category
+              onUpdate({ 
+                business: {
+                  ...business,
+                  category_id: value || null
+                }
+              });
+              console.log('[BusinessSetupStep] Updated local business state with new category_id:', value);
             }
           }
         } catch (error) {
@@ -945,7 +1207,7 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Entity Type
@@ -962,6 +1224,58 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
                     ))}
                   </select>
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Business Category *
+                  </label>
+                  <select
+                    value={formData.categoryId}
+                    onChange={(e) => handleInputChange('categoryId', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">Select Category</option>
+                    {categories.map(category => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.categoryId && (
+                    <p className="text-red-600 text-sm mt-1">{errors.categoryId}</p>
+                  )}
+                </div>
+
+                {/* GitHub Token field - only for Software category */}
+                {categories.find(c => c.id === formData.categoryId)?.name?.toLowerCase() === 'software' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      GitHub Access Token
+                      <span className="text-xs text-gray-500 ml-2">(For repository analysis)</span>
+                    </label>
+                    <input
+                      type="password"
+                      value={formData.githubToken}
+                      onChange={(e) => handleInputChange('githubToken', e.target.value)}
+                      placeholder="ghp_your_github_token_here"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    <p className="text-xs text-gray-600 mt-1">
+                      Optional: Add your GitHub token to enable repository analysis in Software R&D reports. 
+                      <a 
+                        href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 underline ml-1"
+                      >
+                        How to create a token
+                      </a>
+                    </p>
+                    {errors.githubToken && (
+                      <p className="text-red-600 text-sm mt-1">{errors.githubToken}</p>
+                    )}
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1311,14 +1625,48 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
                           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <span className="text-gray-500 text-sm">$</span>
                           </div>
-                          <input
-                            type="text"
-                            value={formData.historicalDataInputs?.[data.year.toString()]?.qre || 
-                                  (data.qre ? formatCurrency(data.qre.toString()) : '')}
-                            onChange={(e) => handleHistoricalDataChange(data.year, 'qre', e.target.value)}
-                            className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            placeholder="0"
-                          />
+                          {/* COLOR-CODING LOGIC: Green for calculated, Black for manual */}
+                          {(() => {
+                            const currentInput = formData.historicalDataInputs?.[data.year.toString()]?.qre;
+                            const hasManualInput = currentInput && currentInput.trim() !== '';
+                            const calculatedQRE = (data as any).calculated_qre || 0;
+                            const manualQRE = (data as any).manual_qre || 0;
+                            
+                            // Determine if showing calculated (internal) or manual (Business Setup) QRE
+                            const isUsingCalculated = !hasManualInput && calculatedQRE > 0;
+                            const displayValue = hasManualInput 
+                              ? currentInput 
+                              : (data.qre ? formatCurrency(data.qre.toString()) : '');
+                            
+                            return (
+                              <input
+                                type="text"
+                                value={displayValue}
+                                onChange={(e) => {
+                                  // When user deletes manual value, revert to calculated QRE
+                                  if (e.target.value === '' && calculatedQRE > 0) {
+                                    console.log(`🔄 [BusinessSetup] Reverting ${data.year} to calculated QRE: ${calculatedQRE}`);
+                                    handleHistoricalDataChange(data.year, 'qre', calculatedQRE.toString());
+                                  } else {
+                                    handleHistoricalDataChange(data.year, 'qre', e.target.value);
+                                  }
+                                }}
+                                className={`w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                                  isUsingCalculated 
+                                    ? 'font-bold text-green-600' // Bold green for calculated values
+                                    : 'font-normal text-gray-900' // Standard black for manual values
+                                }`}
+                                placeholder="0"
+                                title={
+                                  isUsingCalculated 
+                                    ? `Calculated from internal data: $${formatCurrency(calculatedQRE.toString())}`
+                                    : hasManualInput 
+                                      ? 'Manual override (Business Setup QRE)'
+                                      : 'Enter QRE amount'
+                                }
+                              />
+                            );
+                          })()}
                         </div>
                         {errors[`historical-${data.year}-qre`] && (
                           <p className="text-red-600 text-xs mt-1">{errors[`historical-${data.year}-qre`]}</p>

@@ -68,7 +68,7 @@ export class SupplyManagementService {
       }
 
       // Aggregate QRE and applied % for each supply
-      return (supplies || []).map(supply => {
+      const suppliesWithQRE = (supplies || []).map(supply => {
         const supplyAllocs = allocations.filter(a => a.supply_id === supply.id && a.is_included);
         const totalQRE = supplyAllocs.reduce((sum, a) => sum + (a.amount_applied || 0), 0);
         const totalAppliedPct = supplyAllocs.reduce((sum, a) => sum + (a.applied_percentage || 0), 0);
@@ -79,25 +79,61 @@ export class SupplyManagementService {
           cost_amount: supply.annual_cost
         };
       });
+      
+      console.log(`🔍 SupplyManagementService.getSupplies: Found ${suppliesWithQRE.length} total supplies for business, ${suppliesWithQRE.filter(s => s.calculated_qre > 0).length} with QRE > 0 for year ${businessYearId}`);
+      
+      return suppliesWithQRE;
     } catch (error) {
       console.error('Error fetching supplies:', error);
       throw error;
     }
   }
 
-  // Add a new supply
-  static async addSupply(supplyData: QuickSupplyEntry, businessId: string): Promise<void> {
+  // Add a new supply with year-specific subcomponent record
+  static async addSupply(supplyData: QuickSupplyEntry, businessId: string, businessYearId?: string): Promise<void> {
     try {
-      const { error } = await supabase
+      console.log('🔄 SupplyManagementService.addSupply: Creating supply for business:', businessId, 'year:', businessYearId);
+      
+      // Create the supply record
+      const { data: newSupply, error: supplyError } = await supabase
         .from('rd_supplies')
         .insert({
           business_id: businessId,
           name: supplyData.name,
           description: supplyData.description,
           annual_cost: parseFloat(supplyData.amount.replace(/[^0-9.]/g, ''))
-        });
+        })
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (supplyError) throw supplyError;
+      
+      console.log('✅ Created supply:', newSupply.id);
+
+      // CRITICAL FIX: Create a subcomponent record for the specific year so it shows up in EmployeeSetupStep
+      if (businessYearId && newSupply) {
+        console.log('🔗 Creating year-specific subcomponent record for supply:', newSupply.id, 'in year:', businessYearId);
+        
+        const { error: subcomponentError } = await supabase
+          .from('rd_supply_subcomponents')
+          .insert({
+            supply_id: newSupply.id,
+            business_year_id: businessYearId,
+            applied_percentage: 0,
+            amount_applied: 0,
+            is_included: true,
+            subcomponent_id: null // Will be set when user allocates to research activities
+          });
+
+        if (subcomponentError) {
+          console.error('❌ Error creating subcomponent record:', subcomponentError);
+          // Don't throw here - supply was created successfully, subcomponent can be added later
+        } else {
+          console.log('✅ Created year-specific subcomponent record for supply');
+        }
+      } else {
+        console.log('⚠️ No businessYearId provided - supply will only appear when explicitly allocated');
+      }
     } catch (error) {
       console.error('Error adding supply:', error);
       throw error;

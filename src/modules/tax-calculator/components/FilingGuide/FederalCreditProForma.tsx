@@ -10,6 +10,12 @@ interface FederalCreditProFormaProps {
   clientId: string;
   userId?: string;
   selectedMethod?: 'standard' | 'asc';
+  lockedQREValues?: {
+    employee_qre: number;
+    contractor_qre: number;
+    supply_qre: number;
+    qre_locked: boolean;
+  };
 }
 
 export const FederalCreditProForma: React.FC<FederalCreditProFormaProps> = ({
@@ -18,7 +24,8 @@ export const FederalCreditProForma: React.FC<FederalCreditProFormaProps> = ({
   calculations,
   clientId,
   userId,
-  selectedMethod: propSelectedMethod
+  selectedMethod: propSelectedMethod,
+  lockedQREValues
 }) => {
   // Fix: 2023 should default to pre-2024 form, 2024+ should default to post-2024
   const isPost2024 = selectedYear?.year >= 2024;
@@ -79,6 +86,7 @@ export const FederalCreditProForma: React.FC<FederalCreditProFormaProps> = ({
             clientId={clientId}
             userId={userId}
             selectedMethod={selectedMethod}
+            lockedQREValues={lockedQREValues}
           />
         ) : (
           <Form6765v2024
@@ -88,6 +96,7 @@ export const FederalCreditProForma: React.FC<FederalCreditProFormaProps> = ({
             clientId={clientId}
             userId={userId}
             selectedMethod={selectedMethod}
+            lockedQREValues={lockedQREValues}
           />
         )}
       </div>

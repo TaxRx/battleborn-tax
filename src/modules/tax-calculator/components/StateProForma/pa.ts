@@ -1,13 +1,16 @@
 import { StateCreditBaseData } from '../../services/stateCreditDataService';
 
 export const PA_PROFORMA_LINES = [
-  // --- PA Standard Method (Form RCT-101) ---
-  { line: '1', label: 'Enter the amount of Pennsylvania qualified research expenses for the current year.', field: 'paQRE', editable: false, method: 'standard', calc: (data: StateCreditBaseData) => (data.wages || 0) + (data.supplies || 0) + (data.contractResearch || 0) },
-  { line: '2', label: 'Enter the average annual gross receipts for the 4 taxable years preceding the credit year.', field: 'paAvgGrossReceipts', editable: false, method: 'standard', calc: (data: StateCreditBaseData) => data.avgGrossReceipts || 0 },
-  { line: '3', label: 'Enter the fixed-base percentage (3% for most taxpayers).', field: 'paFixedBasePercent', editable: true, method: 'standard', defaultValue: 3, type: 'percentage' },
-  { line: '4', label: 'Multiply Line 2 by Line 3.', field: 'paBaseAmount', editable: false, method: 'standard', calc: (data: any) => (data.paAvgGrossReceipts || 0) * ((data.paFixedBasePercent || 3) / 100) },
-  { line: '5', label: 'Subtract Line 4 from Line 1. If zero or less, enter zero.', field: 'paIncrementalQRE', editable: false, method: 'standard', calc: (data: any) => Math.max((data.paQRE || 0) - (data.paBaseAmount || 0), 0) },
-  { line: '6', label: 'Multiply Line 5 by 10% (.10). This is your Pennsylvania R&D credit.', field: 'paFinalCredit', editable: false, method: 'standard', calc: (data: any) => (data.paIncrementalQRE || 0) * 0.10 },
+  // --- PA R&D Tax Credit Application (myPATH System) ---
+  // IMPORTANT: PA uses application-based awards, not automatic calculations
+  { line: '1', label: 'Current year PA qualified research expenses (from Federal Form 6765)', field: 'paCurrentYearQRE', editable: true, method: 'standard', calc: (data: StateCreditBaseData) => (data.wages || 0) + (data.supplies || 0) + (data.contractResearch || 0), sort_order: 1 },
+  { line: '2', label: 'Prior year PA qualified research expenses', field: 'paPriorYear1QRE', editable: true, method: 'standard', sort_order: 2 },
+  { line: '3', label: 'Second prior year PA qualified research expenses', field: 'paPriorYear2QRE', editable: true, method: 'standard', sort_order: 3 },
+  { line: '4', label: 'Third prior year PA qualified research expenses (if applicable)', field: 'paPriorYear3QRE', editable: true, method: 'standard', sort_order: 4 },
+  { line: '5', label: 'Fourth prior year PA qualified research expenses (if applicable)', field: 'paPriorYear4QRE', editable: true, method: 'standard', sort_order: 5 },
+  { line: '6', label: 'Total QRE to report in application', field: 'paTotalQRE', editable: false, method: 'standard', calc: (data: any) => (data.paCurrentYearQRE || 0) + (data.paPriorYear1QRE || 0) + (data.paPriorYear2QRE || 0) + (data.paPriorYear3QRE || 0) + (data.paPriorYear4QRE || 0), sort_order: 6 },
+  { line: '7', label: 'R&D tax credit awarded by PA Department of Revenue', field: 'paAwardedCredit', editable: true, method: 'standard', sort_order: 7 },
+  { line: '8', label: 'Amount of awarded credit claimed this year', field: 'paFinalCredit', editable: true, method: 'standard', sort_order: 8 },
 ];
 
 export const paConfig = {
@@ -15,55 +18,73 @@ export const paConfig = {
   name: 'Pennsylvania',
   forms: {
     standard: {
-      name: 'PA Form RCT-101 - Research and Development Credit',
+      name: 'PA R&D Tax Credit Application (myPATH)',
       method: 'standard',
       lines: PA_PROFORMA_LINES.filter(line => line.method === 'standard'),
     },
   },
   hasAlternativeMethod: false,
-  creditRate: 0.10,
-  creditType: "incremental",
-  formReference: "PA Form RCT-101",
+  creditRate: "Variable (award-based)",
+  creditType: "application_based_award",
+  formReference: "PA Schedule OC (Line 2) - myPATH Application",
   validationRules: [
     {
-      type: "max_credit",
-      value: 50,
-      message: "Credit limited to 50% of the taxpayer's Pennsylvania Corporate Net Income Tax liability"
+      type: "application_required",
+      value: "myPATH system",
+      message: "Must apply through PA Department of Revenue's myPATH online system"
     },
     {
-      type: "carryforward_limit",
-      value: 15,
-      message: "Unused credits may be carried forward for up to 15 years"
+      type: "application_window",
+      value: "August 1 - December 1",
+      message: "Applications must be submitted between August 1 and December 1 annually"
     },
     {
-      type: "entity_type_restriction",
-      value: "Corporations and partnerships",
-      message: "Available to corporations and partnerships with Pennsylvania source income"
+      type: "entity_type_eligibility",
+      value: "Businesses and individuals",
+      message: "Available to businesses and individuals subject to PA Corporate Net Income Tax or Personal Income Tax"
     },
     {
-      type: "gross_receipts_threshold",
-      value: 100000,
-      message: "Minimum $100,000 in gross receipts in the taxable year to qualify"
+      type: "minimum_history",
+      value: "2 years",
+      message: "Must have at least 2 years of R&D expenditure history"
     },
     {
-      type: "other",
-      value: "Application required",
-      message: "Must file Form RCT-101 and attach Schedule R&D to claim the credit"
+      type: "pennsylvania_requirement",
+      value: "PA research required",
+      message: "Research must be conducted within Pennsylvania"
     },
     {
-      type: "other",
-      value: "Deadline: April 15",
-      message: "Application must be filed by April 15th of the year following the taxable year"
+      type: "project_description",
+      value: "4-part test required",
+      message: "Must provide detailed project descriptions meeting 4-part qualification test"
+    },
+    {
+      type: "tax_clearance",
+      value: "Compliance required",
+      message: "Must be compliant with all PA tax reporting and payment requirements"
+    },
+    {
+      type: "transferable",
+      value: "Credits can be sold",
+      message: "R&D tax credits may be sold to other taxpayers (subject to approval)"
     }
   ],
   notes: [
-    "Credit is non-refundable and may only be used to offset Pennsylvania Corporate Net Income Tax liability",
-    "Research must be conducted in Pennsylvania to qualify for the credit",
-    "Qualified research expenses must meet the same criteria as the federal credit under IRC Section 41",
-    "Taxpayers must maintain detailed records of qualified research activities and expenses",
-    "Pennsylvania uses a fixed-base percentage calculation similar to the federal credit",
-    "Most taxpayers use a 3% fixed-base percentage unless they qualify for a higher rate",
-    "Credit is 10% of incremental qualified research expenses",
-    "Pennsylvania offers one of the longest carryforward periods at 15 years"
+    "Pennsylvania R&D Credit is APPLICATION-BASED, not automatically calculated:",
+    "• Application window: August 1 - December 1 annually",
+    "• Apply through PA Department of Revenue's myPATH online system",
+    "• Must have at least 2 years of R&D expenditure history",
+    "• Requires detailed project descriptions meeting 4-part test:",
+    "  - Elimination of uncertainty",
+    "  - Process of experimentation", 
+    "  - Technological in nature",
+    "  - Qualified purpose information",
+    "• Must provide Federal Form 6765 information (if filed)",
+    "• Research must be conducted within Pennsylvania",
+    "• Tax clearance required - must be compliant with all PA tax obligations",
+    "• Credits are awarded at variable amounts (not fixed percentage)",
+    "• Awarded credits can be sold/transferred (subject to approval)",
+    "• Credits claimed on PA Schedule OC (Other Credits), Line 2",
+    "• Created by Act 7 of 1997 under Article XVII-B of Tax Reform Code"
   ]
 }; 

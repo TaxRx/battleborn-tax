@@ -1,9 +1,9 @@
 import { StateCreditBaseData } from '../../services/stateCreditDataService';
 
 export const NC_PROFORMA_LINES = [
-  // --- NC Standard Method (Form CD-401) ---
-  { line: '1', label: 'Enter the amount of North Carolina qualified research expenses for the current year.', field: 'ncQRE', editable: false, method: 'standard', calc: (data: StateCreditBaseData) => (data.wages || 0) + (data.supplies || 0) + (data.contractResearch || 0) },
-  { line: '2', label: 'Multiply Line 1 by 2.5% (.025). This is your North Carolina R&D credit.', field: 'ncFinalCredit', editable: false, method: 'standard', calc: (data: any) => (data.ncQRE || 0) * 0.025 },
+  // --- NC Standard Method (Research and Development Credit) ---
+  { line: '1', label: 'Enter the amount of North Carolina qualified research expenses for the current year.', field: 'ncQRE', editable: true, method: 'standard', calc: (data: StateCreditBaseData) => (data.wages || 0) + (data.supplies || 0) + (data.contractResearch || 0), line_type: 'input', sort_order: 1 },
+  { line: '2', label: 'Multiply Line 1 by 2.5% (.025). This is your North Carolina R&D credit.', field: 'ncFinalCredit', editable: false, method: 'standard', calc: (data: any) => (data.ncQRE || 0) * 0.025, line_type: 'calculated', sort_order: 2 },
 ];
 
 export const ncConfig = {
@@ -19,7 +19,7 @@ export const ncConfig = {
   hasAlternativeMethod: false,
   creditRate: 0.025,
   creditType: "total_qre",
-  formReference: "NC Form CD-401",
+  formReference: "NC-478I Research and Development Credit",
   validationRules: [
     {
       type: "max_credit",

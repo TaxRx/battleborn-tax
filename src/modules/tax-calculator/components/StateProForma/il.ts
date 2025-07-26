@@ -13,14 +13,41 @@ export interface StateProFormaLine {
 }
 
 export const IL_PROFORMA_LINES: StateProFormaLine[] = [
-  // --- IL Form IL-1120 - Research and Development Credit ---
-  // Based on actual IL Form IL-1120 requirements
+  // --- IL Schedule 1299-D - Income Tax Credits (for corporations) ---
+  // Based on actual Schedule 1299-D requirements
+  
+  // Auto-populate from QRE data using standard field names
+  { 
+    line: 'wages', 
+    label: 'Qualified wages', 
+    field: 'wages', 
+    editable: true, 
+    method: 'standard',
+    sort_order: 0.1
+  },
+  { 
+    line: 'supplies', 
+    label: 'Qualified supplies', 
+    field: 'supplies', 
+    editable: true, 
+    method: 'standard',
+    sort_order: 0.2
+  },
+  { 
+    line: 'contract', 
+    label: 'Contract research', 
+    field: 'contractResearch', 
+    editable: true, 
+    method: 'standard',
+    sort_order: 0.3
+  },
   { 
     line: '1', 
-    label: 'Qualified research expenses for the current year (wages, supplies, contract research)', 
-    field: 'ilQRE', 
+    label: 'Illinois qualified research expenses for current year', 
+    field: 'ilCurrentYearQRE', 
     editable: false, 
-    calc: (data: Record<string, number>) => (data.wages || 0) + (data.supplies || 0) + (data.contractResearch || 0),
+    method: 'standard', 
+    calc: (data: any) => (data.wages || 0) + (data.supplies || 0) + (data.contractResearch || 0),
     sort_order: 1
   },
   { 
@@ -88,14 +115,14 @@ export const IL_ALTERNATIVE_LINES: StateProFormaLine[] = [
 export const ilConfig = {
   forms: {
     standard: {
-      name: "Form IL-1120",
+      name: "Schedule 1299-D - Income Tax Credits (for corporations)",
       method: "standard",
       lines: [
         // ... existing lines ...
       ]
     },
     alternative: {
-      name: "Form IL-1120 (Alternative)",
+      name: "Schedule 1299-D (Alternative Method)",
       method: "alternative", 
       lines: [
         // ... existing lines ...
@@ -105,7 +132,7 @@ export const ilConfig = {
   hasAlternativeMethod: true,
   creditRate: 0.065,
   creditType: "incremental",
-  formReference: "IL Form IL-1120",
+  formReference: "IL Schedule 1299-D (Credit Code 5340)",
   validationRules: [
     {
       type: "max_credit",

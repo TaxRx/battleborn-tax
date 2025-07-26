@@ -3,14 +3,40 @@ import { StateCreditBaseData } from '../../services/stateCreditDataService';
 export const GA_PROFORMA_LINES = [
   // --- GA Form IT-RD - Research and Development Credit ---
   // Based on actual GA Form IT-RD requirements
+  
+  // Auto-populate from QRE data using standard field names
+  { 
+    line: 'wages', 
+    label: 'Qualified wages', 
+    field: 'wages', 
+    editable: true, 
+    method: 'standard',
+    sort_order: 0.1
+  },
+  { 
+    line: 'supplies', 
+    label: 'Qualified supplies', 
+    field: 'supplies', 
+    editable: true, 
+    method: 'standard',
+    sort_order: 0.2
+  },
+  { 
+    line: 'contract', 
+    label: 'Contract research', 
+    field: 'contractResearch', 
+    editable: true, 
+    method: 'standard',
+    sort_order: 0.3
+  },
   { 
     line: '1', 
     label: 'Qualified research expenses for the current year (wages, supplies, contract research)', 
     field: 'gaQRE', 
     editable: false, 
     method: 'standard', 
-    calc: (data: StateCreditBaseData) => (data.wages || 0) + (data.supplies || 0) + (data.contractResearch || 0),
-    line_type: 'input',
+    calc: (data: any) => (data.wages || 0) + (data.supplies || 0) + (data.contractResearch || 0),
+    line_type: 'calculated',
     sort_order: 1
   },
   { 
