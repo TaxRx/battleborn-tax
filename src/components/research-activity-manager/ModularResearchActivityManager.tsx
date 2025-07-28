@@ -45,6 +45,7 @@ import SubcomponentModal from './SubcomponentModal';
 import MoveSubcomponentModal from './MoveSubcomponentModal';
 import AddFilterEntryModal from './AddFilterEntryModal';
 import EditActivityModal from './EditActivityModal';
+import EditStepModal from './EditStepModal';
 import CSVImportModal from './CSVImportModal';
 import EditableSelectableChip from './EditableSelectableChip';
 import EditFocusModal from './EditFocusModal';
@@ -142,6 +143,11 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   // Edit activity modal state
   const [showEditActivityModal, setShowEditActivityModal] = useState(false);
   const [editingActivity, setEditingActivity] = useState<ResearchActivity | null>(null);
+
+  // Edit step modal state
+  const [showEditStepModal, setShowEditStepModal] = useState(false);
+  const [editingStep, setEditingStep] = useState<ResearchStep | null>(null);
+  const [editingStepActivityId, setEditingStepActivityId] = useState<string>('');
 
   // CSV import modal state
   const [showCSVImportModal, setShowCSVImportModal] = useState(false);
@@ -336,6 +342,45 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
     const activeData = active.data.current;
     const overData = over.data.current;
 
+    // Handle step reordering
+    if (activeData?.type === 'step' && overData?.type === 'step') {
+      const activeStepId = active.id as string;
+      const overStepId = over.id as string;
+
+      if (activeStepId !== overStepId) {
+        try {
+          // Find the activity that contains both steps
+          const activity = activities.find(act => 
+            act.steps.some(step => step.id === activeStepId) && 
+            act.steps.some(step => step.id === overStepId)
+          );
+
+          if (activity) {
+            const steps = activity.steps.filter(step => step.is_active);
+            const oldIndex = steps.findIndex(step => step.id === activeStepId);
+            const newIndex = steps.findIndex(step => step.id === overStepId);
+
+            // Create new order array
+            const reorderedSteps = arrayMove(steps, oldIndex, newIndex);
+            
+            // Update step_order in database
+            const updatePromises = reorderedSteps.map((step, index) => 
+              ResearchActivitiesService.updateResearchStep(step.id, { 
+                ...step, 
+                step_order: index + 1 
+              })
+            );
+
+            await Promise.all(updatePromises);
+            loadActivities(); // Refresh data
+          }
+        } catch (error) {
+          console.error('Error reordering steps:', error);
+        }
+      }
+    }
+
+    // Handle subcomponent movement between steps
     if (activeData?.type === 'subcomponent' && overData?.type === 'step') {
       const subcomponent = activeData.subcomponent;
       const fromStepId = activeData.stepId;
@@ -397,6 +442,18 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   const handleEditActivity = (activity: ResearchActivity) => {
     setEditingActivity(activity);
     setShowEditActivityModal(true);
+  };
+
+  const handleEditStep = (step: ResearchStep, activityId: string) => {
+    setEditingStep(step);
+    setEditingStepActivityId(activityId);
+    setShowEditStepModal(true);
+  };
+
+  const handleAddStep = (activityId: string) => {
+    setEditingStep(null);
+    setEditingStepActivityId(activityId);
+    setShowEditStepModal(true);
   };
 
   const handleDuplicateActivity = async (activity: ResearchActivity) => {
@@ -711,6 +768,8 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
                 onDuplicate={handleDuplicateActivity}
                 onDeactivate={handleDeactivateActivity}
                 onRefresh={loadActivities}
+                onEditStep={handleEditStep}
+                onAddStep={handleAddStep}
               />
             ))
           ) : (
@@ -847,6 +906,24 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
           categories={categories}
           areas={areas}
           focuses={focuses}
+        />
+
+        {/* Edit Step Modal */}
+        <EditStepModal
+          isOpen={showEditStepModal}
+          step={editingStep}
+          activityId={editingStepActivityId}
+          onClose={() => {
+            setShowEditStepModal(false);
+            setEditingStep(null);
+            setEditingStepActivityId('');
+          }}
+          onSuccess={() => {
+            loadActivities();
+            setShowEditStepModal(false);
+            setEditingStep(null);
+            setEditingStepActivityId('');
+          }}
         />
 
         {/* CSV Import Modal */}
