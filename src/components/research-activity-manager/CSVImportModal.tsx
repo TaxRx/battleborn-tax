@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { X, Upload, Download, Info, AlertCircle, CheckCircle, FileText } from 'lucide-react';
+import { X, Upload, Download, Info, AlertCircle, CheckCircle, FileText, AlertTriangle, Check, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 interface CSVImportModalProps {
@@ -12,19 +12,35 @@ interface CSVImportModalProps {
 interface ImportResult {
   success: number;
   failed: number;
-  errors: Array<{ row: number; error: string; data?: any }>;
+  updated: number;
+  errors: Array<{
+    row: number;
+    error: string;
+    data?: any;
+  }>;
 }
 
-const CSVImportModal: React.FC<CSVImportModalProps> = ({
-  isOpen,
-  onClose,
-  onSuccess,
-  businessId
-}) => {
+interface DuplicateInfo {
+  existingId: string;
+  existingData: any;
+  newData: any;
+  rowNumber: number;
+}
+
+interface DuplicateResolution {
+  action: 'update' | 'skip' | 'create_new';
+  subcomponentName: string;
+}
+
+const CSVImportModal: React.FC<CSVImportModalProps> = ({ isOpen, onClose, onSuccess, businessId }) => {
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [showInstructions, setShowInstructions] = useState(false);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicates, setDuplicates] = useState<DuplicateInfo[]>([]);
+  const [duplicateResolutions, setDuplicateResolutions] = useState<{ [key: string]: DuplicateResolution }>({});
+  const [processingDuplicates, setProcessingDuplicates] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const csvTemplate = `research_activity,category,area,focus,step,subcomponent,hint,general_description,goal,hypothesis,alternatives,uncertainties,developmental_process,primary_goal,expected_outcome_type,cpt_codes,cdt_codes,alternative_paths
@@ -167,7 +183,66 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
     return focus.data.id;
   };
 
-  const handleImport = async () => {
+  const detectDuplicateSubcomponents = async (rows: any[]): Promise<DuplicateInfo[]> => {
+    const duplicates: DuplicateInfo[] = [];
+    
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row.subcomponent) continue;
+      
+      // Check if subcomponent with this name already exists
+      const { data: existingSubcomponent, error } = await supabase
+        .from('rd_research_subcomponents')
+        .select(`
+          id,
+          name,
+          step_id,
+          description,
+          subcomponent_order,
+          step:rd_research_steps (
+            id,
+            name,
+            research_activity_id,
+            research_activity:rd_research_activities (
+              id,
+              title
+            )
+          )
+        `)
+        .eq('name', row.subcomponent.trim())
+        .single();
+      
+      if (!error && existingSubcomponent) {
+        duplicates.push({
+          existingId: existingSubcomponent.id,
+          existingData: existingSubcomponent,
+          newData: row,
+          rowNumber: row._rowNumber
+        });
+      }
+    }
+    
+    return duplicates;
+  };
+
+  const handleDuplicateResolution = (subcomponentName: string, action: 'update' | 'skip' | 'create_new') => {
+    setDuplicateResolutions(prev => ({
+      ...prev,
+      [subcomponentName]: { action, subcomponentName }
+    }));
+  };
+
+  const processDuplicates = async () => {
+    setProcessingDuplicates(true);
+    
+    // Process the import with duplicate resolutions
+    await handleImportWithResolutions();
+    
+    setShowDuplicateModal(false);
+    setProcessingDuplicates(false);
+  };
+
+  const handleImportWithResolutions = async () => {
     if (!file) return;
 
     setImporting(true);
@@ -184,6 +259,7 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
       const result: ImportResult = {
         success: 0,
         failed: 0,
+        updated: 0,
         errors: []
       };
 
@@ -239,7 +315,7 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
             // Check if step already exists for this activity
             let { data: existingStep, error: stepFindError } = await supabase
               .from('rd_research_steps')
-              .select('id')
+              .select('id, step_order')
               .eq('research_activity_id', activityId)
               .eq('name', row.step.trim())
               .single();
@@ -278,7 +354,49 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
               stepId = existingStep.id;
             }
 
-            // Get the current max subcomponent order for this step
+            // Check for duplicate resolution
+            const resolution = duplicateResolutions[row.subcomponent.trim()];
+            
+            if (resolution) {
+              if (resolution.action === 'skip') {
+                continue; // Skip this row
+              } else if (resolution.action === 'update') {
+                // Update existing subcomponent (preserve ID)
+                const duplicate = duplicates.find(d => d.newData.subcomponent.trim() === row.subcomponent.trim());
+                if (duplicate) {
+                  const updateData = {
+                    step_id: stepId, // Allow changing step/activity relationships
+                    name: row.subcomponent.trim(),
+                    description: row.general_description || '',
+                    hint: row.hint || '',
+                    general_description: row.general_description || '',
+                    goal: row.goal || '',
+                    hypothesis: row.hypothesis || '',
+                    alternatives: row.alternatives || '',
+                    uncertainties: row.uncertainties || '',
+                    developmental_process: row.developmental_process || '',
+                    primary_goal: row.primary_goal || '',
+                    expected_outcome_type: row.expected_outcome_type || '',
+                    cpt_codes: row.cpt_codes || '',
+                    cdt_codes: row.cdt_codes || '',
+                    alternative_paths: row.alternative_paths || '',
+                    updated_at: new Date().toISOString()
+                  };
+
+                  const { error: updateError } = await supabase
+                    .from('rd_research_subcomponents')
+                    .update(updateData)
+                    .eq('id', duplicate.existingId);
+
+                  if (updateError) throw updateError;
+                  result.updated++;
+                  continue;
+                }
+              }
+              // If action is 'create_new', continue with normal creation below
+            }
+
+            // Create new subcomponent (normal flow or create_new resolution)
             const { data: maxOrderSubcomponent } = await supabase
               .from('rd_research_subcomponents')
               .select('subcomponent_order')
@@ -289,7 +407,6 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
 
             const nextSubOrder = (maxOrderSubcomponent?.subcomponent_order || 0) + 1;
 
-            // Create subcomponent with detailed data
             const subcomponentData = {
               step_id: stepId,
               name: row.subcomponent.trim(),
@@ -328,7 +445,7 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
 
       setResult(result);
 
-      if (result.success > 0) {
+      if (result.success > 0 || result.updated > 0) {
         onSuccess();
       }
     } catch (error: any) {
@@ -336,9 +453,51 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
       setResult({
         success: 0,
         failed: 1,
+        updated: 0,
         errors: [{ row: 0, error: error.message || 'Failed to process file' }]
       });
     } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!file) return;
+
+    setImporting(true);
+    setResult(null);
+
+    try {
+      const text = await file.text();
+      const rows = parseCSV(text);
+
+      if (rows.length === 0) {
+        throw new Error('No data found in CSV file');
+      }
+
+      // Check for duplicates before processing
+      console.log('🔍 Checking for duplicate subcomponents...');
+      const foundDuplicates = await detectDuplicateSubcomponents(rows);
+      
+      if (foundDuplicates.length > 0) {
+        console.log(`⚠️ Found ${foundDuplicates.length} duplicate subcomponents`);
+        setDuplicates(foundDuplicates);
+        setShowDuplicateModal(true);
+        setImporting(false);
+        return;
+      }
+
+      // No duplicates found, proceed with normal import
+      await handleImportWithResolutions();
+      
+    } catch (error: any) {
+      console.error('Import error:', error);
+      setResult({
+        success: 0,
+        failed: 1,
+        updated: 0,
+        errors: [{ row: 0, error: error.message || 'Failed to process file' }]
+      });
       setImporting(false);
     }
   };
@@ -495,6 +654,12 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
                     <CheckCircle className="w-5 h-5 text-green-600" />
                     <span className="text-green-600 font-medium">{result.success} Successful</span>
                   </div>
+                  {result.updated > 0 && (
+                    <div className="flex items-center space-x-2">
+                      <RefreshCw className="w-5 h-5 text-orange-600" />
+                      <span className="text-orange-600 font-medium">{result.updated} Updated</span>
+                    </div>
+                  )}
                   {result.failed > 0 && (
                     <div className="flex items-center space-x-2">
                       <AlertCircle className="w-5 h-5 text-red-600" />
@@ -538,6 +703,139 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* Duplicate Resolution Modal */}
+      {showDuplicateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-60">
+          <div className="bg-white rounded-lg shadow-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto mx-4">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="flex items-center">
+                <AlertTriangle className="text-orange-500 mr-3" size={24} />
+                <h3 className="text-lg font-semibold text-gray-900">Duplicate Subcomponents Detected</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowDuplicateModal(false);
+                  setImporting(false);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 mb-4">
+                  Found {duplicates.length} subcomponent(s) that already exist in the database. 
+                  Choose how to handle each duplicate:
+                </p>
+                
+                <div className="space-y-4">
+                  {duplicates.map((duplicate, index) => (
+                    <div key={index} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Existing Data */}
+                        <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                          <h4 className="font-medium text-blue-900 mb-2">Existing in Database</h4>
+                          <div className="text-sm space-y-1">
+                            <div><strong>Name:</strong> {duplicate.existingData.name}</div>
+                            <div><strong>Step:</strong> {duplicate.existingData.step?.name}</div>
+                            <div><strong>Activity:</strong> {duplicate.existingData.step?.research_activity?.title}</div>
+                            <div><strong>Description:</strong> {duplicate.existingData.description || 'None'}</div>
+                          </div>
+                        </div>
+                        
+                        {/* New Data */}
+                        <div className="bg-green-50 border border-green-200 rounded p-3">
+                          <h4 className="font-medium text-green-900 mb-2">New from CSV (Row {duplicate.rowNumber})</h4>
+                          <div className="text-sm space-y-1">
+                            <div><strong>Name:</strong> {duplicate.newData.subcomponent}</div>
+                            <div><strong>Step:</strong> {duplicate.newData.step}</div>
+                            <div><strong>Activity:</strong> {duplicate.newData.research_activity}</div>
+                            <div><strong>Description:</strong> {duplicate.newData.general_description || 'None'}</div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Resolution Options */}
+                      <div className="mt-3 border-t border-gray-200 pt-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          How should this duplicate be handled?
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => handleDuplicateResolution(duplicate.newData.subcomponent.trim(), 'update')}
+                            className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                              duplicateResolutions[duplicate.newData.subcomponent.trim()]?.action === 'update'
+                                ? 'bg-orange-600 text-white border-orange-600'
+                                : 'bg-white text-orange-600 border-orange-600 hover:bg-orange-50'
+                            }`}
+                          >
+                            <RefreshCw className="inline mr-1" size={14} />
+                            Update Existing (Preserve ID)
+                          </button>
+                          <button
+                            onClick={() => handleDuplicateResolution(duplicate.newData.subcomponent.trim(), 'create_new')}
+                            className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                              duplicateResolutions[duplicate.newData.subcomponent.trim()]?.action === 'create_new'
+                                ? 'bg-green-600 text-white border-green-600'
+                                : 'bg-white text-green-600 border-green-600 hover:bg-green-50'
+                            }`}
+                          >
+                            <Check className="inline mr-1" size={14} />
+                            Create New (Allow Duplicate)
+                          </button>
+                          <button
+                            onClick={() => handleDuplicateResolution(duplicate.newData.subcomponent.trim(), 'skip')}
+                            className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                              duplicateResolutions[duplicate.newData.subcomponent.trim()]?.action === 'skip'
+                                ? 'bg-gray-600 text-white border-gray-600'
+                                : 'bg-white text-gray-600 border-gray-600 hover:bg-gray-50'
+                            }`}
+                          >
+                            <X className="inline mr-1" size={14} />
+                            Skip Row
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowDuplicateModal(false);
+                  setImporting(false);
+                }}
+                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={processDuplicates}
+                disabled={processingDuplicates || Object.keys(duplicateResolutions).length !== duplicates.length}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
+              >
+                {processingDuplicates ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="mr-2" size={16} />
+                    Process Import
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
