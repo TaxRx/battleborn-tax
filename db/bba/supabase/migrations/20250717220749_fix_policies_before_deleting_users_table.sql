@@ -10,9 +10,9 @@ CREATE POLICY "Client users can view their clients" ON clients
         -- Admin access using helper function
         user_is_admin(auth.uid())
         OR
-        -- Affiliate access (managing affiliate)
-        affiliate_id = auth.uid()
-        OR
+        -- -- Affiliate access (managing affiliate)
+        -- affiliate_id = auth.uid()
+        -- OR
         -- Creator access (who created the record)
         created_by = auth.uid()
         OR
@@ -26,9 +26,9 @@ CREATE POLICY "Client users can update their clients" ON clients
     USING (
         -- Admin access using helper function
         user_is_admin(auth.uid())
-        OR
-        -- Affiliate access (managing affiliate)
-        affiliate_id = auth.uid()
+        -- OR
+        -- -- Affiliate access (managing affiliate)
+        -- affiliate_id = auth.uid()
         OR
         -- Client owner access (new multi-user access)
         user_has_client_role(auth.uid(), id, 'owner')

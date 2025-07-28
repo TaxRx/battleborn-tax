@@ -73,6 +73,13 @@ export default {
         fileName: '_worker.js',
         source: workerScript
       });
+
+      // Create .assetsignore file to prevent _worker.js from being uploaded as a static asset
+      this.emitFile({
+        type: 'asset',
+        fileName: '.assetsignore',
+        source: '_worker.js\n'
+      });
     }
   };
 }

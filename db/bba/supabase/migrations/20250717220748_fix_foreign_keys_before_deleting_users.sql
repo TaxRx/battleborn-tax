@@ -12,9 +12,9 @@ ALTER TABLE clients
 ADD CONSTRAINT clients_created_by_fkey 
 FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL;
 
-ALTER TABLE clients 
-ADD CONSTRAINT clients_user_id_fkey 
-FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+-- ALTER TABLE clients 
+-- ADD CONSTRAINT clients_user_id_fkey 
+-- FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
 
 -- Update profiles table constraint
 -- Drop the existing FK constraint that references public.users

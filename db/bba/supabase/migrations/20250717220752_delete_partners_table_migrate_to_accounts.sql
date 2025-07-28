@@ -104,9 +104,9 @@ $$;
 
 -- Update clients table FK constraint to reference accounts
 ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_partner_id_fkey;
-ALTER TABLE clients 
-ADD CONSTRAINT clients_partner_id_fkey 
-FOREIGN KEY (partner_id) REFERENCES accounts(id) ON DELETE SET NULL;
+-- ALTER TABLE clients 
+-- ADD CONSTRAINT clients_partner_id_fkey 
+-- FOREIGN KEY (partner_id) REFERENCES accounts(id) ON DELETE SET NULL;
 
 -- Drop partner_tool_subscriptions table (replaced by account_tool_access)
 DO $$

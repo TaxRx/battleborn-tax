@@ -22,31 +22,31 @@ END;
 $$;
 
 -- Migrate existing has_completed_tax_profile data from profiles to clients
-DO $$
-DECLARE
-    migration_count INTEGER := 0;
-    profile_record RECORD;
-BEGIN
-    -- Update clients table with profile tax completion status
-    FOR profile_record IN
-        SELECT 
-            p.id as profile_id,
-            p.has_completed_tax_profile,
-            c.id as client_id
-        FROM profiles p
-        JOIN clients c ON c.user_id = p.id
-        WHERE p.has_completed_tax_profile IS NOT NULL
-    LOOP
-        UPDATE clients 
-        SET has_completed_tax_profile = profile_record.has_completed_tax_profile
-        WHERE id = profile_record.client_id;
+-- DO $$
+-- DECLARE
+--     migration_count INTEGER := 0;
+--     profile_record RECORD;
+-- BEGIN
+--     -- Update clients table with profile tax completion status
+--     FOR profile_record IN
+--         SELECT 
+--             p.id as profile_id,
+--             p.has_completed_tax_profile,
+--             c.id as client_id
+--         FROM profiles p
+--         JOIN clients c ON c.user_id = p.id
+--         WHERE p.has_completed_tax_profile IS NOT NULL
+--     LOOP
+--         UPDATE clients 
+--         SET has_completed_tax_profile = profile_record.has_completed_tax_profile
+--         WHERE id = profile_record.client_id;
         
-        migration_count := migration_count + 1;
-    END LOOP;
+--         migration_count := migration_count + 1;
+--     END LOOP;
     
-    RAISE NOTICE 'Migrated has_completed_tax_profile for % client records', migration_count;
-END;
-$$;
+--     RAISE NOTICE 'Migrated has_completed_tax_profile for % client records', migration_count;
+-- END;
+-- $$;
 
 -- Make account_id required in profiles table
 -- First, check if there are any profiles without account_id

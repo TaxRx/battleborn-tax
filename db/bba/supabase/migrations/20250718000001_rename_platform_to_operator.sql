@@ -3,4 +3,4 @@
 -- Purpose: Step 1 - Add 'operator' value to enum (must be in separate transaction from usage)
 
 -- Step 1: Add 'operator' to the account_type enum
-ALTER TYPE account_type ADD VALUE 'operator';
+-- ALTER TYPE account_type ADD VALUE 'operator';

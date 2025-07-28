@@ -24,6 +24,7 @@ npm run dev:workers
 
 ```
 dist/
+├── .assetsignore       # Prevents _worker.js from being uploaded as static asset
 ├── _worker.js          # Generated Cloudflare Worker script
 ├── index.html          # SPA entry point
 ├── assets/             # Static assets (JS, CSS, images)
