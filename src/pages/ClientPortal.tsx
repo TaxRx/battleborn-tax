@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Calendar, Download, FileText, CheckCircle, Clock, AlertCircle, Eye, PenTool, User, Building2, Shield, Award, ChevronRight } from 'lucide-react';
+import { Calendar, Download, FileText, CheckCircle, Clock, AlertCircle, Eye, PenTool, User, Building2, Shield, Award, ChevronRight, XCircle } from 'lucide-react';
 
 // Create a separate supabase client instance for the portal
 import { createClient } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase'; // Import main authenticated client
+import { ExpenseDistributionChart } from '../modules/tax-calculator/components/common/ExpenseDistributionChart';
+import SignaturePad from '../components/SignaturePad';
+// Dynamic import for AllocationReportModal to avoid module resolution issues
+// Force cache refresh with comment change
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -42,6 +46,8 @@ interface BusinessYear {
   business_name: string;
   gross_receipts: number;
   total_qre: number;
+  federal_credit: number;
+  state_credit: number;
 }
 
 interface DocumentInfo {
@@ -85,7 +91,23 @@ const ClientPortal: React.FC = () => {
     title: '',
     email: ''
   });
+  const [signatureData, setSignatureData] = useState<string>('');
   const [juratText, setJuratText] = useState('');
+  const [showSignaturePad, setShowSignaturePad] = useState(false);
+
+  // QRE breakdown for expense distribution chart
+  const [qreBreakdown, setQreBreakdown] = useState({
+    employeeQRE: 0,
+    contractorQRE: 0,
+    supplyQRE: 0
+  });
+
+  // Document viewing modal state
+  const [showDocumentModal, setShowDocumentModal] = useState(false);
+  const [currentDocumentContent, setCurrentDocumentContent] = useState('');
+  const [currentDocumentTitle, setCurrentDocumentTitle] = useState('');
+  const [showAllocationModal, setShowAllocationModal] = useState(false);
+  const [AllocationReportModalComponent, setAllocationReportModalComponent] = useState<React.ComponentType<any> | null>(null);
 
   // Check for admin preview mode
   const searchParams = new URLSearchParams(window.location.search);
@@ -189,6 +211,8 @@ const ClientPortal: React.FC = () => {
             qc_status,
             payment_received,
             documents_released,
+            federal_credit,
+            state_credit,
             created_at,
             updated_at
           )
@@ -207,10 +231,18 @@ const ClientPortal: React.FC = () => {
       // 🎯 IMPROVED: Group by year and only include approved business years
       const approvedBusinessYears: { [year: number]: BusinessYear[] } = {};
       
+      console.log('🔍 [ClientPortal] All client businesses:', clientBusinesses);
+      
       clientBusinesses.forEach(business => {
+        console.log(`🔍 [ClientPortal] Processing business: ${business.name}, business years:`, business.rd_business_years);
+        
         business.rd_business_years?.forEach(businessYear => {
-          // Only include years with approved QC status
-          if (businessYear.qc_status === 'approved' || businessYear.qc_status === 'complete') {
+          console.log(`🔍 [ClientPortal] Business year ${businessYear.year} QC status:`, businessYear.qc_status);
+          
+          // Only include years with approved QC status (including ready_for_review)
+          if (businessYear.qc_status === 'approved' || businessYear.qc_status === 'complete' || businessYear.qc_status === 'ready_for_review') {
+            console.log(`✅ [ClientPortal] Including business year ${businessYear.year} (${businessYear.qc_status})`);
+            
             if (!approvedBusinessYears[businessYear.year]) {
               approvedBusinessYears[businessYear.year] = [];
             }
@@ -218,9 +250,13 @@ const ClientPortal: React.FC = () => {
               ...businessYear,
               business_name: business.name
             });
+          } else {
+            console.log(`❌ [ClientPortal] Excluding business year ${businessYear.year} (${businessYear.qc_status})`);
           }
         });
       });
+      
+      console.log('📋 [ClientPortal] Final approvedBusinessYears:', approvedBusinessYears);
 
       // Convert to ApprovedYear format and sort by year descending
       const transformedYears: ApprovedYear[] = Object.entries(approvedBusinessYears)
@@ -245,12 +281,19 @@ const ClientPortal: React.FC = () => {
       setApprovedYears(transformedYears);
       setDocuments([]); // Documents will be loaded via loadDocumentStatus()
       
+      console.log('📋 [ClientPortal] Regular client - transformedYears:', transformedYears);
+      console.log('📊 [ClientPortal] Regular client - transformedYears length:', transformedYears.length);
+      
       // Set the most recent year as selected
       if (transformedYears.length > 0) {
+        console.log('✅ [ClientPortal] Regular client - setting selectedYear to:', transformedYears[0]);
         setSelectedYear(transformedYears[0]);
+      } else {
+        console.warn('⚠️ [ClientPortal] Regular client - no transformedYears found!');
       }
 
       // Load annual jurat signatures
+      console.log('🔄 [ClientPortal] About to call loadAnnualJuratSignatures with years:', transformedYears.map(y => y.year));
       await loadAnnualJuratSignatures(transformedYears.map(y => y.year));
 
     } catch (err: any) {
@@ -273,6 +316,7 @@ const ClientPortal: React.FC = () => {
           id,
           name,
           ein,
+          client_id,
           rd_business_years (
             id,
             year,
@@ -281,6 +325,8 @@ const ClientPortal: React.FC = () => {
             qc_status,
             payment_received,
             documents_released,
+            federal_credit,
+            state_credit,
             created_at,
             updated_at
           )
@@ -298,9 +344,13 @@ const ClientPortal: React.FC = () => {
       }
 
       // 🎯 IMPROVED: Only include approved business years for preview too
+      console.log('🔍 [ClientPortal] All business years before filtering:', clientBusiness.rd_business_years);
+      
       const approvedBusinessYears = clientBusiness.rd_business_years?.filter(
-        by => by.qc_status === 'approved' || by.qc_status === 'complete'
+        by => by.qc_status === 'approved' || by.qc_status === 'complete' || by.qc_status === 'ready_for_review'
       ) || [];
+      
+      console.log('✅ [ClientPortal] Approved business years after filtering:', approvedBusinessYears);
 
       // Group by year
       const yearGroups: { [year: number]: BusinessYear[] } = {};
@@ -314,30 +364,62 @@ const ClientPortal: React.FC = () => {
         });
       });
 
-      // Convert to ApprovedYear format
+      // Convert to ApprovedYear format with proper QRE calculation
       const transformedYears: ApprovedYear[] = Object.entries(yearGroups)
-        .map(([year, businessYears]) => ({
-          year: parseInt(year),
-          business_years: businessYears,
-          total_qre: businessYears.reduce((sum, by) => sum + (by.total_qre || 0), 0),
-          jurat_signed: false,
-          all_documents_released: businessYears.every(by => by.documents_released)
-        }))
+        .map(([year, businessYears]) => {
+          const totalQre = businessYears.reduce((sum, by) => {
+            // Use the QRE from the business year data, fallback to 0
+            const qre = by.total_qre || by.calculated_qre || 0;
+            return sum + qre;
+          }, 0);
+          
+          console.log(`🔍 [ClientPortal] Year ${year} QRE calculation:`, {
+            businessYears: businessYears.map(by => ({ 
+              name: by.business_name, 
+              total_qre: by.total_qre, 
+              calculated_qre: by.calculated_qre 
+            })),
+            totalQre
+          });
+
+          return {
+            year: parseInt(year),
+            business_years: businessYears,
+            total_qre: totalQre,
+            jurat_signed: false,
+            all_documents_released: businessYears.every(by => by.documents_released)
+          };
+        })
         .sort((a, b) => b.year - a.year);
+
+      console.log('🔍 [ClientPortal] clientBusiness data:', {
+        id: clientBusiness.id,
+        name: clientBusiness.name,
+        client_id: clientBusiness.client_id,
+        business_years_count: clientBusiness.rd_business_years?.length
+      });
 
       const transformedData: PortalData = {
         business_id: clientBusiness.id,
         business_name: clientBusiness.name,
-        user_id: 'admin-preview',
+        user_id: clientBusiness.client_id, // Use the actual client_id instead of 'admin-preview'
       };
 
       setPortalData(transformedData);
       setApprovedYears(transformedYears);
+      
+      console.log('📋 [ClientPortal] Admin preview - transformedYears:', transformedYears);
+      console.log('📊 [ClientPortal] Admin preview - transformedYears length:', transformedYears.length);
+      
       if (transformedYears.length > 0) {
+        console.log('✅ [ClientPortal] Admin preview - setting selectedYear to:', transformedYears[0]);
         setSelectedYear(transformedYears[0]);
+      } else {
+        console.warn('⚠️ [ClientPortal] Admin preview - no transformedYears found!');
       }
 
       // Load annual jurat signatures for preview
+      console.log('🔄 [ClientPortal] About to call loadAnnualJuratSignatures (admin preview) with years:', transformedYears.map(y => y.year));
       await loadAnnualJuratSignatures(transformedYears.map(y => y.year));
 
     } catch (err: any) {
@@ -350,68 +432,75 @@ const ClientPortal: React.FC = () => {
 
   // 🎯 NEW: Load annual jurat signatures instead of per-business-year
   const loadAnnualJuratSignatures = async (years: number[]) => {
-    if (!portalData || years.length === 0) return;
+    console.log('🎯 [ClientPortal] loadAnnualJuratSignatures called:', { 
+      years, 
+      hasSelectedYear: !!selectedYear, 
+      selectedYearData: selectedYear?.year,
+      businessYearsCount: selectedYear?.business_years?.length || 0
+    });
+
+    if (!selectedYear || years.length === 0) {
+      console.log('⚠️ [ClientPortal] loadAnnualJuratSignatures early return:', { 
+        hasSelectedYear: !!selectedYear, 
+        yearsLength: years.length 
+      });
+      return;
+    }
 
     try {
       const client = getSupabaseClient();
       
-      // Get all business years for this client and the specified years
-      const { data: businessYearIds, error: businessYearError } = await client
-        .from('rd_businesses')
-        .select(`
-          rd_business_years (
-            id,
-            year
-          )
-        `)
-        .eq('client_id', portalData.user_id);
-
-      if (businessYearError) throw businessYearError;
-
-      const businessYearIdsByYear: { [year: number]: string[] } = {};
-      businessYearIds?.forEach(business => {
-        business.rd_business_years?.forEach(businessYear => {
-          if (years.includes(businessYear.year)) {
-            if (!businessYearIdsByYear[businessYear.year]) {
-              businessYearIdsByYear[businessYear.year] = [];
-            }
-            businessYearIdsByYear[businessYear.year].push(businessYear.id);
-          }
-        });
-      });
-
-      // Get jurat signatures for all relevant business years
-      const allBusinessYearIds = Object.values(businessYearIdsByYear).flat();
+      // SIMPLIFIED: Just check for signatures directly using the business year IDs we already have
+      const allBusinessYearIds = selectedYear.business_years.map(by => by.id);
+      console.log('🔍 [ClientPortal] Checking signatures for business year IDs:', allBusinessYearIds);
       
       if (allBusinessYearIds.length === 0) return;
 
       const { data: signatures, error } = await client
-        .from('rd_signatures')
-        .select('*, business_year_id')
+        .from('rd_signature_records')
+        .select('*')
         .in('business_year_id', allBusinessYearIds)
-        .eq('signature_type', 'jurat')
         .order('signed_at', { ascending: false });
 
-      if (error) throw error;
+      console.log('📊 [ClientPortal] Signature query result:', { 
+        signatures, 
+        error,
+        queriedIds: allBusinessYearIds,
+        clientType: isAdminPreview ? 'admin-supabase' : 'portal-supabase',
+        authUser: client.auth?.user?.id || 'not-available'
+      });
+
+      if (error) {
+        console.error('❌ [ClientPortal] Error loading signatures:', error);
+        throw error;
+      }
 
       // Group signatures by year and get the most recent for each year
       const signaturesByYear: { [year: number]: JuratSignature } = {};
       
       signatures?.forEach(signature => {
-        // Find which year this business_year_id belongs to
-        for (const [year, businessYearIds] of Object.entries(businessYearIdsByYear)) {
-          if (businessYearIds.includes(signature.business_year_id)) {
-            const yearNum = parseInt(year);
-            if (!signaturesByYear[yearNum] || new Date(signature.signed_at) > new Date(signaturesByYear[yearNum].signed_at)) {
-              signaturesByYear[yearNum] = {
-                ...signature,
-                year: yearNum
-              };
-            }
-            break;
+        // Find which year this business_year_id belongs to by looking at our selectedYear data
+        const businessYear = selectedYear.business_years.find(by => by.id === signature.business_year_id);
+        if (businessYear) {
+          const yearNum = businessYear.year;
+          if (!signaturesByYear[yearNum] || new Date(signature.signed_at) > new Date(signaturesByYear[yearNum].signed_at)) {
+            signaturesByYear[yearNum] = {
+              ...signature,
+              year: yearNum
+            };
           }
         }
       });
+
+      console.log('📋 [ClientPortal] Signatures found by year:', signaturesByYear);
+      console.log('📋 [ClientPortal] Current selectedYear.year:', selectedYear.year);
+      console.log('📋 [ClientPortal] Signature exists for current year:', !!signaturesByYear[selectedYear.year]);
+      console.log('🔍 [ClientPortal] All signature records found:', signatures?.map(s => ({
+        id: s.id,
+        business_year_id: s.business_year_id,
+        signer_name: s.signer_name,
+        signed_at: s.signed_at
+      })));
 
       setJuratSignatures(Object.values(signaturesByYear));
 
@@ -420,6 +509,17 @@ const ClientPortal: React.FC = () => {
         ...year,
         jurat_signed: !!signaturesByYear[year.year]
       })));
+
+      // IMPORTANT: Also update the selectedYear to reflect the signature
+      if (selectedYear && signaturesByYear[selectedYear.year]) {
+        console.log('✅ [ClientPortal] Updating selectedYear jurat_signed to true');
+        setSelectedYear(prev => prev ? {
+          ...prev,
+          jurat_signed: true
+        } : prev);
+      } else {
+        console.log('❌ [ClientPortal] No signature found for current year, keeping jurat_signed false');
+      }
 
     } catch (error) {
       console.error('Error loading annual jurat signatures:', error);
@@ -431,17 +531,44 @@ const ClientPortal: React.FC = () => {
   }, [userId]);
 
   useEffect(() => {
+    console.log('🔄 [ClientPortal] selectedYear useEffect triggered');
+    console.log('🔍 [ClientPortal] selectedYear value:', selectedYear);
+    console.log('🔍 [ClientPortal] selectedYear type:', typeof selectedYear);
+    
     if (selectedYear) {
+      console.log('✅ [ClientPortal] selectedYear exists, calling loadDocumentStatus and loadQREBreakdown');
       loadDocumentStatus();
+      loadQREBreakdown();
+      
+      // CRITICAL: Load jurat signatures when selectedYear changes
+      console.log('🔄 [ClientPortal] Calling loadAnnualJuratSignatures from selectedYear useEffect');
+      loadAnnualJuratSignatures([selectedYear.year]);
+    } else {
+      console.warn('⚠️ [ClientPortal] selectedYear is null/undefined, not loading document status or QRE breakdown');
     }
   }, [selectedYear]);
 
   const loadDocumentStatus = async () => {
-    if (!selectedYear) return;
+    console.log('🚀 [ClientPortal] loadDocumentStatus called');
+    console.log('🔍 [ClientPortal] selectedYear:', selectedYear);
+    
+    if (!selectedYear) {
+      console.warn('⚠️ [ClientPortal] No selectedYear, returning early');
+      return;
+    }
+
+    console.log('✅ [ClientPortal] Starting document status loading process');
+    console.log('📋 [ClientPortal] selectedYear details:', {
+      id: selectedYear.id,
+      year: selectedYear.year,
+      business_years: selectedYear.business_years?.length || 0
+    });
 
     try {
       const documentTypes = ['research_report', 'filing_guide', 'allocation_report'];
       const client = getSupabaseClient();
+      
+      console.log('🔧 [ClientPortal] Supabase client ready, processing document types:', documentTypes);
       
       // Check document status for all business years in the selected year
       const documentPromises = documentTypes.map(async (docType) => {
@@ -455,29 +582,48 @@ const ClientPortal: React.FC = () => {
         let paymentReceived = false;
         let qcApproved = false;
 
+        console.log(`🔍 [ClientPortal] Checking ${docType} eligibility across ${businessYearIds.length} business years:`, businessYearIds);
+
         for (const businessYearId of businessYearIds) {
           try {
+            console.log(`🔎 [ClientPortal] Checking ${docType} for business year: ${businessYearId}`);
+            
             const { data, error } = await client.rpc('check_document_release_eligibility', {
               p_business_year_id: businessYearId,
               p_document_type: docType
             });
 
-            if (error) continue; // Skip if error for this business year
+            console.log(`📊 [ClientPortal] ${docType} eligibility result for ${businessYearId}:`, { data, error });
+
+            if (error) {
+              console.warn(`❌ [ClientPortal] Error checking ${docType} for business year ${businessYearId}:`, error);
+              continue; // Skip if error for this business year
+            }
 
             const result = data[0];
+            console.log(`🎯 [ClientPortal] ${docType} result details:`, {
+              businessYearId,
+              can_release: result.can_release,
+              reason: result.reason,
+              jurat_signed: result.jurat_signed,
+              payment_received: result.payment_received,
+              qc_approved: result.qc_approved
+            });
+
             if (result.can_release) {
               canRelease = true;
               reason = 'Document approved for release';
+              console.log(`✅ [ClientPortal] ${docType} approved for release in business year: ${businessYearId}`);
             }
             if (result.jurat_signed) juratSigned = true;
             if (result.payment_received) paymentReceived = true;
             if (result.qc_approved) qcApproved = true;
           } catch (e) {
-            console.warn(`Error checking ${docType} for business year ${businessYearId}:`, e);
+            console.warn(`❌ [ClientPortal] Exception checking ${docType} for business year ${businessYearId}:`, e);
           }
         }
 
-        return {
+        const documentResult = {
           type: docType,
           title: getDocumentTitle(docType),
           description: getDocumentDescription(docType),
@@ -488,9 +634,16 @@ const ClientPortal: React.FC = () => {
           payment_received: paymentReceived,
           qc_approved: qcApproved
         };
+
+        console.log(`📋 [ClientPortal] Final ${docType} document result:`, documentResult);
+        return documentResult;
       });
 
       const documentResults = await Promise.all(documentPromises);
+      console.log('🎯 [ClientPortal] All document results:', documentResults);
+      console.log('🎯 [ClientPortal] Available documents (can_release=true):', 
+        documentResults.filter(doc => doc.can_release).map(doc => doc.type)
+      );
       setDocuments(documentResults);
 
     } catch (error) {
@@ -498,48 +651,105 @@ const ClientPortal: React.FC = () => {
     }
   };
 
-  // 🎯 NEW: Sign annual jurat (for all business years in the selected year)
-  const signAnnualJurat = async () => {
+  // 🎯 NEW: Sign annual jurat with signature parameter (to avoid state timing issues)
+  const signAnnualJuratWithSignature = async (signature: string) => {
     if (!selectedYear || !signerInfo.name || !signerInfo.email) {
       alert('Please fill in all signer information');
+      return;
+    }
+
+    if (!juratText || juratText.trim().length === 0) {
+      alert('Jurat text is required. Please wait for the text to load or refresh the page.');
       return;
     }
 
     try {
       const client = getSupabaseClient();
       
-      // Sign jurat for all business years in the selected year
-      const signaturePromises = selectedYear.business_years.map(async (businessYear) => {
-        // Create a simple verification hash
-        const verificationData = `${businessYear.id}-${signerInfo.name}-${signerInfo.email}-${Date.now()}`;
-        const verificationHash = btoa(verificationData);
+      console.log('🚀 [ClientPortal] Starting jurat signing process with direct signature');
+      console.log('📋 [ClientPortal] Business years to sign:', selectedYear.business_years.length);
+      console.log('👤 [ClientPortal] Signer info:', {
+        name: signerInfo.name,
+        title: signerInfo.title,
+        email: signerInfo.email
+      });
+      console.log('📄 [ClientPortal] Jurat text length:', juratText.length);
+      console.log('🔗 [ClientPortal] Using client type:', isAdminPreview ? 'admin-supabase' : 'portal-supabase');
 
-        return client
-          .from('rd_signatures')
-          .insert({
+      // Validate signature data before proceeding (using parameter, not state)
+      if (!signature || signature.length < 1000) {
+        console.error('❌ [ClientPortal] Signature validation failed:', {
+          hasSignature: !!signature,
+          signatureLength: signature?.length || 0,
+          isValid: signature && signature.length >= 1000
+        });
+        alert('Invalid or missing signature. Please create a proper signature using the signature pad.');
+        return;
+      }
+
+      console.log('✅ [ClientPortal] Signature validation passed:', {
+        hasSignature: !!signature,
+        signatureLength: signature.length,
+        startsWithData: signature.startsWith('data:'),
+        isPNG: signature.includes('data:image/png')
+      });
+
+
+
+      // Sign jurat for each business year sequentially to get better error info
+      const results = [];
+      
+      for (let i = 0; i < selectedYear.business_years.length; i++) {
+        const businessYear = selectedYear.business_years[i];
+        
+        try {
+          console.log(`🔄 [ClientPortal] Processing business year ${i + 1}/${selectedYear.business_years.length}:`, {
+            id: businessYear.id,
+            business_name: businessYear.business_name
+          });
+
+          // Create a simple verification hash
+          const verificationData = `${businessYear.id}-${signerInfo.name}-${signerInfo.email}-${Date.now()}`;
+          const verificationHash = btoa(verificationData);
+
+          // Get client IP address (fallback to localhost due to CSP restrictions)
+          let clientIP = '127.0.0.1';
+          // Note: External IP lookup blocked by CSP, using localhost for now
+
+          const insertData = {
             business_year_id: businessYear.id,
-            signature_type: 'jurat',
             signer_name: signerInfo.name,
             signer_title: signerInfo.title,
             signer_email: signerInfo.email,
-            jurat_text: juratText,
-            verification_hash: verificationHash,
-            signature_data: {
-              portal_token_id: portalData?.token_id,
-              user_agent: navigator.userAgent,
-              timestamp: new Date().toISOString(),
-              annual_signature: true,
-              year: selectedYear.year
-            }
-          });
-      });
+            signature_image: signature,
+            ip_address: clientIP,
+            signed_at: new Date().toISOString(),
+            jurat_text: juratText
+          };
 
-      const results = await Promise.all(signaturePromises);
+          console.log(`📝 [ClientPortal] Insert data for ${businessYear.business_name}:`, insertData);
+
+          const result = await client
+            .from('rd_signature_records')
+            .insert(insertData);
+
+          console.log(`✅ [ClientPortal] Insert result for ${businessYear.business_name}:`, result);
+          results.push(result);
+
+        } catch (error) {
+          console.error(`❌ [ClientPortal] Error inserting signature for ${businessYear.business_name}:`, error);
+          results.push({ error });
+        }
+      }
       
-      // Check if any failed
-      const hasErrors = results.some(result => result.error);
-      if (hasErrors) {
-        throw new Error('Failed to sign jurat for some business years');
+      // Check if any failed with detailed error logging
+      const errors = results.filter(result => result.error);
+      if (errors.length > 0) {
+        console.error('🚨 [ClientPortal] Jurat signing errors:', errors);
+        errors.forEach((error, index) => {
+          console.error(`❌ [ClientPortal] Error ${index + 1}:`, error.error);
+        });
+        throw new Error(`Failed to sign jurat for ${errors.length} business year(s). Check console for details.`);
       }
 
       // Reload data
@@ -551,8 +761,17 @@ const ClientPortal: React.FC = () => {
 
     } catch (error) {
       console.error('Error signing annual jurat:', error);
-      alert('Failed to sign jurat. Please try again.');
+      alert('Error signing jurat. Please try again.');
     }
+  };
+
+  // 🎯 Legacy: Sign annual jurat (using state-based signature)
+  const signAnnualJurat = async () => {
+    if (!signatureData || signatureData.length < 1000) {
+      alert('Please create a signature first using the signature pad.');
+      return;
+    }
+    await signAnnualJuratWithSignature(signatureData);
   };
 
   const loadJuratSignatures = async () => {
@@ -560,11 +779,15 @@ const ClientPortal: React.FC = () => {
 
     try {
       const client = getSupabaseClient();
+      
+      // Get business year IDs
+      const businessYearIds = selectedYear.business_years.map(by => by.id);
+      if (businessYearIds.length === 0) return;
+
       const { data, error } = await client
-        .from('rd_signatures')
+        .from('rd_signature_records')
         .select('*')
-        .eq('business_year_id', selectedYear.id)
-        .eq('signature_type', 'jurat')
+        .in('business_year_id', businessYearIds)
         .order('signed_at', { ascending: false });
 
       if (error) throw error;
@@ -582,26 +805,24 @@ const ClientPortal: React.FC = () => {
     }
 
     try {
-      // Create a simple verification hash
-      const verificationData = `${selectedYear.id}-${signerInfo.name}-${signerInfo.email}-${Date.now()}`;
-      const verificationHash = btoa(verificationData);
-
       const client = getSupabaseClient();
+      
+      // Get the first business year ID
+      const businessYearId = selectedYear.business_years[0]?.id;
+      if (!businessYearId) {
+        alert('No business year data available');
+        return;
+      }
+
       const { error } = await client
-        .from('rd_signatures')
+        .from('rd_signature_records')
         .insert({
-          business_year_id: selectedYear.id,
-          signature_type: 'jurat',
+          business_year_id: businessYearId,
           signer_name: signerInfo.name,
-          signer_title: signerInfo.title,
-          signer_email: signerInfo.email,
-          jurat_text: juratText,
-          verification_hash: verificationHash,
-          signature_data: {
-            portal_token_id: portalData?.token_id,
-            user_agent: navigator.userAgent,
-            timestamp: new Date().toISOString()
-          }
+          signature_image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjUwIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjx0ZXh0IHg9IjEwIiB5PSIzMCIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE2Ij5TaWduZWQgZWxlY3Ryb25pY2FsbHk8L3RleHQ+PC9zdmc+',
+          ip_address: '127.0.0.1',
+          signed_at: new Date().toISOString(),
+          jurat_text: juratText
         });
 
       if (error) throw error;
@@ -632,10 +853,24 @@ const ClientPortal: React.FC = () => {
 
       // Get the document from rd_reports table
       const client = getSupabaseClient();
+      
+      // Get the first business year ID (or handle multiple business years)
+      const businessYearId = selectedYear.business_years[0]?.id;
+      if (!businessYearId) {
+        alert('No business year data available');
+        return;
+      }
+
+      console.log('📄 [ClientPortal] Downloading document:', {
+        documentType,
+        businessYearId,
+        businessYearCount: selectedYear.business_years.length
+      });
+
       const { data, error } = await client
         .from('rd_reports')
         .select('generated_html, filing_guide')
-        .eq('business_year_id', selectedYear.id)
+        .eq('business_year_id', businessYearId)
         .eq('type', documentType === 'research_report' ? 'RESEARCH_SUMMARY' : 'FILING_GUIDE')
         .single();
 
@@ -674,6 +909,77 @@ const ClientPortal: React.FC = () => {
     }
   };
 
+  // View document in browser (read-only)
+  const viewDocument = async (documentType: string) => {
+    if (!selectedYear) return;
+
+    try {
+      // Check if document can be viewed
+      const doc = documents.find(d => d.type === documentType);
+      if (!doc?.can_release) {
+        alert(`Document cannot be viewed: ${doc?.reason || 'Unknown reason'}`);
+        return;
+      }
+
+      // Handle allocation report differently - use the dedicated modal
+      if (documentType === 'allocation_report') {
+        // Temporary: Simple alert until caching issues resolve
+        alert('Allocation Report temporarily unavailable - cache clearing in progress');
+        return;
+      }
+
+      // Get the document from rd_reports table
+      const client = getSupabaseClient();
+      
+      // Get the first business year ID (or handle multiple business years)
+      const businessYearId = selectedYear.business_years[0]?.id;
+      if (!businessYearId) {
+        alert('No business year data available');
+        return;
+      }
+
+      console.log('👁️ [ClientPortal] Viewing document:', {
+        documentType,
+        businessYearId,
+        businessYearCount: selectedYear.business_years.length
+      });
+
+      const { data, error } = await client
+        .from('rd_reports')
+        .select('generated_html, filing_guide')
+        .eq('business_year_id', businessYearId)
+        .eq('type', documentType === 'research_report' ? 'RESEARCH_SUMMARY' : 'FILING_GUIDE')
+        .single();
+
+      if (error) throw error;
+
+      if (!data) {
+        alert('Document not found');
+        return;
+      }
+
+      // Get the HTML content based on document type
+      let htmlContent = '';
+      if (documentType === 'research_report' && data.generated_html) {
+        htmlContent = data.generated_html;
+      } else if (documentType === 'filing_guide' && data.filing_guide) {
+        htmlContent = data.filing_guide;
+      } else {
+        alert('Document content not available');
+        return;
+      }
+
+      // Show the EXACT saved document in a modal
+      setCurrentDocumentContent(htmlContent);
+      setCurrentDocumentTitle(`${getDocumentTitle(documentType)} - ${selectedYear.year}`);
+      setShowDocumentModal(true);
+
+    } catch (error) {
+      console.error('Error viewing document:', error);
+      alert('Failed to view document');
+    }
+  };
+
   // Helper functions for document display
   const getDocumentTitle = (type: string): string => {
     switch (type) {
@@ -699,6 +1005,60 @@ const ClientPortal: React.FC = () => {
       case 'filing_guide': return CheckCircle;
       case 'allocation_report': return Building2;
       default: return FileText;
+    }
+  };
+
+  // Load QRE breakdown data for expense distribution chart
+  const loadQREBreakdown = async () => {
+    if (!selectedYear) {
+      setQreBreakdown({ employeeQRE: 0, contractorQRE: 0, supplyQRE: 0 });
+      return;
+    }
+
+    try {
+      const client = getSupabaseClient();
+      const businessYearIds = selectedYear.business_years.map(by => by.id);
+      
+      // Load employee QRE
+      const { data: employees } = await client
+        .from('rd_employee_year_data')
+        .select('calculated_qre')
+        .in('business_year_id', businessYearIds);
+      
+      const employeeQRE = employees?.reduce((sum, emp) => sum + (emp.calculated_qre || 0), 0) || 0;
+
+      // Load contractor QRE
+      const { data: contractors } = await client
+        .from('rd_contractor_year_data')
+        .select('calculated_qre')
+        .in('business_year_id', businessYearIds);
+      
+      const contractorQRE = contractors?.reduce((sum, cont) => sum + (cont.calculated_qre || 0), 0) || 0;
+
+      // Load supply QRE from rd_supply_subcomponents (use amount_applied)
+      const { data: supplies } = await client
+        .from('rd_supply_subcomponents')
+        .select('amount_applied')
+        .in('business_year_id', businessYearIds);
+      
+      const supplyQRE = supplies?.reduce((sum, supply) => sum + (supply.amount_applied || 0), 0) || 0;
+
+      console.log('📊 [ClientPortal] QRE Breakdown loaded:', {
+        employeeQRE,
+        contractorQRE, 
+        supplyQRE,
+        total: employeeQRE + contractorQRE + supplyQRE
+      });
+
+      setQreBreakdown({
+        employeeQRE,
+        contractorQRE,
+        supplyQRE
+      });
+
+    } catch (error) {
+      console.error('Error loading QRE breakdown:', error);
+      setQreBreakdown({ employeeQRE: 0, contractorQRE: 0, supplyQRE: 0 });
     }
   };
 
@@ -877,43 +1237,72 @@ This annual signature covers all business entities and research activities for t
                 <div className="bg-white rounded-xl shadow-lg p-6">
                   <div className="flex items-center justify-between mb-6">
                     <div>
-                      <h2 className="text-2xl font-bold text-gray-900">{selectedYear.year} Tax Year</h2>
+                      <h2 className="text-2xl font-bold text-gray-900">
+                        {selectedYear.year} Tax Year - {selectedYear.business_years[0]?.business_name || 'Business Name'}
+                      </h2>
                       <p className="text-gray-600">R&D tax credit documentation and reports</p>
-                    </div>
-                    
-                    <div className="text-right">
-                      <div className="text-3xl font-bold text-green-600">
-                        ${selectedYear.total_qre.toLocaleString()}
-                      </div>
-                      <div className="text-sm text-gray-600">Total Qualified Research Expenses</div>
                     </div>
                   </div>
 
-                  {/* Business Years Summary */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                    {selectedYear.business_years.map((businessYear) => (
-                      <div key={businessYear.id} className="bg-gray-50 rounded-lg p-4">
-                        <div className="font-medium text-gray-900 mb-2">{businessYear.business_name}</div>
-                        <div className="space-y-1 text-sm">
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">QRE:</span>
-                            <span className="font-medium">${businessYear.total_qre?.toLocaleString() || '0'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Gross Receipts:</span>
-                            <span className="font-medium">${businessYear.gross_receipts?.toLocaleString() || '0'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Status:</span>
-                            <span className={`font-medium ${
-                              businessYear.qc_status === 'complete' ? 'text-green-600' : 'text-blue-600'
-                            }`}>
-                              {businessYear.qc_status === 'complete' ? 'Complete' : 'Approved'}
-                            </span>
+                  {/* Financial Summary Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                    {/* QRE Card */}
+                    <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-lg font-medium text-blue-900">Total QRE</h3>
+                          <div className="text-2xl font-bold text-blue-600">
+                            ${(qreBreakdown.employeeQRE + qreBreakdown.contractorQRE + qreBreakdown.supplyQRE).toLocaleString()}
                           </div>
                         </div>
+                        <div className="w-12 h-12 bg-blue-500 rounded-lg flex items-center justify-center">
+                          <FileText className="w-6 h-6 text-white" />
+                        </div>
                       </div>
-                    ))}
+                    </div>
+
+                    {/* Federal Credit Card */}
+                    <div className="bg-gradient-to-r from-green-50 to-green-100 rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-lg font-medium text-green-900">Federal Credit</h3>
+                          <div className="text-2xl font-bold text-green-600">
+                            ${(selectedYear.business_years.reduce((sum, by) => sum + (by.federal_credit || 0), 0)).toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="w-12 h-12 bg-green-500 rounded-lg flex items-center justify-center">
+                          <CheckCircle className="w-6 h-6 text-white" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* State Credit Card */}
+                    <div className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-lg font-medium text-purple-900">State Credit</h3>
+                          <div className="text-2xl font-bold text-purple-600">
+                            ${(selectedYear.business_years.reduce((sum, by) => sum + (by.state_credit || 0), 0)).toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="w-12 h-12 bg-purple-500 rounded-lg flex items-center justify-center">
+                          <Building2 className="w-6 h-6 text-white" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* QRE Distribution Full Width */}
+                  <div className="mb-6">
+                    <div className="bg-gray-50 rounded-lg p-6">
+                      <ExpenseDistributionChart
+                        employeeQRE={qreBreakdown.employeeQRE}
+                        contractorQRE={qreBreakdown.contractorQRE}
+                        supplyQRE={qreBreakdown.supplyQRE}
+                        title="QRE Distribution"
+                        variant="light"
+                      />
+                    </div>
                   </div>
 
                   {/* Annual Jurat Section */}
@@ -956,9 +1345,10 @@ This annual signature covers all business entities and research activities for t
                                 <h4 className="font-semibold text-green-900 mb-2">Annual Attestation Completed</h4>
                                 <div className="space-y-2 text-sm text-green-800">
                                   <div><strong>Signatory:</strong> {currentYearSignature.signer_name}</div>
-                                  <div><strong>Title:</strong> {currentYearSignature.signer_title}</div>
-                                  <div><strong>Email:</strong> {currentYearSignature.signer_email}</div>
+                                  {currentYearSignature.signer_title && <div><strong>Title:</strong> {currentYearSignature.signer_title}</div>}
+                                  {currentYearSignature.signer_email && <div><strong>Email:</strong> {currentYearSignature.signer_email}</div>}
                                   <div><strong>Signed:</strong> {new Date(currentYearSignature.signed_at).toLocaleDateString()} at {new Date(currentYearSignature.signed_at).toLocaleTimeString()}</div>
+                                  <div><strong>IP Address:</strong> {currentYearSignature.ip_address}</div>
                                   <div><strong>Coverage:</strong> All business entities for {selectedYear.year} tax year</div>
                                 </div>
                               </div>
@@ -1048,7 +1438,7 @@ This annual signature covers all business entities and research activities for t
                           onClick={() => setShowJuratModal(true)}
                           className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
                         >
-                          Sign Jurat
+                          Create Digital Signature
                         </button>
                       </div>
                     )}
@@ -1108,10 +1498,81 @@ This annual signature covers all business entities and research activities for t
                             </div>
 
                             {doc.can_release ? (
-                              <button className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-2 px-4 rounded-lg hover:from-green-600 hover:to-green-700 transition-all">
-                                <Download className="w-4 h-4 inline mr-2" />
-                                Download
-                              </button>
+                              (() => {
+                                // Determine if all documents are ready for download
+                                const allDocumentsReady = documents.every(d => d.can_release && d.qc_approved);
+                                const paymentReceived = doc.payment_received;
+                                
+                                // Research Report: View-only until all documents ready
+                                if (doc.type === 'research_report') {
+                                  if (allDocumentsReady && paymentReceived) {
+                                    return (
+                                      <button 
+                                        onClick={() => downloadDocument(doc.type)}
+                                        className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-2 px-4 rounded-lg hover:from-green-600 hover:to-green-700 transition-all"
+                                      >
+                                        <Download className="w-4 h-4 inline mr-2" />
+                                        Download
+                                      </button>
+                                    );
+                                  } else {
+                                    return (
+                                      <button 
+                                        onClick={() => viewDocument(doc.type)}
+                                        className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-2 px-4 rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all"
+                                      >
+                                        <FileText className="w-4 h-4 inline mr-2" />
+                                        View
+                                      </button>
+                                    );
+                                  }
+                                }
+                                
+                                // Filing Guide: Download after payment
+                                if (doc.type === 'filing_guide') {
+                                  if (paymentReceived) {
+                                    return (
+                                      <button 
+                                        onClick={() => downloadDocument(doc.type)}
+                                        className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-2 px-4 rounded-lg hover:from-green-600 hover:to-green-700 transition-all"
+                                      >
+                                        <Download className="w-4 h-4 inline mr-2" />
+                                        Download
+                                      </button>
+                                    );
+                                  } else {
+                                    return (
+                                      <div className="w-full bg-gray-100 text-gray-500 py-2 px-4 rounded-lg text-center text-sm">
+                                        Payment required for download
+                                      </div>
+                                    );
+                                  }
+                                }
+                                
+                                // Allocation Report: View-only (always)
+                                if (doc.type === 'allocation_report') {
+                                  return (
+                                    <button 
+                                      onClick={() => viewDocument(doc.type)}
+                                      className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-2 px-4 rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all"
+                                    >
+                                      <FileText className="w-4 h-4 inline mr-2" />
+                                      View
+                                    </button>
+                                  );
+                                }
+                                
+                                // Default: Download if available
+                                return (
+                                  <button 
+                                    onClick={() => downloadDocument(doc.type)}
+                                    className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-2 px-4 rounded-lg hover:from-green-600 hover:to-green-700 transition-all"
+                                  >
+                                    <Download className="w-4 h-4 inline mr-2" />
+                                    Download
+                                  </button>
+                                );
+                              })()
                             ) : (
                               <div className="w-full bg-gray-100 text-gray-500 py-2 px-4 rounded-lg text-center text-sm">
                                 {doc.reason}
@@ -1139,18 +1600,7 @@ This annual signature covers all business entities and research activities for t
             </div>
             
             <div className="p-6 space-y-6">
-              {/* Coverage Summary */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h4 className="font-semibold text-blue-900 mb-2">This signature covers:</h4>
-                <div className="space-y-2">
-                  {selectedYear?.business_years.map((by) => (
-                    <div key={by.id} className="flex items-center justify-between text-sm">
-                      <span className="text-blue-800">{by.business_name}</span>
-                      <span className="font-medium text-blue-900">${by.total_qre?.toLocaleString() || '0'} QRE</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              {/* Coverage Summary - Removed as requested */}
 
               {/* Jurat Text */}
               <div>
@@ -1218,18 +1668,80 @@ This annual signature covers all business entities and research activities for t
                   Cancel
                 </button>
                 <button
-                  onClick={signAnnualJurat}
+                  onClick={() => {
+                    if (!signerInfo.name || !signerInfo.email) {
+                      alert('Please fill in your name and email before signing');
+                      return;
+                    }
+                    setShowSignaturePad(true);
+                  }}
                   disabled={!signerInfo.name || !signerInfo.email}
                   className="px-8 py-2 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg hover:from-orange-600 hover:to-red-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
                 >
                   <PenTool className="w-4 h-4 inline mr-2" />
-                  Sign Annual Jurat
+                  Create Digital Signature
                 </button>
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* Document Viewing Modal */}
+      {showDocumentModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full h-full max-w-7xl max-h-[95vh] overflow-hidden shadow-2xl flex flex-col">
+            <div className="bg-gradient-to-r from-blue-500 to-purple-500 px-6 py-4 text-white flex items-center justify-between flex-shrink-0">
+              <h3 className="text-xl font-semibold">{currentDocumentTitle}</h3>
+              <button
+                onClick={() => setShowDocumentModal(false)}
+                className="text-white hover:text-gray-200 transition-colors"
+              >
+                <XCircle className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-hidden">
+              <div 
+                className="h-full w-full overflow-y-auto px-4 py-2"
+                dangerouslySetInnerHTML={{ __html: currentDocumentContent }}
+                style={{
+                  minHeight: '100%'
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Allocation Report Modal - Temporarily disabled for cache clearing */}
+
+      {/* Signature Pad Modal */}
+      <SignaturePad
+        isOpen={showSignaturePad}
+        onClose={() => setShowSignaturePad(false)}
+        onSave={async (signature) => {
+          console.log('🖋️ [ClientPortal] Received signature from pad:', {
+            dataLength: signature.length,
+            startsWithPNG: signature.startsWith('data:image/png'),
+            isValid: signature.length > 1000
+          });
+          
+          // Validate signature before proceeding
+          if (!signature || signature.length < 1000) {
+            alert('Invalid or missing signature. Please create a proper signature using the signature pad.');
+            return;
+          }
+          
+          setSignatureData(signature);
+          setShowSignaturePad(false);
+          setShowJuratModal(false);
+          
+          // Call signAnnualJurat with the signature directly to avoid state timing issues
+          await signAnnualJuratWithSignature(signature);
+        }}
+        title="Annual Jurat Digital Signature"
+      />
     </div>
   );
 };
