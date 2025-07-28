@@ -366,7 +366,6 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
             // Update step_order in database
             const updatePromises = reorderedSteps.map((step, index) => 
               ResearchActivitiesService.updateResearchStep(step.id, { 
-                ...step, 
                 step_order: index + 1 
               })
             );

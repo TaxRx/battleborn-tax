@@ -296,7 +296,8 @@ const SortableStepCard = ({ step, ...props }: any) => {
     id: step.id,
     data: {
       type: 'step',
-      step: step
+      stepId: step.id,
+      activityId: step.research_activity_id
     }
   });
 

@@ -26,21 +26,33 @@ const EditStepModal: React.FC<EditStepModalProps> = ({
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   useEffect(() => {
+    console.log('EditStepModal useEffect - step:', step, 'activityId:', activityId);
+    
     if (step) {
       setFormData({
         name: step.name || '',
         description: step.description || '',
         step_order: step.step_order || 1
       });
-    } else {
-      // For new steps, get the next order number
+    } else if (activityId && activityId.trim() !== '') {
+      // For new steps, get the next order number only if we have a valid activityId
       getNextStepOrder();
+    } else {
+      // Default for invalid activityId
+      setFormData(prev => ({ ...prev, step_order: 1 }));
     }
     setErrors({});
   }, [step, activityId]);
 
   const getNextStepOrder = async () => {
     try {
+      // Validate activityId before making API call
+      if (!activityId || activityId.trim() === '') {
+        console.warn('Invalid activityId provided to getNextStepOrder:', activityId);
+        setFormData(prev => ({ ...prev, step_order: 1 }));
+        return;
+      }
+
       const steps = await ResearchActivitiesService.getResearchSteps(activityId);
       const maxOrder = Math.max(...steps.map(s => s.step_order || 0), 0);
       setFormData(prev => ({ ...prev, step_order: maxOrder + 1 }));
@@ -74,6 +86,12 @@ const EditStepModal: React.FC<EditStepModalProps> = ({
       return;
     }
 
+    // Validate activityId before submission
+    if (!activityId || activityId.trim() === '') {
+      setErrors({ general: 'Invalid activity ID. Please close and try again.' });
+      return;
+    }
+
     setLoading(true);
     try {
       const stepData = {
@@ -85,7 +103,13 @@ const EditStepModal: React.FC<EditStepModalProps> = ({
       };
 
       if (step) {
-        await ResearchActivitiesService.updateResearchStep(step.id, stepData);
+        // For updates, only send the fields that can be updated
+        const updateData = {
+          name: formData.name.trim(),
+          description: formData.description.trim(),
+          step_order: formData.step_order
+        };
+        await ResearchActivitiesService.updateResearchStep(step.id, updateData);
       } else {
         await ResearchActivitiesService.createResearchStep(stepData);
       }
