@@ -304,6 +304,37 @@ ${roleNames.slice(0, Math.min(2, roleNames.length)).map(role => `- **${role}**: 
     );
   }
 
+  public async generateLine49fDescription(line49fContext: any): Promise<string> {
+    const { research_activity_name, subcomponent_count, subcomponent_groups, industry } = line49fContext;
+    
+    const prompt = `Generate a professional Line 49(f) description for Form 6765 Section G Business Component Information. 
+
+Context:
+- Research Activity: ${research_activity_name}
+- Number of Subcomponents: ${subcomponent_count}
+- Subcomponent Types: ${subcomponent_groups}
+- Industry: ${industry}
+
+Requirements:
+- Professional tone suitable for IRS filing
+- Describe the systematic experimentation and research methodology
+- Explain how the research resolves technical uncertainty
+- Include specific mention of the subcomponents evaluated
+- Keep to 2-3 sentences maximum
+- Focus on the research process and technical development
+
+Generate a concise, professional description that demonstrates qualified research activities under IRC Section 41.`;
+
+    const context: AIGenerationContext = {
+      businessProfile: { industry },
+      selectedActivities: [{ name: research_activity_name }],
+      selectedSteps: [],
+      selectedSubcomponents: []
+    };
+
+    return this.generateResearchContent(prompt, context);
+  }
+
   public async generateComplianceSummary(context: AIGenerationContext): Promise<string> {
     return this.generateResearchContent(
       'Generate a compliance summary that demonstrates how the research activities meet the four-part test for qualified research under IRC Section 41.',

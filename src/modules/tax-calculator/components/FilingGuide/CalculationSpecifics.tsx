@@ -327,11 +327,20 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
   });
 
   useEffect(() => {
-    if (!selectedYear?.id) return;
+    console.log('🔧 [CALCULATION SPECIFICS] useEffect triggered:', {
+      selectedYear: selectedYear?.id,
+      hasSelectedYear: !!selectedYear?.id
+    });
+    
+    if (!selectedYear?.id) {
+      console.warn('⚠️ [CALCULATION SPECIFICS] No selectedYear.id, returning early');
+      return;
+    }
     
     async function fetchData() {
       try {
         console.log('%c[CALCULATION SPECIFICS] 🔧 BASELINE FIX: Starting data fetch...', 'background: #ff0; color: #d00; font-size: 16px; font-weight: bold;');
+        console.log('🔧 [CALCULATION SPECIFICS] Selected Year ID:', selectedYear.id);
         
         // FIXED: Fetch employee data properly using rd_employee_year_data for overall applied percentage
         const { data: employeeYearData, error: employeeError } = await supabase
@@ -583,7 +592,9 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
             console.log(`🔧 [SUBCOMPONENT FIX] Calculating REAL subcomponent applied percentages for: ${activity.name}`);
             
             // Get selected subcomponents with their Research Design data
-            const { data: subcomponentsData } = await supabase
+            console.log(`🔧 [SUBCOMPONENT DEBUG] Fetching subcomponents for activity ${activity.id}, business_year_id: ${selectedYear.id}`);
+            
+            const { data: subcomponentsData, error: subcompError } = await supabase
               .from('rd_selected_subcomponents')
               .select(`
                 frequency_percentage,
@@ -597,6 +608,12 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
               `)
               .eq('business_year_id', selectedYear.id)
               .eq('research_activity_id', activity.id);
+            
+            console.log(`🔧 [SUBCOMPONENT DEBUG] Query result for ${activity.name}:`, {
+              error: subcompError,
+              dataCount: subcomponentsData?.length || 0,
+              data: subcomponentsData
+            });
             
             if (subcomponentsData && subcomponentsData.length > 0) {
               const practicePercent = activity.practice_percent;
