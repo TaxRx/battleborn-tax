@@ -748,7 +748,7 @@ class AdminToolService {
   }
 
   // Utility Methods
-  async getAllTools(): Promise<Tool[]> {
+  async getActiveTools(): Promise<Tool[]> {
     try {
       const { data, error } = await supabase
         .from('tools')
@@ -760,7 +760,7 @@ class AdminToolService {
 
       return data || [];
     } catch (error) {
-      console.error('Error fetching tools:', error);
+      console.error('Error fetching active tools:', error);
       throw error;
     }
   }
