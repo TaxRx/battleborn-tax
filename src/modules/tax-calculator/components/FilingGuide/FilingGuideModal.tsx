@@ -343,14 +343,16 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
           businessData,
           selectedYear,
           calculations,
-          fileName
+          fileName,
+          selectedMethod
         });
       } else {
         await FilingGuideService.exportToHTML({
           businessData,
           selectedYear,
           calculations,
-          fileName
+          fileName: fileName.replace('.pdf', '.html'),
+          selectedMethod
         });
       }
     } catch (error) {
@@ -516,6 +518,7 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
                     calculations={calculations}
                     selectedMethod={selectedMethod}
                     debugData={debugData}
+                    readOnly={window.location.pathname.includes('/client')}
                   />
                 </div>
                 
