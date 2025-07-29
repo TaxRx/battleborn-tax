@@ -46,18 +46,7 @@ export const QRESummaryTables: React.FC<QRESummaryTablesProps> = ({
   const totalQRE = calculations?.currentYearQRE?.total ?? calculations?.totalQRE ?? 0;
 
   // More granular logs
-  // eslint-disable-next-line no-console
-  console.log('%c[QRE SUMMARY] currentYearQRE:', 'background: #fffb00; color: #000; font-weight: bold;', currentYearQRE);
-  // eslint-disable-next-line no-console
-  console.log('%c[QRE SUMMARY] currentYearQRE DETAILED:', 'background: #ff0000; color: #fff; font-weight: bold;', JSON.stringify(calculations?.currentYearQRE, null, 2));
-  // eslint-disable-next-line no-console
-  console.log('%c[QRE SUMMARY] historicalData:', 'background: #fffb00; color: #000; font-weight: bold;', historicalData);
-  // eslint-disable-next-line no-console
-  console.log('%c[QRE SUMMARY] historicalData DETAILED:', 'background: #ff0000; color: #fff; font-weight: bold;', JSON.stringify(calculations?.historicalData, null, 2));
-  // eslint-disable-next-line no-console
-  console.log('%c[QRE SUMMARY] totalQRE:', 'background: #fffb00; color: #000; font-weight: bold;', totalQRE);
-  // eslint-disable-next-line no-console
-  console.log('%c[QRE SUMMARY] federalCredits DETAILED:', 'background: #ff0000; color: #fff; font-weight: bold;', JSON.stringify(calculations?.federalCredits, null, 2));
+  // QRE data processing complete
 
   // Check if we have data
   const hasData = totalQRE > 0 || (historicalData && historicalData.length > 0);

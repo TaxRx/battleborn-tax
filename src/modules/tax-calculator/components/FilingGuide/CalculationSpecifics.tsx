@@ -653,46 +653,56 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
     fetchData();
   }, [selectedYear?.id, businessData?.id]);
 
-  // FORCE TRIGGER: If we have selectedYear.id but no employees, force fetch
+  // BACKUP FETCH: Force data loading if main useEffect fails
   useEffect(() => {
-    if (selectedYear?.id && businessData?.id && employees.length === 0) {
-      console.log('%c🚨 [FORCE TRIGGER] No employees found, forcing data fetch...', 'background: #f00; color: #fff; font-weight: bold;');
-      // Re-fetch data immediately
-      const forceFetch = async () => {
-        try {
-          const { data: employeeYearData, error: employeeError } = await supabase
-            .from('rd_employee_year_data')
-            .select(`
-              applied_percent,
-              non_rd_percentage,
-              calculated_qre,
-              employee:rd_employees!inner(
-                id,
-                first_name,
-                last_name,
-                annual_wage,
-                role:rd_roles(name)
-              )
-            `)
-            .eq('business_year_id', selectedYear.id);
+    const forceDataFetch = async () => {
+      if (!selectedYear?.id || !businessData?.id) return;
+      
+      // Only fetch if we have no data after a short delay
+      const timeoutId = setTimeout(async () => {
+        if (employees.length === 0) {
+          console.log('🔧 [BACKUP FETCH] No employees found, forcing reload...');
+          
+          try {
+            const { data: employeeYearData, error: employeeError } = await supabase
+              .from('rd_employee_year_data')
+              .select(`
+                applied_percent,
+                non_rd_percentage,
+                calculated_qre,
+                employee:rd_employees!inner(
+                  id,
+                  first_name,
+                  last_name,
+                  annual_wage,
+                  role:rd_roles(name)
+                )
+              `)
+              .eq('business_year_id', selectedYear.id);
 
-          if (!employeeError && employeeYearData?.length > 0) {
-            const employeesArr = employeeYearData.map(emp => ({
-              name: `${emp.employee.first_name} ${emp.employee.last_name}`,
-              role: emp.employee.role?.name || 'No Role',
-              appliedPercent: emp.applied_percent || 0,
-              qreAmount: emp.calculated_qre || 0
-            }));
-            setEmployees(employeesArr);
-            console.log('%c🚨 [FORCE TRIGGER] Successfully loaded employees:', 'background: #0f0; color: #000; font-weight: bold;', employeesArr);
+            if (!employeeError && employeeYearData?.length > 0) {
+              const employeesArr = employeeYearData.map(emp => ({
+                name: `${emp.employee.first_name} ${emp.employee.last_name}`,
+                role: emp.employee.role?.name || 'No Role',
+                appliedPercent: emp.applied_percent || 0,
+                qreAmount: emp.calculated_qre || 0
+              }));
+              setEmployees(employeesArr);
+              console.log('✅ [BACKUP FETCH] Employees loaded:', employeesArr.length);
+            } else {
+              console.log('⚠️ [BACKUP FETCH] No employee data found for year:', selectedYear.id);
+            }
+          } catch (error) {
+            console.error('❌ [BACKUP FETCH] Error:', error);
           }
-        } catch (error) {
-          console.error('Force fetch error:', error);
         }
-      };
-      forceFetch();
-    }
-  }, [selectedYear?.id, businessData?.id, employees.length]);
+      }, 1000); // Wait 1 second before backup fetch
+
+      return () => clearTimeout(timeoutId);
+    };
+
+    forceDataFetch();
+  }, [selectedYear?.id, businessData?.id]);
 
   return (
     <div className="filing-guide-section">
