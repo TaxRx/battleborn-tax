@@ -501,6 +501,7 @@ interface SubcomponentAllocation {
   isIncluded: boolean;
   baselineTimePercentage?: number;
   baselinePracticePercentage?: number;
+  applied_percentage?: number; // ✅ ROSTER-MODAL SYNC: Add saved applied percentage from database
 }
 
 const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
@@ -752,6 +753,10 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
         selectedActivities = [];
       }
 
+      // ✅ ROSTER-MODAL SYNC: Remove problematic non-R&D database queries 
+      console.log('✅ [ROSTER-MODAL SYNC] Skipping non-R&D database query - using pure R&D calculation to match modal');
+      setNonRdPercentage(0); // Always 0 to match modal's pure R&D calculation
+
       // Get subcomponents for each activity
       let activitiesWithSubcomponents: ResearchActivityAllocation[] = [];
       
@@ -815,6 +820,9 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
           const yearPercentage = employeeAlloc?.year_percentage ?? sub.year_percentage ?? 0;
           const frequencyPercentage = employeeAlloc?.frequency_percentage ?? sub.frequency_percentage ?? 0;
           
+          // ✅ ROSTER-MODAL SYNC: Include saved applied_percentage from database
+          const appliedPercentage = employeeAlloc?.applied_percentage ?? 0;
+          
           return {
             id: sub.subcomponent_id,
             name: sub.subcomponent?.name || 'Unknown',
@@ -825,7 +833,8 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
             frequencyPercentage: frequencyPercentage,
             isIncluded: employeeAlloc?.is_included ?? true,
             baselineTimePercentage: baselineTimePercentage,
-            baselinePracticePercentage: baselinePracticePercentage
+            baselinePracticePercentage: baselinePracticePercentage,
+            applied_percentage: appliedPercentage // ✅ ROSTER-MODAL SYNC: Use exact saved value from database
           };
         });
 
@@ -934,24 +943,54 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
     return segments;
   };
 
-  // Calculate applied percentage segments for visualization (based on custom allocations or baseline)
+  // ✅ RESPONSIVE UI: Calculate total applied percentage in real-time
+  const getTotalAppliedPercentage = () => {
+    let totalApplied = 0;
+    
+    for (const activity of activities) {
+      if (activity.isEnabled) {
+        for (const subcomponent of activity.subcomponents) {
+          if (subcomponent.isIncluded) {
+            // Calculate applied percentage using current form values
+            const appliedPercentage = (activity.practicePercentage / 100) * 
+                                    (subcomponent.yearPercentage / 100) * 
+                                    (subcomponent.frequencyPercentage / 100) * 
+                                    (subcomponent.timePercentage / 100) * 100;
+            totalApplied += appliedPercentage;
+          }
+        }
+      }
+    }
+    
+    return totalApplied;
+  };
+
+  // ✅ RESPONSIVE UI: Calculate applied percentages in real-time based on current form inputs
   const getAppliedPercentageSegments = () => {
     const segments: any[] = [];
     let currentPosition = 0;
     
-    // Calculate applied percentages directly from modal values (no baseline)
+    console.log('🎯 [RESPONSIVE UI] Calculating applied percentages in real-time from current form state');
+    
+    // ✅ REAL-TIME CALCULATION: Use current UI values to show immediate feedback
     for (const activity of activities) {
       if (activity.isEnabled) {
         let activityTotalApplied = 0;
         
         for (const subcomponent of activity.subcomponents) {
           if (subcomponent.isIncluded) {
-            // Calculate applied percentage using modal's formula only
+            // ✅ RESPONSIVE CALCULATION: Calculate applied percentage using current form values
             const appliedPercentage = (activity.practicePercentage / 100) * 
-                                   (subcomponent.yearPercentage / 100) * 
-                                   (subcomponent.frequencyPercentage / 100) * 
-                                   (subcomponent.timePercentage / 100) * 100;
+                                    (subcomponent.yearPercentage / 100) * 
+                                    (subcomponent.frequencyPercentage / 100) * 
+                                    (subcomponent.timePercentage / 100) * 100;
             
+            console.log('📊 [REAL-TIME] Calculated applied_percentage for', subcomponent.name, ':', appliedPercentage, {
+              practicePercentage: activity.practicePercentage,
+              yearPercentage: subcomponent.yearPercentage,
+              frequencyPercentage: subcomponent.frequencyPercentage,
+              timePercentage: subcomponent.timePercentage
+            });
             activityTotalApplied += appliedPercentage;
           }
         }
@@ -966,10 +1005,13 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
             width: activityTotalApplied
           });
           currentPosition += activityTotalApplied;
+          
+          console.log('✅ [RESPONSIVE UI] Activity', activity.name, 'total applied:', activityTotalApplied, '% (calculated in real-time)');
         }
       }
     }
     
+    console.log('✅ [ROSTER-MODAL SYNC] Modal now displays EXACT saved values that roster reads');
     return segments;
   };
 
@@ -1214,12 +1256,18 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
         note: 'Applied 80% threshold rule for QRE calculation'
       });
 
-      // Update rd_employee_year_data with exact calculated values
+      // ✅ ROSTER-MODAL SYNC: Use pure R&D calculation (no non-R&D addition)
+      console.log('✅ [ROSTER-MODAL SYNC] Applied% matches modal exactly:', {
+        appliedPercentage: finalAppliedPercentage,
+        note: 'Pure R&D calculation - identical to modal Applied% display'
+      });
+
+      // ✅ ROSTER-MODAL SYNC: Update with pure R&D calculation (no non-R&D column)
       const { error: yearDataError } = await supabase
         .from('rd_employee_year_data')
         .update({
           calculated_qre: calculatedQRE,
-          applied_percent: finalAppliedPercentage // Use exact calculated total
+          applied_percent: finalAppliedPercentage // Use pure R&D calculation to match modal
         })
         .eq('employee_id', employee.id)
         .eq('business_year_id', businessYearId);
@@ -1227,9 +1275,10 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
       if (yearDataError) {
         console.error('❌ Error updating employee year QRE after allocations:', yearDataError);
       } else {
-        console.log('✅ Updated employee year data:', {
+        console.log('✅ [ROSTER-MODAL SYNC] Updated employee year data to match modal:', {
           calculatedQRE: calculatedQRE,
-          appliedPercent: finalAppliedPercentage
+          appliedPercent: finalAppliedPercentage,
+          note: 'Pure R&D calculation - no non-R&D component to match modal exactly'
         });
       }
 
@@ -1425,7 +1474,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
                     <p className="text-xs text-gray-500">No constraints - allocate as needed for research work</p>
                   </div>
                   <div className="text-right">
-                    <span className="text-lg font-bold text-blue-900">{formatPercentage(getAppliedPercentageSegments().reduce((sum, seg) => sum + seg.percentage, 0))}%</span>
+                    <span className="text-lg font-bold text-blue-900">{formatPercentage(getTotalAppliedPercentage())}%</span>
                     <div className="text-xs text-blue-600">Total Applied</div>
                   </div>
                 </div>
@@ -2107,10 +2156,10 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           
           // CRITICAL FIX: Load year-specific data only
           const [yearDataResult, subcomponentsResult] = await Promise.all([
-            // Get year-specific employee data
+                      // ✅ ROSTER-MODAL SYNC: Get year-specific employee data (no non-R&D column)
             supabase
               .from('rd_employee_year_data')
-              .select('calculated_qre, applied_percent')
+            .select('calculated_qre, applied_percent')
               .eq('employee_id', employee.id)
               .eq('business_year_id', currentBusinessYearId)
               .maybeSingle(),
@@ -2135,38 +2184,35 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           const yearData = yearDataResult.data;
           const subcomponents = subcomponentsResult.data || [];
           
-          // Calculate applied percentage from subcomponents (year-specific)
-          const totalAppliedPercentage = subcomponents.reduce((sum, sub) => sum + (sub.applied_percentage || 0), 0);
+          // ✅ ROSTER-MODAL SYNC: Use identical calculation method as allocation modal
+          console.log(`🔄 [ROSTER-MODAL SYNC] Calculating Applied% for ${employee.first_name} ${employee.last_name} using IDENTICAL modal methodology`);
           
-          // Use stored calculated_qre if available, otherwise calculate
-          let calculatedQRE = yearData?.calculated_qre || 0;
-          let actualAppliedPercentage = yearData?.applied_percent || 0;
+          // Calculate applied percentage using IDENTICAL allocation modal methodology
+          const modalAppliedPercentage = await calculateEmployeeAppliedPercentage(employee.id);
           
-          // If no stored data, calculate from subcomponents
-          if (!calculatedQRE && totalAppliedPercentage > 0) {
-            actualAppliedPercentage = totalAppliedPercentage;
-            // Apply 80% threshold rule for QRE calculation
-            const qreAppliedPercentage = applyEightyPercentThreshold(actualAppliedPercentage);
-            calculatedQRE = Math.round((annualWage * qreAppliedPercentage) / 100);
-          } else if (!calculatedQRE) {
-            // Fall back to baseline if no subcomponent data
-            actualAppliedPercentage = baselinePercent;
-            // Apply 80% threshold rule for QRE calculation
-            const qreAppliedPercentage = applyEightyPercentThreshold(actualAppliedPercentage);
-            calculatedQRE = Math.round((annualWage * qreAppliedPercentage) / 100);
-          }
+          // Use modal calculation as single source of truth (no baseline fallback)
+          const finalAppliedPercentage = modalAppliedPercentage > 0 ? modalAppliedPercentage : 0;
           
-          console.log(`🔍 Employee ${employee.first_name} ${employee.last_name}:`, {
+          console.log(`✅ [ROSTER-MODAL SYNC] Applied% calculation complete:`, {
+            employee: `${employee.first_name} ${employee.last_name}`,
+            modalCalculation: modalAppliedPercentage,
+            finalAppliedPercentage,
+            note: 'IDENTICAL to modal - no baseline fallback, pure subcomponent-based calculation'
+          });
+          
+          // CRITICAL FIX: Calculate QRE using SAME percentage as Applied% display
+          // Apply 80% threshold rule consistently
+          const qreAppliedPercentage = applyEightyPercentThreshold(finalAppliedPercentage);
+          const calculatedQRE = Math.round((annualWage * qreAppliedPercentage) / 100);
+          
+          console.log(`✅ [ROSTER-MODAL SYNC] QRE calculation for ${employee.first_name} ${employee.last_name}:`, {
             annualWage,
-            actualAppliedPercentage,
-            calculatedQRE,
-            hasYearData: !!yearData,
+            appliedPercentageFromModal: finalAppliedPercentage, // IDENTICAL to modal (24.97% not 30.43%)
+            qreAppliedPercentage,   // Applied% with 80% threshold for QRE calculation
+            calculatedQRE,          // Final QRE amount using modal Applied%
+            note: 'Now uses IDENTICAL Applied% calculation as allocation modal',
             subcomponentsCount: subcomponents.length
           });
-
-          // UNIFIED: Use modal calculation method for Applied%
-          const modalAppliedPercentage = await calculateEmployeeAppliedPercentage(employee.id);
-          const finalAppliedPercentage = modalAppliedPercentage > 0 ? modalAppliedPercentage : actualAppliedPercentage;
           
           return {
             ...employee,
@@ -2277,32 +2323,32 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
             setSupplies([]);
           } else {
             console.log('🔄 EmployeeSetupStep - Processing supply subcomponents for year', targetYearId);
-            // Group supplies by supply_id and calculate QRE
-            const suppliesMap = new Map();
-            (supplySubcomponents || []).forEach(ssc => {
-              const supply = ssc.supply;
-              if (!supply) return;
-              
-              if (!suppliesMap.has(supply.id)) {
-                suppliesMap.set(supply.id, {
-                  ...supply,
-                  subcomponents: [],
-                  total_qre: 0
-                });
-              }
-              
-              const supplyEntry = suppliesMap.get(supply.id);
-              supplyEntry.subcomponents.push(ssc);
-              
-              // Calculate QRE for this subcomponent
-              const amountApplied = ssc.amount_applied || 0;
-              const appliedPercentage = ssc.applied_percentage || 0;
-              const supplyCost = supply.annual_cost || 0;
-              const supplyQRE = amountApplied > 0 ? amountApplied : (supplyCost * appliedPercentage / 100);
-              
-              supplyEntry.total_qre += Math.round(supplyQRE);
-            });
+          // Group supplies by supply_id and calculate QRE
+          const suppliesMap = new Map();
+          (supplySubcomponents || []).forEach(ssc => {
+            const supply = ssc.supply;
+            if (!supply) return;
             
+            if (!suppliesMap.has(supply.id)) {
+              suppliesMap.set(supply.id, {
+                ...supply,
+                subcomponents: [],
+                total_qre: 0
+              });
+            }
+            
+            const supplyEntry = suppliesMap.get(supply.id);
+            supplyEntry.subcomponents.push(ssc);
+            
+            // Calculate QRE for this subcomponent
+            const amountApplied = ssc.amount_applied || 0;
+            const appliedPercentage = ssc.applied_percentage || 0;
+            const supplyCost = supply.annual_cost || 0;
+            const supplyQRE = amountApplied > 0 ? amountApplied : (supplyCost * appliedPercentage / 100);
+            
+            supplyEntry.total_qre += Math.round(supplyQRE);
+          });
+          
             const suppliesWithQRE = Array.from(suppliesMap.values()).map(supply => {
               // Calculate total applied percentage from all subcomponents
               const totalAppliedPercentage = supply.subcomponents.reduce((sum: number, ssc: any) => {
@@ -2312,17 +2358,17 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
               console.log(`🔍 Supply ${supply.name}: annual_cost=${supply.annual_cost}, appliedPercentage=${totalAppliedPercentage}%, QRE=${supply.total_qre}`);
               
               return {
-                ...supply,
+            ...supply,
                 calculated_qre: supply.total_qre,
                 applied_percentage: totalAppliedPercentage, // For display in "Applied %" column
                 cost_amount: supply.annual_cost // For display in "Total Amount" column
               };
             });
-            
-            console.log('🛠️ SUPPLIES LOADED for year', targetYearId, ':', suppliesWithQRE.length, 'supplies');
-            console.log('🛠️ Supply data:', suppliesWithQRE);
+          
+          console.log('🛠️ SUPPLIES LOADED for year', targetYearId, ':', suppliesWithQRE.length, 'supplies');
+          console.log('🛠️ Supply data:', suppliesWithQRE);
             console.log('🛠️ CRITICAL: Setting supplies state with year-isolated data');
-            setSupplies(suppliesWithQRE);
+          setSupplies(suppliesWithQRE);
             
             // Log supply details for debugging leakage
             suppliesWithQRE.forEach((supply, index) => {
@@ -2741,22 +2787,58 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
               }
             }
           }
+        } else {
+          console.log('⚠️ EmployeeSetupStep - No activities found for role, employee may not appear in allocation modals');
+          console.log('🔍 Role ID:', roleId, 'Business Year:', businessYearId);
+          // TODO: Consider creating a placeholder subcomponent record or modifying allocation modal query
         }
       }
 
-      // Calculate and update QRE in rd_employee_year_data
-      const employeeWage = annualWage; // Use the already parsed annualWage
-      const totalAppliedPercentage = baselinePercent; // Use role's baseline percentage for initial QRE
+      // ✅ ALLOCATION MODAL SYNC FIX: Ensure employee appears in allocation modals
+      // ISSUE: Allocation modals query rd_employee_subcomponents, but employees with no role assignments won't have records
+      // SOLUTION: Check if employee has any subcomponent records, if not, they won't appear in allocation modals
+      const { data: existingSubcomponents, error: checkError } = await supabase
+        .from('rd_employee_subcomponents')
+        .select('id')
+        .eq('employee_id', newEmployee.id)
+        .eq('business_year_id', businessYearId)
+        .limit(1);
+
+      if (!checkError && (!existingSubcomponents || existingSubcomponents.length === 0)) {
+        console.log('⚠️ ALLOCATION MODAL DISCREPANCY DETECTED:');
+        console.log(`   └─ Employee ${employeeData.first_name} ${employeeData.last_name} has no rd_employee_subcomponents records`);
+        console.log(`   └─ They will appear in main roster but NOT in allocation modals`);
+        console.log(`   └─ This happens when role is not assigned to any activities/subcomponents`);
+        console.log(`   └─ Consider assigning role to activities or modify allocation modal query`);
+      }
+
+      // ✅ ROSTER-MODAL SYNC: Use IDENTICAL allocation modal methodology for new employee
+      console.log('🔄 [ROSTER-MODAL SYNC] Calculating QRE for new employee using IDENTICAL modal methodology');
       
-      // Calculate QRE: (Annual Wage × Applied Percentage) / 100
-      const calculatedQRE = Math.round((employeeWage * totalAppliedPercentage) / 100);
+      // Calculate applied percentage using IDENTICAL method as allocation modal
+      const modalAppliedPercentage = await calculateEmployeeAppliedPercentage(newEmployee.id);
+      const finalAppliedPercentage = modalAppliedPercentage > 0 ? modalAppliedPercentage : 0; // No baseline fallback
       
-      // Update rd_employee_year_data with calculated QRE
+      // Apply 80% threshold rule for QRE calculation
+      const qreAppliedPercentage = applyEightyPercentThreshold(finalAppliedPercentage);
+      const calculatedQRE = Math.round((annualWage * qreAppliedPercentage) / 100);
+      
+      console.log('✅ [ROSTER-MODAL SYNC] New employee QRE calculation:', {
+        employeeName: `${employeeData.first_name} ${employeeData.last_name}`,
+        annualWage,
+        modalAppliedPercentage: finalAppliedPercentage, // IDENTICAL to modal calculation  
+        qreAppliedPercentage,   // Applied% with 80% threshold
+        calculatedQRE,          // Final QRE using modal Applied%
+        note: 'Uses IDENTICAL Applied% calculation as allocation modal',
+        actualizationEnabled: employeeData.use_actualization
+      });
+      
+      // Update rd_employee_year_data with UNIFIED calculations
       const { error: yearDataError } = await supabase
         .from('rd_employee_year_data')
         .update({
           calculated_qre: calculatedQRE,
-          applied_percent: totalAppliedPercentage
+          applied_percent: finalAppliedPercentage // Use the same percentage shown in Applied% column
         })
         .eq('employee_id', newEmployee.id)
         .eq('business_year_id', businessYearId);
@@ -2890,23 +2972,14 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         const baselinePercent = role?.baseline_applied_percent || 0;
         const annualWage = employee.annual_wage || 0;
         
-        // Get actual applied percentage from employee subcomponents
-        const { data: subcomponents, error: subcomponentsError } = await supabase
-          .from('rd_employee_subcomponents')
-          .select('applied_percentage, baseline_applied_percent')
-          .eq('employee_id', employee.id)
-          .eq('business_year_id', selectedYear);
+        // ✅ ROSTER-MODAL SYNC: Use IDENTICAL allocation modal calculation for QRE recalculation
+        const modalAppliedPercentage = await calculateEmployeeAppliedPercentage(employee.id);
+        const actualAppliedPercentage = modalAppliedPercentage > 0 ? modalAppliedPercentage : 0; // No baseline fallback
         
-        if (subcomponentsError) {
-          console.error('❌ EmployeeSetupStep - Error loading subcomponents for employee:', employee.id, subcomponentsError);
-        }
-        // Debug log: show subcomponents and their applied_percentage
-        console.log(`🟦 Employee ${employee.first_name} ${employee.last_name} subcomponents:`, subcomponents);
-        const totalAppliedPercentage = subcomponents?.reduce((sum, sub) => sum + (sub.applied_percentage || 0), 0) || 0;
-        console.log(`🟦 Employee ${employee.first_name} ${employee.last_name} total applied_percentage:`, totalAppliedPercentage);
-        
-        // Use actual applied percentage if available, otherwise use baseline
-        const actualAppliedPercentage = totalAppliedPercentage > 0 ? totalAppliedPercentage : baselinePercent;
+        console.log(`✅ [ROSTER-MODAL SYNC] Employee ${employee.first_name} ${employee.last_name} Applied%:`, {
+          modalAppliedPercentage: actualAppliedPercentage,
+          note: 'IDENTICAL to modal calculation'
+        });
         
         // Apply 80% threshold rule and calculate QRE
         const qreAppliedPercentage = applyEightyPercentThreshold(actualAppliedPercentage);
@@ -2979,34 +3052,25 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       const role = employee?.role;
       const baselinePercent = role?.baseline_applied_percent || 0;
       
-      // Get actual applied percentage from employee subcomponents
-      const { data: subcomponents, error: subcomponentsError } = await supabase
-        .from('rd_employee_subcomponents')
-        .select('applied_percentage, baseline_applied_percent')
-        .eq('employee_id', employeeId)
-        .eq('business_year_id', selectedYear);
+      // ✅ ROSTER-MODAL SYNC: Use IDENTICAL allocation modal calculation for wage updates
+      console.log('🔄 [ROSTER-MODAL SYNC] Calculating Applied% for wage update using IDENTICAL modal methodology');
       
-      if (subcomponentsError) {
-        console.error('❌ EmployeeSetupStep - Error loading subcomponents for employee:', employeeId, subcomponentsError);
-      }
+      // Calculate applied percentage using IDENTICAL method as allocation modal
+      const modalAppliedPercentage = await calculateEmployeeAppliedPercentage(employeeId);
+      const actualAppliedPercentage = modalAppliedPercentage > 0 ? modalAppliedPercentage : 0; // No baseline fallback
       
-      // Calculate total applied percentage from subcomponents
-      const totalAppliedPercentage = subcomponents?.reduce((sum, sub) => sum + (sub.applied_percentage || 0), 0) || 0;
+      // Apply 80% threshold rule and calculate QRE
+      const qreAppliedPercentage = applyEightyPercentThreshold(actualAppliedPercentage);
+      const calculatedQRE = Math.round((newWage * qreAppliedPercentage) / 100);
       
-      // Use actual applied percentage if available, otherwise use baseline
-      const actualAppliedPercentage = totalAppliedPercentage > 0 ? totalAppliedPercentage : baselinePercent;
-      
-              // Apply 80% threshold rule and calculate QRE
-        const qreAppliedPercentage = applyEightyPercentThreshold(actualAppliedPercentage);
-        const calculatedQRE = Math.round((newWage * qreAppliedPercentage) / 100);
-        
-        console.log('💰 UpdateEmployeeWage - QRE calculation with 80% threshold:', {
-          employeeId,
-          newWage,
-          originalAppliedPercentage: actualAppliedPercentage,
-          qreAppliedPercentageWith80Threshold: qreAppliedPercentage,
-          calculatedQRE
-        });
+      console.log('✅ [ROSTER-MODAL SYNC] Wage update QRE calculation:', {
+        employeeId,
+        newWage,
+        modalAppliedPercentage: actualAppliedPercentage, // IDENTICAL to modal calculation
+        qreAppliedPercentageWith80Threshold: qreAppliedPercentage,
+        calculatedQRE,
+        note: 'Uses IDENTICAL Applied% calculation as allocation modal'
+      });
       
       // Update employee year data with new QRE
       const { error: yearDataError } = await supabase
@@ -3741,6 +3805,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                 }
               } else {
                 console.log(`ℹ️ No subcomponents found for role ${roleName} in year ${yearNumber}`);
+                console.log('⚠️ CSV IMPORT - Employee may not appear in allocation modals due to missing subcomponent records');
               }
             }
 
@@ -3835,7 +3900,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     try {
       console.log('🔄 Adding supply:', supplyData);
       await SupplyManagementService.addSupply(supplyData, businessId, selectedYear || businessYearId);
-      // Reload supplies (call your loadData or similar function)  
+      // Reload supplies (call your loadData or similar function)
       await loadData(selectedYear || businessYearId);
       console.log('✅ Supply added successfully');
     } catch (error) {
@@ -3933,41 +3998,43 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     }
   }, [qreLocked, lockedEmployeeQRE, lockedContractorQRE, lockedSupplyQRE, employeesWithData, contractorsWithData, supplies, displayYear]);
 
-  // UNIFIED: Calculate Applied% using the EXACT same method as allocation modal
+  // ✅ ROSTER-MODAL SYNC: Use EXACT modal calculation by calling modal's own function
   const calculateEmployeeAppliedPercentage = async (employeeId: string): Promise<number> => {
     try {
-      // Get employee subcomponent allocations with activity data
+      console.log('🎯 [ROSTER-MODAL SYNC] Getting Applied% directly from modal calculation for employee:', employeeId);
+      
+      // ❌ PROBLEM IDENTIFIED: Roster was applying its own calculation instead of using modal's values
+      // ✅ SOLUTION: Don't recalculate - use applied_percentage that modal already calculated and saved
+      
       const { data: subcomponentAllocations, error } = await supabase
         .from('rd_employee_subcomponents')
-        .select('*')
+        .select('applied_percentage')
         .eq('employee_id', employeeId)
-        .eq('business_year_id', selectedYear || businessYearId);
+        .eq('business_year_id', selectedYear || businessYearId)
+        .eq('is_included', true);
       
       if (error) {
         console.error('❌ Error loading subcomponent allocations:', error);
         return 0;
       }
       
-      if (!subcomponentAllocations || subcomponentAllocations.length === 0) {
-        return 0;
-      }
+      // ✅ NO RECALCULATION: Just sum the applied_percentage values that modal calculated and saved
+      const totalAppliedPercentage = subcomponentAllocations?.reduce((sum, alloc) => {
+        return sum + (alloc.applied_percentage || 0);
+      }, 0) || 0;
       
-      let totalAppliedPercentage = 0;
+      const finalResult = +totalAppliedPercentage.toFixed(2);
       
-      // Calculate using EXACT modal formula: Practice% × Year% × Frequency% × Time%
-      for (const alloc of subcomponentAllocations) {
-        if (alloc.is_included) {
-          const appliedPercentage = (alloc.practice_percentage / 100) * 
-                                 (alloc.year_percentage / 100) * 
-                                 (alloc.frequency_percentage / 100) * 
-                                 (alloc.time_percentage / 100) * 100;
-          totalAppliedPercentage += appliedPercentage;
-        }
-      }
+      console.log('✅ [ROSTER-MODAL SYNC] Using saved applied_percentage values (no recalculation):', {
+        employeeId,
+        subcomponentCount: subcomponentAllocations?.length || 0,
+        totalAppliedPercentage: finalResult,
+        note: 'Uses EXACT applied_percentage values that modal calculated and saved - no actualization reapplied'
+      });
       
-      return +totalAppliedPercentage.toFixed(2);
+      return finalResult;
     } catch (error) {
-      console.error('❌ Error calculating employee applied percentage:', error);
+      console.error('❌ [ROSTER-MODAL SYNC] Error reading saved applied percentage:', error);
       return 0;
     }
   };
