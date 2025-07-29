@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import { SectionGQREService } from '../../services/sectionGQREService';
 import { AIService } from "../../../../services/aiService";
@@ -28,21 +28,23 @@ const formatCurrency = (amount: number): string => {
 const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYear, clientId }) => {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  useEffect(() => {
-    if (!selectedYear?.id || !businessData?.id) return;
-    loadSectionGData();
-  }, [selectedYear?.id, businessData?.id]);
-
-  const loadSectionGData = async () => {
+  const loadSectionGData = useCallback(async () => {
+    // Prevent duplicate executions
+    if (isProcessing) {
+      console.log('%c🚫 [SECTION G] Already processing, skipping duplicate call', 'background: #f90; color: #000; font-weight: bold;');
+      return;
+    }
+    
+    setIsProcessing(true);
     setLoading(true);
     try {
-      console.log('%c[SECTION G DEBUG] Starting loadSectionGData', 'background: #0f0; color: #000; font-weight: bold;');
-      console.log('%c[SECTION G DEBUG] Business year ID:', 'background: #0f0; color: #000; font-weight: bold;', selectedYear.id);
-      console.log('%c[SECTION G DEBUG] Business data:', 'background: #0f0; color: #000; font-weight: bold;', businessData);
-      
-      // First, let's get the raw QRE data to debug
-      console.log('%c[SECTION G DEBUG] Getting raw QRE data...', 'background: #0f0; color: #000; font-weight: bold;');
+      console.log('%c✅ [SECTION G] Starting loadSectionGData', 'background: #0f0; color: #000; font-weight: bold;', {
+        businessYearId: selectedYear.id,
+        businessId: businessData.id,
+        clientId
+      });
       const rawQREData = await SectionGQREService.getQREDataForSectionG(selectedYear.id);
       console.log('%c[SECTION G DEBUG] Raw QRE data:', 'background: #0f0; color: #000; font-weight: bold;', rawQREData);
       
@@ -105,7 +107,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
               
               // Include Research Leaders and owners in Direct Research Wages
               if (isOwner || isResearchLeader) {
-                console.log(`[SECTION G DEBUG] Including ${e.name} in Direct Wages (owner: ${isOwner}, research leader: ${isResearchLeader})`);
+                // Performance optimization: Reduced excessive employee logging
                 return true;
               }
               // Exclude supervisors and admins from Direct Research Wages
@@ -114,7 +116,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
                 return false;
               }
               // Include other employees in Direct Research Wages
-              console.log(`[SECTION G DEBUG] Including ${e.name} in Direct Wages (other employee)`);
+              // Performance optimization: Reduced excessive employee logging
               return true;
             })
             .reduce((sum, e) => {
@@ -252,9 +254,16 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
       console.log('%c[SECTION G DEBUG] Final rows created:', 'background: #0f0; color: #000; font-weight: bold;', newRows);
     } catch (err) {
       console.error('%c[SECTION G ERROR] Unexpected error:', 'background: #f00; color: #fff; font-weight: bold;', err);
+    } finally {
+      setLoading(false);
+      setIsProcessing(false);
     }
-    setLoading(false);
-  };
+  }, [selectedYear?.id, businessData?.id, clientId, isProcessing]);
+
+  useEffect(() => {
+    if (!selectedYear?.id || !businessData?.id) return;
+    loadSectionGData();
+  }, [selectedYear?.id, businessData?.id, loadSectionGData]);
 
   // Method to save data to rd_federal_credit table
   const saveToFederalCreditTable = async (data: {
