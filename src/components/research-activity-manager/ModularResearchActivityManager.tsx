@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -25,8 +25,18 @@ import {
   Search,
   Filter,
   X,
-  Upload
+  Upload,
+  MoreVertical,
+  ChevronDown,
+  ChevronRight,
+  SortAsc,
+  SortDesc,
+  FileText,
+  Download,
+  GripVertical
 } from 'lucide-react';
+import LockBanner from '../common/LockBanner';
+import useLockStore from '../../store/lockStore';
 import { 
   ResearchActivitiesService, 
   ResearchActivity, 
@@ -149,10 +159,13 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   const [editingStep, setEditingStep] = useState<ResearchStep | null>(null);
   const [editingStepActivityId, setEditingStepActivityId] = useState<string>('');
 
+  // Lock store for data protection
+  const { isResearchActivitiesLocked } = useLockStore();
+
   // CSV import modal state
   const [showCSVImportModal, setShowCSVImportModal] = useState(false);
 
-  // Edit focus modal state
+  // Edit focus modal state  
   const [showEditFocusModal, setShowEditFocusModal] = useState(false);
   const [editingFocus, setEditingFocus] = useState<ResearchFocus | null>(null);
 
@@ -439,23 +452,27 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   };
 
   const handleEditActivity = (activity: ResearchActivity) => {
+    if (isResearchActivitiesLocked) return;
     setEditingActivity(activity);
     setShowEditActivityModal(true);
   };
 
   const handleEditStep = (step: ResearchStep, activityId: string) => {
+    if (isResearchActivitiesLocked) return;
     setEditingStep(step);
     setEditingStepActivityId(activityId);
     setShowEditStepModal(true);
   };
 
   const handleAddStep = (activityId: string) => {
+    if (isResearchActivitiesLocked) return;
     setEditingStep(null);
     setEditingStepActivityId(activityId);
     setShowEditStepModal(true);
   };
 
   const handleDuplicateActivity = async (activity: ResearchActivity) => {
+    if (isResearchActivitiesLocked) return;
     try {
       await ResearchActivitiesService.duplicateResearchActivity(activity.id, businessId);
       loadActivities();
@@ -465,6 +482,7 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   };
 
   const handleDeactivateActivity = async (activity: ResearchActivity) => {
+    if (isResearchActivitiesLocked) return;
     try {
       await ResearchActivitiesService.deactivateResearchActivity(activity.id, 'Deactivated via UI');
       loadActivities();
@@ -474,24 +492,28 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   };
 
   const handleAddSubcomponent = (stepId: string) => {
-    setSelectedStepId(stepId);
+    if (isResearchActivitiesLocked) return;
     setEditingSubcomponent(null);
+    setSelectedStepId(stepId);
     setShowSubcomponentModal(true);
   };
 
   const handleEditSubcomponent = (subcomponent: ResearchSubcomponent) => {
+    if (isResearchActivitiesLocked) return;
     setEditingSubcomponent(subcomponent);
     setSelectedStepId(subcomponent.step_id);
     setShowSubcomponentModal(true);
   };
 
   const handleMoveSubcomponent = (subcomponentId: string, fromStepId: string) => {
+    if (isResearchActivitiesLocked) return;
     setMoveSubcomponentId(subcomponentId);
     setMoveFromStepId(fromStepId);
     setShowMoveModal(true);
   };
 
   const handleSaveSubcomponent = async (subcomponentData: Omit<ResearchSubcomponent, 'id' | 'created_at' | 'updated_at'>) => {
+    if (isResearchActivitiesLocked) return;
     try {
       if (editingSubcomponent) {
         await ResearchActivitiesService.updateResearchSubcomponent(editingSubcomponent.id, subcomponentData);
@@ -506,6 +528,7 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   };
 
   const handleMoveSubcomponentToStep = async (targetStepId: string) => {
+    if (isResearchActivitiesLocked) return;
     try {
       await ResearchActivitiesService.moveSubcomponentToStep(
         moveSubcomponentId,
@@ -585,6 +608,13 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
       onDragEnd={handleDragEnd}
     >
       <div className="space-y-6">
+        {/* Lock Banner */}
+        <LockBanner 
+          section="research-activities" 
+          title="Research Activities Management"
+          description="Lock prevents accidental modifications to research activities, steps, and subcomponents"
+        />
+
         {/* Header Controls */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <div className="flex items-center justify-between mb-4">

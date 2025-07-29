@@ -11,6 +11,8 @@ import { toast } from 'react-toastify';
 import { SupplyManagementService, QuickSupplyEntry } from '../../../services/supplyManagementService';
 import ContractorAllocationsModal from './ContractorAllocationsModal';
 import AllocationReportModal from '../../AllocationReport/AllocationReportModal';
+import LockBanner from '../../../../components/common/LockBanner';
+import useLockStore from '../../../../store/lockStore';
 
 // Extend RDSupply to include calculated_qre for local use
 interface RDSupply extends RDSupplyBase {
@@ -517,6 +519,9 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
   const [totalAllocated, setTotalAllocated] = useState(0);
   const [expandedActivity, setExpandedActivity] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false); // Track if user is actively editing
+  
+  // Lock store for data protection
+  const { isExpenseManagementLocked } = useLockStore();
   
   // Color palette for activities
   const activityColors = [
@@ -1070,6 +1075,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
   };
 
   const updateActivityEnabled = (activityId: string, isEnabled: boolean) => {
+    if (isExpenseManagementLocked) return; // Prevent changes when locked
     setHasUnsavedChanges(true); // Mark as having unsaved changes
     setActivities(prev => {
       const updated = prev.map(activity => {
@@ -1093,6 +1099,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
   };
 
   const updateActivityPracticePercentage = (activityId: string, percentage: number) => {
+    if (isExpenseManagementLocked) return; // Prevent changes when locked
     setHasUnsavedChanges(true); // Mark as having unsaved changes
     setActivities(prev => {
       const updated = prev.map(activity => {
@@ -1131,6 +1138,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
   };
 
   const updateSubcomponentTimePercentage = (activityId: string, subcomponentId: string, percentage: number) => {
+    if (isExpenseManagementLocked) return; // Prevent changes when locked
     setHasUnsavedChanges(true); // Mark as having unsaved changes
     setActivities(prev => {
       const updated = prev.map(activity => {
@@ -1162,7 +1170,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
   };
 
   const saveAllocations = async () => {
-    if (!employee) return;
+    if (!employee || isExpenseManagementLocked) return;
     
     // Utility function to apply 80% threshold rule (local to modal)
     const applyEightyPercentThreshold = (appliedPercentage: number): number => {
@@ -1587,10 +1595,12 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
                   max="100"
                   step="0.01"
                   value={nonRdPercentage}
-                                            onChange={(e) => {
+                                              onChange={(e) => {
+                            if (isExpenseManagementLocked) return;
                             setHasUnsavedChanges(true);
                             setNonRdPercentage(parseFloat(e.target.value));
                           }}
+                          disabled={isExpenseManagementLocked}
                   className="w-full h-3 bg-orange-200 rounded-lg appearance-none cursor-pointer"
                 />
                 <div className="flex justify-between text-xs text-gray-500 mt-1">
@@ -1614,7 +1624,8 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
                             type="checkbox"
                             checked={activity.isEnabled}
                             onChange={(e) => updateActivityEnabled(activity.id, e.target.checked)}
-                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                            disabled={isExpenseManagementLocked}
+                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 disabled:opacity-50"
                           />
                           <h5 className="font-medium text-gray-900">{activity.name}</h5>
                         </div>
@@ -1641,7 +1652,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
                           step="0.01"
                           value={activity.practicePercentage}
                           onChange={(e) => updateActivityPracticePercentage(activity.id, parseFloat(e.target.value))}
-                          disabled={!activity.isEnabled}
+                          disabled={!activity.isEnabled || isExpenseManagementLocked}
                           className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer disabled:opacity-50"
                         />
                       </div>
@@ -1658,7 +1669,8 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
                                     type="checkbox"
                                     checked={subcomponent.isIncluded}
                                     onChange={(e) => {
-                                      setHasUnsavedChanges(true); // Mark as having unsaved changes
+                                      if (isExpenseManagementLocked) return;
+                                      setHasUnsavedChanges(true);
                                       setActivities(prev => {
                                         const updated = prev.map(a => {
                                           if (a.id === activity.id) {
@@ -1680,7 +1692,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
                                         return updated;
                                       });
                                     }}
-                                    disabled={!activity.isEnabled}
+                                    disabled={!activity.isEnabled || isExpenseManagementLocked}
                                     className="w-3 h-3 text-blue-600 rounded focus:ring-blue-500 disabled:opacity-50"
                                   />
                                   <span className="text-sm text-gray-700">{subcomponent.name}</span>
@@ -1698,7 +1710,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
                                   step="0.01"
                                   value={subcomponent.timePercentage}
                                   onChange={(e) => updateSubcomponentTimePercentage(activity.id, subcomponent.id, parseFloat(e.target.value))}
-                                  disabled={!subcomponent.isIncluded || !activity.isEnabled}
+                                  disabled={!subcomponent.isIncluded || !activity.isEnabled || isExpenseManagementLocked}
                                   className="flex-1 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer disabled:opacity-50"
                                 />
                                 <span className="text-xs text-gray-600 w-12 text-right">
