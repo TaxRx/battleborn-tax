@@ -133,8 +133,13 @@ const renderTable = (
 };
 
 const renderResearchActivityBaseline = (baseline: ResearchActivityBaseline) => {
+  console.log('🔧 [RENDER BASELINE] Rendering baseline data:', baseline);
+  console.log('🔧 [RENDER BASELINE] Activities count:', baseline.activities?.length || 0);
+  console.log('🔧 [RENDER BASELINE] Subcomponents by activity:', baseline.subcomponentsByActivity);
+  
   if (!baseline.activities || baseline.activities.length === 0) {
-    return null;
+    console.warn('⚠️ [RENDER BASELINE] No activities in baseline data');
+    return <div className="no-data-message">No research activities data available for this year.</div>;
   }
 
   // Calculate total percentages using the correct field names
@@ -236,6 +241,10 @@ const renderResearchActivityBaseline = (baseline: ResearchActivityBaseline) => {
           const practicePercent = activity.practice_percent || 0;
           const appliedPercent = activity.applied_percent || 0;
           
+          console.log(`🔧 [SUBCOMPONENTS] Activity: ${activity.name} (ID: ${activity.id})`);
+          console.log(`🔧 [SUBCOMPONENTS] Practice: ${practicePercent}%, Applied: ${appliedPercent}%`);
+          console.log(`🔧 [SUBCOMPONENTS] Subcomponents:`, subcomponents);
+          
           return (
             <div key={activity.id} className="subcomponent-section">
               <div className="activity-header">
@@ -247,7 +256,13 @@ const renderResearchActivityBaseline = (baseline: ResearchActivityBaseline) => {
               </div>
               
               {subcomponents.length === 0 ? (
-                <div className="no-subcomponents-message">No subcomponents selected for this activity.</div>
+                <div className="no-subcomponents-message">
+                  No subcomponents selected for this activity.
+                  <br />
+                  <small style={{color: '#666', fontSize: '12px'}}>
+                    Debug: Activity ID {activity.id}, Practice {practicePercent}%, Applied {appliedPercent}%
+                  </small>
+                </div>
               ) : (
                 <div className="subcomponent-bar-chart">
                   <div className="bar-container">
@@ -450,6 +465,20 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
 
         if (activitiesError) {
           console.error('❌ Error fetching selected activities:', activitiesError);
+          // Set empty baseline instead of returning to show the error state
+          setResearchActivityBaseline({
+            activities: [],
+            subcomponentsByActivity: {}
+          });
+          return;
+        }
+
+        if (!selectedActivitiesData || selectedActivitiesData.length === 0) {
+          console.warn('⚠️ No selected activities found for business year:', selectedYear.id);
+          setResearchActivityBaseline({
+            activities: [],
+            subcomponentsByActivity: {}
+          });
           return;
         }
 
