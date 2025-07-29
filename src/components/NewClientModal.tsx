@@ -665,7 +665,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
             // First, delete existing businesses for this client
             console.log(`[handleSubmit] Deleting existing businesses for client ${initialData.id}`);
             await supabase
-              .from('businesses')
+              .from('rd_businesses')
               .delete()
               .eq('client_id', initialData.id);
 
@@ -702,7 +702,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                 console.log(`[handleSubmit] Business data to insert:`, businessData);
 
                 const { data: businessResult, error: businessError } = await supabase
-                  .from('businesses')
+                  .from('rd_businesses')
                   .insert(businessData)
                   .select()
                   .single();
@@ -729,7 +729,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                   console.log(`[handleSubmit] Business years data to insert:`, businessYearsData);
 
                   const { error: businessYearsError } = await supabase
-                    .from('business_years')
+                    .from('rd_business_years')
                     .insert(businessYearsData);
 
                   if (businessYearsError) {
