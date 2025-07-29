@@ -87,8 +87,7 @@ export const FilingProcessOverview: React.FC<FilingProcessOverviewProps> = ({
   console.log('%c[FILING PROCESS] totalQRE:', 'background: #fffb00; color: #000; font-weight: bold;', totalQRE);
   // eslint-disable-next-line no-console
   console.log('%c[FILING PROCESS] totalCredit:', 'background: #fffb00; color: #000; font-weight: bold;', totalCredit);
-  // eslint-disable-next-line no-console
-  console.log('%c[FILING PROCESS] selectedFedData:', 'background: #fffb00; color: #000; font-weight: bold;', selectedFedData);
+
 
   // Check if we have data
   const hasData = totalQRE > 0 && totalCredit > 0;

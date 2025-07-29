@@ -241,6 +241,12 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
   const [corporateTaxRate, setCorporateTaxRate] = useState(21);
   const [selectedMethod, setSelectedMethod] = useState<'standard' | 'asc'>('asc');
 
+  // Wrapper function to update both local state and wizard state
+  const handleMethodChange = (method: 'standard' | 'asc') => {
+    setSelectedMethod(method);
+    onUpdate({ selectedMethod: method });
+  };
+
   // State calculation service instance
   const stateCalculationService = useMemo(() => StateCalculationService.getInstance(), []);
   
@@ -1016,7 +1022,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
         corporateTaxRate / 100
       );
       setResults(newResults);
-      onUpdate({ calculations: newResults });
+      onUpdate({ calculations: newResults, selectedMethod });
     } catch (err) {
       console.error('Error loading calculations:', err);
       setError('Failed to load calculations. Please check your data and try again.');
@@ -1040,7 +1046,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       );
 
       setResults(newResults);
-      onUpdate({ calculations: newResults });
+      onUpdate({ calculations: newResults, selectedMethod });
       toast.success('Calculations updated successfully');
     } catch (err) {
       console.error('Error recalculating:', err);
@@ -1886,7 +1892,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           selectedYear={selectedYearData}
           calculations={results}
           selectedMethod={selectedMethod}
-          onMethodChange={setSelectedMethod}
+          onMethodChange={handleMethodChange}
           corporateTaxRate={corporateTaxRate}
           use280C={use280C}
           onUse280CChange={setUse280C}

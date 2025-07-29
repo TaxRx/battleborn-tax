@@ -40,6 +40,7 @@ interface WizardState {
   supplies: any[];
   contractors: any[];
   calculations: any;
+  selectedMethod: 'standard' | 'asc';
   isComplete: boolean;
 }
 
@@ -93,6 +94,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
     supplies: [],
     contractors: [],
     calculations: null,
+    selectedMethod: 'asc',
     isComplete: false
   });
 

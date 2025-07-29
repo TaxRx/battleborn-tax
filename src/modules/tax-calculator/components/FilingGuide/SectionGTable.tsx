@@ -275,7 +275,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
       
       // First, check if the business_year_id exists in the database
       const { data: businessYearCheck, error: checkError } = await supabase
-        .from('business_years')
+        .from('rd_business_years')
         .select('id, year')
         .eq('id', data.business_year_id)
         .single();
@@ -289,7 +289,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
         
         // Get the business_id for this client first
         const { data: businessData, error: businessError } = await supabase
-          .from('businesses')
+          .from('rd_businesses')
           .select('id')
           .eq('client_id', clientId)
           .single();
@@ -301,7 +301,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
         
         // Now get the business year for this business
         const { data: validBusinessYear, error: yearError } = await supabase
-          .from('business_years')
+          .from('rd_business_years')
           .select('id, year')
           .eq('business_id', businessData.id)
           .order('year', { ascending: false })
