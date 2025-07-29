@@ -136,7 +136,7 @@ const AppContent: React.FC = () => {
     <div className="min-h-screen bg-gray-50">
       <Routes>
         {/* Public Routes */}
-        <Route path="/" element={<LandingPage />} />
+        <Route path="/" element={<LoginPage />} />
         <Route 
           path="/login" 
           element={<LoginPage />} 
@@ -201,7 +201,7 @@ const AppContent: React.FC = () => {
               (user || isAuthenticated) ? (
                 <RoleBasedRedirect />
               ) : (
-                <Navigate to="/" replace />
+                <Navigate to="/login" replace />
               )
             } 
           />

@@ -12,6 +12,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [demoPassword, setDemoPassword] = useState('');
+  const [showDemoLogins, setShowDemoLogins] = useState(false);
   const navigate = useNavigate();
   const { login, logout } = useAuthStore();
   const { setUser } = useUser();
@@ -224,47 +226,66 @@ export default function LoginPage() {
           </div>
         </form>
 
-        {/* Development Info */}
+        {/* Demo Access */}
         <div className="mt-8 p-4 bg-gray-100 rounded-md">
-          <h3 className="text-sm font-medium text-gray-900 mb-2">Quick Login (Click to login):</h3>
-          <div className="text-xs space-y-2">
-            <button
-              onClick={() => quickLogin('admin@example.com', 'testpass123')}
-              disabled={isLoading}
-              className="block w-full text-left p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50 cursor-pointer"
-            >
-              <span className="font-medium text-gray-900">Admin:</span> admin@example.com (platform administration)
-            </button>
-            <button
-              onClick={() => quickLogin('operator@example.com', 'testpass123')}
-              disabled={isLoading}
-              className="block w-full text-left p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50 cursor-pointer"
-            >
-              <span className="font-medium text-gray-900">Operator:</span> operator@example.com (service fulfillment)
-            </button>
-            <button
-              onClick={() => quickLogin('affiliate@example.com', 'testpass123')}
-              disabled={isLoading}
-              className="block w-full text-left p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
-            >
-              <span className="font-medium text-gray-900">Affiliate:</span> affiliate@example.com (sales partner)
-            </button>
-            <button
-              onClick={() => quickLogin('client@example.com', 'testpass123')}
-              disabled={isLoading}
-              className="block w-full text-left p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
-            >
-              <span className="font-medium text-gray-900">Client:</span> client@example.com (end customer)
-            </button>
-            <button
-              onClick={() => quickLogin('expert@example.com', 'testpass123')}
-              disabled={isLoading}
-              className="block w-full text-left p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
-            >
-              <span className="font-medium text-gray-900">Expert:</span> expert@example.com (consultant)
-            </button>
-            <p className="text-gray-500 mt-2 italic">Click any account above to instantly login</p>
-          </div>
+          {!showDemoLogins ? (
+            <div className="space-y-2">
+              <input
+                type="password"
+                placeholder="Enter demo access code"
+                value={demoPassword}
+                onChange={(e) => {
+                  setDemoPassword(e.target.value);
+                  if (e.target.value === 'galileo11!!') {
+                    setShowDemoLogins(true);
+                  }
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+            </div>
+          ) : (
+            <div>
+              <h3 className="text-sm font-medium text-gray-900 mb-2">Quick Login (Click to login):</h3>
+              <div className="text-xs space-y-2">
+                <button
+                  onClick={() => quickLogin('admin@example.com', 'testpass123')}
+                  disabled={isLoading}
+                  className="block w-full text-left p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  <span className="font-medium text-gray-900">Admin:</span> admin@example.com (platform administration)
+                </button>
+                <button
+                  onClick={() => quickLogin('operator@example.com', 'testpass123')}
+                  disabled={isLoading}
+                  className="block w-full text-left p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  <span className="font-medium text-gray-900">Operator:</span> operator@example.com (service fulfillment)
+                </button>
+                <button
+                  onClick={() => quickLogin('affiliate@example.com', 'testpass123')}
+                  disabled={isLoading}
+                  className="block w-full text-left p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
+                >
+                  <span className="font-medium text-gray-900">Affiliate:</span> affiliate@example.com (sales partner)
+                </button>
+                <button
+                  onClick={() => quickLogin('client@example.com', 'testpass123')}
+                  disabled={isLoading}
+                  className="block w-full text-left p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
+                >
+                  <span className="font-medium text-gray-900">Client:</span> client@example.com (end customer)
+                </button>
+                <button
+                  onClick={() => quickLogin('expert@example.com', 'testpass123')}
+                  disabled={isLoading}
+                  className="block w-full text-left p-2 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
+                >
+                  <span className="font-medium text-gray-900">Expert:</span> expert@example.com (consultant)
+                </button>
+                <p className="text-gray-500 mt-2 italic">Click any account above to instantly login</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

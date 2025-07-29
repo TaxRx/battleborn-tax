@@ -355,25 +355,14 @@ const App = () => {
   });
   
   if (!isUserAuthenticated) {
-    if (location.pathname === '/login') {
-      return (
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      );
-    }
-    if (location.pathname === '/') {
-      return (
-        <Routes>
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      );
-    }
-    // For any other route, redirect to home
-    return <Navigate to="/" replace />;
+    // Always show login page for unauthenticated users
+    return (
+      <Routes>
+        <Route path="/" element={<LoginPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    );
   }
   // For demo mode, skip profile loading check entirely
   if (!demoMode && actualProfileLoading) return <div className="min-h-screen flex items-center justify-center"><div>Loading profile...</div></div>;

@@ -111,16 +111,16 @@ async function createUser(userData) {
       },
       body: JSON.stringify({
         pathname: '/user-service/register',
-        ...userData
+        ...userData,
+        useCreateUser: true
       })
     });
 
     const result = await response.json();
-    
+    console.log(result);
     if (response.ok && result.success) {
       console.log(`✅ Successfully created user: ${userData.email}`);
-      console.log(`   User ID: ${result.userId}`);
-      console.log(`   Profile ID: ${result.profileId}`);
+      console.log(`   User ID: ${result.data.user.id}`);
     } else {
       console.log(`❌ Failed to create user: ${userData.email}`);
       console.log(`   Error: ${result.error || 'Unknown error'}`);
