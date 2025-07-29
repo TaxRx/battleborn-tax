@@ -25,23 +25,12 @@ export const FilingProcessOverview: React.FC<FilingProcessOverviewProps> = ({
   
   if (selectedMethod === 'asc' && federalCredits.asc) {
     totalCredit = federalCredits.asc.adjustedCredit ?? federalCredits.asc.credit ?? 0;
-    // Performance optimization: reduced logging
   } else if (selectedMethod === 'standard' && federalCredits.standard) {
     totalCredit = federalCredits.standard.adjustedCredit ?? federalCredits.standard.credit ?? 0;
-    console.log('🔧 [FILING GUIDE] Using Standard method credit:', totalCredit);
   } else {
     // Fallback to totalFederalCredit from calculations
     totalCredit = calculations?.totalFederalCredit ?? 0;
-    console.log('🔧 [FILING GUIDE] Using fallback totalFederalCredit:', totalCredit);
   }
-  
-  console.log('🔧 [FILING GUIDE] Summary calculations:', {
-    selectedMethod,
-    totalQRE,
-    totalCredit,
-    federalCredits,
-    calculations: calculations
-  });
 
   // 🔧 FIX: Get REAL state credits from State Pro Forma calculations, not calculations page
   const [realStateCredits, setRealStateCredits] = React.useState<number>(0);
@@ -58,16 +47,11 @@ export const FilingProcessOverview: React.FC<FilingProcessOverviewProps> = ({
 
       setLoadingStateCredits(true);
       try {
-        console.log('🔧 [FILING GUIDE] 📊 Loading REAL state credits from Pro Forma calculations...');
         const stateCreditsResult = await StateProFormaCalculationService.getAllStateCreditsFromProForma(selectedYear.id);
         const realTotal = stateCreditsResult.total;
-        
-        console.log('🔧 [FILING GUIDE] ✅ REAL state credits loaded:', realTotal);
-        console.log('🔧 [FILING GUIDE] 📊 State breakdown:', stateCreditsResult.breakdown);
-        
         setRealStateCredits(realTotal);
       } catch (error) {
-        console.error('🔧 [FILING GUIDE] ❌ Error loading real state credits:', error);
+        console.error('Error loading state credits:', error);
         setRealStateCredits(0);
       } finally {
         setLoadingStateCredits(false);
@@ -79,14 +63,6 @@ export const FilingProcessOverview: React.FC<FilingProcessOverviewProps> = ({
 
   // Use real state credits instead of calculations page data
   const stateCreditsTotal = realStateCredits;
-
-  // More granular logs
-  // eslint-disable-next-line no-console
-  console.log('%c[FILING PROCESS] 🔧 FIXED: Using REAL state credits from Pro Forma:', 'background: #00ff00; color: #000; font-weight: bold;', stateCreditsTotal);
-  // eslint-disable-next-line no-console
-  console.log('%c[FILING PROCESS] totalQRE:', 'background: #fffb00; color: #000; font-weight: bold;', totalQRE);
-  // eslint-disable-next-line no-console
-  console.log('%c[FILING PROCESS] totalCredit:', 'background: #fffb00; color: #000; font-weight: bold;', totalCredit);
 
 
   // Check if we have data
