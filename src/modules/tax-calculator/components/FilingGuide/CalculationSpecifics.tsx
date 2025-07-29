@@ -133,9 +133,7 @@ const renderTable = (
 };
 
 const renderResearchActivityBaseline = (baseline: ResearchActivityBaseline) => {
-  console.log('🔧 [RENDER BASELINE] Rendering baseline data:', baseline);
-  console.log('🔧 [RENDER BASELINE] Activities count:', baseline.activities?.length || 0);
-  console.log('🔧 [RENDER BASELINE] Subcomponents by activity:', baseline.subcomponentsByActivity);
+  // Performance optimization: Reduced excessive baseline rendering logs
   
   if (!baseline.activities || baseline.activities.length === 0) {
     console.warn('⚠️ [RENDER BASELINE] No activities in baseline data');
@@ -241,9 +239,7 @@ const renderResearchActivityBaseline = (baseline: ResearchActivityBaseline) => {
           const practicePercent = activity.practice_percent || 0;
           const appliedPercent = activity.applied_percent || 0;
           
-          console.log(`🔧 [SUBCOMPONENTS] Activity: ${activity.name} (ID: ${activity.id})`);
-          console.log(`🔧 [SUBCOMPONENTS] Practice: ${practicePercent}%, Applied: ${appliedPercent}%`);
-          console.log(`🔧 [SUBCOMPONENTS] Subcomponents:`, subcomponents);
+          // Performance optimization: Reduced excessive subcomponent activity logs
           
           return (
             <div key={activity.id} className="subcomponent-section">
@@ -327,18 +323,24 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
   });
 
   useEffect(() => {
-    console.log('🔧 [CALCULATION SPECIFICS] useEffect triggered:', {
-      selectedYear: selectedYear?.id,
-      hasSelectedYear: !!selectedYear?.id
+    console.log('%c🔧 [CALCULATION SPECIFICS] useEffect triggered:', 'background: #ff0; color: #000; font-weight: bold;', {
+      selectedYear: selectedYear,
+      selectedYearId: selectedYear?.id,
+      hasSelectedYear: !!selectedYear?.id,
+      selectedYearType: typeof selectedYear
     });
     
     if (!selectedYear?.id) {
-      console.warn('⚠️ [CALCULATION SPECIFICS] No selectedYear.id, returning early');
+      console.error('%c⚠️ [CALCULATION SPECIFICS] CRITICAL: No selectedYear.id, returning early', 'background: #f00; color: #fff; font-weight: bold;', {
+        selectedYear,
+        selectedYearId: selectedYear?.id
+      });
       return;
     }
     
     async function fetchData() {
       try {
+        console.log('%c🚨 [CALCULATION SPECIFICS] FETCHDATA CALLED!!! 🚨', 'background: #f0f; color: #fff; font-size: 20px; font-weight: bold;');
         console.log('%c[CALCULATION SPECIFICS] 🔧 BASELINE FIX: Starting data fetch...', 'background: #ff0; color: #d00; font-size: 16px; font-weight: bold;');
         console.log('🔧 [CALCULATION SPECIFICS] Selected Year ID:', selectedYear.id);
         

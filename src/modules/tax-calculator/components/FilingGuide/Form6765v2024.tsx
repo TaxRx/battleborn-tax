@@ -397,18 +397,7 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
     
     const totalQRE = priorYears.reduce((sum: number, year: any) => sum + (year.qre || 0), 0);
     
-    console.log('📊 [Form 6765v2024] Prior 3 years QRE calculation - COMPREHENSIVE:', {
-      currentYear,
-      priorYears,
-      totalQRE,
-      breakdown: priorYears.map((year: any) => ({
-        year: year.year,
-        totalQRE: year.qre || 0,
-        manualQRE: year.manual_qre || 0,
-        calculatedQRE: year.calculated_qre || 0,
-        qreBreakdown: year.qre_breakdown
-      }))
-    });
+    // Performance optimization: Reduced excessive prior year QRE logging
     
     return totalQRE;
   };
