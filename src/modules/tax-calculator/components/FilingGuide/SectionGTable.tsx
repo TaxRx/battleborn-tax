@@ -118,7 +118,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
               return true;
             })
             .reduce((sum, e) => {
-              console.log(`[SECTION G DEBUG] Adding ${e.name} QRE to direct wages: ${e.calculated_qre}`);
+              // Performance optimization: reduced excessive employee QRE logging
               return sum + (e.calculated_qre || 0);
             }, 0) || 0;
           
@@ -186,7 +186,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
             // Generate AI description using the AI service
             try {
               console.log('[SECTION G DEBUG] Calling AI service for Line 49(f) description...');
-              description = await AIService.generateLine49fDescription(line49fContext);
+              description = await AIService.getInstance().generateLine49fDescription(line49fContext);
               console.log('[SECTION G DEBUG] AI-generated description:', description);
             } catch (aiError) {
               console.warn('[SECTION G WARNING] AI service failed, using fallback description:', aiError);
