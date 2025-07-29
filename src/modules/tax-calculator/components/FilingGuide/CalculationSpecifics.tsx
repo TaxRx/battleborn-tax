@@ -323,35 +323,13 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
   });
 
   useEffect(() => {
-    console.log('%c🔧 [CALCULATION SPECIFICS] useEffect triggered:', 'background: #ff0; color: #000; font-weight: bold;', {
-      selectedYear: selectedYear,
-      selectedYearId: selectedYear?.id,
-      hasSelectedYear: !!selectedYear?.id,
-      selectedYearType: typeof selectedYear
-    });
-    
     if (!selectedYear?.id) {
-      console.error('%c⚠️ [CALCULATION SPECIFICS] CRITICAL: No selectedYear.id, returning early', 'background: #f00; color: #fff; font-weight: bold;', {
-        selectedYear,
-        selectedYearId: selectedYear?.id
-      });
       return;
     }
     
     async function fetchData() {
       try {
-        console.log('%c🚨 [CALCULATION SPECIFICS] FETCHDATA CALLED!!! 🚨', 'background: #f0f; color: #fff; font-size: 20px; font-weight: bold;');
-        console.log('%c[CALCULATION SPECIFICS] 🔧 BASELINE FIX: Starting data fetch...', 'background: #ff0; color: #d00; font-size: 16px; font-weight: bold;');
-        console.log('🔧 [CALCULATION SPECIFICS] Selected Year ID:', selectedYear.id);
-        
-        // DEBUG: Log the initial query parameters
-        console.log('%c[FETCH DEBUG] Query params:', 'background: #00f; color: #fff; font-weight: bold;', {
-          selectedYearId: selectedYear.id,
-          businessDataId: businessData?.id
-        });
-        
-        // FIXED: Fetch employee data properly using rd_employee_year_data for overall applied percentage
-        console.log('%c🔧 [FETCH DEBUG] About to fetch employee data...', 'background: #ff0; color: #000; font-weight: bold;');
+        // Fetch employee data using rd_employee_year_data
         const { data: employeeYearData, error: employeeError } = await supabase
           .from('rd_employee_year_data')
           .select(`
@@ -369,16 +347,10 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
           .eq('business_year_id', selectedYear.id);
 
         if (employeeError) {
-          console.error('❌ Error fetching employee year data:', employeeError);
+          console.error('Error fetching employee year data:', employeeError);
         }
-        
-        console.log('%c🔧 [FETCH DEBUG] Employee data result:', 'background: #0f0; color: #000; font-weight: bold;', {
-          error: employeeError,
-          dataLength: employeeYearData?.length || 0,
-          rawData: employeeYearData
-        });
 
-        console.log('🔧 [CALCULATION SPECIFICS] Employee data debug:', {
+        console.log('Employee data debug:', {
           businessYearId: selectedYear.id,
           employeeYearDataCount: employeeYearData?.length || 0,
           employeeYearData: employeeYearData
@@ -472,23 +444,11 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
           supplies: suppliesArr.length
         });
 
-        console.log('🔧 [CALCULATION SPECIFICS] Final arrays:', {
-          employeesCount: employeesArr.length,
-          contractorsCount: contractorsArr.length,
-          suppliesCount: suppliesArr.length,
-          employees: employeesArr
-        });
+        // Set final state
 
         setEmployees(employeesArr);
         setContractors(contractorsArr);
         setSupplies(suppliesArr);
-        
-        console.log('%c🔧 [STATE DEBUG] After setting state:', 'background: #f90; color: #000; font-weight: bold;', {
-          employeesArrLength: employeesArr.length,
-          contractorsArrLength: contractorsArr.length,
-          suppliesArrLength: suppliesArr.length,
-          employeesArr: employeesArr
-        });
         
         // 🔧 BASELINE FIX: Fetch research activity baseline data with CORRECT applied percentages from Research Design
         console.log('%c[CALCULATION SPECIFICS] 🔧 BASELINE FIX: Fetching activities with CORRECT applied percentages from Research Design...', 'background: #ff0; color: #d00; font-weight: bold;');
@@ -691,15 +651,48 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
     }
     
     fetchData();
-  }, [selectedYear]);
+  }, [selectedYear?.id, businessData?.id]);
 
-  // CRITICAL DEBUG: Check if component renders and what selectedYear looks like
-  console.log('%c🚨 [CALCULATION SPECIFICS] RENDER DEBUGGING 🚨', 'background: #f0f; color: #fff; font-size: 18px; font-weight: bold;');
-  console.log('%c[RENDER DEBUG] selectedYear:', 'background: #0f0; color: #000; font-weight: bold;', selectedYear);
-  console.log('%c[RENDER DEBUG] selectedYear.id:', 'background: #0f0; color: #000; font-weight: bold;', selectedYear?.id);
-  console.log('%c[RENDER DEBUG] businessData:', 'background: #0f0; color: #000; font-weight: bold;', businessData);
-  console.log('%c[RENDER DEBUG] employees length:', 'background: #0f0; color: #000; font-weight: bold;', employees.length);
-  console.log('%c[RENDER DEBUG] researchActivityBaseline:', 'background: #0f0; color: #000; font-weight: bold;', researchActivityBaseline);
+  // FORCE TRIGGER: If we have selectedYear.id but no employees, force fetch
+  useEffect(() => {
+    if (selectedYear?.id && businessData?.id && employees.length === 0) {
+      console.log('%c🚨 [FORCE TRIGGER] No employees found, forcing data fetch...', 'background: #f00; color: #fff; font-weight: bold;');
+      // Re-fetch data immediately
+      const forceFetch = async () => {
+        try {
+          const { data: employeeYearData, error: employeeError } = await supabase
+            .from('rd_employee_year_data')
+            .select(`
+              applied_percent,
+              non_rd_percentage,
+              calculated_qre,
+              employee:rd_employees!inner(
+                id,
+                first_name,
+                last_name,
+                annual_wage,
+                role:rd_roles(name)
+              )
+            `)
+            .eq('business_year_id', selectedYear.id);
+
+          if (!employeeError && employeeYearData?.length > 0) {
+            const employeesArr = employeeYearData.map(emp => ({
+              name: `${emp.employee.first_name} ${emp.employee.last_name}`,
+              role: emp.employee.role?.name || 'No Role',
+              appliedPercent: emp.applied_percent || 0,
+              qreAmount: emp.calculated_qre || 0
+            }));
+            setEmployees(employeesArr);
+            console.log('%c🚨 [FORCE TRIGGER] Successfully loaded employees:', 'background: #0f0; color: #000; font-weight: bold;', employeesArr);
+          }
+        } catch (error) {
+          console.error('Force fetch error:', error);
+        }
+      };
+      forceFetch();
+    }
+  }, [selectedYear?.id, businessData?.id, employees.length]);
 
   return (
     <div className="filing-guide-section">
