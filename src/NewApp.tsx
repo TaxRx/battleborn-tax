@@ -91,7 +91,7 @@ const RoleBasedRedirect: React.FC = () => {
   return <Navigate to="/admin" replace />;
 };
 
-const BattleBornApp: React.FC = () => {
+const GalileoTaxApp: React.FC = () => {
   return (
     <UserProvider>
       <AppContent />
@@ -223,4 +223,4 @@ const AppContent: React.FC = () => {
     );
 };
 
-export default BattleBornApp; 
+export default GalileoTaxApp; 

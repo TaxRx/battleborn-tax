@@ -1,4 +1,4 @@
-// Cloudflare Worker for Battle Born Tax App
+// Cloudflare Worker for Galileo Tax Tax App
 // Handles SPA routing, static assets, and API proxying
 
 export interface Env {

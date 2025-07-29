@@ -271,8 +271,8 @@ END $$;
 
 -- Add some sample experts if they don't exist
 INSERT INTO experts (name, email, specialization, active) VALUES
-  ('John Tax Expert', 'expert1@battleborn.life', 'Business Tax Strategy', true),
-  ('Sarah CPA', 'expert2@battleborn.life', 'Individual Tax Planning', true),
-  ('Mike Financial Advisor', 'expert3@battleborn.life', 'Estate Planning', true)
+  ('John Tax Expert', 'expert1@galileotax.com', 'Business Tax Strategy', true),
+  ('Sarah CPA', 'expert2@galileotax.com', 'Individual Tax Planning', true),
+  ('Mike Financial Advisor', 'expert3@galileotax.com', 'Estate Planning', true)
 ON CONFLICT (email) DO NOTHING;
 ;

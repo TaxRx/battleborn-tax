@@ -6,7 +6,7 @@ import InfoForm from './components/InfoForm';
 import { useTaxStore } from './store/taxStore';
 
 interface TaxCalculatorModuleProps {
-  // Optional props for integration with Battle Born system
+  // Optional props for integration with Galileo Tax system
   clientId?: string;
   affiliateId?: string;
   onProposalCreate?: (proposal: any) => void;
@@ -62,7 +62,7 @@ const TaxCalculatorModule: React.FC<TaxCalculatorModuleProps> = ({
       onSaveCalculation(calc);
     }
 
-    // If we're in the Battle Born system, potentially create a proposal
+    // If we're in the Galileo Tax system, potentially create a proposal
     if (onProposalCreate && clientId && affiliateId) {
       const proposal = {
         client_id: clientId,

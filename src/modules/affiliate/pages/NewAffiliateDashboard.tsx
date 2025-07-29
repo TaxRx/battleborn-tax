@@ -139,10 +139,10 @@ const AffiliateDashboard: React.FC = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">BB</span>
+                <span className="text-white font-bold text-sm">GT</span>
               </div>
               <div>
-                <h1 className="text-heading-sm text-slate-900">BattleBorn</h1>
+                <h1 className="text-heading-sm text-slate-900">Galileo Tax</h1>
                 <p className="text-body-sm text-slate-500">Affiliate Portal</p>
               </div>
             </div>

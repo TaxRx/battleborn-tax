@@ -1,4 +1,4 @@
-// Battle Born Capital Advisors - Shared Types
+// Galileo Tax - Shared Types
 
 export type UserRole = 'affiliate' | 'admin' | 'client';
 

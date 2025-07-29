@@ -7,7 +7,7 @@ DECLARE
 
 BEGIN
   -- Check if admin user already exists
-  SELECT id INTO admin_user_id FROM auth.users WHERE email = 'admin@battleborn.life';
+  SELECT id INTO admin_user_id FROM auth.users WHERE email = 'admin@galileotax.com';
 
   
   IF admin_user_id IS NULL THEN
@@ -32,7 +32,7 @@ BEGIN
       gen_random_uuid(),
       'authenticated',
       'authenticated',
-      'admin@battleborn.life',
+      'admin@galileotax.com',
       crypt('Test11!!', gen_salt('bf')),
       NOW(),
       NOW(),

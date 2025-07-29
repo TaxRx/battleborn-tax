@@ -32,7 +32,7 @@ BEGIN
   -- Check if admin user already exists
   SELECT id, true INTO admin_user_id, admin_exists 
   FROM auth.users 
-  WHERE email = 'admin@battleborn.life';
+  WHERE email = 'admin@galileotax.com';
 
   
   IF NOT admin_exists THEN
@@ -63,7 +63,7 @@ BEGIN
       admin_user_id,
       'authenticated',
       'authenticated',
-      'admin@battleborn.life',
+      'admin@galileotax.com',
       crypt('Test11!!', gen_salt('bf')),
       NOW(),
       NOW(),
@@ -86,13 +86,13 @@ BEGIN
     admin_user_id,
     'admin'::user_role,
     'Admin User',
-    'admin@battleborn.life',
+    'admin@galileotax.com',
     NOW()
   )
   ON CONFLICT (id) DO UPDATE SET
     role = 'admin'::user_role,
     name = 'Admin User',
-    email = 'admin@battleborn.life';
+    email = 'admin@galileotax.com';
 
 END $$;
 
@@ -185,7 +185,7 @@ BEGIN
   SELECT COUNT(*) INTO admin_count
   FROM auth.users u
   JOIN profiles p ON u.id = p.id
-  WHERE u.email = 'admin@battleborn.life' AND p.role = 'admin';
+  WHERE u.email = 'admin@galileotax.com' AND p.role = 'admin';
 
   
   -- Count affiliate records
