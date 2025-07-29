@@ -344,7 +344,14 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
         console.log('%c[CALCULATION SPECIFICS] 🔧 BASELINE FIX: Starting data fetch...', 'background: #ff0; color: #d00; font-size: 16px; font-weight: bold;');
         console.log('🔧 [CALCULATION SPECIFICS] Selected Year ID:', selectedYear.id);
         
+        // DEBUG: Log the initial query parameters
+        console.log('%c[FETCH DEBUG] Query params:', 'background: #00f; color: #fff; font-weight: bold;', {
+          selectedYearId: selectedYear.id,
+          businessDataId: businessData?.id
+        });
+        
         // FIXED: Fetch employee data properly using rd_employee_year_data for overall applied percentage
+        console.log('%c🔧 [FETCH DEBUG] About to fetch employee data...', 'background: #ff0; color: #000; font-weight: bold;');
         const { data: employeeYearData, error: employeeError } = await supabase
           .from('rd_employee_year_data')
           .select(`
@@ -364,6 +371,12 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
         if (employeeError) {
           console.error('❌ Error fetching employee year data:', employeeError);
         }
+        
+        console.log('%c🔧 [FETCH DEBUG] Employee data result:', 'background: #0f0; color: #000; font-weight: bold;', {
+          error: employeeError,
+          dataLength: employeeYearData?.length || 0,
+          rawData: employeeYearData
+        });
 
         console.log('🔧 [CALCULATION SPECIFICS] Employee data debug:', {
           businessYearId: selectedYear.id,
@@ -469,6 +482,13 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
         setEmployees(employeesArr);
         setContractors(contractorsArr);
         setSupplies(suppliesArr);
+        
+        console.log('%c🔧 [STATE DEBUG] After setting state:', 'background: #f90; color: #000; font-weight: bold;', {
+          employeesArrLength: employeesArr.length,
+          contractorsArrLength: contractorsArr.length,
+          suppliesArrLength: suppliesArr.length,
+          employeesArr: employeesArr
+        });
         
         // 🔧 BASELINE FIX: Fetch research activity baseline data with CORRECT applied percentages from Research Design
         console.log('%c[CALCULATION SPECIFICS] 🔧 BASELINE FIX: Fetching activities with CORRECT applied percentages from Research Design...', 'background: #ff0; color: #d00; font-weight: bold;');
@@ -672,6 +692,14 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
     
     fetchData();
   }, [selectedYear]);
+
+  // CRITICAL DEBUG: Check if component renders and what selectedYear looks like
+  console.log('%c🚨 [CALCULATION SPECIFICS] RENDER DEBUGGING 🚨', 'background: #f0f; color: #fff; font-size: 18px; font-weight: bold;');
+  console.log('%c[RENDER DEBUG] selectedYear:', 'background: #0f0; color: #000; font-weight: bold;', selectedYear);
+  console.log('%c[RENDER DEBUG] selectedYear.id:', 'background: #0f0; color: #000; font-weight: bold;', selectedYear?.id);
+  console.log('%c[RENDER DEBUG] businessData:', 'background: #0f0; color: #000; font-weight: bold;', businessData);
+  console.log('%c[RENDER DEBUG] employees length:', 'background: #0f0; color: #000; font-weight: bold;', employees.length);
+  console.log('%c[RENDER DEBUG] researchActivityBaseline:', 'background: #0f0; color: #000; font-weight: bold;', researchActivityBaseline);
 
   return (
     <div className="filing-guide-section">
