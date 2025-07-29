@@ -1313,7 +1313,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
                 onClick={async () => {
                   try {
                     setLoading(true);
-                    const { ExpenseManagementService } = await import('../../../../../services/expenseManagementService');
+                    const { ExpenseManagementService } = await import('../../../../services/expenseManagementService');
                     const csvData = await ExpenseManagementService.exportExpensesToCSV(wizardState.selectedYear?.id);
                     const blob = new Blob([csvData], { type: 'text/csv' });
                     const url = window.URL.createObjectURL(blob);
