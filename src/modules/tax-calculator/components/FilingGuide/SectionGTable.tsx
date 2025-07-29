@@ -183,8 +183,16 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
             
             console.log('[SECTION G DEBUG] AI Context for Line 49(f):', line49fContext);
             
-            // Generate static description based on the line49fContext
-            description = `The company evaluated ${line49fContext.subcomponent_count} ${line49fContext.subcomponent_groups} to resolve technical uncertainty in ${line49fContext.research_activity_name}. Experimental testing was conducted using systematic research methodologies within the ${line49fContext.industry} industry. ${line49fContext.guideline_notes || 'Research activities were performed in accordance with established protocols and regulatory requirements.'}`;
+            // Generate AI description using the AI service
+            try {
+              console.log('[SECTION G DEBUG] Calling AI service for Line 49(f) description...');
+              description = await AIService.generateLine49fDescription(line49fContext);
+              console.log('[SECTION G DEBUG] AI-generated description:', description);
+            } catch (aiError) {
+              console.warn('[SECTION G WARNING] AI service failed, using fallback description:', aiError);
+              // Fallback to static description if AI service fails
+              description = `The company evaluated ${line49fContext.subcomponent_count} ${line49fContext.subcomponent_groups} to resolve technical uncertainty in ${line49fContext.research_activity_name}. Experimental testing was conducted using systematic research methodologies within the ${line49fContext.industry} industry. ${line49fContext.guideline_notes || 'Research activities were performed in accordance with established protocols and regulatory requirements.'}`;
+            }
             
             // Save to rd_federal_credit table (validate research_activity_id first)
             await saveToFederalCreditTable({

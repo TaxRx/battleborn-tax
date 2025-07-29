@@ -118,7 +118,13 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
   const businessState = businessData?.domicile_state || businessData?.contact_info?.state || businessData?.state || 'CA';
   
   const [state, setState] = useState(businessState);
-  const [method, setMethod] = useState(selectedMethod || 'standard');
+  const [method, setMethod] = useState(() => {
+    // Determine initial method based on selectedMethod or federal calculation defaults
+    if (selectedMethod === 'asc') return 'alternative';
+    if (selectedMethod === 'standard') return 'standard';
+    // Default to 'standard' if selectedMethod is undefined
+    return 'standard';
+  });
   const [stateProFormaData, setStateProFormaData] = useState<Record<string, number>>({});
   const [isLoadingData, setIsLoadingData] = useState(false);
 
@@ -133,9 +139,12 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
 
   // Sync state method with federal selectedMethod
   useEffect(() => {
-    if (selectedMethod && selectedMethod !== method) {
-      setMethod(selectedMethod);
-      console.log('[FilingGuideDocument] Synced state method with federal method:', selectedMethod);
+    if (selectedMethod) {
+      const stateMethod = selectedMethod === 'asc' ? 'alternative' : 'standard';
+      if (stateMethod !== method) {
+        setMethod(stateMethod);
+        console.log('[FilingGuideDocument] Synced state method with federal method:', selectedMethod, '->', stateMethod);
+      }
     }
   }, [selectedMethod, method]);
 
@@ -143,6 +152,17 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
   const currentStateConfig = getStateConfig(state);
   // Get lines from the appropriate form method
   const availableLines = currentStateConfig?.forms?.[method]?.lines || [];
+  
+  // Debug logging for state pro forma
+  console.log('[FilingGuideDocument] State Pro Forma Debug:', {
+    state,
+    method,
+    selectedMethod,
+    currentStateConfig: !!currentStateConfig,
+    availableLines: availableLines.length,
+    stateProFormaData,
+    isLoadingData
+  });
 
   // Load existing data when state or method changes
   useEffect(() => {

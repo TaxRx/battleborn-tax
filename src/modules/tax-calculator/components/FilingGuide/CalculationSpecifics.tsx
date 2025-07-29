@@ -354,6 +354,12 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
           console.error('❌ Error fetching employee year data:', employeeError);
         }
 
+        console.log('🔧 [CALCULATION SPECIFICS] Employee data debug:', {
+          businessYearId: selectedYear.id,
+          employeeYearDataCount: employeeYearData?.length || 0,
+          employeeYearData: employeeYearData
+        });
+
         // Process employees with correct applied percentage from rd_employee_year_data
         const employeesArr: BreakdownEntry[] = [];
         if (employeeYearData) {
@@ -442,6 +448,13 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
           supplies: suppliesArr.length
         });
 
+        console.log('🔧 [CALCULATION SPECIFICS] Final arrays:', {
+          employeesCount: employeesArr.length,
+          contractorsCount: contractorsArr.length,
+          suppliesCount: suppliesArr.length,
+          employees: employeesArr
+        });
+
         setEmployees(employeesArr);
         setContractors(contractorsArr);
         setSupplies(suppliesArr);
@@ -483,6 +496,11 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
         }
 
         console.log('🔧 [BASELINE FIX] Selected activities loaded:', selectedActivitiesData);
+        console.log('🔧 [BASELINE FIX] Query details:', {
+          businessYearId: selectedYear.id,
+          selectedActivitiesCount: selectedActivitiesData?.length || 0,
+          selectedActivitiesData: selectedActivitiesData
+        });
 
         // For each activity, calculate the REAL applied percentage using Research Design logic
         const activitiesWithRealApplied = [];
@@ -616,6 +634,13 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
           }
         }
         
+        console.log('🔧 [BASELINE FIX] Setting final baseline data:', {
+          activitiesCount: activitiesWithRealApplied.length,
+          activities: activitiesWithRealApplied,
+          subcomponentsByActivity: subcomponentsByActivity,
+          subcomponentActivityKeys: Object.keys(subcomponentsByActivity)
+        });
+
         setResearchActivityBaseline({
           activities: activitiesWithRealApplied,
           subcomponentsByActivity

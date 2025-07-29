@@ -137,19 +137,19 @@ export const FilingProcessOverview: React.FC<FilingProcessOverviewProps> = ({
               </tr>
               <tr className="summary-row-highlight">
                 <td className="summary-label"><strong>Federal Credit</strong></td>
-                <td className="summary-value summary-amount">{formatCurrency(totalCredit)}</td>
+                <td className="summary-value summary-amount">{formatCurrency(Math.round(totalCredit))}</td>
               </tr>
               {/* Add State Credits if available - Fix: Use real-time calculation */}
               {stateCreditsTotal > 0 && (
                 <tr className="summary-row-highlight">
                   <td className="summary-label"><strong>State Credits</strong></td>
-                  <td className="summary-value summary-amount">{formatCurrency(stateCreditsTotal)}</td>
+                  <td className="summary-value summary-amount">{formatCurrency(Math.round(stateCreditsTotal))}</td>
                 </tr>
               )}
               <tr className="summary-row-total">
                 <td className="summary-label"><strong>Total Tax Credits</strong></td>
                 <td className="summary-value summary-total">
-                  {formatCurrency(totalCredit + stateCreditsTotal)}
+                  {formatCurrency(Math.round(totalCredit + stateCreditsTotal))}
                 </td>
               </tr>
             </tbody>
