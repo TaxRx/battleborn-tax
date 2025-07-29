@@ -17,6 +17,7 @@ interface FilingGuideDocumentProps {
   calculations: any;
   selectedMethod?: 'asc' | 'standard';
   debugData?: any;
+  readOnly?: boolean; // Add read-only mode for client portal
 }
 
 export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
@@ -24,7 +25,8 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
   selectedYear,
   calculations,
   selectedMethod,
-  debugData
+  debugData,
+  readOnly = false
 }) => {
   // State for locked QRE values
   const [lockedQREValues, setLockedQREValues] = useState<{
@@ -116,7 +118,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
   const businessState = businessData?.domicile_state || businessData?.contact_info?.state || businessData?.state || 'CA';
   
   const [state, setState] = useState(businessState);
-  const [method, setMethod] = useState('standard');
+  const [method, setMethod] = useState(selectedMethod || 'standard');
   const [stateProFormaData, setStateProFormaData] = useState<Record<string, number>>({});
   const [isLoadingData, setIsLoadingData] = useState(false);
 
@@ -128,6 +130,14 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
       console.log('[FilingGuideDocument] Updated state to business address state:', newBusinessState);
     }
   }, [businessData, state]);
+
+  // Sync state method with federal selectedMethod
+  useEffect(() => {
+    if (selectedMethod && selectedMethod !== method) {
+      setMethod(selectedMethod);
+      console.log('[FilingGuideDocument] Synced state method with federal method:', selectedMethod);
+    }
+  }, [selectedMethod, method]);
 
   const availableStates = getAvailableStates();
   const currentStateConfig = getStateConfig(state);
@@ -191,7 +201,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
     };
 
     loadExistingData();
-  }, [state, method, businessData?.client_id, selectedYear?.id]);
+  }, [state, method, businessData?.client_id, selectedYear?.id, calculations?.currentYearQRE]);
 
   const handleSaveStateProForma = async (data: Record<string, number>, businessYearId: string) => {
     await saveStateProFormaData(businessYearId, state, method as 'standard' | 'alternative', data);
@@ -408,6 +418,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
             <select 
               value={state} 
               onChange={e => handleStateChange(e.target.value)}
+              disabled={readOnly}
             >
               {availableStates.map(stateConfig => (
                 <option key={stateConfig.code} value={stateConfig.code}>
@@ -421,7 +432,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
             <select 
               value={method} 
               onChange={e => handleMethodChange(e.target.value)}
-              disabled={!currentStateConfig?.hasAlternativeMethod}
+              disabled={readOnly || !currentStateConfig?.hasAlternativeMethod}
             >
               <option value="standard">Standard</option>
               {currentStateConfig?.hasAlternativeMethod && (
@@ -440,6 +451,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
             onSave={handleSaveStateProForma}
             title={`${currentStateConfig.name} (${currentStateConfig.code}) State Credit – ${currentStateConfig.forms?.[method]?.name || currentStateConfig.formName} Pro Forma (${method.charAt(0).toUpperCase() + method.slice(1)})`}
             businessYearId={selectedYear?.id}
+            readOnly={readOnly}
             // Pass validation rules and metadata
             validationRules={currentStateConfig.validationRules}
             alternativeValidationRules={currentStateConfig.alternativeValidationRules}
