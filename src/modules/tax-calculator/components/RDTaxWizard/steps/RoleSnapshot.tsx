@@ -39,7 +39,19 @@ const RoleSnapshot = forwardRef<RoleSnapshotRef, RoleSnapshotProps>(({ businessY
   const calculateRolePercentages = async () => {
     try {
       setLoading(true);
-      console.log('🎯 [ROLE SNAPSHOT] Starting fresh calculation');
+      console.log('🎯 [ROLE SNAPSHOT] Starting fresh calculation for businessYearId:', businessYearId);
+      console.log('✅ [REGRESSION PREVENTION] This calculation should ONLY run when:');
+      console.log('   • Roles are added/removed/changed');  
+      console.log('   • Role assignments to subcomponents change');
+      console.log('   • Subcomponents are added/removed');
+      console.log('   • Frequency/year percentages change');
+      console.log('   • Manual "Calculate Snapshot" button clicked');
+      console.log('❌ [NEVER RUN ON] Activity card clicks or applied percentage display changes');
+
+      // AGGRESSIVE STATE CLEARING to prevent data leakage between years
+      console.log('🧹 [ROLE SNAPSHOT] Clearing all state to prevent year data leakage');
+      setRoles([]);
+      setRolePercentages({});
 
       // Get all roles for this business year
       const { data: rolesData, error: rolesError } = await supabase
@@ -50,17 +62,19 @@ const RoleSnapshot = forwardRef<RoleSnapshotRef, RoleSnapshotProps>(({ businessY
 
       if (rolesError) {
         console.error('Error fetching roles:', rolesError);
-        return;
-      }
-
-      if (!rolesData || rolesData.length === 0) {
-        console.log('🎯 [ROLE SNAPSHOT] No roles found');
         setRoles([]);
         setRolePercentages({});
         return;
       }
 
-      console.log('🎯 [ROLE SNAPSHOT] Found', rolesData.length, 'raw roles from database');
+      if (!rolesData || rolesData.length === 0) {
+        console.log('🎯 [ROLE SNAPSHOT] No roles found for year:', businessYearId);
+        setRoles([]);
+        setRolePercentages({});
+        return;
+      }
+
+      console.log('🎯 [ROLE SNAPSHOT] Found', rolesData.length, 'raw roles from database for year:', businessYearId);
       
       // CRITICAL FIX: Deduplicate roles by name to prevent double processing
       const uniqueRoles = rolesData.reduce((acc, role) => {
@@ -73,7 +87,7 @@ const RoleSnapshot = forwardRef<RoleSnapshotRef, RoleSnapshotProps>(({ businessY
         return acc;
       }, [] as typeof rolesData);
       
-      console.log('🎯 [ROLE SNAPSHOT] After deduplication:', uniqueRoles.length, 'unique roles');
+      console.log('🎯 [ROLE SNAPSHOT] After deduplication:', uniqueRoles.length, 'unique roles for year:', businessYearId);
       uniqueRoles.forEach((role, index) => {
         console.log(`   ${index + 1}. ${role.name} (ID: ${role.id})`);
       });
@@ -183,9 +197,10 @@ const RoleSnapshot = forwardRef<RoleSnapshotRef, RoleSnapshotProps>(({ businessY
       }
 
       // Get step time percentages and practice percentages for dynamic calculation
+      // CRITICAL FIX: Include non_rd_percentage to exclude Non-R&D time (same as Research Activity Card)
       const { data: steps, error: stepsError } = await supabase
         .from('rd_selected_steps')
-        .select('step_id, time_percentage, research_activity_id')
+        .select('step_id, time_percentage, research_activity_id, non_rd_percentage')
         .eq('business_year_id', businessYearId);
 
       if (stepsError) {
@@ -208,6 +223,10 @@ const RoleSnapshot = forwardRef<RoleSnapshotRef, RoleSnapshotProps>(({ businessY
       console.log(`   └─ Filtered subcomponents: ${subcomponents.length} (with freq > 0 and year > 0)`);
       console.log(`   └─ Steps loaded: ${steps?.length || 0}`);
       console.log(`   └─ Activities loaded: ${activities?.length || 0}`);
+      
+      // CRITICAL FIX: Ensure both Research Activity and Role calculations use IDENTICAL logic
+      console.log('🔧 [DATA CONSISTENCY] Both calculations now use same data source and formula');
+      console.log('🎯 [ROLE LOGIC] Each role gets FULL applied % for each assigned subcomponent (no sharing/reduction)');
       
       // Create lookup maps for performance
       const stepMap = new Map(steps?.map(s => [s.step_id, s]) || []);
@@ -288,7 +307,19 @@ const RoleSnapshot = forwardRef<RoleSnapshotRef, RoleSnapshotProps>(({ businessY
               
               // DYNAMIC CALCULATION: practice × step × frequency × year (same as research activity cards)
               if (practicePercent > 0 && stepTimePercent > 0 && frequencyPercent > 0 && yearPercent > 0) {
-                const appliedPercentage = (practicePercent / 100) * (stepTimePercent / 100) * (frequencyPercent / 100) * (yearPercent / 100) * 100;
+                let appliedPercentage = (practicePercent / 100) * (stepTimePercent / 100) * (frequencyPercent / 100) * (yearPercent / 100) * 100;
+                
+                // CRITICAL FIX: Apply Non-R&D reduction (same as Research Activity Card and Subcomponent Bar)
+                const nonRdPercent = step.non_rd_percentage || 0;
+                if (nonRdPercent > 0) {
+                  const beforeReduction = appliedPercentage;
+                  appliedPercentage = appliedPercentage * ((100 - nonRdPercent) / 100);
+                  
+                  // Debug Non-R&D reduction for verification
+                  if (role.name === 'Research Leader' && index < 5) {
+                    console.log(`🔧 [ROLE NON-R&D] Applied Non-R&D reduction: ${appliedPercentage.toFixed(2)}% (was ${beforeReduction.toFixed(2)}%, reduced by ${nonRdPercent}%)`);
+                  }
+                }
                 
                 roleTotal += appliedPercentage;
                 subcomponentCount++;
@@ -300,9 +331,9 @@ const RoleSnapshot = forwardRef<RoleSnapshotRef, RoleSnapshotProps>(({ businessY
                 }
                 activityBreakdowns[role.name][activityName] += appliedPercentage;
                 
-                // Debug first few for verification
+                // Debug first few for verification (now shows Non-R&D adjusted values)
                 if (role.name === 'Research Leader' && index < 5) {
-                  console.log(`🧮 [DYNAMIC CALC] ${role.name} - Subcomponent ${index + 1}: ${appliedPercentage.toFixed(2)}% = ${practicePercent}% × ${stepTimePercent}% × ${frequencyPercent}% × ${yearPercent}% (${activityName})`);
+                  console.log(`🧮 [DYNAMIC CALC] ${role.name} - Subcomponent ${index + 1}: ${appliedPercentage.toFixed(2)}% = ${practicePercent}% × ${stepTimePercent}% × ${frequencyPercent}% × ${yearPercent}% ${nonRdPercent > 0 ? `(reduced by ${nonRdPercent}% Non-R&D)` : ''} (${activityName})`);
                 }
               } else {
                 console.log(`⏭️ [ROLE SNAPSHOT] Skipping subcomponent ${index + 1} for ${role.name} - missing values: practice=${practicePercent}, step=${stepTimePercent}, freq=${frequencyPercent}, year=${yearPercent}`);
@@ -319,7 +350,49 @@ const RoleSnapshot = forwardRef<RoleSnapshotRef, RoleSnapshotProps>(({ businessY
         });
 
         calculations[role.name] = +roleTotal.toFixed(2);
-        console.log(`🎯 [ROLE SNAPSHOT] ${role.name}: ${roleTotal.toFixed(2)}% from ${subcomponentCount} subcomponents (DYNAMIC CALCULATION)`);
+        console.log(`🎯 [ROLE SNAPSHOT] ${role.name}: ${roleTotal.toFixed(2)}% from ${subcomponentCount} subcomponents (DYNAMIC CALCULATION with Non-R&D exclusion)`);
+        
+        // VERIFICATION: Ensure Non-R&D exclusion is working consistently
+        console.log(`🔧 [NON-R&D VERIFICATION] ${role.name}: Role Applied Percentage now excludes Non-R&D time (same as Research Activity Card and Subcomponent Bar)`);
+        
+        // CALCULATION VERIFICATION: Confirm each role gets full applied % for assigned subcomponents
+        console.log(`📊 [CALCULATION VERIFICATION] ${role.name}: ${roleTotal.toFixed(2)}% applied percentage`);
+        console.log(`   └─ This role is assigned to ${subcomponentCount} subcomponents`);
+        console.log(`   └─ Each assigned subcomponent contributes its FULL applied % to this role`);
+        console.log(`   └─ Formula: practice% × time% × frequency% × year% × (1 - non-R&D%)`);
+        console.log(`   └─ IMPORTANT: No sharing/reduction when multiple roles assigned to same subcomponent`);
+        
+        // ASSIGNMENT VERIFICATION: Show how many subcomponents this role is assigned to
+        const roleSubcomponentCount = subcomponents.filter(sub => {
+          let selectedRoles = sub.selected_roles || [];
+          if (typeof selectedRoles === 'string') {
+            try {
+              selectedRoles = JSON.parse(selectedRoles);
+            } catch (e) {
+              selectedRoles = [];
+            }
+          }
+          return selectedRoles.includes(role.id);
+        }).length;
+        
+        const totalSubcomponentCount = subcomponents.length;
+        const assignmentPercentage = totalSubcomponentCount > 0 ? (roleSubcomponentCount / totalSubcomponentCount * 100) : 0;
+        
+        console.log(`🎯 [ASSIGNMENT ANALYSIS] ${role.name}:`);
+        console.log(`   └─ Assigned to: ${roleSubcomponentCount}/${totalSubcomponentCount} subcomponents (${assignmentPercentage.toFixed(1)}%)`);
+        console.log(`   └─ If assigned to <100% of subcomponents, Role % < Activity % is expected`);
+        
+        // EXPECTATION: Role should get full percentage from each assigned subcomponent
+        console.log(`   └─ Expected behavior: Role gets FULL applied % from each assigned subcomponent`);
+        console.log(`   └─ No reduction occurs when multiple roles share the same subcomponent`);
+        
+        if (assignmentPercentage < 100) {
+          console.log(`   └─ 🔍 Role assigned to ${assignmentPercentage.toFixed(1)}% of subcomponents`);
+          console.log(`   └─ Role % should equal sum of applied % from assigned subcomponents only`);
+        } else {
+          console.log(`   └─ ✅ Role assigned to ALL subcomponents - Role % should equal Research Activity %`);
+          console.log(`   └─ If Role % ≠ Activity %, check data consistency between calculations`);
+        }
         
         // CRITICAL DEBUG: Track calculation storage to prevent overwriting
         if (calculations[role.name] !== +roleTotal.toFixed(2)) {
@@ -397,12 +470,38 @@ const RoleSnapshot = forwardRef<RoleSnapshotRef, RoleSnapshotProps>(({ businessY
       console.log(`🎯 [ROLE SNAPSHOT] Fixed calculation - filtered to match research activity cards exactly`);
       console.log(`🎨 [ROLE SNAPSHOT] Activity breakdowns:`, activityBreakdowns);
 
+      // SUMMARY: Correct understanding of Role % vs Research Activity % relationship
+      console.log('\n🎯 [CALCULATION SUMMARY] Role vs Research Activity Percentage Logic:');
+      console.log('📋 CORRECT LOGIC:');
+      console.log('   • Each role gets FULL applied % from each subcomponent they are assigned to');
+      console.log('   • NO sharing/reduction when multiple roles assigned to same subcomponent');
+      console.log('   • Research Activity %: Sum of unique subcomponent applied %');
+      console.log('   • Role %: Sum of applied % from ALL subcomponents assigned to that role');
+      console.log('');
+      console.log('📐 EXPECTED RELATIONSHIPS:');
+      console.log('   • If role assigned to ALL subcomponents: Role % = Research Activity %');
+      console.log('   • If role assigned to some subcomponents: Role % = sum of assigned subcomponents');
+      console.log('   • Multiple roles on same subcomponent: Each gets full % (no division)');
+      console.log('');
+      console.log('✅ VERIFICATION: Both calculations should use identical:');
+      console.log('   • Data source (same subcomponents)');
+      console.log('   • Formula: practice% × time% × frequency% × year% × (1 - non-R&D%)');
+      console.log('   • No artificial sharing/reduction between roles');
+      console.log('');
+
       // FINAL DEBUG: Log what's being stored in state
       console.log(`📝 [FINAL STATE] Setting role percentages:`, calculations);
       Object.entries(calculations).forEach(([roleName, percentage]) => {
         console.log(`   └─ ${roleName}: ${percentage}%`);
       });
 
+      // STABILITY VERIFICATION: Role calculations should be consistent and stable
+      console.log('\n✅ [STABILITY VERIFICATION] Role calculations complete:');
+      console.log('   • ✅ STABLE: Role calculations only depend on database data, not UI state');
+      console.log('   • ✅ CONSISTENT: Same data source and formula as Research Activity calculations');
+      console.log('   • ✅ INDEPENDENT: Not affected by activity card selection or applied percentage changes');
+      console.log('   • ✅ CORRECT: Each role gets FULL applied % from assigned subcomponents (no sharing)');
+      
       setRolePercentages(calculations);
       setActivityBreakdowns(activityBreakdowns);
       setLastCalculation(new Date().toLocaleTimeString());

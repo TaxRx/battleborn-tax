@@ -127,6 +127,7 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
+  const [businessYearData, setBusinessYearData] = useState<any>(null);
   const [selectedActivities, setSelectedActivities] = useState<SelectedActivity[]>([]);
   const [selectedSteps, setSelectedSteps] = useState<SelectedStep[]>([]);
   const [selectedSubcomponents, setSelectedSubcomponents] = useState<SelectedSubcomponent[]>([]);
@@ -206,7 +207,9 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
       }
 
       setBusinessProfile(yearData?.business);
+      setBusinessYearData(yearData);
       console.log('✅ Business profile loaded:', yearData?.business?.name);
+      console.log('✅ Business year data loaded:', yearData?.year);
       console.log('🏷️ Business category loaded:', {
         categoryId: yearData?.business?.category?.id,
         categoryName: yearData?.business?.category?.name,
@@ -254,8 +257,13 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
           setShowPreview(true);
           setLoadingMessage('Report loaded from cache');
         } else {
-          console.log('🔄 Cached report doesn\'t match current category, will regenerate');
-          setLoadingMessage('Category changed, regenerating report...');
+          console.log('⚠️ Cached report exists but doesn\'t match current category');
+          console.log('📋 Using existing report as user already completed it - avoiding forced regeneration');
+          // Load the existing report anyway since user already completed it
+          setCachedReport(existingReport);
+          setGeneratedReport(cleanupExistingFormatting(existingReport.generated_html));
+          setShowPreview(true);
+          setLoadingMessage('Report loaded from cache (category mismatch ignored)');
         }
       } else {
         console.log('📝 No cached report found, will generate new');
@@ -376,6 +384,35 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
       setError('Failed to load data');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Helper function to generate activity sections with proper async handling
+  const generateActivitySections = async (activitiesMap, businessRoles, reportType, businessProfile) => {
+    try {
+      console.log('🔄 Generating activity sections...');
+      const activitySections = await Promise.all(
+        Array.from(activitiesMap.entries()).map(async ([activityId, data], index) => {
+          try {
+            return await generateActivitySection(activityId, data, index, businessRoles, reportType, businessProfile);
+          } catch (error) {
+            console.error(`❌ Error generating activity section for ${activityId}:`, error);
+            // Return a fallback section if generation fails
+            return `
+              <section class="activity-section">
+                <h2>Activity ${index + 1}: ${data.activity?.activity?.title || 'Unknown Activity'}</h2>
+                <p>Error generating detailed section for this activity.</p>
+              </section>
+            `;
+          }
+        })
+      );
+      
+      console.log('✅ Generated', activitySections.length, 'activity sections');
+      return activitySections.join('\n');
+    } catch (error) {
+      console.error('❌ Error generating activity sections:', error);
+      return '<section><h2>Error generating activity sections</h2></section>';
     }
   };
 
@@ -516,11 +553,7 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
         </div>
       </section>
 
-      ${(await Promise.all(
-        Array.from(activitiesMap.entries()).map(([activityId, data], index) => {
-          return generateActivitySection(activityId, data, index, businessRoles, isSoftwareReport ? 'software' : 'healthcare', businessProfile);
-        })
-      )).join('')}
+      ${await generateActivitySections(activitiesMap, businessRoles, isSoftwareReport ? 'software' : 'healthcare', businessProfile)}
 
       ${generateComplianceSummary()}
       ${generateDocumentationChecklist()}
@@ -602,6 +635,10 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
     `;
 
     try {
+      console.log('📊 Final report length:', report.length, 'characters');
+      console.log('📄 Report preview (first 500 chars):', report.substring(0, 500));
+      console.log('🔍 Report contains main content:', report.includes('report-main-content'));
+      
       setGeneratedReport(report);
       setShowPreview(true);
 
@@ -924,66 +961,687 @@ Please provide:
 
     setIsLoading(true);
     try {
+      console.log('🔄 Starting PDF generation...');
+      
       // Import html2pdf dynamically
       const html2pdf = (await import('html2pdf.js')).default;
       
-      // Create a temporary container for the document
-      const container = document.createElement('div');
-      container.className = 'research-report-pdf-container';
-      container.innerHTML = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="UTF-8">
-            <title>Research Report - ${businessProfile?.name || 'Unknown'}</title>
-            <style>${getReportStyles()}</style>
-          </head>
-          <body>
-            ${generatedReport}
-          </body>
-        </html>
+      // SIMPLIFIED APPROACH: Extract just the main content from the generated report
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = generatedReport;
+      
+      // Find the main content container
+      const mainContent = tempDiv.querySelector('.report-main-content') || tempDiv.querySelector('body') || tempDiv;
+      console.log('🔍 Found main content:', !!mainContent);
+      
+      if (!mainContent) {
+        throw new Error('No content found in generated report');
+      }
+      
+      // Create simple PDF container with just the essential content
+      const pdfContainer = document.createElement('div');
+      pdfContainer.style.padding = '20px';
+      pdfContainer.style.fontFamily = '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      pdfContainer.style.color = '#374151';
+      pdfContainer.style.lineHeight = '1.6';
+      pdfContainer.style.fontSize = '14px';
+      pdfContainer.style.backgroundColor = 'white';
+      
+      // Add basic styling
+      const basicStyles = `
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          h1 { font-size: 24px; margin-bottom: 16px; color: #1f2937; font-weight: 700; }
+          h2 { font-size: 20px; margin: 20px 0 12px 0; color: #374151; font-weight: 600; }
+          h3 { font-size: 16px; margin: 16px 0 8px 0; color: #4b5563; font-weight: 600; }
+          p { margin-bottom: 12px; }
+          .section { margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #e5e7eb; }
+          .activity-card { background: #f9fafb; padding: 16px; margin: 16px 0; border-radius: 8px; border-left: 4px solid #3b82f6; }
+          .step-card { background: white; border: 1px solid #e5e7eb; padding: 12px; margin: 8px 0; border-radius: 6px; }
+          .subcomponent-item { padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
+          table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+          th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+          th { background: #f9fafb; font-weight: 600; color: #374151; }
+          .page-break { page-break-before: always; }
+        </style>
       `;
       
-      // Add to DOM temporarily (hidden)
-      container.style.position = 'absolute';
-      container.style.left = '-9999px';
-      container.style.top = '-9999px';
-      document.body.appendChild(container);
+      // Create clean content for PDF
+      const cleanContent = mainContent.innerHTML
+        .replace(/style="[^"]*"/g, '') // Remove inline styles
+        .replace(/class="[^"]*interactive[^"]*"/g, '') // Remove interactive elements
+        .replace(/<script[\s\S]*?<\/script>/gi, '') // Remove scripts
+        .replace(/<button[\s\S]*?<\/button>/gi, '') // Remove buttons
+        .replace(/onclick="[^"]*"/g, ''); // Remove click handlers
       
-      // Configure PDF options
+      // Add cover page
+      const coverPageHTML = `
+        <div style="text-align: center; padding: 60px 20px;">
+          <h1 style="font-size: 32px; margin-bottom: 20px; color: #1e40af;">
+            R&D Tax Credit Research Report
+          </h1>
+          <h2 style="font-size: 24px; margin-bottom: 40px; color: #374151;">
+            ${businessProfile?.name || 'Business Entity'}
+          </h2>
+          <div style="margin-bottom: 20px;">
+            <strong>Tax Year:</strong> ${businessYearData?.year || new Date().getFullYear()}
+          </div>
+          <div style="margin-bottom: 20px;">
+            <strong>Generated:</strong> ${new Date().toLocaleDateString()}
+          </div>
+          <div style="margin-bottom: 20px;">
+            <strong>Activities:</strong> ${selectedActivities.length} Research Activities
+          </div>
+          <div class="page-break"></div>
+        </div>
+      `;
+      
+      pdfContainer.innerHTML = basicStyles + coverPageHTML + cleanContent;
+      
+      // Add to DOM for rendering
+      pdfContainer.style.position = 'fixed';
+      pdfContainer.style.top = '-9999px';
+      pdfContainer.style.left = '-9999px';
+      pdfContainer.style.width = '8.5in';
+      pdfContainer.style.backgroundColor = 'white';
+      
+      document.body.appendChild(pdfContainer);
+      console.log('📄 PDF container added to DOM');
+      
+      // Wait for rendering
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Simple PDF options
       const pdfOptions = {
-        margin: [0.5, 0.5, 0.5, 0.5], // top, right, bottom, left in inches
-        filename: `Research_Report_${businessProfile?.name?.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
+        margin: 0.5,
+        filename: `Research_Report_${businessProfile?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Report'}_${new Date().toISOString().split('T')[0]}.pdf`,
+        image: { type: 'jpeg', quality: 0.9 },
         html2canvas: { 
-          scale: 2,
+          scale: 1.5,
           useCORS: true,
-          letterRendering: true,
-          scrollX: 0,
-          scrollY: 0,
-          windowWidth: 1200,
-          windowHeight: 800
+          logging: false,
+          backgroundColor: '#ffffff'
         },
         jsPDF: { 
           unit: 'in', 
           format: 'letter', 
-          orientation: 'portrait' 
-        },
-        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+          orientation: 'portrait'
+        }
       };
       
+      console.log('📊 Generating PDF with options:', pdfOptions);
+      
       // Generate PDF
-      await html2pdf().from(container).set(pdfOptions).save();
+      const pdf = await html2pdf().from(pdfContainer).set(pdfOptions).save();
+      
+      console.log('✅ PDF generated successfully');
       
       // Clean up
-      document.body.removeChild(container);
+      document.body.removeChild(pdfContainer);
       
     } catch (error) {
-      console.error('Error generating PDF:', error);
-      setError('Failed to generate PDF. Please try again.');
+      console.error('❌ Error generating PDF:', error);
+      setError(`Failed to generate PDF: ${error.message}. Please try again.`);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const createCoverPage = () => {
+    const coverPage = document.createElement('div');
+    coverPage.id = 'cover-page';
+    coverPage.className = 'pdf-cover-page';
+    
+    const currentDate = new Date().toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+    
+    coverPage.innerHTML = `
+      <div class="cover-content">
+        <div class="cover-header">
+          <div class="company-logo">
+            <div class="logo-placeholder">
+              <div class="logo-icon">R&D</div>
+            </div>
+          </div>
+          <div class="company-info">
+            <h3>Direct Research Advisors</h3>
+            <p>R&D Tax Credit Specialists</p>
+          </div>
+        </div>
+        
+        <div class="cover-main">
+          <h1 class="cover-title">
+            Qualified Research Activities<br/>
+            Documentation Report
+          </h1>
+          
+          <div class="cover-subtitle">
+            IRC Section 41 Compliance Documentation
+          </div>
+          
+          <div class="cover-details">
+            <div class="detail-item">
+              <label>Business Entity:</label>
+              <span>${businessProfile?.name || 'Unknown Business'}</span>
+            </div>
+                         <div class="detail-item">
+               <label>Tax Year:</label>
+               <span>${businessYearData?.year || new Date().getFullYear()}</span>
+             </div>
+            <div class="detail-item">
+              <label>Report Generated:</label>
+              <span>${currentDate}</span>
+            </div>
+            <div class="detail-item">
+              <label>Activities Documented:</label>
+              <span>${selectedActivities.length} Qualified Research Activities</span>
+            </div>
+            <div class="detail-item">
+              <label>Research Steps:</label>
+              <span>${selectedSteps.length} Research Process Steps</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="cover-footer">
+          <div class="confidentiality-notice">
+            <h4>CONFIDENTIAL</h4>
+            <p>This document contains proprietary business information and research documentation 
+            prepared for tax compliance purposes under IRC Section 41. Unauthorized distribution is prohibited.</p>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    return coverPage;
+  };
+
+  const createTableOfContents = () => {
+    const tocPage = document.createElement('div');
+    tocPage.id = 'table-of-contents';
+    tocPage.className = 'pdf-toc-page';
+    
+    tocPage.innerHTML = `
+      <div class="toc-content">
+        <h2 class="toc-title">Table of Contents</h2>
+        
+        <div class="toc-entries">
+          <div class="toc-entry">
+            <span class="toc-item">Executive Summary</span>
+            <span class="toc-dots"></span>
+            <span class="toc-page">3</span>
+          </div>
+          
+          <div class="toc-entry">
+            <span class="toc-item">R&D Tax Credit Overview</span>
+            <span class="toc-dots"></span>
+            <span class="toc-page">4</span>
+          </div>
+          
+          <div class="toc-entry">
+            <span class="toc-item">Qualified Research Activities</span>
+            <span class="toc-dots"></span>
+            <span class="toc-page">5</span>
+          </div>
+          
+          ${selectedActivities.map((activity, index) => `
+            <div class="toc-entry toc-sub-entry">
+              <span class="toc-item">${activity.name || `Activity ${index + 1}`}</span>
+              <span class="toc-dots"></span>
+              <span class="toc-page">${6 + index}</span>
+            </div>
+          `).join('')}
+          
+          <div class="toc-entry">
+            <span class="toc-item">Research Process Documentation</span>
+            <span class="toc-dots"></span>
+            <span class="toc-page">${6 + selectedActivities.length}</span>
+          </div>
+          
+          <div class="toc-entry">
+            <span class="toc-item">Compliance Summary</span>
+            <span class="toc-dots"></span>
+            <span class="toc-page">${7 + selectedActivities.length}</span>
+          </div>
+          
+          <div class="toc-entry">
+            <span class="toc-item">Appendices</span>
+            <span class="toc-dots"></span>
+            <span class="toc-page">${8 + selectedActivities.length}</span>
+          </div>
+        </div>
+        
+        <div class="toc-footer">
+                     <p><strong>Document Purpose:</strong> This report provides comprehensive documentation of qualified research activities 
+           conducted during the ${businessYearData?.year || new Date().getFullYear()} tax year, prepared in accordance with 
+           Internal Revenue Code Section 41 requirements for R&D tax credit claims.</p>
+        </div>
+      </div>
+    `;
+    
+    return tocPage;
+  };
+
+  const addPDFHeadersFooters = (content) => {
+    // Add page headers and footers to main content sections
+    const sections = content.querySelectorAll('.report-section, .activity-section, .step-section');
+    sections.forEach((section, index) => {
+      if (index > 0) { // Skip first section
+        const pageBreak = document.createElement('div');
+        pageBreak.className = 'pdf-page-break';
+        section.parentNode.insertBefore(pageBreak, section);
+      }
+      
+      // Add header to each section
+      const header = document.createElement('div');
+      header.className = 'pdf-page-header';
+      header.innerHTML = `
+        <div class="header-content">
+          <div class="header-left">${businessProfile?.name || 'R&D Documentation'}</div>
+                     <div class="header-right">Tax Year ${businessYearData?.year || new Date().getFullYear()}</div>
+        </div>
+      `;
+      section.insertBefore(header, section.firstChild);
+    });
+    
+    // Add footer to the container
+    const footer = document.createElement('div');
+    footer.className = 'pdf-page-footer';
+    footer.innerHTML = `
+      <div class="footer-content">
+        <div class="footer-left">Direct Research Advisors • R&D Tax Credit Documentation</div>
+        <div class="footer-center">CONFIDENTIAL</div>
+        <div class="footer-right">Generated ${new Date().toLocaleDateString()}</div>
+      </div>
+    `;
+    content.appendChild(footer);
+  };
+
+  const getPDFStyles = () => {
+    return `
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+      
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      .pdf-document-container {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #1f2937;
+        line-height: 1.6;
+        background: white;
+        width: 8.5in;
+        min-height: 11in;
+      }
+      
+      /* Cover Page Styles */
+      .pdf-cover-page {
+        width: 100%;
+        height: 11in;
+        display: flex;
+        flex-direction: column;
+        background: linear-gradient(135deg, #1e3a8a 0%, #3730a3 50%, #6366f1 100%);
+        color: white;
+        page-break-after: always;
+      }
+      
+      .cover-content {
+        padding: 1in;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+      
+      .cover-header {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+      
+      .logo-placeholder {
+        width: 60px;
+        height: 60px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      
+      .logo-icon {
+        font-size: 24px;
+        font-weight: 700;
+        color: white;
+      }
+      
+      .company-info h3 {
+        font-size: 20px;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      
+      .company-info p {
+        font-size: 14px;
+        opacity: 0.9;
+      }
+      
+      .cover-main {
+        text-align: center;
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 30px;
+      }
+      
+      .cover-title {
+        font-size: 48px;
+        font-weight: 700;
+        line-height: 1.2;
+        margin-bottom: 16px;
+      }
+      
+      .cover-subtitle {
+        font-size: 24px;
+        font-weight: 400;
+        opacity: 0.9;
+        margin-bottom: 40px;
+      }
+      
+      .cover-details {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 30px;
+        border-radius: 12px;
+        backdrop-filter: blur(10px);
+        max-width: 500px;
+        margin: 0 auto;
+      }
+      
+      .detail-item {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 12px;
+        font-size: 16px;
+      }
+      
+      .detail-item:last-child {
+        margin-bottom: 0;
+      }
+      
+      .detail-item label {
+        font-weight: 500;
+        opacity: 0.9;
+      }
+      
+      .detail-item span {
+        font-weight: 600;
+      }
+      
+      .cover-footer {
+        margin-top: auto;
+      }
+      
+      .confidentiality-notice {
+        background: rgba(220, 38, 38, 0.1);
+        border: 1px solid rgba(220, 38, 38, 0.3);
+        padding: 20px;
+        border-radius: 8px;
+        text-align: center;
+      }
+      
+      .confidentiality-notice h4 {
+        color: #fca5a5;
+        font-size: 18px;
+        font-weight: 700;
+        margin-bottom: 8px;
+        letter-spacing: 2px;
+      }
+      
+      .confidentiality-notice p {
+        font-size: 12px;
+        line-height: 1.5;
+        opacity: 0.9;
+      }
+      
+      /* Table of Contents Styles */
+      .pdf-toc-page {
+        width: 100%;
+        min-height: 11in;
+        padding: 1in;
+        background: white;
+        page-break-after: always;
+      }
+      
+      .toc-title {
+        font-size: 36px;
+        font-weight: 700;
+        color: #1e3a8a;
+        margin-bottom: 40px;
+        text-align: center;
+      }
+      
+      .toc-entries {
+        margin-bottom: 40px;
+      }
+      
+      .toc-entry {
+        display: flex;
+        align-items: baseline;
+        margin-bottom: 16px;
+        font-size: 16px;
+      }
+      
+      .toc-sub-entry {
+        margin-left: 24px;
+        font-size: 14px;
+        color: #6b7280;
+      }
+      
+      .toc-item {
+        font-weight: 500;
+      }
+      
+      .toc-dots {
+        flex-grow: 1;
+        height: 1px;
+        background: repeating-linear-gradient(to right, transparent, transparent 2px, #d1d5db 2px, #d1d5db 6px);
+        margin: 0 12px;
+        align-self: end;
+        margin-bottom: 6px;
+      }
+      
+      .toc-page {
+        font-weight: 600;
+        color: #1e3a8a;
+      }
+      
+      .toc-footer {
+        background: #f9fafb;
+        padding: 24px;
+        border-radius: 8px;
+        border-left: 4px solid #3730a3;
+      }
+      
+      .toc-footer p {
+        font-size: 14px;
+        line-height: 1.6;
+        color: #4b5563;
+      }
+      
+      /* Main Content Styles */
+      .pdf-main-content {
+        padding: 0.75in;
+        background: white;
+      }
+      
+      /* Page Break Controls */
+      .pdf-page-break {
+        page-break-before: always;
+        height: 0;
+      }
+      
+      .pdf-keep-together {
+        page-break-inside: avoid;
+      }
+      
+      /* Header and Footer Styles */
+      .pdf-page-header {
+        margin-bottom: 24px;
+        padding-bottom: 12px;
+        border-bottom: 2px solid #e5e7eb;
+      }
+      
+      .header-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 12px;
+        color: #6b7280;
+      }
+      
+      .header-left {
+        font-weight: 600;
+      }
+      
+      .header-right {
+        font-weight: 500;
+      }
+      
+      .pdf-page-footer {
+        position: fixed;
+        bottom: 0.5in;
+        left: 0.75in;
+        right: 0.75in;
+        padding-top: 12px;
+        border-top: 1px solid #e5e7eb;
+      }
+      
+      .footer-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 10px;
+        color: #6b7280;
+      }
+      
+      .footer-center {
+        font-weight: 600;
+        color: #dc2626;
+        letter-spacing: 1px;
+      }
+      
+      /* Enhanced Content Styling */
+      .pdf-main-content h1 {
+        font-size: 28px;
+        font-weight: 700;
+        color: #1e3a8a;
+        margin-bottom: 24px;
+        page-break-after: avoid;
+      }
+      
+      .pdf-main-content h2 {
+        font-size: 24px;
+        font-weight: 600;
+        color: #1e3a8a;
+        margin-top: 32px;
+        margin-bottom: 16px;
+        page-break-after: avoid;
+      }
+      
+      .pdf-main-content h3 {
+        font-size: 20px;
+        font-weight: 600;
+        color: #374151;
+        margin-top: 24px;
+        margin-bottom: 12px;
+        page-break-after: avoid;
+      }
+      
+      .pdf-main-content h4 {
+        font-size: 16px;
+        font-weight: 600;
+        color: #374151;
+        margin-top: 20px;
+        margin-bottom: 8px;
+        page-break-after: avoid;
+      }
+      
+      .pdf-main-content p {
+        margin-bottom: 12px;
+        text-align: justify;
+      }
+      
+      .pdf-main-content ul, .pdf-main-content ol {
+        margin-left: 24px;
+        margin-bottom: 16px;
+      }
+      
+      .pdf-main-content li {
+        margin-bottom: 6px;
+      }
+      
+      /* Card and Section Styling */
+      .activity-card, .step-card, .report-section {
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+        page-break-inside: avoid;
+      }
+      
+      .activity-card h3, .step-card h3 {
+        color: #1e3a8a;
+        border-bottom: 2px solid #3730a3;
+        padding-bottom: 8px;
+        margin-bottom: 16px;
+      }
+      
+      /* Table Styling */
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 20px;
+        font-size: 14px;
+      }
+      
+      th, td {
+        padding: 12px;
+        border: 1px solid #d1d5db;
+        text-align: left;
+      }
+      
+      th {
+        background: #f3f4f6;
+        font-weight: 600;
+        color: #374151;
+      }
+      
+      /* Print Optimization */
+      @media print {
+        .pdf-document-container {
+          background: white !important;
+          color: black !important;
+        }
+        
+        * {
+          -webkit-print-color-adjust: exact !important;
+          color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+      }
+      
+      @page {
+        size: letter;
+        margin: 0.75in 0.75in 1in 0.75in;
+      }
+    `;
   };
 
   const getReportStyles = () => {

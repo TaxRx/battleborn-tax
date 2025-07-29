@@ -1040,10 +1040,17 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
   // Reload roles when business year changes
   useEffect(() => {
     if (selectedBusinessYearId) {
-      console.log('Business year changed, loading roles for:', selectedBusinessYearId);
+      console.log('🔄 [YEAR CHANGE] Business year changed, aggressive clearing and loading for:', selectedBusinessYearId);
+      
+      // AGGRESSIVE STATE CLEARING immediately when year changes to prevent data leakage
+      console.log('🧹 [YEAR CHANGE] Clearing all research data to prevent leakage');
+      setRoles([]);
+      
+      // Load fresh data after clearing
+      console.log('📥 [YEAR CHANGE] Loading fresh data for year:', selectedBusinessYearId);
       loadRoles();
-      // Also load selected activities when business year changes
       loadSelectedActivities();
+      loadResearchData();
     }
   }, [selectedBusinessYearId]);
 
@@ -1245,8 +1252,11 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         return;
       }
 
-      console.log('Loading roles for business year:', selectedBusinessYearId);
-
+      console.log('🧹 [ROLES] AGGRESSIVE CLEARING - Loading roles for business year:', selectedBusinessYearId);
+      
+      // IMMEDIATE STATE CLEARING to prevent data leakage
+      setRoles([]);
+      
       const { data: roles, error } = await supabase
         .from('rd_roles')
         .select('*')
@@ -1263,12 +1273,14 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
       if (roles && roles.length > 0) {
         setRoles(roles);
+        console.log('✅ [ROLES] Set roles data:', roles.length, 'roles');
       } else {
         // No roles found for this business year, ask user if they want to copy all data
         console.log('No roles found for this business year, asking user if they want to copy all data');
         setCopyType('all');
         setShowCopyModal(true);
         setRoles([]);
+        console.log('✅ [ROLES] No roles found - state cleared and copy modal shown');
       }
     } catch (err) {
       console.error('Error loading roles:', err);

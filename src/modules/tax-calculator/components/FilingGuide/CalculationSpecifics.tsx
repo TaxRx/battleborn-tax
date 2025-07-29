@@ -323,6 +323,7 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
           .from('rd_employee_year_data')
           .select(`
             applied_percent,
+            non_rd_percentage,
             calculated_qre,
             employee:rd_employees!inner(
               id,
@@ -345,8 +346,18 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
             const employee = empYearData.employee;
             const employeeName = `${employee.first_name} ${employee.last_name}`;
             
-            // FIXED: Use applied_percent from rd_employee_year_data (this is the correct total)
-            const overallAppliedPercent = empYearData.applied_percent || 0;
+            // CRITICAL FIX: For research design, exclude Non-R&D time from applied percentage
+            // applied_percent now includes Non-R&D time, but research design should only show R&D activities
+            const totalAppliedPercent = empYearData.applied_percent || 0;
+            const nonRdPercent = empYearData.non_rd_percentage || 0;
+            const overallAppliedPercent = Math.max(0, totalAppliedPercent - nonRdPercent);
+            
+            console.log(`🔧 [RESEARCH DESIGN FIX] Employee ${employeeName}:`, {
+              totalAppliedPercent: totalAppliedPercent,
+              nonRdPercent: nonRdPercent,
+              researchOnlyPercent: overallAppliedPercent,
+              note: 'Research Design excludes Non-R&D time'
+            });
             const qreAmount = empYearData.calculated_qre || 0;
             
             // FIXED: Get research activity breakdown from rd_employee_subcomponents

@@ -11,8 +11,8 @@ import { toast } from 'react-toastify';
 import { SupplyManagementService, QuickSupplyEntry } from '../../../services/supplyManagementService';
 import ContractorAllocationsModal from './ContractorAllocationsModal';
 import AllocationReportModal from '../../AllocationReport/AllocationReportModal';
-import LockBanner from '../../../../components/common/LockBanner';
-import useLockStore from '../../../../store/lockStore';
+import LockBanner from '../../../../../components/common/LockBanner';
+import useLockStore from '../../../../../store/lockStore';
 
 // Extend RDSupply to include calculated_qre for local use
 interface RDSupply extends RDSupplyBase {
@@ -1474,6 +1474,13 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
         </div>
         
         <div className="p-6">
+          {/* Lock Banner */}
+          <LockBanner 
+            section="expense-management" 
+            title="Employee Allocations"
+            description="Lock prevents Non-R&D percentages from being accidentally modified to 100%"
+          />
+          
           {loading ? (
             <div className="flex items-center justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -2259,7 +2266,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           const subcomponents = subcomponentsResult.data || [];
           
           // ✅ ROSTER-MODAL SYNC: Use identical calculation method as allocation modal
-          console.log(`🔄 [ROSTER-MODAL SYNC] Calculating Applied% for ${employee.first_name} ${employee.last_name} using IDENTICAL modal methodology`);
+          // Calculate Applied% for roster display
           
           // Calculate applied percentage using IDENTICAL allocation modal methodology
           const modalAppliedPercentage = await calculateEmployeeAppliedPercentage(employee.id);
@@ -2267,26 +2274,14 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           // Use modal calculation as single source of truth (no baseline fallback)
           const finalAppliedPercentage = modalAppliedPercentage > 0 ? modalAppliedPercentage : 0;
           
-          console.log(`✅ [ROSTER-MODAL SYNC] Applied% calculation complete:`, {
-            employee: `${employee.first_name} ${employee.last_name}`,
-            modalCalculation: modalAppliedPercentage,
-            finalAppliedPercentage,
-            note: 'IDENTICAL to modal - no baseline fallback, pure subcomponent-based calculation'
-          });
+          // Applied% calculation complete for ${employee.first_name} ${employee.last_name}: ${finalAppliedPercentage}%
           
           // CRITICAL FIX: Calculate QRE using SAME percentage as Applied% display
           // Apply 80% threshold rule consistently
           const qreAppliedPercentage = applyEightyPercentThreshold(finalAppliedPercentage);
           const calculatedQRE = Math.round((annualWage * qreAppliedPercentage) / 100);
           
-          console.log(`✅ [ROSTER-MODAL SYNC] QRE calculation for ${employee.first_name} ${employee.last_name}:`, {
-            annualWage,
-            appliedPercentageFromModal: finalAppliedPercentage, // IDENTICAL to modal (24.97% not 30.43%)
-            qreAppliedPercentage,   // Applied% with 80% threshold for QRE calculation
-            calculatedQRE,          // Final QRE amount using modal Applied%
-            note: 'Now uses IDENTICAL Applied% calculation as allocation modal',
-            subcomponentsCount: subcomponents.length
-          });
+          // QRE calculation: $${annualWage} × ${qreAppliedPercentage}% = $${calculatedQRE.toLocaleString()}
           
           return {
             ...employee,
@@ -2299,10 +2294,9 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           };
         }));
 
-        // Filter to only include employees with data for this year
-        const filteredEmployees = employeesWithQRE.filter(emp => 
-          emp.calculated_qre > 0 || emp.subcomponents.length > 0
-        );
+        // Show ALL employees for this year, not just those with existing R&D allocations
+        // Users need to see all employees to assign new R&D allocations
+        const filteredEmployees = employeesWithQRE;
 
         console.log(`✅ Loaded ${filteredEmployees.length} employees with year-specific data`);
         setEmployeesWithData(filteredEmployees);
@@ -4131,6 +4125,13 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Lock Banner */}
+      <LockBanner 
+        section="expense-management" 
+        title="Employee & Expense Management"
+        description="Lock prevents Non-R&D percentages from being accidentally modified to 100%"
+      />
+      
       {/* Modern Gradient Header with Progress */}
       <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl shadow-xl overflow-hidden">
         <div className="px-8 py-8 relative">

@@ -621,8 +621,10 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
               step_name: stepName
             });
             
-            // Trigger real-time role snapshot update after applied percentage change
-            triggerRoleSnapshotUpdate(50, 'applied percentage change');
+            // ✅ REGRESSION FIX: Removed problematic role snapshot trigger
+            // ISSUE: triggerRoleSnapshotUpdate() here caused roles to recalculate when activity cards were clicked
+            // SOLUTION: Role calculations should be STABLE and independent of activity applied percentage changes
+            // RESULT: Clicking activity cards no longer affects Role Applied Percentage values
           }
         } catch (error) {
           console.error('Error saving applied percentage, time percentage, and step name:', error);
@@ -2300,26 +2302,48 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
         const year = sub.year_percentage || 0;
         
         if (freq > 0 && year > 0 && stepTimePercent > 0 && practicePercent > 0) {
-          // CRITICAL FIX: Get Non-R&D adjustment for this step using the SPECIFIC activity, not activeActivityIndex
-          // This was causing roles calculation to change when clicking different activity cards
-          const specificActivity = activitiesWithSteps.find(act => act.activityId === activityId);
-          const stepData = specificActivity?.steps?.find(s => s.id === step.step_id);
-          const nonRdPercent = stepData?.nonRdPercentage || 0;
+          // ✅ CONSISTENCY FIX: Use database data instead of activity-specific UI state
+          // ISSUE: researchSteps is UI state that changes when switching activity cards
+          // SOLUTION: Use selectedSteps (database data) which is consistent for ALL activities
+          const dbStep = selectedSteps.find(s => s.step_id === step.step_id);
+          const nonRdPercent = dbStep?.non_rd_percentage || 0;
+          
+          console.log(`✅ [CONSISTENCY FIX] Step ${step.step_id}: nonRdPercent=${nonRdPercent}% (from selectedSteps database data)`);
+          
+          // Verify we're using consistent database data
+          if (dbStep) {
+            console.log(`   └─ ✅ Database step found: time=${dbStep.time_percentage}%, non_rd=${dbStep.non_rd_percentage}%`);
+          } else {
+            console.log(`   └─ ⚠️ Database step NOT found for step_id: ${step.step_id}`);
+          }
           
           // CORE CALCULATION: practice% × time% × frequency% × year%
           let applied = (practicePercent / 100) * (stepTimePercent / 100) * (freq / 100) * (year / 100) * 100;
           
-          // Apply Non-R&D reduction if this step has non-R&D time
+          // Apply Non-R&D reduction if this step has non-R&D time (same calculation as subcomponent bar)
           let rdOnlyPercent = 1.0; // Default to 1.0 (no reduction)
           if (nonRdPercent > 0) {
             rdOnlyPercent = (100 - nonRdPercent) / 100;
+            const beforeReduction = applied;
             applied = applied * rdOnlyPercent;
+            console.log(`🔧 [RESEARCH ACTIVITY] Applied Non-R&D reduction: ${applied.toFixed(2)}% (was ${beforeReduction.toFixed(2)}%, reduced by ${nonRdPercent}%)`);
           }
           
           totalApplied += applied;
         }
       });
     });
+    
+    // ✅ CONSISTENCY FIX: Remove problematic verification calculation that uses UI state
+    // ISSUE: Verification was using subcomponentStates[sub.id]?.isSelected (UI state) 
+    // PROBLEM: UI state only populated for active activity, causing inconsistent calculations
+    // SOLUTION: Use single calculation path based on database data for ALL activities
+    // RESULT: All activity cards show consistent applied percentages regardless of selection
+    
+    console.log(`✅ [FINAL CONSISTENCY] Activity ${activityId}: ${totalApplied.toFixed(2)}% (database-based, excludes non-R&D time)`);
+    console.log(`   └─ ✅ NON-R&D DATA: Uses selectedSteps (database) instead of researchSteps (UI state)`);
+    console.log(`   └─ ✅ STABLE CALCULATION: Same result for all cards regardless of selection`);
+    console.log(`   └─ ✅ NO MORE JUMPS: Unselected cards maintain consistent applied percentages`);
     
     const finalResult = +totalApplied.toFixed(2);
     return finalResult;
@@ -2824,7 +2848,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
               // Practice percentage comes from Research Activities section (like 44.18%)
               // Applied percentage is calculated from subcomponents (should be ≤ practice)
               const practicePercentage = getActivityPercentage(activity);  // From Research Activities
-              const appliedPercentage = loading ? 0 : calculateActivityAppliedPercentage(activity);  // Calculated from subcomponents
+              const appliedPercentage = loading ? 0 : calculateActivityAppliedPercentage(activity);  // ✅ CONSISTENT: Same calculation for ALL cards
               
               // Debug logging for correlation issues (removed to prevent performance issues)
               const colorGradient = ACTIVITY_COLORS[index % ACTIVITY_COLORS.length];
@@ -2835,11 +2859,12 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
                 <div
                   key={activity.id}
                   onClick={() => {
-                    console.log('🎯 ACTIVITY CARD CLICKED - This should NOT affect Roles Applied Percentage');
+                    console.log('✅ [ACTIVITY CARD CLICK] Activity card clicked - all calculations should remain STABLE');
                     console.log('🎯 Previous activeActivityIndex:', activeActivityIndex);
                     console.log('🎯 New activeActivityIndex will be:', index);
-                    console.log('🎯 CRITICAL: Roles calculation should remain the same because it uses ALL activities');
-                    console.log('🎯 If roles change after this click, there is a bug in the independence logic');
+                    console.log('✅ [FINAL FIX] Activity cards now use selectedSteps (database) for non-R&D data');
+                    console.log('✅ [CONSISTENT DATA] No more UI state dependency - all cards use same data source');
+                    console.log('✅ [NO MORE JUMPS] Applied percentages should remain stable for all cards');
                     setActiveActivityIndex(index);
                   }}
                   className={`relative group cursor-pointer transition-all duration-300 transform hover:scale-105 ${
@@ -2921,11 +2946,12 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
             // Calculate the raw applied percent for this subcomponent
             let applied = (practicePercent / 100) * (step.percentage / 100) * (subState.frequencyPercent / 100) * (subState.yearPercent / 100) * 100;
             
-            // Apply Non-R&D reduction if applicable
+            // Apply Non-R&D reduction if applicable (same calculation as research activity card)
             const nonRdPercent = step.nonRdPercentage || 0;
             if (nonRdPercent > 0) {
               const rdOnlyPercent = (100 - nonRdPercent) / 100;
               applied = applied * rdOnlyPercent;
+              console.log(`🔧 [SUBCOMPONENT BAR] Applied Non-R&D reduction: ${applied.toFixed(2)}% (was ${((practicePercent / 100) * (step.percentage / 100) * (subState.frequencyPercent / 100) * (subState.yearPercent / 100) * 100).toFixed(2)}%, reduced by ${nonRdPercent}%)`);
             }
             
             return { id: sub.id, title: sub.title, name: sub.name, applied, stepId: step.id, stepMax, stepName: step.name, nonRdPercent };

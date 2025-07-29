@@ -152,7 +152,26 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
         };
       });
 
-      // Load employees with subcomponent data
+      // ✅ ALLOCATION MODAL SYNC FIX: Load employees even without subcomponent data
+      // ISSUE: Previous query only showed employees with rd_employee_subcomponents records
+      // SOLUTION: First get all employees with year data, then get their subcomponent data separately
+      
+      // Load all employees who have year data for this business year
+      const { data: employeeYearData, error: empYearError } = await supabase
+        .from('rd_employee_year_data')
+        .select(`
+          employee_id,
+          rd_employees!inner(id, first_name, last_name, annual_wage, role_id, rd_roles(id, name))
+        `)
+        .eq('business_year_id', selectedYear.id);
+
+      if (empYearError) throw empYearError;
+
+      // Extract unique employees
+      const allEmployees = employeeYearData?.map(item => item.rd_employees).filter(Boolean) || [];
+      console.log('🔍 Found employees with year data:', allEmployees.length);
+
+      // Now load subcomponent data for these employees (if any exists)
       const { data: employeeData, error: empError } = await supabase
         .from('rd_employee_subcomponents')
         .select(`
@@ -161,12 +180,20 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
           rd_research_subcomponents!inner(id, name)
         `)
         .eq('business_year_id', selectedYear.id)
-        .eq('is_included', true);
+        .eq('is_included', true)
+        .in('employee_id', allEmployees.map(emp => emp.id));
 
       if (empError) throw empError;
 
-      // Process employee data with correct activity mapping
-      const processedEmployees = processEmployeeData(employeeData || [], activityLookup, subcomponentToActivity);
+      // ✅ SYNC FIX: Process employee data including those without subcomponent allocations
+      // Merge all employees with their subcomponent data (if any)
+      const processedEmployees = processEmployeeData(
+        employeeData || [], 
+        activityLookup, 
+        subcomponentToActivity,
+        allEmployees // Pass all employees to ensure they're included even without subcomponents
+      );
+      console.log('🔍 Processed employees (including those without subcomponents):', processedEmployees.length);
       setEmployees(processedEmployees);
 
       // Load contractors
@@ -203,7 +230,8 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
   const processEmployeeData = (
     data: any[], 
     activityLookup: Record<string, { title: string }>,
-    subcomponentToActivity: Record<string, { activity_id: string; step_id: string }>
+    subcomponentToActivity: Record<string, { activity_id: string; step_id: string }>,
+    allEmployees?: any[] // ✅ SYNC FIX: Optional parameter for all employees even without subcomponents
   ): EmployeeData[] => {
     const employeeMap = new Map<string, EmployeeData>();
     
@@ -327,8 +355,27 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
       });
     });
     
+    // ✅ SYNC FIX: Include all employees even if they have no subcomponent allocations
+    if (allEmployees) {
+      allEmployees.forEach(emp => {
+        if (!employeeMap.has(emp.id)) {
+          console.log('✅ SYNC FIX - Adding employee without subcomponents:', emp.first_name, emp.last_name);
+          employeeMap.set(emp.id, {
+            id: emp.id,
+            name: `${emp.first_name} ${emp.last_name}`,
+            total_qre: emp.annual_wage || 0,
+            applied_percentage: 0,
+            roles: emp.rd_roles ? [emp.rd_roles.name] : [],
+            roleIds: emp.rd_roles ? [emp.rd_roles.id] : [],
+            activities: [],
+            subcomponents: []
+          });
+        }
+      });
+    }
+    
     const result = Array.from(employeeMap.values());
-    console.log('🎉 AllocationReport - Final processed employees:', result.length);
+    console.log('🎉 AllocationReport - Final processed employees (including those without subcomponents):', result.length);
     result.forEach(emp => {
       console.log(`📈 ${emp.name}: ${emp.activities.length} activities, ${emp.subcomponents.length} subcomponents`);
     });

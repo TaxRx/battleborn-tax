@@ -38,15 +38,46 @@ const SignatureCapture: React.FC<SignatureCaptureProps> = ({
     }
   }, [isOpen]);
 
-  // Get client IP address
+  // Get client IP address with CSP-compliant approach
   const getClientIP = async (): Promise<string> => {
     try {
-      const response = await fetch('https://api.ipify.org?format=json');
-      const data = await response.json();
-      return data.ip || 'Unknown';
+      // Use WebRTC to get IP address (CSP compliant)
+      try {
+        const rtcPeerConnection = new RTCPeerConnection({ iceServers: [] });
+        const noop = () => {};
+        rtcPeerConnection.createDataChannel('');
+        
+        return new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            resolve('session-' + new Date().getTime());
+          }, 1000);
+          
+          rtcPeerConnection.createOffer()
+            .then(offer => rtcPeerConnection.setLocalDescription(offer))
+            .catch(noop);
+          
+          rtcPeerConnection.onicecandidate = (ice) => {
+            if (ice && ice.candidate && ice.candidate.candidate) {
+              const candidate = ice.candidate.candidate;
+              const ipMatch = candidate.match(/([0-9]{1,3}(\.[0-9]{1,3}){3})/);
+              if (ipMatch) {
+                clearTimeout(timeout);
+                rtcPeerConnection.close();
+                resolve(ipMatch[1]);
+                return;
+              }
+            }
+          };
+        });
+      } catch (webrtcError) {
+        console.log('WebRTC IP detection not available:', webrtcError);
+        // Fallback to session identifier
+        return 'session-' + new Date().getTime() + '-' + Math.random().toString(36).substr(2, 9);
+      }
     } catch (error) {
       console.error('Error getting IP:', error);
-      return 'Unknown';
+      // Generate unique session identifier as fallback
+      return 'session-' + new Date().getTime() + '-' + Math.random().toString(36).substr(2, 9);
     }
   };
 
@@ -181,8 +212,7 @@ const SignatureCapture: React.FC<SignatureCaptureProps> = ({
           signature_image: signatureDataURL,
           ip_address: clientIP,
           signed_at: timestamp,
-          jurat_text: juratText,
-          created_at: timestamp
+          jurat_text: juratText
         });
 
       if (error) throw error;

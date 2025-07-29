@@ -27,7 +27,6 @@ import {
   Building,
   Calculator,
   Calendar,
-  DollarSign,
   Eye,
   AlertTriangle,
   CheckCircle,
@@ -174,10 +173,7 @@ const ClientCard: React.FC<ClientCardProps> = ({
                   {client.business_name}
                 </span>
               )}
-              <span className="flex items-center">
-                <DollarSign className="w-4 h-4 mr-1" />
-                ${client.total_income?.toLocaleString() || '0'}
-              </span>
+
             </div>
 
             <div className="flex items-center space-x-3">
