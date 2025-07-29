@@ -71,20 +71,44 @@ async function handleRegistration(req, supabaseAdmin) {
 
   // Determine account type - default to 'client' if not 'affiliate'
   const accountType = ['affiliate','expert','admin','operator','client'].includes(registrationData.type) ? registrationData.type : 'client';
+  
+  // Check if we should use createUser instead of signUp (for admin creation)
+  const useCreateUser = registrationData.useCreateUser === true;
 
   // Create the user using Supabase auth
-  const { data: authData, error: authError } = await supabaseAdmin.auth.signUp({
-    email: registrationData.email,
-    password: registrationData.password,
-    options: {
-      data: {
+  let authData, authError;
+  if (useCreateUser) {
+    // Use createUser for admin-created accounts (no email verification required)
+    const result = await supabaseAdmin.auth.admin.createUser({
+      email: registrationData.email,
+      password: registrationData.password,
+      email_confirm: true, // Skip email verification
+      user_metadata: {
         full_name: registrationData.fullName,
         personal_info: registrationData.personalInfo,
         business_info: registrationData.businessInfo,
         account_type: accountType
       }
-    }
-  })
+    });
+    authData = result.data;
+    authError = result.error;
+  } else {
+    // Use signUp for self-registration (requires email verification)
+    const result = await supabaseAdmin.auth.signUp({
+      email: registrationData.email,
+      password: registrationData.password,
+      options: {
+        data: {
+          full_name: registrationData.fullName,
+          personal_info: registrationData.personalInfo,
+          business_info: registrationData.businessInfo,
+          account_type: accountType
+        }
+      }
+    });
+    authData = result.data;
+    authError = result.error;
+  }
   if (authError) {
     console.error('Auth signUp failed:', JSON.stringify(authError, null, 2))
     console.error('Registration data:', JSON.stringify(registrationData, null, 2))
@@ -138,7 +162,7 @@ async function handleRegistration(req, supabaseAdmin) {
       }
     }
 
-    // Create account with Stripe customer ID and contact email
+    // Create account first
     const accountName = registrationData.businessInfo?.businessName || registrationData.fullName || authData.user.email;
     const { data: accountData, error: accountError } = await supabaseAdmin
       .from('accounts')
@@ -167,7 +191,7 @@ async function handleRegistration(req, supabaseAdmin) {
       throw accountError;
     }
 
-    // Create profile
+    // Create profile with account_id
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
       .insert({
@@ -192,7 +216,7 @@ async function handleRegistration(req, supabaseAdmin) {
         });
 
       if (affiliateError) {
-        console.error('Error creating affiliate:', affiliateError);
+        console.error('Error creating affiliate:', accountData.id,affiliateError);
         // Don't fail registration for this
       }
     } else if (accountType === 'client') {
@@ -202,7 +226,6 @@ async function handleRegistration(req, supabaseAdmin) {
           full_name: registrationData.fullName,
           email: registrationData.email,
           account_id: accountData.id,
-          user_id: authData.user.id,
           created_by: authData.user.id
         });
 
