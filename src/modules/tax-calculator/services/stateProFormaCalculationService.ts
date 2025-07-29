@@ -110,7 +110,7 @@ export class StateProFormaCalculationService {
       // Execute the real pro forma calculation
       const finalCredit = await this.executeProFormaCalculation(qreData, lines, finalField);
       
-      console.log(`🔧 [REAL STATE PRO FORMA] ${state} final credit (${finalField}): $${finalCredit}`);
+      // Reduced logging for performance
       
       const breakdown = {};
       breakdown[state] = finalCredit;
@@ -150,7 +150,7 @@ export class StateProFormaCalculationService {
           try {
             const result = line.calc(calculationData);
             calculationData[line.field] = result;
-            console.log(`🔧 [REAL STATE PRO FORMA] Line ${line.line} (${line.field}): $${result}`);
+            // Reduced logging for performance
           } catch (calcError) {
             console.error(`🔧 [REAL STATE PRO FORMA] Error calculating line ${line.line}:`, calcError);
             calculationData[line.field] = 0;
@@ -186,7 +186,7 @@ export class StateProFormaCalculationService {
       // Calculate using the REAL pro forma logic
       const stateCredit = await this.getStateCreditsFromProForma(businessYearId, primaryState, 'standard');
       
-      console.log(`🔧 [REAL STATE PRO FORMA] Final result: $${stateCredit.total}`);
+      // Performance optimization: reduced logging
       
       return {
         total: stateCredit.total,

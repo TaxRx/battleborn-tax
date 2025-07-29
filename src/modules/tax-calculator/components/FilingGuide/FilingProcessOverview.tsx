@@ -25,7 +25,7 @@ export const FilingProcessOverview: React.FC<FilingProcessOverviewProps> = ({
   
   if (selectedMethod === 'asc' && federalCredits.asc) {
     totalCredit = federalCredits.asc.adjustedCredit ?? federalCredits.asc.credit ?? 0;
-    console.log('🔧 [FILING GUIDE] Using ASC method credit:', totalCredit);
+    // Performance optimization: reduced logging
   } else if (selectedMethod === 'standard' && federalCredits.standard) {
     totalCredit = federalCredits.standard.adjustedCredit ?? federalCredits.standard.credit ?? 0;
     console.log('🔧 [FILING GUIDE] Using Standard method credit:', totalCredit);

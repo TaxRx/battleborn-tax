@@ -93,24 +93,27 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
   const [activitiesCount, setActivitiesCount] = useState(0);
   const [ownerQREs, setOwnerQREs] = useState(0);
 
-  // CRITICAL: Use locked QRE values when available, fall back to calculated values
-  const getQREValue = (type: 'employee' | 'contractor' | 'supply') => {
+  // OPTIMIZED: Memoized QRE values to prevent excessive recalculation
+  const memoizedQREValues = useMemo(() => {
     if (lockedQREValues?.qre_locked) {
-      console.log(`🔒 Form6765v2024 - Using LOCKED ${type} QRE:`, lockedQREValues[`${type}_qre`]);
-      switch (type) {
-        case 'employee': return lockedQREValues.employee_qre;
-        case 'contractor': return lockedQREValues.contractor_qre;
-        case 'supply': return lockedQREValues.supply_qre;
-      }
+      return {
+        employee: lockedQREValues.employee_qre || 0,
+        contractor: lockedQREValues.contractor_qre || 0,
+        supply: lockedQREValues.supply_qre || 0,
+        isLocked: true
+      };
     } else {
-      console.log(`📊 Form6765v2024 - Using CALCULATED ${type} QRE`);
-      switch (type) {
-        case 'employee': return calculations?.currentYearQRE?.employee_wages || 0;
-        case 'contractor': return calculations?.currentYearQRE?.contractor_costs || 0;
-        case 'supply': return calculations?.currentYearQRE?.supply_costs || 0;
-      }
+      return {
+        employee: calculations?.currentYearQRE?.employee_wages || 0,
+        contractor: calculations?.currentYearQRE?.contractor_costs || 0,
+        supply: calculations?.currentYearQRE?.supply_costs || 0,
+        isLocked: false
+      };
     }
-    return 0;
+  }, [lockedQREValues?.qre_locked, lockedQREValues?.employee_qre, lockedQREValues?.contractor_qre, lockedQREValues?.supply_qre, calculations?.currentYearQRE?.employee_wages, calculations?.currentYearQRE?.contractor_costs, calculations?.currentYearQRE?.supply_costs]);
+
+  const getQREValue = (type: 'employee' | 'contractor' | 'supply') => {
+    return memoizedQREValues[type];
   };
 
   // Data extraction from calculations (same as original Form6765)
@@ -132,18 +135,7 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
   const rawBasePercentage = standardCredit?.basePercentage;
   const basePercentage = (typeof rawBasePercentage === 'number' && rawBasePercentage >= 0.03) ? rawBasePercentage : 0.03;
 
-  // CRITICAL: Debug QRE auto-population for Form6765v2024
-  console.log('🔍 Form 6765v2024 Debug - QRE Auto-Population:', {
-    calculations_full: calculations,
-    calculations_currentYearQRE: calculations?.currentYearQRE,
-    calculations_currentYearQRE_employee_wages: calculations?.currentYearQRE?.employee_wages,
-    calculations_currentYearQRE_supply_costs: calculations?.currentYearQRE?.supply_costs,
-    calculations_currentYearQRE_contractor_costs: calculations?.currentYearQRE?.contractor_costs,
-    calculations_currentYearQRE_total: calculations?.currentYearQRE?.total,
-    currentYearQRE_extracted: currentYearQRE,
-    businessData,
-    selectedYear
-  });
+  // Removed excessive debug logging for performance
 
   // CRITICAL: Check if calculations are available
   if (!calculations || !calculations.currentYearQRE) {
@@ -162,10 +154,11 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
     loadOverrides();
   }, [clientId, selectedYear?.year]);
 
-  // On mount, initialize use280C from calculations
+  // On mount, initialize use280C from calculations (optimized dependencies)
   useEffect(() => {
-    setUse280C(!!calculations?.federalCredits?.use280C);
-  }, [calculations]);
+    const newUse280C = !!calculations?.federalCredits?.use280C;
+    setUse280C(newUse280C);
+  }, [calculations?.federalCredits?.use280C]);
 
   // Load Section E data
   useEffect(() => {
@@ -375,12 +368,12 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
     return l;
   };
 
-  // Update Section F when calculations or locked QRE values change
+  // Update Section F when QRE values change (optimized to prevent infinite loops)
   useEffect(() => {
     setSectionF(prev => {
       const updated = [...prev];
       
-      // CRITICAL: Use locked values when available, otherwise fall back to calculations
+      // Use memoized QRE values to prevent excessive recalculation
       updated[0].value = safeCurrency(getQREValue('employee'));
       updated[0].calculatedValue = updated[0].value;
       updated[1].value = safeCurrency(getQREValue('supply'));
@@ -388,16 +381,9 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
       updated[3].value = safeCurrency(getQREValue('contractor'));
       updated[3].calculatedValue = updated[3].value;
       
-      console.log('🔒 Form6765v2024 - Section F updated with QRE values:', {
-        employee: updated[0].value,
-        supply: updated[1].value,
-        contractor: updated[3].value,
-        isLocked: lockedQREValues?.qre_locked
-      });
-      
       return recalcSectionF(updated);
     });
-  }, [calculations, lockedQREValues]);
+  }, [memoizedQREValues.employee, memoizedQREValues.contractor, memoizedQREValues.supply, memoizedQREValues.isLocked]);
 
   // Calculate prior 3 years QRE total for line 21
   const calculatePrior3YearsQRE = (): number => {
@@ -758,7 +744,7 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
   const [sectionDCalculated, setSectionDCalculated] = useState<Form6765Line[]>(sectionD.lines);
   const [sectionECalculated, setSectionECalculated] = useState<Form6765Line[]>(sectionE.lines);
 
-  // Recalculate sections when dependencies change
+  // Recalculate sections when dependencies change (optimized dependencies)
   useEffect(() => {
     if (sectionA.isVisible) {
       setSectionACalculated(calculateSectionA());
@@ -769,7 +755,7 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
     setSectionCCalculated(calculateSectionC());
     setSectionDCalculated(calculateSectionD());
     setSectionECalculated(calculateSectionE());
-  }, [sectionF, use280C, sectionA.isVisible, sectionB.isVisible, calculations, activitiesCount, ownerQREs]);
+  }, [sectionF, use280C, sectionA.isVisible, sectionB.isVisible, activitiesCount, ownerQREs, calculations?.federalCredits?.selectedMethod]);
 
   // Update sections when overrides are loaded
   useEffect(() => {
