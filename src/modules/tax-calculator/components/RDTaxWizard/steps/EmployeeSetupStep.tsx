@@ -516,6 +516,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
   const [nonRdPercentage, setNonRdPercentage] = useState(0);
   const [totalAllocated, setTotalAllocated] = useState(0);
   const [expandedActivity, setExpandedActivity] = useState<string | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false); // Track if user is actively editing
   
   // Color palette for activities
   const activityColors = [
@@ -543,6 +544,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
       setTotalAllocated(0);
       setNonRdPercentage(0);
       setExpandedActivity(null);
+      setHasUnsavedChanges(false); // Reset unsaved changes flag
       
       // Force a delay to ensure state is cleared before loading
       setTimeout(() => {
@@ -557,6 +559,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
       setTotalAllocated(0);
       setNonRdPercentage(0);  
       setExpandedActivity(null);
+      setHasUnsavedChanges(false); // Reset unsaved changes flag
     }
   }, [isOpen, employee?.id]); // CHANGED: Depend on employee.id specifically
 
@@ -943,20 +946,36 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
     return segments;
   };
 
-  // ✅ RESPONSIVE UI: Calculate total applied percentage in real-time
+  // ✅ HYBRID APPROACH: Show saved total when no edits, real-time total when editing
   const getTotalAppliedPercentage = () => {
     let totalApplied = 0;
     
-    for (const activity of activities) {
-      if (activity.isEnabled) {
-        for (const subcomponent of activity.subcomponents) {
-          if (subcomponent.isIncluded) {
-            // Calculate applied percentage using current form values
-            const appliedPercentage = (activity.practicePercentage / 100) * 
-                                    (subcomponent.yearPercentage / 100) * 
-                                    (subcomponent.frequencyPercentage / 100) * 
-                                    (subcomponent.timePercentage / 100) * 100;
-            totalApplied += appliedPercentage;
+    if (hasUnsavedChanges) {
+      // Real-time calculation when user is editing
+      for (const activity of activities) {
+        if (activity.isEnabled) {
+          for (const subcomponent of activity.subcomponents) {
+            if (subcomponent.isIncluded) {
+              // Calculate applied percentage using current form values
+              const appliedPercentage = (activity.practicePercentage / 100) * 
+                                      (subcomponent.yearPercentage / 100) * 
+                                      (subcomponent.frequencyPercentage / 100) * 
+                                      (subcomponent.timePercentage / 100) * 100;
+              totalApplied += appliedPercentage;
+            }
+          }
+        }
+      }
+    } else {
+      // Use saved database values when no edits (matches roster)
+      for (const activity of activities) {
+        if (activity.isEnabled) {
+          for (const subcomponent of activity.subcomponents) {
+            if (subcomponent.isIncluded) {
+              // Use saved applied_percentage from database
+              const appliedPercentage = subcomponent.applied_percentage || 0;
+              totalApplied += appliedPercentage;
+            }
           }
         }
       }
@@ -965,48 +984,83 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
     return totalApplied;
   };
 
-  // ✅ RESPONSIVE UI: Calculate applied percentages in real-time based on current form inputs
+  // ✅ HYBRID APPROACH: Show saved values when no edits, real-time when editing
   const getAppliedPercentageSegments = () => {
     const segments: any[] = [];
     let currentPosition = 0;
     
-    console.log('🎯 [RESPONSIVE UI] Calculating applied percentages in real-time from current form state');
-    
-    // ✅ REAL-TIME CALCULATION: Use current UI values to show immediate feedback
-    for (const activity of activities) {
-      if (activity.isEnabled) {
-        let activityTotalApplied = 0;
-        
-        for (const subcomponent of activity.subcomponents) {
-          if (subcomponent.isIncluded) {
-            // ✅ RESPONSIVE CALCULATION: Calculate applied percentage using current form values
-            const appliedPercentage = (activity.practicePercentage / 100) * 
-                                    (subcomponent.yearPercentage / 100) * 
-                                    (subcomponent.frequencyPercentage / 100) * 
-                                    (subcomponent.timePercentage / 100) * 100;
-            
-            console.log('📊 [REAL-TIME] Calculated applied_percentage for', subcomponent.name, ':', appliedPercentage, {
-              practicePercentage: activity.practicePercentage,
-              yearPercentage: subcomponent.yearPercentage,
-              frequencyPercentage: subcomponent.frequencyPercentage,
-              timePercentage: subcomponent.timePercentage
+    if (hasUnsavedChanges) {
+      console.log('🎯 [EDITING MODE] Calculating applied percentages in real-time from current form state');
+      
+      // ✅ REAL-TIME CALCULATION: Use current UI values when user is editing
+      for (const activity of activities) {
+        if (activity.isEnabled) {
+          let activityTotalApplied = 0;
+          
+          for (const subcomponent of activity.subcomponents) {
+            if (subcomponent.isIncluded) {
+              // ✅ RESPONSIVE CALCULATION: Calculate applied percentage using current form values
+              const appliedPercentage = (activity.practicePercentage / 100) * 
+                                      (subcomponent.yearPercentage / 100) * 
+                                      (subcomponent.frequencyPercentage / 100) * 
+                                      (subcomponent.timePercentage / 100) * 100;
+              
+              console.log('📊 [REAL-TIME] Calculated applied_percentage for', subcomponent.name, ':', appliedPercentage, {
+                practicePercentage: activity.practicePercentage,
+                yearPercentage: subcomponent.yearPercentage,
+                frequencyPercentage: subcomponent.frequencyPercentage,
+                timePercentage: subcomponent.timePercentage
+              });
+              activityTotalApplied += appliedPercentage;
+            }
+          }
+          
+          if (activityTotalApplied > 0) {
+            segments.push({
+              activityId: activity.id,
+              name: activity.name,
+              percentage: activityTotalApplied,
+              color: activityColors[activities.indexOf(activity) % activityColors.length],
+              startPosition: currentPosition,
+              width: activityTotalApplied
             });
-            activityTotalApplied += appliedPercentage;
+            currentPosition += activityTotalApplied;
+            
+            console.log('✅ [EDITING MODE] Activity', activity.name, 'total applied:', activityTotalApplied, '% (calculated in real-time)');
           }
         }
-        
-        if (activityTotalApplied > 0) {
-          segments.push({
-            activityId: activity.id,
-            name: activity.name,
-            percentage: activityTotalApplied,
-            color: activityColors[activities.indexOf(activity) % activityColors.length],
-            startPosition: currentPosition,
-            width: activityTotalApplied
-          });
-          currentPosition += activityTotalApplied;
+      }
+    } else {
+      console.log('🎯 [SAVED VALUES] Using database saved applied_percentage values (matches roster)');
+      
+      // ✅ SAVED VALUES: Use database values when no edits (matches roster display)
+      for (const activity of activities) {
+        if (activity.isEnabled) {
+          let activityTotalApplied = 0;
           
-          console.log('✅ [RESPONSIVE UI] Activity', activity.name, 'total applied:', activityTotalApplied, '% (calculated in real-time)');
+          for (const subcomponent of activity.subcomponents) {
+            if (subcomponent.isIncluded) {
+              // ✅ ROSTER SYNC: Use saved applied_percentage from database
+              const appliedPercentage = subcomponent.applied_percentage || 0;
+              
+              console.log('📊 [SAVED VALUES] Using saved applied_percentage for', subcomponent.name, ':', appliedPercentage);
+              activityTotalApplied += appliedPercentage;
+            }
+          }
+          
+          if (activityTotalApplied > 0) {
+            segments.push({
+              activityId: activity.id,
+              name: activity.name,
+              percentage: activityTotalApplied,
+              color: activityColors[activities.indexOf(activity) % activityColors.length],
+              startPosition: currentPosition,
+              width: activityTotalApplied
+            });
+            currentPosition += activityTotalApplied;
+            
+            console.log('✅ [SAVED VALUES] Activity', activity.name, 'total applied:', activityTotalApplied, '% (from database - matches roster)');
+          }
         }
       }
     }
@@ -1016,6 +1070,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
   };
 
   const updateActivityEnabled = (activityId: string, isEnabled: boolean) => {
+    setHasUnsavedChanges(true); // Mark as having unsaved changes
     setActivities(prev => {
       const updated = prev.map(activity => {
         if (activity.id === activityId) {
@@ -1038,6 +1093,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
   };
 
   const updateActivityPracticePercentage = (activityId: string, percentage: number) => {
+    setHasUnsavedChanges(true); // Mark as having unsaved changes
     setActivities(prev => {
       const updated = prev.map(activity => {
         if (activity.id === activityId) {
@@ -1075,6 +1131,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
   };
 
   const updateSubcomponentTimePercentage = (activityId: string, subcomponentId: string, percentage: number) => {
+    setHasUnsavedChanges(true); // Mark as having unsaved changes
     setActivities(prev => {
       const updated = prev.map(activity => {
         if (activity.id === activityId) {
@@ -1283,6 +1340,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
       }
 
       console.log('✅ Allocations saved successfully - employee roster should now match allocation modal');
+      setHasUnsavedChanges(false); // Reset unsaved changes flag after successful save
       onUpdate();
       onClose();
     } catch (error) {
@@ -1529,7 +1587,10 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
                   max="100"
                   step="0.01"
                   value={nonRdPercentage}
-                  onChange={(e) => setNonRdPercentage(parseFloat(e.target.value))}
+                                            onChange={(e) => {
+                            setHasUnsavedChanges(true);
+                            setNonRdPercentage(parseFloat(e.target.value));
+                          }}
                   className="w-full h-3 bg-orange-200 rounded-lg appearance-none cursor-pointer"
                 />
                 <div className="flex justify-between text-xs text-gray-500 mt-1">
@@ -1597,6 +1658,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
                                     type="checkbox"
                                     checked={subcomponent.isIncluded}
                                     onChange={(e) => {
+                                      setHasUnsavedChanges(true); // Mark as having unsaved changes
                                       setActivities(prev => {
                                         const updated = prev.map(a => {
                                           if (a.id === activity.id) {
