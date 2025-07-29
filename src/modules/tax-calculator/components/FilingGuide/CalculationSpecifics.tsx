@@ -591,11 +591,9 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
               .eq('business_year_id', selectedYear.id)
               .eq('research_activity_id', activity.id);
             
-            console.log(`🔧 [SUBCOMPONENT DEBUG] Query result for ${activity.name}:`, {
-              error: subcompError,
-              dataCount: subcomponentsData?.length || 0,
-              data: subcomponentsData
-            });
+            if (subcompError) {
+              console.error('Error fetching subcomponents for activity:', activity.name, subcompError);
+            }
             
             if (subcomponentsData && subcomponentsData.length > 0) {
               const practicePercent = activity.practice_percent;
@@ -619,7 +617,7 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
                   }
                 }
                 
-                console.log(`   Subcomponent: ${sub.subcomponent?.name} - REAL Applied: ${realAppliedPercent.toFixed(2)}%`);
+                // Calculated real applied percentage
                 
                 return {
                   name: sub.subcomponent?.name || 'Unknown Subcomponent',
@@ -633,12 +631,7 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
           }
         }
         
-        console.log('🔧 [BASELINE FIX] Setting final baseline data:', {
-          activitiesCount: activitiesWithRealApplied.length,
-          activities: activitiesWithRealApplied,
-          subcomponentsByActivity: subcomponentsByActivity,
-          subcomponentActivityKeys: Object.keys(subcomponentsByActivity)
-        });
+        // Setting research activity baseline with subcomponent data
 
         setResearchActivityBaseline({
           activities: activitiesWithRealApplied,
@@ -660,37 +653,76 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
       
       // Only fetch if we have no data after a short delay
       const timeoutId = setTimeout(async () => {
-        if (employees.length === 0) {
-          console.log('🔧 [BACKUP FETCH] No employees found, forcing reload...');
+        const needsEmployeeData = employees.length === 0;
+        const needsActivityData = !researchActivityBaseline?.activities || researchActivityBaseline.activities.length === 0;
+        
+        if (needsEmployeeData || needsActivityData) {
+          console.log('🔧 [BACKUP FETCH] Missing data, forcing reload...', {
+            needsEmployees: needsEmployeeData,
+            needsActivities: needsActivityData
+          });
           
           try {
-            const { data: employeeYearData, error: employeeError } = await supabase
-              .from('rd_employee_year_data')
-              .select(`
-                applied_percent,
-                non_rd_percentage,
-                calculated_qre,
-                employee:rd_employees!inner(
-                  id,
-                  first_name,
-                  last_name,
-                  annual_wage,
-                  role:rd_roles(name)
-                )
-              `)
-              .eq('business_year_id', selectedYear.id);
+            // Fetch employees if missing
+            if (needsEmployeeData) {
+              const { data: employeeYearData, error: employeeError } = await supabase
+                .from('rd_employee_year_data')
+                .select(`
+                  applied_percent,
+                  non_rd_percentage,
+                  calculated_qre,
+                  employee:rd_employees!inner(
+                    id,
+                    first_name,
+                    last_name,
+                    annual_wage,
+                    role:rd_roles(name)
+                  )
+                `)
+                .eq('business_year_id', selectedYear.id);
 
-            if (!employeeError && employeeYearData?.length > 0) {
-              const employeesArr = employeeYearData.map(emp => ({
-                name: `${emp.employee.first_name} ${emp.employee.last_name}`,
-                role: emp.employee.role?.name || 'No Role',
-                appliedPercent: emp.applied_percent || 0,
-                qreAmount: emp.calculated_qre || 0
-              }));
-              setEmployees(employeesArr);
-              console.log('✅ [BACKUP FETCH] Employees loaded:', employeesArr.length);
-            } else {
-              console.log('⚠️ [BACKUP FETCH] No employee data found for year:', selectedYear.id);
+              if (!employeeError && employeeYearData?.length > 0) {
+                const employeesArr = employeeYearData.map(emp => ({
+                  name: `${emp.employee.first_name} ${emp.employee.last_name}`,
+                  role: emp.employee.role?.name || 'No Role',
+                  appliedPercent: emp.applied_percent || 0,
+                  qreAmount: emp.calculated_qre || 0
+                }));
+                setEmployees(employeesArr);
+                console.log('✅ [BACKUP FETCH] Employees loaded:', employeesArr.length);
+              }
+            }
+            
+            // Fetch research activities if missing
+            if (needsActivityData) {
+              const { data: activitiesData, error: activitiesError } = await supabase
+                .from('rd_selected_activities')
+                .select(`
+                  activity_id,
+                  practice_percent,
+                  activity:rd_research_activities!inner(
+                    id,
+                    title,
+                    focus
+                  )
+                `)
+                .eq('business_year_id', selectedYear.id);
+
+              if (!activitiesError && activitiesData?.length > 0) {
+                const activitiesWithRealApplied = activitiesData.map(sel => ({
+                  id: sel.activity.id,
+                  name: sel.activity.title,
+                  focus: sel.activity.focus,
+                  practice_percent: sel.practice_percent || 0,
+                  applied_percent: sel.practice_percent || 0 // Real applied = practice for now
+                }));
+                
+                setResearchActivityBaseline({
+                  activities: activitiesWithRealApplied,
+                  subcomponentsByActivity: {}
+                });
+                console.log('✅ [BACKUP FETCH] Activities loaded:', activitiesWithRealApplied.length);
+              }
             }
           } catch (error) {
             console.error('❌ [BACKUP FETCH] Error:', error);
@@ -702,7 +734,7 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
     };
 
     forceDataFetch();
-  }, [selectedYear?.id, businessData?.id]);
+  }, [selectedYear?.id, businessData?.id, employees.length, researchActivityBaseline?.activities?.length]);
 
   return (
     <div className="filing-guide-section">
