@@ -15,12 +15,33 @@ export const FilingProcessOverview: React.FC<FilingProcessOverviewProps> = ({
   calculations,
   selectedMethod
 }) => {
-  // Extract summary numbers - handle the nested structure
-  const fed = calculations?.federalCredits ?? {};
-  const selectedFedData = fed[selectedMethod] ?? fed.standard ?? {};
+  // Extract summary numbers - use the correct structure from RDCalculationsService
   const totalQRE = calculations?.currentYearQRE?.total ?? 0;
-  const totalCredit = selectedFedData.credit ?? 0;
   const taxYear = selectedYear?.year || new Date().getFullYear();
+  
+  // 🔧 FIX: Get federal credit based on selectedMethod from the correct calculation structure
+  const federalCredits = calculations?.federalCredits ?? {};
+  let totalCredit = 0;
+  
+  if (selectedMethod === 'asc' && federalCredits.asc) {
+    totalCredit = federalCredits.asc.adjustedCredit ?? federalCredits.asc.credit ?? 0;
+    console.log('🔧 [FILING GUIDE] Using ASC method credit:', totalCredit);
+  } else if (selectedMethod === 'standard' && federalCredits.standard) {
+    totalCredit = federalCredits.standard.adjustedCredit ?? federalCredits.standard.credit ?? 0;
+    console.log('🔧 [FILING GUIDE] Using Standard method credit:', totalCredit);
+  } else {
+    // Fallback to totalFederalCredit from calculations
+    totalCredit = calculations?.totalFederalCredit ?? 0;
+    console.log('🔧 [FILING GUIDE] Using fallback totalFederalCredit:', totalCredit);
+  }
+  
+  console.log('🔧 [FILING GUIDE] Summary calculations:', {
+    selectedMethod,
+    totalQRE,
+    totalCredit,
+    federalCredits,
+    calculations: calculations
+  });
 
   // 🔧 FIX: Get REAL state credits from State Pro Forma calculations, not calculations page
   const [realStateCredits, setRealStateCredits] = React.useState<number>(0);

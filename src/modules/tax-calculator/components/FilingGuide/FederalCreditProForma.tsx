@@ -34,6 +34,14 @@ export const FederalCreditProForma: React.FC<FederalCreditProFormaProps> = ({
   const [selectedVersion, setSelectedVersion] = useState<'pre-2024' | 'post-2024'>(defaultVersion);
   const [selectedMethod, setSelectedMethod] = useState<'standard' | 'asc'>(propSelectedMethod || 'standard');
 
+  // Sync with prop when it changes
+  useEffect(() => {
+    if (propSelectedMethod && propSelectedMethod !== selectedMethod) {
+      setSelectedMethod(propSelectedMethod);
+      console.log('🔧 [FederalCreditProForma] Syncing method with prop:', propSelectedMethod);
+    }
+  }, [propSelectedMethod, selectedMethod]);
+
   // Update selected version when year changes
   useEffect(() => {
     const newDefaultVersion = selectedYear?.year >= 2024 ? 'post-2024' : 'pre-2024';
