@@ -646,95 +646,39 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
     fetchData();
   }, [selectedYear?.id, businessData?.id]);
 
-  // BACKUP FETCH: Force data loading if main useEffect fails
+  // SIMPLE FALLBACK: Use SectionGQREService data if main fetch fails
   useEffect(() => {
-    const forceDataFetch = async () => {
-      if (!selectedYear?.id || !businessData?.id) return;
-      
-      // Only fetch if we have no data after a short delay
-      const timeoutId = setTimeout(async () => {
-        const needsEmployeeData = employees.length === 0;
-        const needsActivityData = !researchActivityBaseline?.activities || researchActivityBaseline.activities.length === 0;
-        
-        if (needsEmployeeData || needsActivityData) {
-          console.log('🔧 [BACKUP FETCH] Missing data, forcing reload...', {
-            needsEmployees: needsEmployeeData,
-            needsActivities: needsActivityData
-          });
-          
+    if (!selectedYear?.id || !businessData?.id) return;
+    
+    const fallbackFetch = async () => {
+      // Wait 2 seconds, then check if we need data
+      setTimeout(async () => {
+        if (employees.length === 0) {
+          console.log('⚡ Using SectionGQREService fallback for employee data...');
           try {
-            // Fetch employees if missing
-            if (needsEmployeeData) {
-              const { data: employeeYearData, error: employeeError } = await supabase
-                .from('rd_employee_year_data')
-                .select(`
-                  applied_percent,
-                  non_rd_percentage,
-                  calculated_qre,
-                  employee:rd_employees!inner(
-                    id,
-                    first_name,
-                    last_name,
-                    annual_wage,
-                    role:rd_roles(name)
-                  )
-                `)
-                .eq('business_year_id', selectedYear.id);
-
-              if (!employeeError && employeeYearData?.length > 0) {
-                const employeesArr = employeeYearData.map(emp => ({
-                  name: `${emp.employee.first_name} ${emp.employee.last_name}`,
-                  role: emp.employee.role?.name || 'No Role',
-                  appliedPercent: emp.applied_percent || 0,
-                  qreAmount: emp.calculated_qre || 0
-                }));
-                setEmployees(employeesArr);
-                console.log('✅ [BACKUP FETCH] Employees loaded:', employeesArr.length);
-              }
-            }
+            // Import and use the working SectionGQREService
+            const { SectionGQREService } = await import('../../services/sectionGQREService');
+            const employeeQREData = await SectionGQREService.getEmployeeQREData(selectedYear.id);
             
-            // Fetch research activities if missing
-            if (needsActivityData) {
-              const { data: activitiesData, error: activitiesError } = await supabase
-                .from('rd_selected_activities')
-                .select(`
-                  activity_id,
-                  practice_percent,
-                  activity:rd_research_activities!inner(
-                    id,
-                    title,
-                    focus
-                  )
-                `)
-                .eq('business_year_id', selectedYear.id);
-
-              if (!activitiesError && activitiesData?.length > 0) {
-                const activitiesWithRealApplied = activitiesData.map(sel => ({
-                  id: sel.activity.id,
-                  name: sel.activity.title,
-                  focus: sel.activity.focus,
-                  practice_percent: sel.practice_percent || 0,
-                  applied_percent: sel.practice_percent || 0 // Real applied = practice for now
-                }));
-                
-                setResearchActivityBaseline({
-                  activities: activitiesWithRealApplied,
-                  subcomponentsByActivity: {}
-                });
-                console.log('✅ [BACKUP FETCH] Activities loaded:', activitiesWithRealApplied.length);
-              }
+            if (employeeQREData && employeeQREData.length > 0) {
+              const employeesArr = employeeQREData.map(emp => ({
+                name: emp.employee_name || 'Unknown Employee',
+                role: emp.role || 'No Role',
+                appliedPercent: emp.applied_percentage || 0,
+                qreAmount: emp.calculated_qre || 0
+              }));
+              setEmployees(employeesArr);
+              console.log('✅ Employees loaded via SectionGQREService:', employeesArr.length);
             }
           } catch (error) {
-            console.error('❌ [BACKUP FETCH] Error:', error);
+            console.error('❌ SectionGQREService fallback failed:', error);
           }
         }
-      }, 1000); // Wait 1 second before backup fetch
-
-      return () => clearTimeout(timeoutId);
+      }, 2000);
     };
 
-    forceDataFetch();
-  }, [selectedYear?.id, businessData?.id, employees.length, researchActivityBaseline?.activities?.length]);
+    fallbackFetch();
+  }, [selectedYear?.id, businessData?.id]);
 
   return (
     <div className="filing-guide-section">
