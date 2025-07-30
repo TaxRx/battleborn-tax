@@ -135,6 +135,7 @@ interface EmployeeSetupStepProps {
   onPrevious: () => void;
   businessYearId?: string;
   businessId?: string;
+  yearRefreshTrigger?: number; // Trigger to refresh year dropdowns when business years are updated
 }
 
 interface Role {
@@ -1774,7 +1775,8 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
   onNext,
   onPrevious,
   businessYearId = '',
-  businessId = ''
+  businessId = '',
+  yearRefreshTrigger
 }) => {
   const [loading, setLoading] = useState(true);
   const [employeesWithData, setEmployeesWithData] = useState<EmployeeWithExpenses[]>([]);
@@ -4006,6 +4008,14 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       }
     }
   }, [availableYears, selectedYear]);
+
+  // Reload available years when yearRefreshTrigger changes (business years updated)
+  useEffect(() => {
+    if (yearRefreshTrigger !== undefined && yearRefreshTrigger > 0 && businessId) {
+      console.log('📅 [EmployeeSetupStep] Year refresh triggered - reloading available years');
+      loadData();
+    }
+  }, [yearRefreshTrigger, businessId]);
 
   // Calculate QRE totals using useMemo for performance and availability throughout component
   const { employeeQRE, contractorQRE, supplyQRE, totalQRE } = React.useMemo(() => {

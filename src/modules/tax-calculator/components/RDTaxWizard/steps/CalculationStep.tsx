@@ -31,6 +31,7 @@ interface CalculationStepProps {
   onUpdate: (updates: any) => void;
   onNext: () => void;
   onPrevious: () => void;
+  yearRefreshTrigger?: number; // Trigger to refresh year dropdowns when business years are updated
 }
 
 // AccordionSection for showing calculation details
@@ -229,7 +230,8 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
   wizardState,
   onUpdate,
   onNext,
-  onPrevious
+  onPrevious,
+  yearRefreshTrigger
 }) => {
   // Get user information for userId
   const { user } = useUser();
@@ -1006,6 +1008,14 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       onUpdate({ qreValuesChanged: false });
     }
   }, [wizardState.qreValuesChanged]);
+
+  // Reload calculations when yearRefreshTrigger changes (business years updated)
+  useEffect(() => {
+    if (yearRefreshTrigger !== undefined && yearRefreshTrigger > 0) {
+      console.log('📅 [CalculationStep] Year refresh triggered - reloading calculations');
+      loadCalculations();
+    }
+  }, [yearRefreshTrigger]);
 
   const loadCalculations = async () => {
     if (!wizardState.selectedYear?.id) return;

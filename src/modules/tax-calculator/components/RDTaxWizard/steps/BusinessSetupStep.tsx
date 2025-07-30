@@ -896,6 +896,42 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
             const updatedBusiness = await RDBusinessService.updateBusiness(business.id, updateData);
             console.log('[BusinessSetupStep] Auto-save successful for', field);
             
+            // CRITICAL: Create business years when start year changes
+            if (field === 'startYear' && value) {
+              try {
+                const startYear = parseInt(value);
+                const currentYear = new Date().getFullYear();
+                
+                // Generate years from start year to current year + 1 (for planning next year)
+                const yearsToCreate: number[] = [];
+                for (let year = startYear; year <= currentYear + 1; year++) {
+                  yearsToCreate.push(year);
+                }
+                
+                console.log(`📅 [BusinessSetupStep] Creating business years for new start year ${startYear}:`, yearsToCreate);
+                
+                await RDBusinessService.createOrUpdateBusinessYears(business.id, yearsToCreate, false);
+                
+                console.log(`✅ [BusinessSetupStep] Successfully created/updated business years for start year ${startYear}`);
+                
+                // Update parent component to trigger refresh of year dropdowns
+                onUpdate({ 
+                  business: {
+                    ...business,
+                    start_year: startYear
+                  },
+                  yearUpdated: true // Flag to indicate years were updated
+                });
+                
+                // Show user notification that years were created
+                alert(`Successfully created business years ${startYear}-${currentYear + 1}. Year dropdowns will refresh automatically.`);
+                
+              } catch (yearError) {
+                console.error('[BusinessSetupStep] Error creating business years:', yearError);
+                // Don't throw - continue with other operations
+              }
+            }
+            
             // Update the local business state to prevent useEffect from overwriting with stale data
             if (tempUpdatedContactInfo) {
               // Update the business prop through the onUpdate callback to keep parent state in sync
@@ -934,6 +970,41 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
         await RDBusinessService.updateBusiness(business.id, {
           start_year: parseInt(newStartYear)
         });
+        
+        // CRITICAL: Create business years when start year changes via this function too
+        try {
+          const startYear = parseInt(newStartYear);
+          const currentYear = new Date().getFullYear();
+          
+          // Generate years from start year to current year + 1 (for planning next year)
+          const yearsToCreate: number[] = [];
+          for (let year = startYear; year <= currentYear + 1; year++) {
+            yearsToCreate.push(year);
+          }
+          
+          console.log(`📅 [BusinessSetupStep] handleStartYearChange - Creating business years for start year ${startYear}:`, yearsToCreate);
+          
+          await RDBusinessService.createOrUpdateBusinessYears(business.id, yearsToCreate, false);
+          
+          console.log(`✅ [BusinessSetupStep] handleStartYearChange - Successfully created/updated business years`);
+          
+          // Update parent component to trigger refresh of year dropdowns
+          onUpdate({ 
+            business: {
+              ...business,
+              start_year: startYear
+            },
+            yearUpdated: true // Flag to indicate years were updated
+          });
+          
+          // Show user notification that years were created
+          alert(`Successfully created business years ${startYear}-${currentYear + 1}. Year dropdowns will refresh automatically.`);
+          
+        } catch (yearError) {
+          console.error('[BusinessSetupStep] handleStartYearChange - Error creating business years:', yearError);
+          // Don't throw - continue with other operations
+        }
+        
       } catch (error) {
         console.error('[BusinessSetupStep] Error updating start year:', error);
       }

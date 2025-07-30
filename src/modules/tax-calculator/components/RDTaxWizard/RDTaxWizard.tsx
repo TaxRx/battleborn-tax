@@ -98,6 +98,9 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
     isComplete: false
   });
 
+  // Add state to trigger year dropdown refreshes when business years are updated
+  const [yearRefreshTrigger, setYearRefreshTrigger] = useState(0);
+  
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -381,6 +384,18 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
 
   const updateWizardState = (updates: Partial<WizardState>) => {
     console.log('RDTaxWizard: Updating wizard state with:', updates);
+    
+    // Check if business years were updated
+    const yearUpdated = (updates as any).yearUpdated;
+    if (yearUpdated) {
+      console.log('📅 [RDTaxWizard] Business years were updated - triggering year dropdown refresh');
+      setYearRefreshTrigger(prev => prev + 1);
+      
+      // Remove the yearUpdated flag from updates before setting state
+      const { yearUpdated: _, ...cleanUpdates } = updates as any;
+      updates = cleanUpdates;
+    }
+    
     setWizardState(prev => {
       const newState = { ...prev, ...updates };
       console.log('RDTaxWizard: New wizard state:', newState);
@@ -421,6 +436,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
             businessYearId={wizardState.selectedYear?.id || ''}
             businessId={wizardState.business?.id}
             year={wizardState.selectedYear?.year}
+            yearRefreshTrigger={yearRefreshTrigger}
             onUpdate={(updates) => updateWizardState(updates)}
             onNext={handleNext}
             onPrevious={handlePrevious}
@@ -435,6 +451,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
             onPrevious={handlePrevious}
             businessYearId={wizardState.selectedYear?.id || ''}
             businessId={wizardState.business?.id || ''}
+            yearRefreshTrigger={yearRefreshTrigger}
           />
         );
       case 4:
@@ -444,6 +461,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
             onUpdate={(updates) => updateWizardState(updates)}
             onNext={handleNext}
             onPrevious={handlePrevious}
+            yearRefreshTrigger={yearRefreshTrigger}
           />
         );
       case 5:
@@ -767,6 +785,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
                               ...prev,
                               selectedYear: { id: newYear.id, year: newYear.year }
                             }));
+                            setYearRefreshTrigger(prev => prev + 1); // Trigger refresh
                           }
                         } catch (error) {
                           console.error(`Failed to create business year ${year}:`, error);

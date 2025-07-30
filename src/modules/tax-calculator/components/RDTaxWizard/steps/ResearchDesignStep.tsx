@@ -28,6 +28,7 @@ interface ResearchDesignStepProps {
   businessYearId: string;
   businessId?: string;
   year?: number;
+  yearRefreshTrigger?: number; // Trigger to refresh year dropdowns when business years are updated
   onUpdate: (data: any) => void;
   onNext: () => void;
   onPrevious: () => void;
@@ -92,6 +93,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
   businessYearId,
   businessId,
   year,
+  yearRefreshTrigger,
   onUpdate,
   onNext,
   onPrevious
@@ -101,6 +103,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
     businessYearId,
     businessId,
     year,
+    yearRefreshTrigger: typeof yearRefreshTrigger,
     onUpdate: typeof onUpdate,
     onNext: typeof onNext,
     onPrevious: typeof onPrevious
@@ -2395,6 +2398,14 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
   useEffect(() => {
     loadAvailableActivityYears();
   }, [loadAvailableActivityYears]);
+
+  // Reload available years when yearRefreshTrigger changes (business years updated)
+  useEffect(() => {
+    if (yearRefreshTrigger !== undefined && yearRefreshTrigger > 0) {
+      console.log('📅 [ResearchDesignStep] Year refresh triggered - reloading available years');
+      loadAvailableActivityYears();
+    }
+  }, [yearRefreshTrigger, loadAvailableActivityYears]);
 
   // Update selected year when available years change
   useEffect(() => {
