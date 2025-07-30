@@ -673,10 +673,11 @@ export class RDBusinessService {
 
 
   /**
-   * Create or update rd_business_years entries for the specified years
-   * @param businessId - The ID of the business in rd_businesses table
-   * @param years - Array of years to create/update
-   * @param removeUnusedYears - Whether to remove years not in the specified array (default: false)
+   * Create or update business year records for the given years.
+   * CRITICAL: Preserve existing business years with QRE data to prevent data loss.
+   * @param businessId ID of the business
+   * @param years Array of years to ensure exist
+   * @param removeUnusedYears Whether to remove business years not in the years array
    * @returns Array of created/updated business year records
    */
   static async createOrUpdateBusinessYears(businessId: string, years: number[], removeUnusedYears: boolean = false): Promise<any[]> {
@@ -688,10 +689,17 @@ export class RDBusinessService {
     }
 
     try {
-      // First, get existing business years for this business
+      // First, get existing business years for this business with QRE data check
       const { data: existingYears, error: fetchError } = await supabase
         .from('rd_business_years')
-        .select('*')
+        .select(`
+          *,
+          employee_year_data:rd_employee_year_data(id),
+          contractor_year_data:rd_contractor_year_data(id),
+          supply_year_data:rd_supply_year_data(id),
+          selected_activities:rd_selected_activities(id),
+          selected_subcomponents:rd_selected_subcomponents(id)
+        `)
         .eq('business_id', businessId);
 
       if (fetchError) {
@@ -701,20 +709,52 @@ export class RDBusinessService {
 
       console.log('[RDBusinessService] Existing business years:', existingYears);
 
+      // Categorize existing years based on whether they have QRE data
+      const existingYearMap = new Map();
+      const yearsWithData = new Set();
+      const yearsWithoutData = new Set();
+
+      existingYears?.forEach(year => {
+        existingYearMap.set(year.year, year);
+        
+        const hasQREData = (
+          year.total_qre > 0 || 
+          year.employee_qre > 0 || 
+          year.contractor_qre > 0 || 
+          year.supply_qre > 0 ||
+          year.employee_year_data?.length > 0 ||
+          year.contractor_year_data?.length > 0 ||
+          year.supply_year_data?.length > 0 ||
+          year.selected_activities?.length > 0 ||
+          year.selected_subcomponents?.length > 0
+        );
+
+        if (hasQREData) {
+          yearsWithData.add(year.year);
+          console.log(`🔒 [RDBusinessService] Year ${year.year} has QRE data - will be preserved`);
+        } else {
+          yearsWithoutData.add(year.year);
+          console.log(`📝 [RDBusinessService] Year ${year.year} has no QRE data`);
+        }
+      });
+
       const existingYearSet = new Set(existingYears?.map(y => y.year) || []);
       const yearsToCreate = years.filter(year => !existingYearSet.has(year));
-      const yearsToUpdate = years.filter(year => existingYearSet.has(year));
 
       console.log('[RDBusinessService] Years to create:', yearsToCreate);
-      console.log('[RDBusinessService] Years to update:', yearsToUpdate);
+      console.log('[RDBusinessService] Years with QRE data (preserved):', Array.from(yearsWithData));
+      console.log('[RDBusinessService] Years without QRE data:', Array.from(yearsWithoutData));
 
       const results = [];
 
-      // Remove unused years if requested
+      // CRITICAL: Never remove years that have QRE data
       if (removeUnusedYears && existingYears) {
-        const yearsToRemove = existingYears.filter(year => !years.includes(year.year));
+        const yearsToRemove = existingYears.filter(year => 
+          !years.includes(year.year) && !yearsWithData.has(year.year)
+        );
+        
         if (yearsToRemove.length > 0) {
-          console.log('[RDBusinessService] Removing unused years:', yearsToRemove.map(y => y.year));
+          console.log('[RDBusinessService] Removing unused years (without QRE data):', yearsToRemove.map(y => y.year));
           
           const { error: deleteError } = await supabase
             .from('rd_business_years')
@@ -728,9 +768,18 @@ export class RDBusinessService {
             console.log('[RDBusinessService] Successfully removed unused years');
           }
         }
+
+        // Log if any years with data would have been removed (for user awareness)
+        const protectedYears = existingYears.filter(year => 
+          !years.includes(year.year) && yearsWithData.has(year.year)
+        );
+        if (protectedYears.length > 0) {
+          console.log('🔒 [RDBusinessService] Protected years with QRE data from removal:', 
+            protectedYears.map(y => y.year));
+        }
       }
 
-      // Create new business year entries
+      // Create new business year entries only for missing years
       if (yearsToCreate.length > 0) {
         const newYearRecords = yearsToCreate.map(year => ({
           business_id: businessId,
@@ -755,18 +804,22 @@ export class RDBusinessService {
         results.push(...(createdYears || []));
       }
 
-      // Update existing business year entries (if needed)
-      if (yearsToUpdate.length > 0) {
-        console.log('[RDBusinessService] Years already exist, no update needed:', yearsToUpdate);
-        // For now, we don't update existing records, just return them
-        const existingRecords = existingYears?.filter(y => yearsToUpdate.includes(y.year)) || [];
-        results.push(...existingRecords);
+      // Include all existing business years in results (both with and without data)
+      const existingRecords = existingYears?.filter(y => years.includes(y.year)) || [];
+      results.push(...existingRecords);
+
+      // Log summary for user awareness
+      const totalYearsWithData = Array.from(yearsWithData).filter(year => years.includes(year)).length;
+      if (totalYearsWithData > 0) {
+        console.log(`✅ [RDBusinessService] Preserved ${totalYearsWithData} years with existing QRE data:`, 
+          Array.from(yearsWithData).filter(year => years.includes(year)));
       }
 
       console.log('[RDBusinessService] createOrUpdateBusinessYears completed successfully', {
         totalResults: results.length,
         createdCount: yearsToCreate.length,
-        existingCount: yearsToUpdate.length
+        preservedWithData: totalYearsWithData,
+        existingCount: existingRecords.length
       });
 
       return results;

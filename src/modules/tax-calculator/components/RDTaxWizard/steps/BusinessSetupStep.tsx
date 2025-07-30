@@ -910,7 +910,16 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
                 
                 console.log(`📅 [BusinessSetupStep] Creating business years for new start year ${startYear}:`, yearsToCreate);
                 
-                await RDBusinessService.createOrUpdateBusinessYears(business.id, yearsToCreate, false);
+                const result = await RDBusinessService.createOrUpdateBusinessYears(business.id, yearsToCreate, false);
+                
+                // Count how many years were actually created vs preserved
+                const { data: existingYears } = await supabase
+                  .from('rd_business_years')
+                  .select('year')
+                  .eq('business_id', business.id);
+                
+                const existingYearNumbers = new Set(existingYears?.map(y => y.year) || []);
+                const actuallyCreated = yearsToCreate.filter(year => !existingYearNumbers.has(year));
                 
                 console.log(`✅ [BusinessSetupStep] Successfully created/updated business years for start year ${startYear}`);
                 
@@ -923,8 +932,12 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
                   yearUpdated: true // Flag to indicate years were updated
                 });
                 
-                // Show user notification that years were created
-                alert(`Successfully created business years ${startYear}-${currentYear + 1}. Year dropdowns will refresh automatically.`);
+                // Only show notification if new years were actually created
+                if (actuallyCreated.length > 0) {
+                  alert(`✅ Created ${actuallyCreated.length} new business years: ${actuallyCreated.join(', ')}.\n\n🔒 Any existing QRE data has been preserved.\n\nYear dropdowns will refresh automatically.`);
+                } else {
+                  console.log('📅 [BusinessSetupStep] No new years needed - all years already exist with preserved data');
+                }
                 
               } catch (yearError) {
                 console.error('[BusinessSetupStep] Error creating business years:', yearError);
@@ -984,7 +997,16 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
           
           console.log(`📅 [BusinessSetupStep] handleStartYearChange - Creating business years for start year ${startYear}:`, yearsToCreate);
           
-          await RDBusinessService.createOrUpdateBusinessYears(business.id, yearsToCreate, false);
+          const result = await RDBusinessService.createOrUpdateBusinessYears(business.id, yearsToCreate, false);
+          
+          // Count how many years were actually created vs preserved
+          const { data: existingYears } = await supabase
+            .from('rd_business_years')
+            .select('year')
+            .eq('business_id', business.id);
+          
+          const existingYearNumbers = new Set(existingYears?.map(y => y.year) || []);
+          const actuallyCreated = yearsToCreate.filter(year => !existingYearNumbers.has(year));
           
           console.log(`✅ [BusinessSetupStep] handleStartYearChange - Successfully created/updated business years`);
           
@@ -997,8 +1019,12 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
             yearUpdated: true // Flag to indicate years were updated
           });
           
-          // Show user notification that years were created
-          alert(`Successfully created business years ${startYear}-${currentYear + 1}. Year dropdowns will refresh automatically.`);
+          // Only show notification if new years were actually created
+          if (actuallyCreated.length > 0) {
+            alert(`✅ Created ${actuallyCreated.length} new business years: ${actuallyCreated.join(', ')}.\n\n🔒 Any existing QRE data has been preserved.\n\nYear dropdowns will refresh automatically.`);
+          } else {
+            console.log('📅 [BusinessSetupStep] handleStartYearChange - No new years needed - all years already exist with preserved data');
+          }
           
         } catch (yearError) {
           console.error('[BusinessSetupStep] handleStartYearChange - Error creating business years:', yearError);
