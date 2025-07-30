@@ -138,22 +138,20 @@ export class RDCalculationsService {
         return total + employeeQRE;
       }, 0);
 
-      // Get contractor costs (from rd_contractor_year_data joined with rd_contractors)
+      // Get contractor costs (from rd_contractor_year_data table directly)
       const { data: contractorData, error: contractorError } = await supabase
         .from('rd_contractor_year_data')
         .select(`
           applied_percent,
           calculated_qre,
-          contractor:rd_contractors (
-            amount
-          )
+          cost_amount
         `)
         .eq('business_year_id', businessYearId);
 
       if (contractorError) throw contractorError;
 
       const contractorCosts = (contractorData || []).reduce((total, contractor) => {
-        const amount = contractor.contractor?.amount || 0;
+        const amount = contractor.cost_amount || 0;
         const appliedPercent = contractor.applied_percent || 0;
         const calculatedQRE = contractor.calculated_qre || 0;
         
@@ -214,7 +212,7 @@ export class RDCalculationsService {
   // Get historical data for base period calculations
   static async getHistoricalData(businessId: string, currentYear: number): Promise<HistoricalData[]> {
     try {
-      console.log('🔍 [RDCalculationsService] Loading COMPREHENSIVE historical data for business:', businessId, 'current year:', currentYear);
+      // Loading historical data for business
       
       // Get business years with basic data (manually entered QREs and gross receipts)
       const { data: businessYears, error } = await supabase
@@ -278,7 +276,7 @@ export class RDCalculationsService {
           });
 
         } catch (qreError) {
-          console.warn(`⚠️ [RDCalculationsService] Could not calculate QREs for year ${yearData.year}:`, qreError);
+          // Could not calculate QREs for this year
           
           // Fallback to manual QRE only if calculation fails
           const fallbackQRE = yearData.total_qre || 0;

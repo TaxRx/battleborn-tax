@@ -1313,7 +1313,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
                 onClick={async () => {
                   try {
                     setLoading(true);
-                    const { ExpenseManagementService } = await import('../../../../services/expenseManagementService');
+                    const { ExpenseManagementService } = await import('../../../../../services/expenseManagementService');
                     const csvData = await ExpenseManagementService.exportExpensesToCSV(wizardState.selectedYear?.id);
                     const blob = new Blob([csvData], { type: 'text/csv' });
                     const url = window.URL.createObjectURL(blob);
@@ -1562,7 +1562,15 @@ I acknowledge that I had the opportunity to review and revise the report prior t
                 {/* Action Button */}
                 <div className="mb-4">
                   <button
-                    onClick={() => setIsResearchReportOpen(true)}
+                    onClick={() => {
+                      console.log('%c🚀 [REPORTS SECTION] Research Report button clicked!', 'color: #ff00ff; font-size: 18px; font-weight: bold;');
+                      console.log('%c📊 [REPORTS] wizardState.selectedYear:', 'color: #00ffff; font-weight: bold;', wizardState.selectedYear);
+                      console.log('%c📊 [REPORTS] wizardState.business:', 'color: #00ffff; font-weight: bold;', wizardState.business);
+                      console.log('%c📊 [REPORTS] businessYearId:', 'color: #00ffff; font-weight: bold;', wizardState.selectedYear?.id);
+                      console.log('%c📊 [REPORTS] businessId:', 'color: #00ffff; font-weight: bold;', wizardState.business?.id);
+                      console.log('%c🔍 [REPORTS] Setting modal to true...', 'color: #ffff00; font-weight: bold;');
+                      setIsResearchReportOpen(true);
+                    }}
                     className="w-full flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
                   >
                     <Eye className="mr-2" size={16} />
@@ -2313,12 +2321,20 @@ I acknowledge that I had the opportunity to review and revise the report prior t
       {isResearchReportOpen && (
         <ResearchReportModal
           isOpen={isResearchReportOpen}
-          onClose={() => setIsResearchReportOpen(false)}
-          businessData={wizardState.business}
-          selectedYear={wizardState.selectedYear}
-          calculations={wizardState.calculations}
-          selectedMethod={wizardState.selectedMethod}
-          debugData={wizardState.debugData}
+          onClose={() => {
+            console.log('%c🔒 [REPORTS] Research Report Modal closing...', 'color: #ff0000; font-size: 16px; font-weight: bold;');
+            setIsResearchReportOpen(false);
+          }}
+          businessYearId={(() => {
+            const yearId = wizardState.selectedYear?.id;
+            console.log('%c📊 [REPORTS MODAL] Passing businessYearId:', 'color: #00ff00; font-weight: bold;', yearId);
+            return yearId;
+          })()}
+          businessId={(() => {
+            const businessId = wizardState.business?.id;
+            console.log('%c📊 [REPORTS MODAL] Passing businessId:', 'color: #00ff00; font-weight: bold;', businessId);
+            return businessId;
+          })()}
         />
       )}
 

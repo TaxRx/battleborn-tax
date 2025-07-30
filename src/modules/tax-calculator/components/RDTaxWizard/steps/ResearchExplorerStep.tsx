@@ -3891,18 +3891,11 @@ const CopyConfirmationModal: React.FC<CopyConfirmationModalProps> = ({
 }) => {
   const [selectedYearId, setSelectedYearId] = useState<string>('');
 
-  // Add debugging
-  console.log('🔍 CopyConfirmationModal Debug:');
-  console.log('📅 Available years:', availableYears);
-  console.log('🎯 Current year:', currentYear);
-  console.log('🎯 Current year ID:', currentYear?.id);
-  
   const filteredYears = availableYears.filter(year => year.id !== currentYear?.id);
-  console.log('🔍 Filtered years (excluding current):', filteredYears);
 
   const handleConfirm = () => {
     if (selectedYearId) {
-      console.log('✅ User selected year ID for copy:', selectedYearId);
+      // User confirmed year selection for copy
       onConfirm(selectedYearId);
       onClose();
       setSelectedYearId('');

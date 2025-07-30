@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, FileText, Download, Printer, Eye, EyeOff, 
   Activity, Target, Beaker, Calendar, Users, 
   TrendingUp, Award, BookOpen, ChevronRight, ChevronLeft,
   CheckCircle, AlertCircle, Info, BarChart3,
-  Clock, Building2, FileCheck, Microscope
+  Clock, Building2, FileCheck, Microscope, Settings
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { AIService } from '../../../../services/aiService';
@@ -20,6 +20,14 @@ import {
   ReportData
 } from './reportGenerator';
 // rdReportService removed - using static report generation
+
+// Add TypeScript declarations for window object
+declare global {
+  interface Window {
+    regenerateAISection?: (subcomponentId: string) => Promise<void>;
+    editAIPrompt?: (subcomponentId: string) => void;
+  }
+}
 
 interface ResearchReportModalProps {
   isOpen: boolean;
@@ -140,44 +148,310 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
   const [editingSubcomponentId, setEditingSubcomponentId] = useState<string>('');
   const [editPrompt, setEditPrompt] = useState<string>('');
 
+  // Use ref for synchronous race condition prevention (state updates are async)
+  const isLoadingRef = useRef<boolean>(false);
+
   useEffect(() => {
+    console.log('%c🔄 [RESEARCH REPORT MODAL] useEffect triggered:', 'color: #ff6600; font-size: 14px; font-weight: bold;', {
+      isOpen,
+      businessYearId,
+      currentTime: new Date().toISOString(),
+      isLoadingState: isLoading,
+      isLoadingRefCurrent: isLoadingRef.current
+    });
+    
     if (isOpen && businessYearId) {
+      console.log('%c🔍 [RESEARCH REPORT MODAL] Opening with props:', 'color: #ff6600; font-size: 16px; font-weight: bold;');
+      console.log('%c📊 [RESEARCH REPORT MODAL] businessYearId:', 'color: #ff6600; font-weight: bold;', businessYearId);
+      console.log('%c📊 [RESEARCH REPORT MODAL] businessId:', 'color: #ff6600; font-weight: bold;', businessId);
+      console.log('%c🚀 [RESEARCH REPORT MODAL] Calling loadData()...', 'color: #ff6600; font-weight: bold;');
       loadData();
+    } else {
+      console.log('%c⚠️ [RESEARCH REPORT MODAL] Not loading data:', 'color: #ff0000; font-weight: bold;', {
+        isOpen,
+        businessYearId,
+        businessId
+      });
     }
   }, [isOpen, businessYearId]);
 
-  // Add window functions for iframe communication
+  // Expose functions to window for iframe access
   useEffect(() => {
-    // Make regenerateAISection available to iframe
-    (window as any).regenerateAISection = regenerateAISection;
-    (window as any).editAIPrompt = editAIPrompt;
-    
-    // Cleanup on unmount
-    return () => {
-      delete (window as any).regenerateAISection;
-      delete (window as any).editAIPrompt;
-    };
-  }, []);
+    if (typeof window !== 'undefined') {
+      // Functions will be updated through closures when they're called
+      window.regenerateAISection = (subcomponentId: string) => regenerateAISection(subcomponentId);
+      window.editAIPrompt = (subcomponentId: string) => editAIPrompt(subcomponentId);
+      
+      // Cleanup on unmount
+      return () => {
+        delete window.regenerateAISection;
+        delete window.editAIPrompt;
+      };
+    }
+  }, []); // Empty dependency array - functions are bound through closures
 
-  // Function to clean up existing markdown formatting in cached reports
-  const cleanupExistingFormatting = (htmlContent: string): string => {
-    return htmlContent
-      // Fix **bold** formatting that wasn't properly converted
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      // Fix any remaining markdown patterns
-      .replace(/^\*\*(.+?)\*\*:$/gm, '<h4 class="ai-step-title">$1:</h4>')
-      // Fix bullet points that might not be properly formatted
-      .replace(/^[\-\*] (.+)$/gm, '<li>$1</li>')
-      // Wrap orphaned <li> elements
-      .replace(/(<li>.*?<\/li>)(?:\s*<li>.*?<\/li>)*/g, '<ul>$&</ul>');
+  const regenerateAllAIEntries = async () => {
+    try {
+      setLoadingMessage('Regenerating all AI content...');
+      setIsLoading(true);
+
+      // Get all subcomponents that need AI regeneration
+      const subcomponentsToRegenerate = selectedSubcomponents.filter(sub => 
+        sub.rd_research_subcomponents || sub.name
+      );
+
+      console.log(`🤖 Starting regeneration of ${subcomponentsToRegenerate.length} AI sections`);
+
+      // Regenerate each section sequentially to avoid overwhelming the AI service
+      for (let i = 0; i < subcomponentsToRegenerate.length; i++) {
+        const subcomponent = subcomponentsToRegenerate[i];
+        setLoadingMessage(`Regenerating AI content... (${i + 1}/${subcomponentsToRegenerate.length})`);
+        
+        try {
+          await regenerateAISection(subcomponent.id);
+        } catch (error) {
+          console.error(`Failed to regenerate subcomponent ${subcomponent.id}:`, error);
+          // Continue with other subcomponents even if one fails
+        }
+        
+        // Small delay between regenerations to prevent rate limiting
+        if (i < subcomponentsToRegenerate.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      console.log('✅ Completed regeneration of all AI sections');
+      
+      // Regenerate the full report to incorporate all updates
+      await generateReport();
+      
+    } catch (error) {
+      console.error('Failed to regenerate all AI content:', error);
+      setError('Failed to regenerate all content. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const regenerateAISection = async (subcomponentId: string) => {
+    try {
+      setLoadingMessage('Regenerating AI content...');
+      setIsLoading(true);
+
+      // Find the subcomponent
+      const subcomponent = selectedSubcomponents.find(sub => sub.id === subcomponentId);
+      if (!subcomponent) return;
+
+      const subData = subcomponent.rd_research_subcomponents || subcomponent;
+      
+      // Detect business type for appropriate content generation
+      const categoryName = businessProfile?.category?.name?.toLowerCase();
+      const isSoftwareReport = categoryName === 'software';
+
+      console.log('🤖 Calling AI for content regeneration:', {
+        componentName: subData.name,
+        category: categoryName,
+        isSoftwareReport
+      });
+
+      // Generate context-appropriate prompt for AI
+      const componentName = subData.name || subData.general_description || 'Subcomponent';
+      const description = subData.general_description || subData.description || '';
+      
+      const prompt = isSoftwareReport ? 
+        `Generate comprehensive IRS R&D tax credit documentation for "${componentName}" in a software development environment.
+
+Component Description: ${description}
+
+Development Team Roles: ${businessRoles.map(role => role.name).join(', ')}
+
+Please provide:
+1. Technical uncertainty documentation and challenges addressed
+2. Process of experimentation details (iterations, testing, alternatives)
+3. Qualified purpose demonstration (functionality, performance, reliability improvements)
+4. Technological nature evidence (computer science/engineering principles)
+5. Specific role assignments with time allocation estimates
+6. Documentation requirements for IRS audit defense
+
+Format the response with proper HTML headings (h4, h5) and lists (ul, li) for integration into a research report.` :
+        `Generate professional clinical practice guidelines for implementing "${componentName}" in a healthcare setting.
+
+Subcomponent Description: ${description}
+
+Available Staff Roles: ${businessRoles.map(role => role.name).join(', ')}
+
+Please provide:
+1. Step-by-step implementation guidelines with clear headings
+2. For each step, specify which staff roles should be involved
+3. Use professional medical/clinical language
+4. Include bullet points for role assignments under each step
+5. Quality assurance and documentation requirements
+
+Format the response with proper HTML headings (h4, h5) and lists (ul, li) for integration into a research report.`;
+
+      // Call AI service
+      const aiResponse = await AIService.getInstance().generateResearchContent(prompt, {
+        businessCategory: categoryName || 'healthcare',
+        componentName,
+        availableRoles: businessRoles
+      });
+
+      console.log('✅ AI response received, updating report');
+
+      // Update the HTML with AI-generated content
+      const updatedHTML = generatedReport.replace(
+        new RegExp(`<div class="best-practices-content">.*?</div>`, 's'),
+        `<div class="best-practices-content">${formatAIContent(aiResponse)}</div>`
+      );
+
+      setGeneratedReport(updatedHTML);
+
+      // Save updated report
+      const { data: existingReport } = await supabase
+        .from('rd_reports')
+        .select('id')
+        .eq('business_year_id', businessYearId)
+        .eq('type', 'RESEARCH_SUMMARY')
+        .single();
+      
+      if (existingReport) {
+        await supabase
+          .from('rd_reports')
+          .update({
+            generated_html: updatedHTML,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingReport.id);
+      }
+      
+    } catch (error) {
+      console.error('Failed to regenerate AI section:', error);
+      setError('Failed to regenerate content. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const editAIPrompt = (subcomponentId: string) => {
+    const subcomponent = selectedSubcomponents.find(sub => sub.id === subcomponentId);
+    if (!subcomponent) return;
+
+    // Detect business type for appropriate prompt generation
+    const categoryName = businessProfile?.category?.name?.toLowerCase();
+    const isSoftwareReport = categoryName === 'software';
+
+    const subData = subcomponent.rd_research_subcomponents || subcomponent;
+    setEditingSubcomponentId(subcomponentId);
+    
+    const prompt = isSoftwareReport ? 
+      `Generate comprehensive IRS R&D tax credit documentation for "${subData.name || 'this development component'}" in a software development environment.
+
+Component Description: ${subData.general_description || subData.description || ''}
+
+Development Team Roles: ${businessRoles.map(role => role.name).join(', ')}
+
+Please provide:
+1. Technical uncertainty documentation and challenges addressed
+2. Process of experimentation details (iterations, testing, alternatives)
+3. Qualified purpose demonstration (functionality, performance, reliability improvements)
+4. Technological nature evidence (computer science/engineering principles)
+5. Specific role assignments with time allocation estimates
+6. Documentation requirements for IRS audit defense` :
+      `Generate professional clinical practice guidelines for implementing "${subData.name || 'this subcomponent'}" in a healthcare setting.
+
+Subcomponent Description: ${subData.general_description || subData.description || ''}
+
+Available Staff Roles: ${businessRoles.map(role => role.name).join(', ')}
+
+Please provide:
+1. Step-by-step implementation guidelines with clear headings
+2. For each step, specify which staff roles should be involved
+3. Use professional medical/clinical language
+4. Format with proper markdown headings
+5. Include bullet points for role assignments under each step`;
+
+    setEditPrompt(prompt);
+    setShowEditModal(true);
+  };
+
+  const handleCustomPromptGeneration = async () => {
+    try {
+      setLoadingMessage('Generating content with custom prompt...');
+      setIsLoading(true);
+      setShowEditModal(false);
+
+      // Get category info for context
+      const categoryName = businessProfile?.category?.name?.toLowerCase();
+      const isSoftwareReport = categoryName === 'software';
+
+      console.log('🤖 Calling AI with custom prompt:', {
+        promptLength: editPrompt.length,
+        category: categoryName,
+        isSoftwareReport
+      });
+
+      // Call AI service with the custom prompt
+      const aiResponse = await AIService.getInstance().generateResearchContent(editPrompt, {
+        businessCategory: categoryName || 'healthcare',
+        componentName: editingSubcomponentId || 'Custom Content',
+        availableRoles: businessRoles
+      });
+
+      console.log('✅ AI response received for custom prompt, updating report');
+
+      // Update the HTML with AI-generated content
+      const updatedHTML = generatedReport.replace(
+        new RegExp(`<div class="best-practices-content">.*?</div>`, 's'),
+        `<div class="best-practices-content">${formatAIContent(aiResponse)}</div>`
+      );
+
+      setGeneratedReport(updatedHTML);
+
+      // Save updated report
+      const { data: existingReport } = await supabase
+        .from('rd_reports')
+        .select('id')
+        .eq('business_year_id', businessYearId)
+        .eq('type', 'RESEARCH_SUMMARY')
+        .single();
+      
+      if (existingReport) {
+        await supabase
+          .from('rd_reports')
+          .update({
+            generated_html: updatedHTML,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingReport.id);
+      }
+      
+    } catch (error) {
+      console.error('Failed to generate custom content:', error);
+      setError('Failed to generate content. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const loadData = async () => {
+    // RACE CONDITION PREVENTION: Use ref for synchronous check (state is async)
+    if (isLoadingRef.current) {
+      console.log('🚫 [RESEARCH REPORT MODAL] Skipping loadData - already loading (ref check)');
+      return;
+    }
+
+    // Set loading flag immediately (synchronous)
+    isLoadingRef.current = true;
+
+    // Generate unique call ID for tracking
+    const callId = Math.random().toString(36).substr(2, 9);
+    console.log(`🎯 [RESEARCH REPORT MODAL] Starting loadData call: ${callId}`);
+
     try {
       setIsLoading(true);
       setError(null);
       
-      console.log('🔍 Loading data for businessYearId:', businessYearId);
+      console.log(`🔍 [${callId}] Loading data for businessYearId:`, businessYearId);
 
       // Load business profile with category FIRST (before checking cache)
       setLoadingMessage('Loading business profile...');
@@ -379,10 +653,23 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
         ]);
       }
 
+      console.log(`🎯 [${callId}] Data loading completed successfully`);
+      console.log(`🎯 [${callId}] Final data summary:`, {
+        hasBusinessProfile: !!businessProfile,
+        hasBusinessYearData: !!businessYearData,
+        activitiesCount: selectedActivities.length,
+        stepsCount: selectedSteps.length,
+        subcomponentsCount: selectedSubcomponents.length,
+        rolesCount: businessRoles.length,
+        hasCachedReport: !!cachedReport
+      });
+
     } catch (err) {
-      console.error('❌ Data loading error:', err);
+      console.error(`❌ [${callId}] Data loading error:`, err);
       setError('Failed to load data');
     } finally {
+      console.log(`🏁 [${callId}] loadData completed - resetting loading flags`);
+      isLoadingRef.current = false;
       setIsLoading(false);
     }
   };
@@ -417,7 +704,19 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
   };
 
   const generateReport = async () => {
+    console.log(`🎯 [RESEARCH REPORT MODAL] generateReport() called`);
+    console.log(`🎯 [RESEARCH REPORT MODAL] Pre-generation state:`, {
+      hasBusinessProfile: !!businessProfile,
+      selectedActivitiesCount: selectedActivities.length,
+      hasBusinessYearData: !!businessYearData,
+      hasCachedReport: !!cachedReport
+    });
+    
     if (!businessProfile || selectedActivities.length === 0) {
+      console.error(`❌ [RESEARCH REPORT MODAL] Missing required data:`, {
+        hasBusinessProfile: !!businessProfile,
+        selectedActivitiesCount: selectedActivities.length
+      });
       setError('No data available to generate report');
       return;
     }
@@ -695,210 +994,16 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
       setError('Failed to generate report. Please try again.');
     } finally {
       setIsLoading(false);
+      console.log(`🚀 [RESEARCH REPORT MODAL] setIsLoading(false) called - should show content now`);
+      console.log(`🚀 [RESEARCH REPORT MODAL] Final state check:`, {
+        isLoading: false,
+        hasError: !!error,
+        showPreview: showPreview,
+        hasGeneratedReport: !!generatedReport,
+        generatedReportPreview: generatedReport ? generatedReport.substring(0, 100) + '...' : 'EMPTY'
+      });
     }
   };
-
-  const regenerateAISection = async (subcomponentId: string) => {
-    try {
-      setLoadingMessage('Regenerating AI content...');
-      setIsLoading(true);
-
-      // Find the subcomponent
-      const subcomponent = selectedSubcomponents.find(sub => sub.id === subcomponentId);
-      if (!subcomponent) return;
-
-      const subData = subcomponent.rd_research_subcomponents || subcomponent;
-      
-      // Detect business type for appropriate content generation
-      const categoryName = businessProfile?.category?.name?.toLowerCase();
-      const isSoftwareReport = categoryName === 'software';
-
-      console.log('🤖 Calling AI for content regeneration:', {
-        componentName: subData.name,
-        category: categoryName,
-        isSoftwareReport
-      });
-
-      // Generate context-appropriate prompt for AI
-      const componentName = subData.name || subData.general_description || 'Subcomponent';
-      const description = subData.general_description || subData.description || '';
-      
-      const prompt = isSoftwareReport ? 
-        `Generate comprehensive IRS R&D tax credit documentation for "${componentName}" in a software development environment.
-
-Component Description: ${description}
-
-Development Team Roles: ${businessRoles.map(role => role.name).join(', ')}
-
-Please provide:
-1. Technical uncertainty documentation and challenges addressed
-2. Process of experimentation details (iterations, testing, alternatives)
-3. Qualified purpose demonstration (functionality, performance, reliability improvements)
-4. Technological nature evidence (computer science/engineering principles)
-5. Specific role assignments with time allocation estimates
-6. Documentation requirements for IRS audit defense
-
-Format the response with proper HTML headings (h4, h5) and lists (ul, li) for integration into a research report.` :
-        `Generate professional clinical practice guidelines for implementing "${componentName}" in a healthcare setting.
-
-Subcomponent Description: ${description}
-
-Available Staff Roles: ${businessRoles.map(role => role.name).join(', ')}
-
-Please provide:
-1. Step-by-step implementation guidelines with clear headings
-2. For each step, specify which staff roles should be involved
-3. Use professional medical/clinical language
-4. Include bullet points for role assignments under each step
-5. Quality assurance and documentation requirements
-
-Format the response with proper HTML headings (h4, h5) and lists (ul, li) for integration into a research report.`;
-
-      // Call AI service
-      const aiResponse = await AIService.getInstance().generateResearchContent(prompt, {
-        businessCategory: categoryName || 'healthcare',
-        componentName,
-        availableRoles: businessRoles
-      });
-
-      console.log('✅ AI response received, updating report');
-
-      // Update the HTML with AI-generated content
-      const updatedHTML = generatedReport.replace(
-        new RegExp(`<div class="best-practices-content">.*?</div>`, 's'),
-        `<div class="best-practices-content">${formatAIContent(aiResponse)}</div>`
-      );
-
-      setGeneratedReport(updatedHTML);
-
-      // Save updated report
-      const { data: existingReport } = await supabase
-        .from('rd_reports')
-        .select('id')
-        .eq('business_year_id', businessYearId)
-        .eq('type', 'RESEARCH_SUMMARY')
-        .single();
-      
-      if (existingReport) {
-        await supabase
-          .from('rd_reports')
-          .update({
-            generated_html: updatedHTML,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingReport.id);
-      }
-      
-    } catch (error) {
-      console.error('Failed to regenerate AI section:', error);
-      setError('Failed to regenerate content. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const editAIPrompt = (subcomponentId: string) => {
-    const subcomponent = selectedSubcomponents.find(sub => sub.id === subcomponentId);
-    if (!subcomponent) return;
-
-    // Detect business type for appropriate prompt generation
-    const categoryName = businessProfile?.category?.name?.toLowerCase();
-    const isSoftwareReport = categoryName === 'software';
-
-    const subData = subcomponent.rd_research_subcomponents || subcomponent;
-    setEditingSubcomponentId(subcomponentId);
-    
-    const prompt = isSoftwareReport ? 
-      `Generate comprehensive IRS R&D tax credit documentation for "${subData.name || 'this development component'}" in a software development environment.
-
-Component Description: ${subData.general_description || subData.description || ''}
-
-Development Team Roles: ${businessRoles.map(role => role.name).join(', ')}
-
-Please provide:
-1. Technical uncertainty documentation and challenges addressed
-2. Process of experimentation details (iterations, testing, alternatives)
-3. Qualified purpose demonstration (functionality, performance, reliability improvements)
-4. Technological nature evidence (computer science/engineering principles)
-5. Specific role assignments with time allocation estimates
-6. Documentation requirements for IRS audit defense` :
-      `Generate professional clinical practice guidelines for implementing "${subData.name || 'this subcomponent'}" in a healthcare setting.
-
-Subcomponent Description: ${subData.general_description || subData.description || ''}
-
-Available Staff Roles: ${businessRoles.map(role => role.name).join(', ')}
-
-Please provide:
-1. Step-by-step implementation guidelines with clear headings
-2. For each step, specify which staff roles should be involved
-3. Use professional medical/clinical language
-4. Format with proper markdown headings
-5. Include bullet points for role assignments under each step`;
-
-    setEditPrompt(prompt);
-    setShowEditModal(true);
-  };
-
-  const handleCustomPromptGeneration = async () => {
-    try {
-      setLoadingMessage('Generating content with custom prompt...');
-      setIsLoading(true);
-      setShowEditModal(false);
-
-      // Get category info for context
-      const categoryName = businessProfile?.category?.name?.toLowerCase();
-      const isSoftwareReport = categoryName === 'software';
-
-      console.log('🤖 Calling AI with custom prompt:', {
-        promptLength: editPrompt.length,
-        category: categoryName,
-        isSoftwareReport
-      });
-
-      // Call AI service with the custom prompt
-      const aiResponse = await AIService.getInstance().generateResearchContent(editPrompt, {
-        businessCategory: categoryName || 'healthcare',
-        componentName: editingSubcomponentId || 'Custom Content',
-        availableRoles: businessRoles
-      });
-
-      console.log('✅ AI response received for custom prompt, updating report');
-
-      // Update the HTML with AI-generated content
-      const updatedHTML = generatedReport.replace(
-        new RegExp(`<div class="best-practices-content">.*?</div>`, 's'),
-        `<div class="best-practices-content">${formatAIContent(aiResponse)}</div>`
-      );
-
-      setGeneratedReport(updatedHTML);
-
-      // Save updated report
-      const { data: existingReport } = await supabase
-        .from('rd_reports')
-        .select('id')
-        .eq('business_year_id', businessYearId)
-        .eq('type', 'RESEARCH_SUMMARY')
-        .single();
-      
-      if (existingReport) {
-        await supabase
-          .from('rd_reports')
-          .update({
-            generated_html: updatedHTML,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingReport.id);
-      }
-      
-    } catch (error) {
-      console.error('Failed to generate custom content:', error);
-      setError('Failed to generate content. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-
 
   const handlePrint = () => {
     const printWindow = window.open('', '_blank');
@@ -1948,6 +2053,17 @@ Please provide:
 
   if (!isOpen) return null;
 
+  // DEBUG: Log render state
+  console.log(`🖼️ [RESEARCH REPORT MODAL] Rendering with state:`, {
+    isOpen,
+    isLoading,
+    error: !!error,
+    showPreview,
+    hasGeneratedReport: !!generatedReport,
+    hasBusinessProfile: !!businessProfile,
+    activitiesCount: selectedActivities.length
+  });
+
   return (
     <div className="research-report-modal-overlay">
       <div className="research-report-modal">
@@ -2124,6 +2240,19 @@ Please provide:
               >
                 <ChevronLeft />
                 Back to Summary
+              </button>
+              <button 
+                onClick={regenerateAllAIEntries} 
+                className="action-button action-button-warning"
+                disabled={isLoading}
+                style={{
+                  backgroundColor: '#f59e0b',
+                  color: 'white',
+                  border: '1px solid #d97706'
+                }}
+              >
+                <FileText />
+                {isLoading ? 'Regenerating...' : 'Regenerate All AI Entries'}
               </button>
               <button onClick={handlePrint} className="action-button action-button-primary">
                 <Printer />

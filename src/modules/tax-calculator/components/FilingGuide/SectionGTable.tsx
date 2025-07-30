@@ -46,7 +46,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
         clientId
       });
       const rawQREData = await SectionGQREService.getQREDataForSectionG(selectedYear.id);
-      console.log('%c[SECTION G DEBUG] Raw QRE data:', 'background: #0f0; color: #000; font-weight: bold;', rawQREData);
+      // QRE data loaded
       
       // Group by activity
       const activitiesMap = new Map();
@@ -72,10 +72,8 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
       });
       
       const activitiesWithQRE = Array.from(activitiesMap.values());
-      console.log('%c[SECTION G DEBUG] Grouped activities:', 'background: #0f0; color: #000; font-weight: bold;', activitiesWithQRE);
       
       if (!activitiesWithQRE || activitiesWithQRE.length === 0) {
-        console.log('%c[SECTION G DEBUG] No activities with QRE found', 'background: #ff0; color: #000; font-weight: bold;');
         setRows([]);
         setLoading(false);
         return;
@@ -84,10 +82,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
       // Process each activity to build Section G rows
       const newRows = await Promise.all(
         activitiesWithQRE.map(async (activity, activityIndex) => {
-          console.log(`%c[SECTION G DEBUG] Processing activity ${activityIndex + 1}:`, 'background: #0f0; color: #000; font-weight: bold;', activity);
-          
-          // Debug employee data
-          console.log(`%c[SECTION G DEBUG] Activity ${activityIndex + 1} employees:`, 'background: #0f0; color: #000; font-weight: bold;', activity.employees);
+          // Process activity QRE data
           
           // Calculate QREs by type
           const directWages = activity.employees
@@ -97,13 +92,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
               const isSupervisor = e.role?.toLowerCase().includes('supervisor');
               const isAdmin = e.role?.toLowerCase().includes('admin');
               
-              console.log(`[SECTION G DEBUG] Employee ${e.name} (${e.role}):`, {
-                isOwner,
-                isResearchLeader,
-                isSupervisor,
-                isAdmin,
-                calculated_qre: e.calculated_qre
-              });
+              // Debug: Employee role classification (reduced logging)
               
               // Include Research Leaders and owners in Direct Research Wages
               if (isOwner || isResearchLeader) {
@@ -124,7 +113,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
               return sum + (e.calculated_qre || 0);
             }, 0) || 0;
           
-          console.log(`[SECTION G DEBUG] Activity ${activityIndex + 1} direct wages total:`, directWages);
+          // Activity direct wages calculated
           
           const supervisionWages = activity.employees
             ?.filter(e => e.role?.toLowerCase().includes('supervisor'))
@@ -138,13 +127,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
           const contractResearch = activity.contractors?.reduce((sum, c) => sum + (c.calculated_qre || 0), 0) || 0;
           const rentalLease = 0; // Manual entry
           
-          console.log(`[SECTION G DEBUG] Activity ${activityIndex + 1} totals:`, {
-            directWages,
-            supervisionWages,
-            supportWages,
-            supplies,
-            contractResearch
-          });
+          // Activity totals calculated
           
           // EIN/NAICS from business data
           const ein = businessData?.ein || '';
@@ -166,12 +149,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
             activity.supplies?.forEach(s => uniqueSubcomponentIds.add(s.subcomponent_id));
             const actualSubcomponentCount = uniqueSubcomponentIds.size;
             
-            console.log('[SECTION G DEBUG] Subcomponent count calculation:', {
-              employeeSubcomponents: activity.employees?.length || 0,
-              contractorSubcomponents: activity.contractors?.length || 0,
-              supplySubcomponents: activity.supplies?.length || 0,
-              uniqueSubcomponentCount: actualSubcomponentCount
-            });
+            // Subcomponent count calculated
             
             // Use the new Section G Line 49(f) specific method with correct field names
             const line49fContext = {
@@ -251,14 +229,14 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
       );
       
       setRows(newRows);
-      console.log('%c[SECTION G DEBUG] Final rows created:', 'background: #0f0; color: #000; font-weight: bold;', newRows);
+      // Section G rows generated
     } catch (err) {
       console.error('%c[SECTION G ERROR] Unexpected error:', 'background: #f00; color: #fff; font-weight: bold;', err);
     } finally {
       setLoading(false);
       setIsProcessing(false);
     }
-  }, [selectedYear?.id, businessData?.id, clientId, isProcessing]);
+  }, [selectedYear?.id, businessData?.id, clientId]);
 
   useEffect(() => {
     if (!selectedYear?.id || !businessData?.id) return;
@@ -377,9 +355,9 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
         });
       
       if (insertError) {
-        console.log('[SECTION G ERROR] Failed to save to rd_federal_credit:', insertError);
+        console.error('[SECTION G ERROR] Failed to save to rd_federal_credit:', insertError);
       } else {
-        console.log('[SECTION G DEBUG] Successfully saved to rd_federal_credit table');
+        // Data saved successfully
       }
     } catch (error) {
       console.error('[SECTION G ERROR] Unexpected error in saveToFederalCreditTable:', error);

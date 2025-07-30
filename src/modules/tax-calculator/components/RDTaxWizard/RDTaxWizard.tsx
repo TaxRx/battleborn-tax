@@ -113,25 +113,19 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
   const [availableBusinesses, setAvailableBusinesses] = useState<any[]>([]);
   const [showBusinessSelector, setShowBusinessSelector] = useState(false);
 
-  // CRITICAL: Use a key to force component remount when business changes
-  // This ensures complete isolation between different business files
-  const [componentKey, setComponentKey] = useState(0);
+  // Business change tracking for state management
   const lastBusinessIdRef = useRef<string>('');
   const businessSelectorRef = useRef<HTMLDivElement>(null);
 
-  // CRITICAL: Reset wizard state when businessId changes to prevent data leakage
+  // Reset wizard state when businessId changes, but less aggressively
   useEffect(() => {
-    console.log('🔄 Business ID changed, resetting wizard state:', { effectiveBusinessId });
+    console.log('🔄 Business ID changed, checking if reset needed:', { effectiveBusinessId });
     
     // Only reset if this is actually a different business (not initial load)
     if (lastBusinessIdRef.current && effectiveBusinessId !== lastBusinessIdRef.current) {
-      console.log('🔄 Different business detected, forcing complete component reset');
-      
-      // Force component remount by changing key - this unmounts and remounts all child components
-      setComponentKey(prev => prev + 1);
-    }
+      console.log('🔄 Different business detected, clearing wizard state (without component remount)');
     
-    // Reset wizard state to initial state
+      // Reset wizard state but DON'T force component remount
     setWizardState({
       currentStep: startStep,
       business: null,
@@ -144,14 +138,15 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
       isComplete: false
     });
     
-    // Clear any error states
+      // Clear error states
     setError(null);
     setLoading(false);
+    }
     
     // Update ref for next comparison
     lastBusinessIdRef.current = effectiveBusinessId || '';
     
-    console.log('✅ Wizard state reset for new business');
+    console.log('✅ Wizard state handled for business change');
   }, [effectiveBusinessId, startStep]);
 
   // Get current user ID on component mount
@@ -398,7 +393,6 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
       case 0:
         return (
           <BusinessSetupStep
-            key={componentKey} // Add key to force remount
             business={wizardState.business}
             selectedYear={wizardState.selectedYear}
             onUpdate={(updates) => updateWizardState(updates)}
@@ -409,7 +403,6 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
       case 1:
         return (
           <ResearchExplorerStep
-            key={componentKey} // Add key to force remount
             selectedActivities={wizardState.selectedActivities}
             onUpdate={(updates) => updateWizardState(updates)}
             onNext={handleNext}
@@ -424,7 +417,6 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
         console.log('RDTaxWizard: businessYearId:', wizardState.selectedYear?.id);
         return (
           <ResearchDesignStep
-            key={componentKey} // Add key to force remount
             selectedActivities={wizardState.selectedActivities}
             businessYearId={wizardState.selectedYear?.id || ''}
             businessId={wizardState.business?.id}
@@ -437,7 +429,6 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
       case 3:
         return (
           <EmployeeSetupStep
-            key={componentKey} // Add key to force remount
             employees={wizardState.employees}
             onUpdate={(updates) => updateWizardState(updates)}
             onNext={handleNext}
@@ -449,7 +440,6 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
       case 4:
         return (
           <CalculationStep
-            key={componentKey} // Add key to force remount
             wizardState={wizardState}
             onUpdate={(updates) => updateWizardState(updates)}
             onNext={handleNext}
@@ -459,7 +449,6 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
       case 5:
         return (
           <ReportsStep
-            key={componentKey} // Add key to force remount
             wizardState={wizardState}
             onComplete={onClose}
             onPrevious={handlePrevious}
@@ -528,10 +517,10 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
                             >
                               <div className="flex items-center justify-between">
                                 <div>
-                                  <div className="font-medium">{business.name}</div>
-                                  {business.contact_info?.state && (
-                                    <div className="text-xs text-gray-500">{business.contact_info.state}</div>
-                                  )}
+                              <div className="font-medium">{business.name}</div>
+                              {business.contact_info?.state && (
+                                <div className="text-xs text-gray-500">{business.contact_info.state}</div>
+                              )}
                                 </div>
                                 {business.id === wizardState.business?.id && (
                                   <div className="text-blue-600">

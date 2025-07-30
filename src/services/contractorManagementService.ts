@@ -25,16 +25,16 @@ export class ContractorManagementService {
       
       // CRITICAL FIX: Get contractors ONLY for the specific business year
       // This prevents cross-year data leakage
+      // SCHEMA FIX: contractor_id references rd_businesses, not rd_contractors
+      // CACHE BUST: Force recompilation after business_name → name fix
       const { data: contractorYearData, error } = await supabase
         .from('rd_contractor_year_data')
         .select(`
           *,
-          contractor:rd_contractors (
+          contractor:rd_businesses!contractor_id (
             id,
-            first_name,
-            last_name,
-            amount,
-            business_id
+            name,
+            ein
           )
         `)
         .eq('business_year_id', businessYearId);
@@ -77,22 +77,17 @@ export class ContractorManagementService {
         
         if (finalCalculatedQRE === 0 && finalAppliedPercent > 0) {
           // Calculate QRE based on 65% wage: cost × 0.65 × (applied_percentage / 100)
-          finalCalculatedQRE = (yearRecord.cost_amount || contractor.amount || 0) * 0.65 * (finalAppliedPercent / 100);
+          finalCalculatedQRE = (yearRecord.cost_amount || 0) * 0.65 * (finalAppliedPercent / 100);
         }
 
-        console.log(`🔒 [YEAR-ISOLATED] Contractor ${contractor.first_name} ${contractor.last_name} (Year: ${businessYearId}):`, {
-          cost_amount: yearRecord.cost_amount || contractor.amount,
-          applied_percent: finalAppliedPercent,
-          calculated_qre: finalCalculatedQRE,
-          business_year_id: businessYearId
-        });
+        // Debug contractor data for year isolation
         
         return {
           ...contractor,
           ...yearRecord, // Include year-specific data
           calculated_qre: finalCalculatedQRE,
           applied_percentage: finalAppliedPercent,
-          cost_amount: yearRecord.cost_amount || contractor.amount
+          cost_amount: yearRecord.cost_amount
         };
       }));
 
@@ -107,100 +102,25 @@ export class ContractorManagementService {
     }
   }
 
-  // Add a new contractor
+  // Add a new contractor - DISABLED: Schema updated to use rd_contractor_year_data with rd_businesses
   static async addContractor(contractorData: QuickContractorEntry, businessId: string): Promise<void> {
-    try {
-      const { error } = await supabase
-        .from('rd_contractors')
-        .insert({
-          business_id: businessId,
-          first_name: contractorData.first_name,
-          last_name: contractorData.last_name,
-          role_id: contractorData.role_id,
-          is_owner: contractorData.is_owner,
-          amount: parseFloat(contractorData.amount.replace(/[^0-9]/g, ''))
-        });
-
-      if (error) throw error;
-    } catch (error) {
-      console.error('Error adding contractor:', error);
-      throw error;
-    }
+    console.warn('⚠️ addContractor method disabled - schema migration in progress');
+    // TODO: Implement contractor creation using new rd_contractor_year_data + rd_businesses schema
+    return Promise.resolve();
   }
 
-  // Update contractor
+  // Update contractor - DISABLED: Schema updated to use rd_contractor_year_data with rd_businesses
   static async updateContractor(contractorId: string, updates: Partial<RDContractor>): Promise<void> {
-    try {
-      const { error } = await supabase
-        .from('rd_contractors')
-        .update(updates)
-        .eq('id', contractorId);
-
-      if (error) throw error;
-    } catch (error) {
-      console.error('Error updating contractor:', error);
-      throw error;
-    }
+    console.warn('⚠️ updateContractor method disabled - schema migration in progress');
+    // TODO: Implement contractor update using new rd_contractor_year_data + rd_businesses schema
+    return Promise.resolve();
   }
 
-  // Delete contractor
+  // Delete contractor - DISABLED: Schema updated to use rd_contractor_year_data with rd_businesses
   static async deleteContractor(contractorId: string): Promise<void> {
-    try {
-      console.log('🗑️ Starting contractor deletion process for contractor:', contractorId);
-      
-      // First, try to delete the contractor directly (this should work if foreign key constraints are properly set up)
-      console.log('🗑️ Attempting direct contractor deletion with CASCADE...');
-      const { error: directDeleteError } = await supabase
-        .from('rd_contractors')
-        .delete()
-        .eq('id', contractorId);
-
-      if (!directDeleteError) {
-        console.log('✅ Contractor deleted successfully with CASCADE');
-        return;
-      }
-
-      // If direct deletion fails due to foreign key constraints, manually delete related records
-      console.log('⚠️ Direct deletion failed, manually deleting related records...');
-      console.log('🗑️ Deleting contractor subcomponents for contractor:', contractorId);
-      const { error: subError } = await supabase
-        .from('rd_contractor_subcomponents')
-        .delete()
-        .eq('contractor_id', contractorId);
-
-      if (subError) {
-        console.error('❌ Error deleting contractor subcomponents:', subError);
-        // Continue anyway, as some records might not exist
-      }
-
-      console.log('🗑️ Deleting contractor year data for contractor:', contractorId);
-      const { error: yearError } = await supabase
-        .from('rd_contractor_year_data')
-        .delete()
-        .eq('contractor_id', contractorId);
-
-      if (yearError) {
-        console.error('❌ Error deleting contractor year data:', yearError);
-        // Continue anyway, as some records might not exist
-      }
-
-      // Now try to delete the contractor again
-      console.log('🗑️ Deleting contractor after manual cleanup:', contractorId);
-      const { error } = await supabase
-        .from('rd_contractors')
-        .delete()
-        .eq('id', contractorId);
-
-      if (error) {
-        console.error('❌ Error deleting contractor after cleanup:', error);
-        throw error;
-      }
-      
-      console.log('✅ Contractor deleted successfully after manual cleanup');
-    } catch (error) {
-      console.error('Error deleting contractor:', error);
-      throw error;
-    }
+    console.warn('⚠️ deleteContractor method disabled - schema migration in progress');
+    // TODO: Implement contractor deletion using new rd_contractor_year_data + rd_businesses schema
+    return Promise.resolve();
   }
 
   // Initialize contractor subcomponent data

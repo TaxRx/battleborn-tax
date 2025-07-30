@@ -313,7 +313,6 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       // CRITICAL FIX: Check if QRE values are locked first
       const lockedValues = lockedQREValues[selectedActivityYearId];
       if (lockedValues && lockedValues.qre_locked) {
-        console.log(`🔒 Using locked employee QRE for summary: ${lockedValues.employee_qre}`);
         setEmployeeWagesQRE(lockedValues.employee_qre);
         return;
       }
@@ -1393,13 +1392,12 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       return null;
     }
 
-    console.log(`📊 CalculationStep - Calculating summary for selected year ${selectedYearData.year} (ID: ${selectedActivityYearId})`);
-
+    // Calculate summary for selected year
+    
     // CRITICAL FIX: Check if QRE values are locked for the SELECTED year
     const lockedValues = lockedQREValues[selectedYearData.id];
     if (lockedValues && lockedValues.qre_locked) {
       // Use locked values as single source of truth
-      console.log(`🔒 Using LOCKED QRE for summary cards (year ${selectedYearData.year}):`, lockedValues);
       return {
         supply_costs: lockedValues.supply_qre,
         employee_costs: lockedValues.employee_qre,

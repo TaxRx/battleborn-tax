@@ -58,6 +58,11 @@ interface SupplyData {
   }>;
 }
 
+// Apply 80% threshold rule (matches calculations logic)
+const applyEightyPercentThreshold = (appliedPercentage: number): number => {
+  return appliedPercentage >= 80 ? 100 : appliedPercentage;
+};
+
 // Color palette for subcomponents (matching Filing Guide colors)
 const SUBCOMPONENT_COLORS = [
   '#3B82F6', // Blue
@@ -417,7 +422,10 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
   };
 
   const getTotalEmployeeQRE = () => {
-    return employees.reduce((sum, emp) => sum + (emp.total_qre * (emp.applied_percentage / 100)), 0);
+    return employees.reduce((sum, emp) => {
+      const qreAppliedPercentage = applyEightyPercentThreshold(emp.applied_percentage);
+      return sum + (emp.total_qre * (qreAppliedPercentage / 100));
+    }, 0);
   };
 
   const getTotalContractorQRE = () => {
@@ -742,7 +750,7 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
                                 </div>
                             </div>
                             <div class="applied-amount">
-                                <div class="applied-value">${formatCurrency(emp.total_qre * (emp.applied_percentage / 100))}</div>
+                                <div class="applied-value">${formatCurrency(emp.total_qre * (applyEightyPercentThreshold(emp.applied_percentage) / 100))}</div>
                                 <div class="applied-label">Applied Amount</div>
                             </div>
                         </div>
@@ -1085,7 +1093,7 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
                               </div>
                               <div className="text-right ml-4">
                                 <div className="text-xl font-bold text-blue-600">
-                                  {formatCurrency(emp.total_qre * (emp.applied_percentage / 100))}
+                                  {formatCurrency(emp.total_qre * (applyEightyPercentThreshold(emp.applied_percentage) / 100))}
                                 </div>
                                 <div className="text-sm text-gray-600">
                                   Applied Amount
