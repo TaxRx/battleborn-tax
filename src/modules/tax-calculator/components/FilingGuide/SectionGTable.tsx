@@ -268,52 +268,84 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
       console.log('[SECTION G DEBUG] Attempting to save with business_year_id:', data.business_year_id);
       console.log('[SECTION G DEBUG] clientId:', clientId);
       
-      // First, check if the business_year_id exists in the database
+      // CRITICAL FIX: First validate that business_year_id exists in rd_business_years table
       const { data: businessYearCheck, error: checkError } = await supabase
         .from('rd_business_years')
-        .select('id, year')
+        .select('id, year, business_id')
         .eq('id', data.business_year_id)
         .single();
       
-      if (checkError) {
-        console.log('[SECTION G ERROR] Failed to check business_year_id:', checkError);
-        console.log('[SECTION G DEBUG] Business year ID being used:', data.business_year_id);
+      let validBusinessYearId = data.business_year_id;
+      
+      if (checkError || !businessYearCheck) {
+        console.error('[SECTION G ERROR] Business year ID does not exist:', data.business_year_id);
+        console.log('[SECTION G DEBUG] Error details:', checkError);
         
-        // If the business_year_id doesn't exist, try to find a valid business year for this client
-        console.log('[SECTION G DEBUG] Attempting to find valid business year for client:', clientId);
+        // If the business_year_id doesn't exist, try to find/create a valid business year
+        console.log('[SECTION G DEBUG] Attempting to find/create valid business year for client:', clientId);
         
-        // Get the business_id for this client first
-        const { data: businessData, error: businessError } = await supabase
+        // Get the business for this client
+        const { data: clientBusiness, error: businessError } = await supabase
           .from('rd_businesses')
-          .select('id')
+          .select('id, name')
           .eq('client_id', clientId)
           .single();
         
-        if (businessError) {
-          console.log('[SECTION G ERROR] Failed to find business for client:', businessError);
+        if (businessError || !clientBusiness) {
+          console.error('[SECTION G ERROR] Failed to find business for client:', businessError);
+          alert('❌ Cannot save Section G data: No business found for this client. Please ensure the business is properly set up.');
           return;
         }
         
-        // Now get the business year for this business
-        const { data: validBusinessYear, error: yearError } = await supabase
+        console.log('[SECTION G DEBUG] Found business for client:', clientBusiness);
+        
+        // Try to find any existing business year for this business
+        const { data: existingBusinessYears, error: yearError } = await supabase
           .from('rd_business_years')
           .select('id, year')
-          .eq('business_id', businessData.id)
-          .order('year', { ascending: false })
-          .limit(1)
-          .single();
+          .eq('business_id', clientBusiness.id)
+          .order('year', { ascending: false });
         
         if (yearError) {
-          console.log('[SECTION G ERROR] Failed to find valid business year:', yearError);
+          console.error('[SECTION G ERROR] Failed to fetch business years:', yearError);
+          alert('❌ Cannot save Section G data: Failed to fetch business years. Please try again.');
           return;
         }
         
-        // Use the valid business year ID
-        data.business_year_id = validBusinessYear.id;
-        console.log('[SECTION G DEBUG] Using valid business year ID:', validBusinessYear.id);
+        if (existingBusinessYears && existingBusinessYears.length > 0) {
+          // Use the most recent business year
+          validBusinessYearId = existingBusinessYears[0].id;
+          console.log('[SECTION G DEBUG] Using existing business year ID:', validBusinessYearId, 'for year:', existingBusinessYears[0].year);
+        } else {
+          // No business years exist - create one for the current year
+          const currentYear = new Date().getFullYear();
+          console.log('[SECTION G DEBUG] No business years found, creating one for year:', currentYear);
+          
+          const { data: newBusinessYear, error: createError } = await supabase
+            .from('rd_business_years')
+            .insert({
+              business_id: clientBusiness.id,
+              year: currentYear,
+              gross_receipts: 0,
+              total_qre: 0
+            })
+            .select()
+            .single();
+          
+          if (createError || !newBusinessYear) {
+            console.error('[SECTION G ERROR] Failed to create business year:', createError);
+            alert('❌ Cannot save Section G data: Failed to create business year. Please try again.');
+            return;
+          }
+          
+          validBusinessYearId = newBusinessYear.id;
+          console.log('[SECTION G DEBUG] Created new business year ID:', validBusinessYearId);
+        }
+      } else {
+        console.log('[SECTION G DEBUG] Business year ID is valid:', businessYearCheck);
       }
       
-      // Validate research_activity_id exists before saving
+      // Validate research_activity_id if provided
       let validResearchActivityId = data.research_activity_id;
       if (data.research_activity_id) {
         const { data: researchActivityCheck, error: researchActivityError } = await supabase
@@ -329,38 +361,67 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
         }
       }
       
-      // Now save to rd_federal_credit table
-      const { error: insertError } = await supabase
+      // Check if a record already exists and update instead of insert to avoid conflicts
+      const { data: existingRecord, error: existingError } = await supabase
         .from('rd_federal_credit')
-        .insert({
-          business_year_id: data.business_year_id,
-          client_id: data.client_id,
-          research_activity_id: validResearchActivityId,
-          research_activity_name: data.research_activity_name,
-          direct_research_wages: data.direct_research_wages,
-          supplies_expenses: data.supplies_expenses,
-          contractor_expenses: data.contractor_expenses,
-          total_qre: data.total_qre,
-          subcomponent_count: data.subcomponent_count,
-          subcomponent_groups: data.subcomponent_groups,
-          applied_percent: data.applied_percent,
-          line_49f_description: data.line_49f_description,
-          ai_generation_timestamp: data.ai_generation_timestamp,
-          ai_prompt_used: data.ai_prompt_used,
-          industry_type: data.industry_type,
-          focus_area: data.focus_area,
-          general_description: data.general_description,
-          data_snapshot: data.data_snapshot,
-          is_latest: true
-        });
+        .select('id')
+        .eq('business_year_id', validBusinessYearId)
+        .eq('client_id', data.client_id)
+        .eq('research_activity_name', data.research_activity_name)
+        .single();
       
-      if (insertError) {
-        console.error('[SECTION G ERROR] Failed to save to rd_federal_credit:', insertError);
+      const recordData = {
+        business_year_id: validBusinessYearId,
+        client_id: data.client_id,
+        research_activity_id: validResearchActivityId,
+        research_activity_name: data.research_activity_name,
+        direct_research_wages: data.direct_research_wages,
+        supplies_expenses: data.supplies_expenses,
+        contractor_expenses: data.contractor_expenses,
+        total_qre: data.total_qre,
+        subcomponent_count: data.subcomponent_count,
+        subcomponent_groups: data.subcomponent_groups,
+        applied_percent: data.applied_percent,
+        line_49f_description: data.line_49f_description,
+        ai_generation_timestamp: data.ai_generation_timestamp,
+        ai_prompt_used: data.ai_prompt_used,
+        industry_type: data.industry_type,
+        focus_area: data.focus_area,
+        general_description: data.general_description,
+        data_snapshot: data.data_snapshot,
+        is_latest: true
+      };
+      
+      if (existingRecord && !existingError) {
+        // Update existing record
+        const { error: updateError } = await supabase
+          .from('rd_federal_credit')
+          .update(recordData)
+          .eq('id', existingRecord.id);
+        
+        if (updateError) {
+          console.error('[SECTION G ERROR] Failed to update rd_federal_credit:', updateError);
+          alert('❌ Failed to update Section G data. Please try again.');
+        } else {
+          console.log('[SECTION G SUCCESS] Updated existing rd_federal_credit record');
+        }
       } else {
-        // Data saved successfully
+        // Insert new record
+        const { error: insertError } = await supabase
+          .from('rd_federal_credit')
+          .insert(recordData);
+        
+        if (insertError) {
+          console.error('[SECTION G ERROR] Failed to insert to rd_federal_credit:', insertError);
+          alert('❌ Failed to save Section G data. Please try again.');
+        } else {
+          console.log('[SECTION G SUCCESS] Inserted new rd_federal_credit record');
+        }
       }
+      
     } catch (error) {
       console.error('[SECTION G ERROR] Unexpected error in saveToFederalCreditTable:', error);
+      alert('❌ Unexpected error saving Section G data. Please try again.');
     }
   };
 
