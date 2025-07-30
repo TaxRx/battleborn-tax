@@ -265,6 +265,17 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
     data_snapshot: any;
   }): Promise<void> => {
     try {
+      console.log('🔍 [SECTION G SAVE] Starting save operation...');
+      console.log('🔍 [SECTION G SAVE] Data to save:', {
+        business_year_id: data.business_year_id,
+        client_id: data.client_id,
+        research_activity_id: data.research_activity_id,
+        research_activity_name: data.research_activity_name,
+        line_49f_description_length: data.line_49f_description?.length || 0,
+        has_ai_description: !!data.line_49f_description,
+        total_qre: data.total_qre
+      });
+      
       console.log('[SECTION G DEBUG] Attempting to save with business_year_id:', data.business_year_id);
       console.log('[SECTION G DEBUG] clientId:', clientId);
       
@@ -278,7 +289,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
       let validBusinessYearId = data.business_year_id;
       
       if (checkError || !businessYearCheck) {
-        console.error('[SECTION G ERROR] Business year ID does not exist:', data.business_year_id);
+        console.error('❌ [SECTION G SAVE] Business year ID does not exist:', data.business_year_id);
         console.log('[SECTION G DEBUG] Error details:', checkError);
         
         // If the business_year_id doesn't exist, try to find/create a valid business year
@@ -292,12 +303,12 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
           .single();
         
         if (businessError || !clientBusiness) {
-          console.error('[SECTION G ERROR] Failed to find business for client:', businessError);
+          console.error('❌ [SECTION G SAVE] Failed to find business for client:', businessError);
           alert('❌ Cannot save Section G data: No business found for this client. Please ensure the business is properly set up.');
           return;
         }
         
-        console.log('[SECTION G DEBUG] Found business for client:', clientBusiness);
+        console.log('✅ [SECTION G SAVE] Found business for client:', clientBusiness);
         
         // Try to find any existing business year for this business
         const { data: existingBusinessYears, error: yearError } = await supabase
@@ -307,7 +318,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
           .order('year', { ascending: false });
         
         if (yearError) {
-          console.error('[SECTION G ERROR] Failed to fetch business years:', yearError);
+          console.error('❌ [SECTION G SAVE] Failed to fetch business years:', yearError);
           alert('❌ Cannot save Section G data: Failed to fetch business years. Please try again.');
           return;
         }
@@ -315,11 +326,11 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
         if (existingBusinessYears && existingBusinessYears.length > 0) {
           // Use the most recent business year
           validBusinessYearId = existingBusinessYears[0].id;
-          console.log('[SECTION G DEBUG] Using existing business year ID:', validBusinessYearId, 'for year:', existingBusinessYears[0].year);
+          console.log('✅ [SECTION G SAVE] Using existing business year ID:', validBusinessYearId, 'for year:', existingBusinessYears[0].year);
         } else {
           // No business years exist - create one for the current year
           const currentYear = new Date().getFullYear();
-          console.log('[SECTION G DEBUG] No business years found, creating one for year:', currentYear);
+          console.log('⚠️ [SECTION G SAVE] No business years found, creating one for year:', currentYear);
           
           const { data: newBusinessYear, error: createError } = await supabase
             .from('rd_business_years')
@@ -333,16 +344,16 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
             .single();
           
           if (createError || !newBusinessYear) {
-            console.error('[SECTION G ERROR] Failed to create business year:', createError);
+            console.error('❌ [SECTION G SAVE] Failed to create business year:', createError);
             alert('❌ Cannot save Section G data: Failed to create business year. Please try again.');
             return;
           }
           
           validBusinessYearId = newBusinessYear.id;
-          console.log('[SECTION G DEBUG] Created new business year ID:', validBusinessYearId);
+          console.log('✅ [SECTION G SAVE] Created new business year ID:', validBusinessYearId);
         }
       } else {
-        console.log('[SECTION G DEBUG] Business year ID is valid:', businessYearCheck);
+        console.log('✅ [SECTION G SAVE] Business year ID is valid:', businessYearCheck);
       }
       
       // Validate research_activity_id if provided
@@ -355,9 +366,11 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
           .single();
         
         if (researchActivityError || !researchActivityCheck) {
-          console.log('[SECTION G WARNING] research_activity_id does not exist:', data.research_activity_id);
+          console.log('⚠️ [SECTION G SAVE] research_activity_id does not exist:', data.research_activity_id);
           console.log('[SECTION G WARNING] Saving without research_activity_id reference');
           validResearchActivityId = null; // Set to null to avoid foreign key violation
+        } else {
+          console.log('✅ [SECTION G SAVE] Research activity ID is valid');
         }
       }
       
@@ -369,6 +382,12 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
         .eq('client_id', data.client_id)
         .eq('research_activity_name', data.research_activity_name)
         .single();
+      
+      console.log('🔍 [SECTION G SAVE] Checking for existing record:', {
+        found: !!existingRecord,
+        error: !!existingError,
+        existingId: existingRecord?.id
+      });
       
       const recordData = {
         business_year_id: validBusinessYearId,
@@ -392,35 +411,46 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
         is_latest: true
       };
       
+      console.log('📝 [SECTION G SAVE] Record data prepared:', {
+        hasDescription: !!recordData.line_49f_description,
+        descriptionLength: recordData.line_49f_description?.length || 0,
+        totalQre: recordData.total_qre,
+        activityName: recordData.research_activity_name
+      });
+      
       if (existingRecord && !existingError) {
         // Update existing record
+        console.log('🔄 [SECTION G SAVE] Updating existing record...');
         const { error: updateError } = await supabase
           .from('rd_federal_credit')
           .update(recordData)
           .eq('id', existingRecord.id);
         
         if (updateError) {
-          console.error('[SECTION G ERROR] Failed to update rd_federal_credit:', updateError);
+          console.error('❌ [SECTION G SAVE] Failed to update rd_federal_credit:', updateError);
           alert('❌ Failed to update Section G data. Please try again.');
         } else {
-          console.log('[SECTION G SUCCESS] Updated existing rd_federal_credit record');
+          console.log('✅ [SECTION G SAVE] Updated existing rd_federal_credit record successfully');
+          alert('✅ Section G data updated successfully!');
         }
       } else {
         // Insert new record
+        console.log('➕ [SECTION G SAVE] Inserting new record...');
         const { error: insertError } = await supabase
           .from('rd_federal_credit')
           .insert(recordData);
         
         if (insertError) {
-          console.error('[SECTION G ERROR] Failed to insert to rd_federal_credit:', insertError);
+          console.error('❌ [SECTION G SAVE] Failed to insert to rd_federal_credit:', insertError);
           alert('❌ Failed to save Section G data. Please try again.');
         } else {
-          console.log('[SECTION G SUCCESS] Inserted new rd_federal_credit record');
+          console.log('✅ [SECTION G SAVE] Inserted new rd_federal_credit record successfully');
+          alert('✅ Section G data saved successfully!');
         }
       }
       
     } catch (error) {
-      console.error('[SECTION G ERROR] Unexpected error in saveToFederalCreditTable:', error);
+      console.error('❌ [SECTION G SAVE] Unexpected error in saveToFederalCreditTable:', error);
       alert('❌ Unexpected error saving Section G data. Please try again.');
     }
   };

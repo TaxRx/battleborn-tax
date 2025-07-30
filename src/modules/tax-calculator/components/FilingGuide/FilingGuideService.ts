@@ -12,15 +12,32 @@ interface FilingGuideExportData {
 export class FilingGuideService {
   static async exportToPDF(data: FilingGuideExportData): Promise<void> {
     try {
+      console.log('🔍 [PDF EXPORT] Starting PDF generation...');
+      console.log('🔍 [PDF EXPORT] Data received:', { 
+        hasBusinessData: !!data.businessData,
+        hasSelectedYear: !!data.selectedYear,
+        hasCalculations: !!data.calculations,
+        fileName: data.fileName
+      });
+
       // Find the existing FilingGuideDocument in the DOM
       const existingDocument = document.querySelector('.filing-guide-preview');
       
       if (!existingDocument) {
+        console.error('❌ [PDF EXPORT] Filing guide content not found');
         throw new Error('Filing guide content not found. Please ensure the filing guide is open.');
       }
 
+      console.log('✅ [PDF EXPORT] Found filing guide content:', {
+        tagName: existingDocument.tagName,
+        className: existingDocument.className,
+        hasContent: !!existingDocument.innerHTML,
+        contentLength: existingDocument.innerHTML.length
+      });
+
       // Import html2pdf dynamically
       const html2pdf = (await import('html2pdf.js')).default;
+      console.log('✅ [PDF EXPORT] html2pdf loaded');
 
       // Create a professional wrapper for the PDF
       const container = document.createElement('div');
@@ -28,20 +45,34 @@ export class FilingGuideService {
       
       // Add professional styling first
       this.addProfessionalPDFStyles(container);
+      console.log('✅ [PDF EXPORT] Added PDF styles');
       
-      // Create the complete PDF content
+      // Create the complete PDF content with better error handling
       const pdfContent = this.createProfessionalPDFContent(data, existingDocument as HTMLElement);
       container.innerHTML = pdfContent;
       
-      // Add to DOM temporarily (hidden)
+      console.log('✅ [PDF EXPORT] Generated PDF content:', {
+        contentLength: pdfContent.length,
+        hasHeader: pdfContent.includes('pdf-header'),
+        hasContent: pdfContent.includes('pdf-content'),
+        hasFooter: pdfContent.includes('pdf-footer')
+      });
+      
+      // Add to DOM temporarily (but visible for debugging)
       container.style.position = 'fixed';
       container.style.left = '-9999px';
-      container.style.top = '-9999px';
+      container.style.top = '0px'; // Changed from -9999px to 0px for debugging
       container.style.width = '8.5in';
       container.style.background = 'white';
+      container.style.zIndex = '9999';
       document.body.appendChild(container);
       
-      // Professional PDF generation options
+      console.log('✅ [PDF EXPORT] Added container to DOM');
+
+      // Wait a moment for styles to apply
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Professional PDF generation options with debugging
       const pdfOptions = {
         margin: [0.75, 0.5, 0.75, 0.5], // top, right, bottom, left in inches
         filename: data.fileName,
@@ -55,11 +86,23 @@ export class FilingGuideService {
           letterRendering: true,
           allowTaint: false,
           backgroundColor: '#ffffff',
-          logging: false,
+          logging: true, // Enable logging for debugging
           width: 816, // 8.5 inches at 96 DPI
           height: 1056, // 11 inches at 96 DPI
           scrollX: 0,
-          scrollY: 0
+          scrollY: 0,
+          onclone: (clonedDoc: Document) => {
+            console.log('🔍 [PDF EXPORT] html2canvas cloned document');
+            const clonedContainer = clonedDoc.querySelector('.filing-guide-pdf-export');
+            if (clonedContainer) {
+              console.log('✅ [PDF EXPORT] Found cloned container:', {
+                hasContent: !!clonedContainer.innerHTML,
+                contentLength: clonedContainer.innerHTML.length
+              });
+            } else {
+              console.error('❌ [PDF EXPORT] Cloned container not found');
+            }
+          }
         },
         jsPDF: { 
           unit: 'in', 
@@ -76,20 +119,23 @@ export class FilingGuideService {
         }
       };
       
+      console.log('🔍 [PDF EXPORT] Starting PDF generation with options:', pdfOptions);
+      
       // Generate PDF with enhanced error handling
       try {
         await html2pdf().from(container).set(pdfOptions).save();
-        console.log('✅ PDF generated successfully:', data.fileName);
+        console.log('✅ [PDF EXPORT] PDF generated successfully:', data.fileName);
       } catch (pdfError) {
-        console.error('PDF generation error:', pdfError);
+        console.error('❌ [PDF EXPORT] PDF generation error:', pdfError);
         throw new Error(`PDF generation failed: ${pdfError.message}`);
       }
       
       // Clean up
       document.body.removeChild(container);
+      console.log('✅ [PDF EXPORT] Cleaned up container');
       
     } catch (error) {
-      console.error('Error generating PDF:', error);
+      console.error('❌ [PDF EXPORT] Error generating PDF:', error);
       alert(`❌ Failed to generate PDF: ${error.message}\n\nPlease try again or contact support if the issue persists.`);
       throw error;
     }

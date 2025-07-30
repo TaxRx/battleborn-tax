@@ -2426,36 +2426,15 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         }
       }
 
-      // STEP 8: Copy Employee Year Data  
-      const { data: sourceEmployeeYearData, error: empYearError } = await supabase
-        .from('rd_employee_year_data')
-        .select('*')
-        .eq('business_year_id', sourceBusinessYearId);
-
-      if (empYearError) {
-        console.error('Error fetching source employee year data:', empYearError);
-      } else if (sourceEmployeeYearData && sourceEmployeeYearData.length > 0) {
-        console.log(`👤 Copying ${sourceEmployeeYearData.length} employee year records...`);
-        
-        for (const empYear of sourceEmployeeYearData) {
-          try {
-            await supabase
-              .from('rd_employee_year_data')
-              .insert({
-                employee_id: empYear.employee_id,
-                business_year_id: selectedBusinessYearId,
-                calculated_qre: empYear.calculated_qre,
-                applied_percent: empYear.applied_percent
-              });
-            console.log(`✅ Copied employee year data for employee ${empYear.employee_id}`);
-          } catch (error) {
-            console.error(`❌ Error copying employee year data:`, error);
-          }
-        }
-      }
+      // STEP 8: Employee Year Data - REMOVED (Inappropriate to copy year-specific employee data)
+      // Employee year data contains annual wages and year-specific calculations that should NOT be copied between years.
+      // Only employee allocations (which activities/subcomponents they work on) should be copied, which we already did in STEP 5.
+      console.log('⚠️  Skipping employee year data copy - this data is year-specific and should not be copied');
+      console.log('✅ Employee allocations were already copied in STEP 5 (which activities/subcomponents employees work on)');
 
       console.log('🎉 COMPREHENSIVE DATA COPY COMPLETED!');
       console.log('📊 Successfully copied all research data, activities, steps, subcomponents, employee allocations, contractors, and supplies');
+      console.log('💡 Note: Employee year data (wages, etc.) was intentionally NOT copied as it should be year-specific');
       
       // Reload all data for the current year
       await Promise.all([
