@@ -174,35 +174,9 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
               description = `The company evaluated ${line49fContext.subcomponent_count} ${line49fContext.subcomponent_groups} to resolve technical uncertainty in ${line49fContext.research_activity_name}. Experimental testing was conducted using systematic research methodologies within the ${line49fContext.industry} industry. ${line49fContext.guideline_notes || 'Research activities were performed in accordance with established protocols and regulatory requirements.'}`;
             }
             
-            // Save to rd_federal_credit table (validate research_activity_id first)
-            await saveToFederalCreditTable({
-              business_year_id: selectedYear.id,
-              client_id: clientId,
-              research_activity_id: activity.activity_id, // This will be validated in saveToFederalCreditTable
-              research_activity_name: activity.activity_title,
-              direct_research_wages: activity.direct_research_wages || 0,
-              supplies_expenses: activity.supplies_expenses || 0,
-              contractor_expenses: activity.contractor_expenses || 0,
-              total_qre: (activity.direct_research_wages || 0) + (activity.supplies_expenses || 0) + (activity.contractor_expenses || 0),
-              subcomponent_count: actualSubcomponentCount,
-              subcomponent_groups: line49fContext.subcomponent_groups,
-              applied_percent: line49fContext.shrinkback_percent,
-              line_49f_description: description,
-              ai_generation_timestamp: new Date().toISOString(),
-              ai_prompt_used: JSON.stringify(line49fContext),
-              industry_type: businessData?.industry,
-              focus_area: businessData?.focus,
-              general_description: activity.general_description,
-              data_snapshot: {
-                activity_data: activity,
-                qre_breakdown: {
-                  employees: activity.employees,
-                  contractors: activity.contractors,
-                  supplies: activity.supplies
-                },
-                calculation_timestamp: new Date().toISOString()
-              }
-            });
+            // NOTE: Removed automatic save from loadSectionGData
+            // Save should only happen when user clicks the "Save" button
+            // This prevents circular behavior where every activity gets saved on component load
             
           } catch (error) {
             console.error('[SECTION G ERROR] Failed to generate AI description:', error);
