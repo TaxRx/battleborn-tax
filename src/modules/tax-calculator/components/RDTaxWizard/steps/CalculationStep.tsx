@@ -11,6 +11,7 @@ import AllocationReportModal from '../../AllocationReport/AllocationReportModal'
 import { IntegratedFederalCredits } from './IntegratedFederalCredits';
 import { IntegratedStateCredits } from './IntegratedStateCredits';
 import { useUser } from '../../../../../context/UserContext';
+import StepCompletionBanner from '../../../../../components/common/StepCompletionBanner';
 
 // Standardized rounding functions
 const roundToDollar = (value: number): number => Math.round(value);
@@ -1028,7 +1029,8 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       const newResults = await RDCalculationsService.calculateCredits(
         wizardState.selectedYear.id,
         use280C,
-        corporateTaxRate / 100
+        corporateTaxRate / 100,
+        selectedMethod
       );
       setResults(newResults);
       onUpdate({ calculations: newResults, selectedMethod });
@@ -1051,7 +1053,8 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       const newResults = await RDCalculationsService.calculateCredits(
         wizardState.selectedYear.id,
         use280C,
-        corporateTaxRate / 100
+        corporateTaxRate / 100,
+        selectedMethod
       );
 
       setResults(newResults);
@@ -1695,6 +1698,14 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Step Completion Banner */}
+      <StepCompletionBanner 
+        stepName="calculations"
+        stepDisplayName="Calculations"
+        businessYearId={wizardState.selectedYear?.id || ''}
+        description="Review and calculate your R&D tax credit"
+      />
+      
       {/* Header with Year Selector and Filing Guide Button */}
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow-lg p-6 text-white">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between">

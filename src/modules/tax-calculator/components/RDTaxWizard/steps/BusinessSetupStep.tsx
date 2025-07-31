@@ -4,6 +4,7 @@ import { BusinessSetupData, HistoricalData } from '../../../types/rdTypes';
 import { supabase } from '../../../../../lib/supabase';
 import { Building2, MapPin, Calendar, Info, Image, Upload, BarChart3, ChevronRight, AlertTriangle } from 'lucide-react';
 import { formatCurrency } from '../../../../../utils/formatting';
+import StepCompletionBanner from '../../../../../components/common/StepCompletionBanner';
 
 interface BusinessSetupStepProps {
   business: any;
@@ -1220,6 +1221,14 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
 
   return (
     <div className="space-y-8">
+      {/* Step Completion Banner */}
+      <StepCompletionBanner 
+        stepName="businessSetup"
+        stepDisplayName="Business Setup"
+        businessYearId={selectedYear?.id || ''}
+        description="Configure your business information and historical data"
+      />
+      
       {/* Professional Header with Gradient - matching Calculations Page */}
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow-lg p-6 text-white">
         <div className="flex items-center justify-between">

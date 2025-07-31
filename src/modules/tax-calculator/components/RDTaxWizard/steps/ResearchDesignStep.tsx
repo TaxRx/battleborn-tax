@@ -14,6 +14,7 @@ import { supabase } from "../../../../../lib/supabase";
 import ResearchReportModal from "../../ResearchReport/ResearchReportModal";
 import { FileText } from "lucide-react";
 import { AppliedPercentageBar, generateSegmentColors } from '../../common/AppliedPercentageBar';
+import StepCompletionBanner from '../../../../../components/common/StepCompletionBanner';
 
 interface ResearchDesignStepProps {
   selectedActivities: Array<{ 
@@ -2715,6 +2716,14 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Step Completion Banner */}
+      <StepCompletionBanner 
+        stepName="researchDesign"
+        stepDisplayName="Research Design"
+        businessYearId={businessYearId || ''}
+        description="Define the research components and their percentages"
+      />
+      
       <style dangerouslySetInnerHTML={{ __html: `
         ${sliderStyles}
         

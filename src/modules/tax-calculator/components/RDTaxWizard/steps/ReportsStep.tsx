@@ -524,7 +524,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
           <head>
             <title>R&D Research Report - ${businessName} - ${year}</title>
             <style>
-              body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+              body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 40px; line-height: 1.6; }
               .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
               .section { margin-bottom: 30px; }
               .section h2 { color: #333; border-bottom: 1px solid #ccc; padding-bottom: 10px; }
@@ -581,7 +581,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
           <head>
             <title>Filing Guide - ${businessName} - ${year}</title>
             <style>
-              body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+              body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 40px; line-height: 1.6; }
               .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
               .section { margin-bottom: 30px; }
               .section h2 { color: #333; border-bottom: 1px solid #ccc; padding-bottom: 10px; }
@@ -628,7 +628,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
           <head>
             <title>${documentType.replace('_', ' ').toUpperCase()} - ${businessName}</title>
             <style>
-              body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+              body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 40px; line-height: 1.6; }
               .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
             </style>
           </head>

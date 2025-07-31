@@ -481,11 +481,12 @@ export class RDCalculationsService {
     return results;
   }
 
-  // Main calculation method
-  static async calculateCredits(
+    // Main calculation method
+static async calculateCredits(
     businessYearId: string,
     use280C: boolean = false,
-    corporateTaxRate: number = 0.21
+    corporateTaxRate: number = 0.21,
+    selectedMethod?: 'standard' | 'asc'
   ): Promise<CalculationResults> {
     try {
       console.log('🚀 [RDCalculationsService] Starting main calculateCredits for business year:', businessYearId);
@@ -543,14 +544,19 @@ export class RDCalculationsService {
         corporateTaxRate
       );
 
-      // Always calculate both methods and let user choose
-      // Default to ASC if Standard is not eligible, otherwise let user decide
-      const selectedMethod = standardCredit.isEligible ? 'standard' : 'asc';
+      // Use user's selected method if provided, otherwise default based on eligibility
+      const finalSelectedMethod = selectedMethod || (standardCredit.isEligible ? 'standard' : 'asc');
+      
+      console.log('🎯 [RDCalculationsService] Method selection:', {
+        userSelectedMethod: selectedMethod,
+        standardIsEligible: standardCredit.isEligible,
+        finalSelectedMethod: finalSelectedMethod
+      });
 
       const federalCredits: FederalCreditResults = {
         standard: standardCredit,
         asc: ascCredit,
-        selectedMethod,
+        selectedMethod: finalSelectedMethod,
         use280C,
         corporateTaxRate
       };
@@ -562,7 +568,7 @@ export class RDCalculationsService {
       );
 
       // Calculate totals based on selected method
-      const totalFederalCredit = selectedMethod === 'standard' 
+      const totalFederalCredit = finalSelectedMethod === 'standard' 
         ? (standardCredit.adjustedCredit || standardCredit.credit)
         : (ascCredit.adjustedCredit || ascCredit.credit);
 
@@ -588,7 +594,7 @@ export class RDCalculationsService {
         historicalDataSample: results.historicalData.slice(0, 3),
         standardCredit: results.federalCredits.standard.credit,
         ascCredit: results.federalCredits.asc.credit,
-        selectedMethod: results.federalCredits.selectedMethod,
+        selectedMethod: finalSelectedMethod,
         totalFederalCredit: results.totalFederalCredit
       });
 

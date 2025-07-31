@@ -1058,6 +1058,291 @@ Please provide:
     URL.revokeObjectURL(url);
   };
 
+  const cleanupExistingFormatting = (htmlContent: string): string => {
+    if (!htmlContent) return '';
+    
+    // Basic cleanup of HTML content for display
+    return htmlContent
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+  };
+
+  const generateCleanReportHTML = () => {
+    if (!generatedReport) {
+      throw new Error('No report content available');
+    }
+
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    // Clean the report content for PDF
+    const cleanContent = generatedReport
+      .replace(/style="[^"]*"/g, '') // Remove inline styles
+      .replace(/class="[^"]*interactive[^"]*"/g, '') // Remove interactive elements
+      .replace(/<script[\s\S]*?<\/script>/gi, '') // Remove scripts
+      .replace(/<button[\s\S]*?<\/button>/gi, '') // Remove buttons
+      .replace(/onclick="[^"]*"/g, ''); // Remove click handlers
+
+    return `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Research Report - ${businessProfile?.name || 'Client'}</title>
+        
+        <!-- Google Fonts - Plus Jakarta Sans -->
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;0,800;1,200;1,300;1,400;1,500;1,600;1,700;1,800&display=swap" rel="stylesheet">
+        
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          
+          html {
+            font-size: 14px;
+            line-height: 1.6;
+          }
+
+          body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', system-ui, sans-serif;
+            font-weight: 400;
+            font-size: 11px;
+            color: #1f2937;
+            background: white;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            line-height: 1.5;
+          }
+
+          .pdf-wrapper {
+            width: 100%;
+            max-width: 8.5in;
+            margin: 0 auto;
+            background: white;
+            min-height: 11in;
+            position: relative;
+          }
+
+          /* Header Styling */
+          .pdf-header {
+            background: linear-gradient(135deg, #1e40af 0%, #3730a3 50%, #6366f1 100%);
+            color: white;
+            padding: 12px 8px;
+            margin-bottom: 16px;
+            position: relative;
+            overflow: hidden;
+          }
+
+          .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            position: relative;
+            z-index: 1;
+          }
+
+          .logo-section {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 8px 12px;
+            border-radius: 8px;
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+
+          .logo-img {
+            height: 24px;
+            width: auto;
+            object-fit: contain;
+            filter: brightness(0) invert(1);
+          }
+
+          .company-name {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            margin: 0;
+            color: white;
+            letter-spacing: -0.025em;
+            line-height: 1.2;
+          }
+
+          .document-title {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 18px;
+            font-weight: 800;
+            margin: 0;
+            color: white;
+            letter-spacing: -0.025em;
+            line-height: 1.2;
+            text-align: right;
+          }
+
+          /* Content Area */
+          .pdf-content {
+            padding: 0 8px;
+            min-height: 600px;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+          }
+
+          /* Typography */
+          h1 { font-size: 24px; font-weight: 700; margin-bottom: 16px; color: #1f2937; }
+          h2 { font-size: 20px; font-weight: 600; margin: 20px 0 12px 0; color: #374151; }
+          h3 { font-size: 16px; font-weight: 600; margin: 16px 0 8px 0; color: #4b5563; }
+          h4 { font-size: 14px; font-weight: 600; margin: 12px 0 6px 0; color: #6b7280; }
+
+          p {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 11px;
+            font-weight: 400;
+            line-height: 1.6;
+            color: #374151;
+            margin: 12px 0;
+          }
+
+          /* Tables */
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+          }
+
+          th {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-weight: 600;
+            font-size: 10px;
+            text-align: left;
+            padding: 12px 16px;
+            color: #1f2937;
+            border-bottom: 2px solid #e5e7eb;
+            letter-spacing: 0.025em;
+            text-transform: uppercase;
+          }
+
+          td {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 11px;
+            font-weight: 400;
+            padding: 12px 16px;
+            border-bottom: 1px solid #f3f4f6;
+            color: #374151;
+            vertical-align: top;
+          }
+
+          /* Activity and Step Cards */
+          .activity-card, .step-card, .subcomponent-item {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 8px 0;
+            page-break-inside: avoid;
+          }
+
+          .activity-card {
+            border-left: 4px solid #3b82f6;
+            padding: 16px;
+            margin: 16px 0;
+          }
+
+          /* Professional Footer */
+          .pdf-footer {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            border-top: 3px solid #e5e7eb;
+            padding: 12px 16px;
+            margin-top: 24px;
+            position: relative;
+          }
+
+          .footer-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 10px;
+            color: #6b7280;
+          }
+
+          /* Print Optimizations */
+          @page {
+            margin: 0.25in 0.1in 0.4in 0.1in;
+            size: Letter;
+          }
+
+          @media print {
+            body {
+              font-size: 10px;
+            }
+            .pdf-header {
+              background: #1e40af !important;
+              -webkit-print-color-adjust: exact;
+              color-adjust: exact;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="pdf-wrapper">
+          <!-- Professional Header -->
+          <div class="pdf-header">
+            <div class="header-content">
+              <div class="header-left">
+                <div class="logo-section">
+                  <div class="company-logo">
+                    <img src="/images/Direct Research_horizontal advisors logo.png" alt="Direct Research Logo" class="logo-img">
+                  </div>
+                  <div class="company-info">
+                    <h2 class="company-name">Direct Research</h2>
+                  </div>
+                </div>
+              </div>
+              <div class="header-right">
+                <h1 class="document-title">R&D Research Report</h1>
+              </div>
+            </div>
+          </div>
+
+          <!-- Document Content -->
+          <div class="pdf-content">
+            ${cleanContent}
+          </div>
+
+          <!-- Professional Footer -->
+          <div class="pdf-footer">
+            <div class="footer-content">
+              <div class="footer-left">
+                <span>Prepared by Direct Research</span>
+              </div>
+              <div class="footer-center">
+                <span>Confidential & Proprietary</span>
+              </div>
+              <div class="footer-right">
+                <span>Tax Year ${businessYearData?.year || 'N/A'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+  };
+
   const handlePDFDownload = async () => {
     if (!generatedReport) {
       setError('Please generate report first');
@@ -1068,121 +1353,38 @@ Please provide:
     try {
       console.log('🔄 Starting PDF generation...');
       
-      // Import html2pdf dynamically
-      const html2pdf = (await import('html2pdf.js')).default;
+      // Generate PDF using Puppeteer backend
+      const cleanedContent = generateCleanReportHTML();
       
-      // SIMPLIFIED APPROACH: Extract just the main content from the generated report
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = generatedReport;
-      
-      // Find the main content container
-      const mainContent = tempDiv.querySelector('.report-main-content') || tempDiv.querySelector('body') || tempDiv;
-      console.log('🔍 Found main content:', !!mainContent);
-      
-      if (!mainContent) {
-        throw new Error('No content found in generated report');
-      }
-      
-      // Create simple PDF container with just the essential content
-      const pdfContainer = document.createElement('div');
-      pdfContainer.style.padding = '20px';
-      pdfContainer.style.fontFamily = '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-      pdfContainer.style.color = '#374151';
-      pdfContainer.style.lineHeight = '1.6';
-      pdfContainer.style.fontSize = '14px';
-      pdfContainer.style.backgroundColor = 'white';
-      
-      // Add basic styling
-      const basicStyles = `
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          h1 { font-size: 24px; margin-bottom: 16px; color: #1f2937; font-weight: 700; }
-          h2 { font-size: 20px; margin: 20px 0 12px 0; color: #374151; font-weight: 600; }
-          h3 { font-size: 16px; margin: 16px 0 8px 0; color: #4b5563; font-weight: 600; }
-          p { margin-bottom: 12px; }
-          .section { margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #e5e7eb; }
-          .activity-card { background: #f9fafb; padding: 16px; margin: 16px 0; border-radius: 8px; border-left: 4px solid #3b82f6; }
-          .step-card { background: white; border: 1px solid #e5e7eb; padding: 12px; margin: 8px 0; border-radius: 6px; }
-          .subcomponent-item { padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
-          table { width: 100%; border-collapse: collapse; margin: 16px 0; }
-          th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
-          th { background: #f9fafb; font-weight: 600; color: #374151; }
-          .page-break { page-break-before: always; }
-        </style>
-      `;
-      
-      // Create clean content for PDF
-      const cleanContent = mainContent.innerHTML
-        .replace(/style="[^"]*"/g, '') // Remove inline styles
-        .replace(/class="[^"]*interactive[^"]*"/g, '') // Remove interactive elements
-        .replace(/<script[\s\S]*?<\/script>/gi, '') // Remove scripts
-        .replace(/<button[\s\S]*?<\/button>/gi, '') // Remove buttons
-        .replace(/onclick="[^"]*"/g, ''); // Remove click handlers
-      
-      // Add cover page
-      const coverPageHTML = `
-        <div style="text-align: center; padding: 60px 20px;">
-          <h1 style="font-size: 32px; margin-bottom: 20px; color: #1e40af;">
-            R&D Tax Credit Research Report
-          </h1>
-          <h2 style="font-size: 24px; margin-bottom: 40px; color: #374151;">
-            ${businessProfile?.name || 'Business Entity'}
-          </h2>
-          <div style="margin-bottom: 20px;">
-            <strong>Tax Year:</strong> ${businessYearData?.year || new Date().getFullYear()}
-          </div>
-          <div style="margin-bottom: 20px;">
-            <strong>Generated:</strong> ${new Date().toLocaleDateString()}
-          </div>
-          <div style="margin-bottom: 20px;">
-            <strong>Activities:</strong> ${selectedActivities.length} Research Activities
-          </div>
-          <div class="page-break"></div>
-        </div>
-      `;
-      
-      pdfContainer.innerHTML = basicStyles + coverPageHTML + cleanContent;
-      
-      // Add to DOM for rendering
-      pdfContainer.style.position = 'fixed';
-      pdfContainer.style.top = '-9999px';
-      pdfContainer.style.left = '-9999px';
-      pdfContainer.style.width = '8.5in';
-      pdfContainer.style.backgroundColor = 'white';
-      
-      document.body.appendChild(pdfContainer);
-      console.log('📄 PDF container added to DOM');
-      
-      // Wait for rendering
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Simple PDF options
-      const pdfOptions = {
-        margin: 0.5,
-        filename: `Research_Report_${businessProfile?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Report'}_${new Date().toISOString().split('T')[0]}.pdf`,
-        image: { type: 'jpeg', quality: 0.9 },
-        html2canvas: { 
-          scale: 1.5,
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff'
+      console.log('📄 Sending content to Puppeteer server...');
+      const response = await fetch('http://localhost:3001/api/generate-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        jsPDF: { 
-          unit: 'in', 
-          format: 'letter', 
-          orientation: 'portrait'
-        }
-      };
+        body: JSON.stringify({
+          html: cleanedContent,
+          filename: `Research_Report_${businessProfile?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Report'}_${new Date().toISOString().split('T')[0]}.pdf`
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.text();
+        throw new Error(`PDF generation failed: ${errorData}`);
+      }
+
+      console.log('✅ [PUPPETEER API] PDF downloaded successfully');
       
-      console.log('📊 Generating PDF with options:', pdfOptions);
-      
-      // Generate PDF
-      const pdf = await html2pdf().from(pdfContainer).set(pdfOptions).save();
-      
-      console.log('✅ PDF generated successfully');
-      
-      // Clean up
-      document.body.removeChild(pdfContainer);
+      // Download the PDF
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Research_Report_${businessProfile?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Report'}_${new Date().toISOString().split('T')[0]}.pdf`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+
+      console.log('✅ [PUPPETEER PDF] PDF generated successfully');
       
     } catch (error) {
       console.error('❌ Error generating PDF:', error);
@@ -1376,7 +1578,7 @@ Please provide:
       }
       
       .pdf-document-container {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         color: #1f2937;
         line-height: 1.6;
         background: white;
@@ -1753,7 +1955,7 @@ Please provide:
     return `
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body { 
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         color: #1f2937;
         line-height: 1.6;
         background: #f8fafc;
@@ -2066,7 +2268,7 @@ Please provide:
 
   return (
     <div className="research-report-modal-overlay">
-      <div className="research-report-modal">
+      <div className="research-report-modal" style={{ fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
         <div className="research-report-modal-header">
           <h2>
             <FileText />
@@ -2094,7 +2296,7 @@ Please provide:
               </button>
             </div>
           ) : showPreview ? (
-            <div className="report-preview-container">
+            <div className="report-preview-container" style={{ fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
               <iframe
                 srcDoc={generatedReport}
                 style={{
@@ -2107,7 +2309,7 @@ Please provide:
               />
             </div>
           ) : (
-            <div className="report-main-content" style={{ padding: '40px' }}>
+            <div className="report-main-content" style={{ padding: '40px', fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
               <div className="report-section">
                 <div className="section-header">
                   <div className="section-icon">📊</div>

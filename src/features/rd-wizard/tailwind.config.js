@@ -81,8 +81,8 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['DM Sans', 'system-ui', 'sans-serif'],
-        serif: ['DM Serif Display', 'Georgia', 'serif'],
+        sans: ['Plus Jakarta Sans', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'system-ui', 'sans-serif'],
+        serif: ['Plus Jakarta Sans', 'Georgia', 'serif'],
       },
       spacing: {
         '18': '4.5rem',

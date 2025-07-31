@@ -3,7 +3,7 @@ import { supabase } from '../../../../../lib/supabase';
 import { Plus, ChevronDown, ChevronRight, Edit, Trash2, MoveUp, MoveDown, UserPlus, Sparkles, RotateCcw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { AIService } from "../../../../../services/aiService";
-// aiService removed - using static content generation
+import StepCompletionBanner from '../../../../../components/common/StepCompletionBanner';
 
 interface ResearchExplorerStepProps {
   selectedActivities: any[];
@@ -2957,6 +2957,14 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Step Completion Banner */}
+      <StepCompletionBanner 
+        stepName="researchActivities"
+        stepDisplayName="Research Activities"
+        businessYearId={businessYearId || ''}
+        description="Select the research activities your business performs"
+      />
+      
       {/* Header with Business Setup style */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-6 border-b border-gray-200">
@@ -3974,6 +3982,14 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
   };
 
   const generateAIAnswers = async () => {
+    console.log('🚀 [AI] Generate All with AI button clicked!');
+    console.log('🎯 [AI] Current activity:', {
+      id: activity.id,
+      name: activity.activity_name,
+      selected_roles: activity.selected_roles,
+      allRoles: allRoles?.length || 0
+    });
+    
     setIsGenerating(true);
     try {
       // Get role names for the selected roles
@@ -3981,28 +3997,74 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
         .filter(role => activity.selected_roles.includes(role.id))
         .map(role => role.name);
 
-      // TEMP: Commented out AI functionality due to deleted aiService
-      // const context: AIGenerationContext = {
-      //   businessProfile: { name: activity.activity_name || 'Unknown Activity' },
-      //   selectedActivities: [activity],
-      //   selectedSteps: [],
-      //   selectedSubcomponents: []
-      // };
+      console.log('👥 [AI] Selected roles for generation:', selectedRoleNames);
 
-      // const hypothesis = await aiService.generateContent(`Generate a research hypothesis for: ${activity.activity_name || 'Unknown Activity'}`);
-      // const developmentSteps = await aiService.generateContent(`Generate development steps for: ${activity.activity_name || 'Unknown Activity'}`);
-      // const dataFeedback = await aiService.generateContent(`Generate data feedback approach for: ${activity.activity_name || 'Unknown Activity'}`);
+      const aiService = AIService.getInstance();
+      console.log('🔧 [AI] AI Service instance obtained');
       
-      // TEMP: Using placeholder values
-      const hypothesis = 'AI service temporarily unavailable';
-      const developmentSteps = 'AI service temporarily unavailable';
-      const dataFeedback = 'AI service temporarily unavailable';
+      // Generate AI content for each field
+      const activityName = activity.activity_name || 'Unknown Activity';
+      const roleContext = selectedRoleNames.length > 0 ? ` involving roles: ${selectedRoleNames.join(', ')}` : '';
       
-      const aiAnswers = {
-        hypothesis,
-        developmentSteps,
-        dataFeedback
+      console.log('🤖 [AI] Starting generation for activity:', activityName, 'with roles:', selectedRoleNames);
+      
+      const hypothesis = await aiService.generateContent(
+        `Generate a specific research hypothesis for the R&D activity: "${activityName}"${roleContext}. 
+        Focus on what uncertainty the research aims to resolve and what new knowledge or capability will be developed.
+        Keep it concise but technical and specific to the activity.
+        
+        IMPORTANT: Do not use markdown formatting (no **bold**, *italic*, etc.). Provide plain text only.`
+      );
+      
+      console.log('✅ [AI] Generated hypothesis:', hypothesis?.substring(0, 100) + '...');
+      
+      const developmentSteps = await aiService.generateContent(
+        `Generate development steps for the R&D activity: "${activityName}"${roleContext}.
+        List 3-5 specific, measurable steps that would be taken to execute this research.
+        Focus on the systematic approach and methodology that would be used.
+        
+        IMPORTANT: Do not use markdown formatting (no **bold**, *italic*, etc.). Provide plain text only.`
+      );
+      
+      console.log('✅ [AI] Generated development steps:', developmentSteps?.substring(0, 100) + '...');
+      
+      const dataFeedback = await aiService.generateContent(
+        `Generate a data feedback approach for the R&D activity: "${activityName}"${roleContext}.
+        Describe how progress will be measured, what data will be collected, and how results will be evaluated.
+        Focus on metrics and evaluation criteria specific to this type of research.
+        
+        IMPORTANT: Do not use markdown formatting (no **bold**, *italic*, etc.). Provide plain text only.`
+      );
+      
+      console.log('✅ [AI] Generated data feedback:', dataFeedback?.substring(0, 100) + '...');
+      
+      // Function to strip markdown formatting
+      const stripMarkdown = (text: string): string => {
+        if (!text) return '';
+        return text
+          .replace(/\*\*(.*?)\*\*/g, '$1') // Remove **bold**
+          .replace(/\*(.*?)\*/g, '$1')     // Remove *italic*
+          .replace(/__(.*?)__/g, '$1')     // Remove __bold__
+          .replace(/_(.*?)_/g, '$1')       // Remove _italic_
+          .replace(/`(.*?)`/g, '$1')       // Remove `code`
+          .replace(/#{1,6}\s/g, '')        // Remove headers
+          .replace(/\[(.*?)\]\(.*?\)/g, '$1') // Remove links, keep text
+          .replace(/^\s*[-*+]\s/gm, '')    // Remove bullet points
+          .replace(/^\s*\d+\.\s/gm, '')    // Remove numbered lists
+          .trim();
       };
+
+      const aiAnswers = {
+        hypothesis: stripMarkdown(hypothesis),
+        developmentSteps: stripMarkdown(developmentSteps),
+        dataFeedback: stripMarkdown(dataFeedback)
+      };
+      
+      console.log('📝 [AI] Final processed answers:', {
+        hypothesis: aiAnswers.hypothesis?.substring(0, 50) + '...',
+        developmentSteps: aiAnswers.developmentSteps?.substring(0, 50) + '...',
+        dataFeedback: aiAnswers.dataFeedback?.substring(0, 50) + '...'
+      });
       
       const updatedGuidelines = {
         ...guidelines,
@@ -4013,9 +4075,49 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
       
       setGuidelines(updatedGuidelines);
       onUpdateGuidelines(updatedGuidelines);
+      
+      console.log('✅ [AI] Successfully updated all guidelines for activity:', activityName);
+      
+      // Log success for debugging
+      console.log('📢 [AI] AI generation completed successfully');
     } catch (error) {
-      console.error('Error generating AI answers:', error);
+      console.error('❌ [AI] Error generating AI answers:', error);
+      
+      // Provide user-friendly error message based on the error type
+      let errorMessage = 'Unable to generate AI content at this time.';
+      if (error instanceof Error) {
+        console.error('❌ [AI] Error details:', {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        });
+        
+        if (error.message.includes('API key not configured')) {
+          errorMessage = 'AI service configuration error. Please check API key settings.';
+        } else if (error.message.includes('Rate limit exceeded')) {
+          errorMessage = 'Rate limit exceeded. Please try again in a moment.';
+        } else if (error.message.includes('OpenAI API error')) {
+          errorMessage = 'AI service error. Please try again later.';
+        }
+      }
+      
+      console.log('🔧 [AI] Setting error message in fields:', errorMessage);
+      
+      // Set error message in the fields
+      const updatedGuidelines = {
+        ...guidelines,
+        hypothesis: errorMessage,
+        development_steps: errorMessage,
+        data_feedback: errorMessage
+      };
+      
+      setGuidelines(updatedGuidelines);
+      onUpdateGuidelines(updatedGuidelines);
+      
+      // Log error for debugging  
+      console.log('📢 [AI] AI generation failed, error set in fields');
     } finally {
+      console.log('🏁 [AI] Finished generateAIAnswers process');
       setIsGenerating(false);
     }
   };
@@ -4027,22 +4129,63 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
         .filter(role => activity.selected_roles.includes(role.id))
         .map(role => role.name);
 
-      // TEMP: Commented out AI functionality due to deleted aiService
+      const aiService = AIService.getInstance();
+      const activityName = activity.activity_name || 'Unknown Activity';
+      const roleContext = selectedRoleNames.length > 0 ? ` involving roles: ${selectedRoleNames.join(', ')}` : '';
+      
+      // Function to strip markdown formatting
+      const stripMarkdown = (text: string): string => {
+        if (!text) return '';
+        return text
+          .replace(/\*\*(.*?)\*\*/g, '$1') // Remove **bold**
+          .replace(/\*(.*?)\*/g, '$1')     // Remove *italic*
+          .replace(/__(.*?)__/g, '$1')     // Remove __bold__
+          .replace(/_(.*?)_/g, '$1')       // Remove _italic_
+          .replace(/`(.*?)`/g, '$1')       // Remove `code`
+          .replace(/#{1,6}\s/g, '')        // Remove headers
+          .replace(/\[(.*?)\]\(.*?\)/g, '$1') // Remove links, keep text
+          .replace(/^\s*[-*+]\s/gm, '')    // Remove bullet points
+          .replace(/^\s*\d+\.\s/gm, '')    // Remove numbered lists
+          .trim();
+      };
+
+      console.log(`🤖 [AI] Regenerating field "${field}" for activity:`, activityName);
+      
       let newValue = '';
       switch (field) {
         case 'hypothesis':
-          // newValue = await aiService.generateContent(`Generate a research hypothesis for: ${activity.activity_name || 'Unknown Activity'}`);
-          newValue = 'AI service temporarily unavailable';
+          newValue = await aiService.generateContent(
+            `Generate a specific research hypothesis for the R&D activity: "${activityName}"${roleContext}. 
+            Focus on what uncertainty the research aims to resolve and what new knowledge or capability will be developed.
+            Keep it concise but technical and specific to the activity.
+            
+            IMPORTANT: Do not use markdown formatting (no **bold**, *italic*, etc.). Provide plain text only.`
+          );
           break;
         case 'development_steps':
-          // newValue = await aiService.generateContent(`Generate development steps for: ${activity.activity_name || 'Unknown Activity'}`);
-          newValue = 'AI service temporarily unavailable';
+          newValue = await aiService.generateContent(
+            `Generate development steps for the R&D activity: "${activityName}"${roleContext}.
+            List 3-5 specific, measurable steps that would be taken to execute this research.
+            Focus on the systematic approach and methodology that would be used.
+            
+            IMPORTANT: Do not use markdown formatting (no **bold**, *italic*, etc.). Provide plain text only.`
+          );
           break;
         case 'data_feedback':
-          // newValue = await aiService.generateContent(`Generate data feedback approach for: ${activity.activity_name || 'Unknown Activity'}`);
-          newValue = 'AI service temporarily unavailable';
+          newValue = await aiService.generateContent(
+            `Generate a data feedback approach for the R&D activity: "${activityName}"${roleContext}.
+            Describe how progress will be measured, what data will be collected, and how results will be evaluated.
+            Focus on metrics and evaluation criteria specific to this type of research.
+            
+            IMPORTANT: Do not use markdown formatting (no **bold**, *italic*, etc.). Provide plain text only.`
+          );
           break;
       }
+
+      // Strip any remaining markdown formatting
+      newValue = stripMarkdown(newValue);
+      
+      console.log(`✅ [AI] Successfully regenerated "${field}":`, newValue?.substring(0, 100) + '...');
 
       const updatedGuidelines = { ...guidelines, [field]: newValue };
       setGuidelines(updatedGuidelines);

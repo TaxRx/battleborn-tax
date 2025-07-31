@@ -790,17 +790,16 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
     fetchData();
   }, [selectedYear?.id, businessData?.id]);
 
-  // SIMPLE FALLBACK: Use SectionGQREService data if main fetch fails
+  // IMMEDIATE FALLBACK: Use SectionGQREService data if main fetch fails
   useEffect(() => {
     if (!selectedYear?.id || !businessData?.id) return;
     
     const fallbackFetch = async () => {
-      // Wait 3 seconds, then check if we need data (increased timeout)
-      setTimeout(async () => {
+      // Check immediately after main fetch, then again after 1 second (reduced timeout)
+      const checkAndLoad = async () => {
         console.log(`🔍 [FILING GUIDE] Fallback check: employees.length = ${employees.length}`);
         if (employees.length === 0) {
           console.log(`⚠️ [FILING GUIDE] Main data fetch failed - No employees found, triggering fallback service...`);
-          // Using fallback service for employee data
           try {
             // Import and use the working SectionGQREService
             const { SectionGQREService } = await import('../../services/sectionGQREService');
@@ -862,11 +861,21 @@ export const CalculationSpecifics: React.FC<CalculationSpecificsProps> = ({
             console.error('❌ SectionGQREService fallback failed:', error);
           }
         }
-      }, 3000);
+      };
+
+      // Try immediately
+      await checkAndLoad();
+      
+      // Try again after 1 second if still no data
+      setTimeout(async () => {
+        if (employees.length === 0) {
+          await checkAndLoad();
+        }
+      }, 1000);
     };
 
     fallbackFetch();
-  }, [selectedYear?.id, businessData?.id]);
+  }, [selectedYear?.id, businessData?.id, employees.length]); // Added employees.length dependency
 
   return (
     <div className="filing-guide-section">
