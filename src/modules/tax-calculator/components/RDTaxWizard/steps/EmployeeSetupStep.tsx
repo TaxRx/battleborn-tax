@@ -2095,6 +2095,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       const { data: rolesData, error: rolesError } = await supabase
         .from('rd_roles')
         .select('id, name, baseline_applied_percent')
+        .eq('business_id', businessId)
         .eq('business_year_id', targetYearId);
 
       if (rolesError) {
@@ -3678,61 +3679,96 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           }
           
           try {
-            // Create employee WITHOUT role assignment (as requested)
-            console.log(`👤 Creating employee ${firstName} ${lastName} for business year: ${targetBusinessYearId} (Year: ${yearNumber})`);
+            // Check for existing employee FIRST to prevent duplicates
+            console.log(`🔍 Checking for existing employee: ${firstName} ${lastName} in business: ${businessId}`);
             
-            // Extract numeric value from formatted wage string
+            const { data: existingEmployee, error: checkError } = await supabase
+              .from('rd_employees')
+              .select('id, first_name, last_name, role_id, annual_wage')
+              .eq('business_id', businessId)
+              .eq('first_name', firstName.trim())
+              .eq('last_name', lastName.trim())
+              .single();
+
+            let employeeRecord;
+            
+            if (existingEmployee && !checkError) {
+              // Employee already exists - reuse them
+              console.log(`✅ Found existing employee: ${firstName} ${lastName} (ID: ${existingEmployee.id})`);
+              employeeRecord = existingEmployee;
+            } else {
+              // Employee doesn't exist - create new one
+              console.log(`👤 Creating NEW employee ${firstName} ${lastName} for business: ${businessId}`);
+              
+              // Extract numeric value from formatted wage string
+              const numericWage = wage.replace(/[^0-9.]/g, '');
+              const annualWage = numericWage ? parseFloat(numericWage) : 0;
+              
+              // Get or create default role (but don't assign it to the employee)
+              console.log(`🔧 Getting default role for business: ${businessId}, year: ${targetBusinessYearId}`);
+              const defaultRoleId = await getOrCreateDefaultRole(businessId, targetBusinessYearId);
+              console.log(`✅ Default role ID: ${defaultRoleId}`);
+              
+              // Handle optional role assignment ONLY if role is provided and valid
+              let assignedRoleId = null;
+              if (roleName && roleName.trim() !== '') {
+                const foundRole = roles.find(r => r.name && r.name.toLowerCase() === roleName.toLowerCase());
+                if (foundRole) {
+                  assignedRoleId = foundRole.id;
+                  rolesAssignedCount++;
+                  console.log(`✅ Assigned role "${roleName}" to ${firstName} ${lastName}`);
+                } else {
+                  console.log(`ℹ️ Role "${roleName}" not found for ${firstName} ${lastName} - creating without role`);
+                }
+              }
+              
+              // Create NEW employee record
+              console.log(`👤 Inserting NEW employee data:`, {
+                business_id: businessId,
+                first_name: firstName.trim(),
+                last_name: lastName.trim(),
+                role_id: assignedRoleId,
+                is_owner: false,
+                annual_wage: annualWage
+              });
+              
+              const { data: newEmployee, error: employeeError } = await supabase
+                .from('rd_employees')
+                .insert({
+                  business_id: businessId,
+                  first_name: firstName.trim(),
+                  last_name: lastName.trim(),
+                  role_id: assignedRoleId, // Will be null unless specific role was found
+                  is_owner: false,
+                  annual_wage: annualWage
+                })
+                .select('*')
+                .single();
+
+              if (employeeError) {
+                console.error('❌ Error creating employee:', employeeError);
+                console.error('❌ Full error details:', JSON.stringify(employeeError, null, 2));
+                throw new Error(`Database error: ${employeeError.message} (Code: ${employeeError.code})`);
+              }
+              
+              console.log(`✅ NEW Employee created with ID: ${newEmployee.id}`);
+              employeeRecord = newEmployee;
+            }
+            
+            // Extract numeric value from formatted wage for year data
             const numericWage = wage.replace(/[^0-9.]/g, '');
             const annualWage = numericWage ? parseFloat(numericWage) : 0;
-            
-            // Get or create default role (but don't assign it to the employee)
-            console.log(`🔧 Getting default role for business: ${businessId}, year: ${targetBusinessYearId}`);
-            const defaultRoleId = await getOrCreateDefaultRole(businessId, targetBusinessYearId);
-            console.log(`✅ Default role ID: ${defaultRoleId}`);
-            
-            // Handle optional role assignment ONLY if role is provided and valid
-            let assignedRoleId = null;
-            if (roleName && roleName.trim() !== '') {
+
+            // Handle role assignment for existing employees (if role wasn't assigned during creation)
+            let assignedRoleId = employeeRecord.role_id; // Start with existing role
+            if (!assignedRoleId && roleName && roleName.trim() !== '') {
               const foundRole = roles.find(r => r.name && r.name.toLowerCase() === roleName.toLowerCase());
               if (foundRole) {
                 assignedRoleId = foundRole.id;
                 rolesAssignedCount++;
-                console.log(`✅ Assigned role "${roleName}" to ${firstName} ${lastName}`);
-              } else {
-                console.log(`ℹ️ Role "${roleName}" not found for ${firstName} ${lastName} - creating without role`);
+                console.log(`✅ Assigned role "${roleName}" to existing employee ${firstName} ${lastName}`);
               }
             }
-            
-            // Create employee record (without role assignment by default)
-            console.log(`👤 Inserting employee data:`, {
-              business_id: businessId,
-              first_name: firstName.trim(),
-              last_name: lastName.trim(),
-              role_id: assignedRoleId,
-              is_owner: false,
-              annual_wage: annualWage
-            });
-            
-            const { data: newEmployee, error: employeeError } = await supabase
-              .from('rd_employees')
-              .insert({
-                business_id: businessId,
-                first_name: firstName.trim(),
-                last_name: lastName.trim(),
-                role_id: assignedRoleId, // Will be null unless specific role was found
-                is_owner: false,
-                annual_wage: annualWage
-              })
-              .select('*')
-              .single();
-
-            if (employeeError) {
-              console.error('❌ Error creating employee:', employeeError);
-              console.error('❌ Full error details:', JSON.stringify(employeeError, null, 2));
-              throw new Error(`Database error: ${employeeError.message} (Code: ${employeeError.code})`);
-            }
-            
-            console.log(`✅ Employee created with ID: ${newEmployee.id}`);
 
             // Create employee year data with proper role-based calculations
             let baselinePercent = 0;
@@ -3752,19 +3788,46 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
               }
             }
             
-            const { error: yearDataError } = await supabase
+            // Check if year data already exists before creating
+            const { data: existingYearData, error: yearCheckError } = await supabase
               .from('rd_employee_year_data')
-              .insert({
-                employee_id: newEmployee.id,
-                business_year_id: targetBusinessYearId,
-                applied_percent: baselinePercent,
-                calculated_qre: calculatedQRE,
-                activity_roles: assignedRoleId ? [assignedRoleId] : []
-              });
+              .select('id')
+              .eq('employee_id', employeeRecord.id)
+              .eq('business_year_id', targetBusinessYearId)
+              .single();
 
-            if (yearDataError) {
-              console.error('❌ Error creating employee year data:', yearDataError);
-              // Don't throw here, as the employee was created successfully
+            if (existingYearData && !yearCheckError) {
+              console.log(`📝 Updating existing year data for ${firstName} ${lastName} in year ${yearNumber}`);
+              
+              const { error: yearUpdateError } = await supabase
+                .from('rd_employee_year_data')
+                .update({
+                  applied_percent: baselinePercent,
+                  calculated_qre: calculatedQRE,
+                  activity_roles: assignedRoleId ? [assignedRoleId] : []
+                })
+                .eq('id', existingYearData.id);
+
+              if (yearUpdateError) {
+                console.error('❌ Error updating employee year data:', yearUpdateError);
+              }
+            } else {
+              console.log(`📝 Creating new year data for ${firstName} ${lastName} in year ${yearNumber}`);
+              
+              const { error: yearDataError } = await supabase
+                .from('rd_employee_year_data')
+                .insert({
+                  employee_id: employeeRecord.id,
+                  business_year_id: targetBusinessYearId,
+                  applied_percent: baselinePercent,
+                  calculated_qre: calculatedQRE,
+                  activity_roles: assignedRoleId ? [assignedRoleId] : []
+                });
+
+              if (yearDataError) {
+                console.error('❌ Error creating employee year data:', yearDataError);
+                // Don't throw here, as the employee was created successfully
+              }
             }
 
             // Create subcomponent relationships if role was assigned during import
@@ -3848,7 +3911,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                   }
 
                   return {
-                    employee_id: newEmployee.id,
+                    employee_id: employeeRecord.id,
                     subcomponent_id: subcomponent.subcomponent_id,
                     business_year_id: targetBusinessYearId,
                     time_percentage: timePercentage,
