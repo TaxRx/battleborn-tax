@@ -1396,22 +1396,24 @@ class AdminAccountService {
   // Auth User Management Methods
   async checkAuthUserExists(email: string): Promise<boolean> {
     try {
-      const { data, error } = await supabase.auth.admin.listUsers({
-        page: 1,
-        perPage: 1000
+      // Call the secure edge function endpoint instead of direct supabase.auth.admin
+      const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL;
+      const response = await fetch(`${functionsUrl}/user-service/admin/check-auth-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+        },
+        body: JSON.stringify({ email: email.trim().toLowerCase() })
       });
-      
-      if (error) {
-        console.error('Error listing auth users:', error);
+
+      if (!response.ok) {
+        console.error('Error checking auth user existence via edge function:', response.status, response.statusText);
         return false;
       }
-      
-      // Check if any user has the matching email (case-insensitive)
-      const userExists = data.users.some(user => 
-        user.email?.toLowerCase() === email.toLowerCase()
-      );
-      
-      return userExists;
+
+      const data = await response.json();
+      return data?.exists || false;
     } catch (error) {
       console.error('Error checking auth user existence:', error);
       return false;
@@ -1425,33 +1427,43 @@ class AdminAccountService {
     temporaryPassword?: string;
   }> {
     try {
-      // Create the auth user
-      const { data, error } = await supabase.auth.admin.createUser({
-        email: email.trim().toLowerCase(),
-        password: password,
-        email_confirm: true // Auto-confirm the email
+      // Call the secure edge function endpoint instead of direct supabase.auth.admin
+      const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL;
+      const response = await fetch(`${functionsUrl}/user-service/admin/create-auth-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+        },
+        body: JSON.stringify({ 
+          email: email.trim().toLowerCase(),
+          password: password
+        })
       });
 
-      if (error) {
-        console.error('Error creating auth user:', error);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Error creating auth user via edge function:', response.status, response.statusText, errorData);
         return {
           success: false,
-          message: error.message || 'Failed to create user login'
+          message: errorData.error || 'Failed to create user login'
         };
       }
 
-      if (!data.user) {
+      const data = await response.json();
+
+      if (!data?.success) {
         return {
           success: false,
-          message: 'Failed to create user - no user returned'
+          message: data?.error || 'Failed to create user login'
         };
       }
 
       return {
         success: true,
-        userId: data.user.id,
-        message: 'User login created successfully',
-        temporaryPassword: password
+        userId: data.userId,
+        message: data.message || 'User login created successfully',
+        temporaryPassword: data.temporaryPassword
       };
     } catch (error) {
       console.error('Error creating auth user:', error);
@@ -1476,60 +1488,56 @@ class AdminAccountService {
     temporaryPassword?: string;
   }> {
     try {
-      let authUserId: string | undefined;
-      let temporaryPassword: string | undefined;
-
-      // Create auth user first if requested
       if (createLogin) {
-        const authResult = await this.createAuthUser(profileData.email);
-        if (!authResult.success) {
+        // Call the secure edge function endpoint instead of direct supabase.auth.admin
+        const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL;
+        const response = await fetch(`${functionsUrl}/user-service/admin/create-profile-with-auth`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+          },
+          body: JSON.stringify({
+            email: profileData.email.trim().toLowerCase(),
+            full_name: profileData.full_name?.trim() || null,
+            role: profileData.role || 'user',
+            account_id: profileData.account_id,
+            phone: profileData.phone?.trim() || null,
+            status: profileData.status || 'pending',
+            createLogin: true,
+            password: 'TempPass123!'
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error('Error creating profile with auth via edge function:', response.status, response.statusText, errorData);
           return {
             success: false,
-            message: `Failed to create user login: ${authResult.message}`
+            message: errorData.error || 'Failed to create profile with login'
           };
         }
-        authUserId = authResult.userId;
-        temporaryPassword = authResult.temporaryPassword;
-      }
 
-      // Create the profile
-      const profileResult = await this.createProfile({
-        ...profileData,
-        // Set profile ID to match auth user ID if login was created
-        ...(authUserId && { id: authUserId })
-      });
+        const data = await response.json();
 
-      if (!profileResult.success) {
-        // If profile creation failed but auth user was created, we should clean up
-        if (authUserId) {
-          try {
-            await supabase.auth.admin.deleteUser(authUserId);
-          } catch (cleanupError) {
-            console.error('Error cleaning up auth user after profile creation failure:', cleanupError);
-          }
+        if (!data?.success) {
+          return {
+            success: false,
+            message: data?.error || 'Failed to create profile with login'
+          };
         }
+
+        return {
+          success: true,
+          profile: data.profile,
+          message: data.message || 'Profile and user login created successfully',
+          temporaryPassword: data.temporaryPassword
+        };
+      } else {
+        // Create profile only (without login) - use existing method
+        const profileResult = await this.createProfile(profileData);
         return profileResult;
       }
-
-      // If auth user was created, update the profile to link them
-      if (authUserId && profileResult.profile) {
-        await supabase
-          .from('profiles')
-          .update({ 
-            id: authUserId,
-            auth_sync_status: 'synced'
-          })
-          .eq('id', profileResult.profile.id);
-      }
-
-      return {
-        success: true,
-        profile: profileResult.profile,
-        message: createLogin ? 
-          'Profile and user login created successfully' : 
-          'Profile created successfully',
-        temporaryPassword
-      };
     } catch (error) {
       console.error('Error creating profile with auth:', error);
       return {

@@ -23,12 +23,13 @@ serve(async (req) => {
 
     // Initialize the Supabase Admin Client for elevated privileges
     const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      (Deno.env.get('SUPABASE_URL') ?? ''),
+      (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')
     )
 
-    console.log('path',pathname, url)
-
+    console.log('path',pathname, url.origin,'url: ' +  (Deno.env.get('SUPABASE_URL') ?? ''),
+    'key: ' + (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''))
+    
     // --- ROUTING --- //
     if (pathname === '/user-service/register') {
       return await handleRegistration(req, supabaseAdmin)
@@ -40,9 +41,19 @@ serve(async (req) => {
       return await handleGetProfile(req, supabaseAdmin)
     } else if (pathname === '/user-service/reset-password') {
       return await handlePasswordReset(req, supabaseAdmin)
+    } else if (pathname === '/user-service/admin/check-auth-user') {
+      return await handleAdminCheckAuthUser(req, supabaseAdmin)
+    } else if (pathname === '/user-service/admin/create-auth-user') {
+      return await handleAdminCreateAuthUser(req, supabaseAdmin)
+    } else if (pathname === '/user-service/admin/create-profile-with-auth') {
+      return await handleAdminCreateProfileWithAuth(req, supabaseAdmin)
+    } else if (pathname === '/user-service/admin/delete-auth-user') {
+      return await handleAdminDeleteAuthUser(req, supabaseAdmin)
+    } else if (pathname === '/user-service/admin/get-user-by-email') {
+      return await handleAdminGetUserByEmail(req, supabaseAdmin)
     }
 
-    return new Response(JSON.stringify({ error: 'Not Found' }), {
+    return new Response(JSON.stringify({ error: 'Not Found:' + pathname }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 404,
     })
@@ -335,7 +346,7 @@ async function handleLogin(req, supabaseAdmin) {
       .eq('is_active', true)
 
     if (clientUsersError) {
-      console.error('Error fetching client users:', clientUsersError)
+      //console.error('Error fetching client users:', clientUsersError)
       // Don't fail login for this, just log and continue
     }
 
@@ -512,6 +523,487 @@ async function handlePasswordReset(req, supabaseAdmin) {
   } catch (error) {
     console.error('Password reset request error:', error)
     return new Response(JSON.stringify({ error: 'Failed to send password reset email' }), { status: 500 })
+  }
+}
+
+// --- ADMIN USER MANAGEMENT HANDLERS --- //
+
+// Middleware to verify admin authorization
+async function verifyAdminAccess(req, supabaseAdmin) {
+  try {
+    // Get the authorization header
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return { error: 'Authorization header required', status: 401 }
+    }
+
+    // Create a client with the user's token to verify their identity
+    const supabaseUser = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      { global: { headers: { Authorization: authHeader } } }
+    )
+
+    // Verify the token and get user
+    const { data: { user }, error: userError } = await supabaseUser.auth.getUser()
+    if (userError || !user) {
+      return { error: 'Invalid or expired token', status: 401 }
+    }
+
+    // Get the user's profile to check admin status
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('role, is_admin, email')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError) {
+      console.error('Error fetching user profile for admin check:', profileError)
+      return { error: 'Failed to verify user permissions', status: 500 }
+    }
+
+    // Check if user is admin
+    if (!profile.is_admin && profile.role !== 'admin') {
+      console.log(`Unauthorized admin access attempt by user: ${profile.email} (role: ${profile.role}, is_admin: ${profile.is_admin})`)
+      return { error: 'Admin access required', status: 403 }
+    }
+
+    console.log(`Admin access verified for user: ${profile.email}`)
+    return { user, profile }
+  } catch (error) {
+    console.error('Error in admin access verification:', error)
+    return { error: 'Failed to verify admin access', status: 500 }
+  }
+}
+
+// --- Handler for Admin Check Auth User --- //
+async function handleAdminCheckAuthUser(req, supabaseAdmin) {
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 405 
+    })
+  }
+
+  // Verify admin access
+  const adminCheck = await verifyAdminAccess(req, supabaseAdmin)
+  if (adminCheck.error) {
+    return new Response(JSON.stringify({ error: adminCheck.error }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: adminCheck.status
+    })
+  }
+
+  try {
+    const { email } = await req.json()
+
+    if (!email?.trim()) {
+      return new Response(JSON.stringify({ error: 'Email is required' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400
+      })
+    }
+
+    // List all users and check if email exists
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({
+      page: 1,
+      perPage: 1000 // Reasonable limit for checking existence
+    })
+    
+    if (error) {
+      console.error('Error listing auth users:', error)
+      return new Response(JSON.stringify({ 
+        error: 'Failed to check user existence',
+        details: error.message 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500
+      })
+    }
+    
+    // Check if any user has the matching email (case-insensitive)
+    const userExists = data.users.some(user => 
+      user.email?.toLowerCase() === email.toLowerCase()
+    )
+    
+    console.log(`Admin ${adminCheck.profile.email} checked existence of auth user: ${email} - exists: ${userExists}`)
+    
+    return new Response(JSON.stringify({ 
+      exists: userExists,
+      email: email.toLowerCase()
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200
+    })
+
+  } catch (error) {
+    console.error('Error in handleAdminCheckAuthUser:', error)
+    return new Response(JSON.stringify({ 
+      error: 'Failed to check user existence',
+      details: error.message 
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500
+    })
+  }
+}
+
+// --- Handler for Admin Create Auth User --- //
+async function handleAdminCreateAuthUser(req, supabaseAdmin) {
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 405 
+    })
+  }
+
+  // Verify admin access
+  const adminCheck = await verifyAdminAccess(req, supabaseAdmin)
+  if (adminCheck.error) {
+    return new Response(JSON.stringify({ error: adminCheck.error }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: adminCheck.status
+    })
+  }
+
+  try {
+    const { email, password = 'TempPass123!' } = await req.json()
+
+    if (!email?.trim()) {
+      return new Response(JSON.stringify({ error: 'Email is required' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400
+      })
+    }
+
+    // Create the auth user
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+      email: email.trim().toLowerCase(),
+      password: password,
+      email_confirm: true // Auto-confirm the email
+    })
+
+    if (error) {
+      console.error('Error creating auth user:', error)
+      return new Response(JSON.stringify({ 
+        error: 'Failed to create user login',
+        details: error.message 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400
+      })
+    }
+
+    if (!data.user) {
+      return new Response(JSON.stringify({ 
+        error: 'Failed to create user - no user returned' 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500
+      })
+    }
+
+    console.log(`Admin ${adminCheck.profile.email} created auth user: ${email} with ID: ${data.user.id}`)
+
+    return new Response(JSON.stringify({ 
+      success: true,
+      userId: data.user.id,
+      email: data.user.email,
+      message: 'User login created successfully',
+      temporaryPassword: password
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200
+    })
+
+  } catch (error) {
+    console.error('Error in handleAdminCreateAuthUser:', error)
+    return new Response(JSON.stringify({ 
+      error: 'Failed to create user login',
+      details: error.message 
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500
+    })
+  }
+}
+
+// --- Handler for Admin Create Profile With Auth --- //
+async function handleAdminCreateProfileWithAuth(req, supabaseAdmin) {
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 405 
+    })
+  }
+
+  // Verify admin access
+  const adminCheck = await verifyAdminAccess(req, supabaseAdmin)
+  if (adminCheck.error) {
+    return new Response(JSON.stringify({ error: adminCheck.error }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: adminCheck.status
+    })
+  }
+
+  try {
+    const { 
+      email, 
+      full_name, 
+      role = 'user', 
+      account_id, 
+      phone, 
+      status = 'pending',
+      createLogin = false,
+      password = 'TempPass123!'
+    } = await req.json()
+
+    // Validate required fields
+    if (!email?.trim()) {
+      return new Response(JSON.stringify({ error: 'Email is required' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400
+      })
+    }
+
+    if (!account_id) {
+      return new Response(JSON.stringify({ error: 'Account ID is required' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400
+      })
+    }
+
+    let authUserId = undefined
+    let temporaryPassword = undefined
+
+    // Create auth user first if requested
+    if (createLogin) {
+      const authResult = await handleAdminCreateAuthUser(
+        new Request(req.url, {
+          method: 'POST',
+          headers: req.headers,
+          body: JSON.stringify({ email, password })
+        }),
+        supabaseAdmin
+      )
+
+      const authData = await authResult.json()
+      if (!authData.success) {
+        return new Response(JSON.stringify({
+          error: `Failed to create user login: ${authData.error}`,
+          details: authData.details
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400
+        })
+      }
+
+      authUserId = authData.userId
+      temporaryPassword = authData.temporaryPassword
+    }
+
+    // Create the profile
+    const profileData = {
+      email: email.trim().toLowerCase(),
+      full_name: full_name?.trim() || null,
+      role: role || 'user',
+      account_id: account_id,
+      phone: phone?.trim() || null,
+      status: status || 'pending',
+      auth_sync_status: authUserId ? 'synced' : 'pending',
+      metadata: {},
+      preferences: {},
+      timezone: 'UTC',
+      login_count: 0,
+      is_verified: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+
+    // If auth user was created, use that ID for the profile
+    if (authUserId) {
+      profileData.id = authUserId
+    }
+
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .insert([profileData])
+      .select()
+      .single()
+
+    if (profileError) {
+      console.error('Error creating profile:', profileError)
+      
+      // If profile creation failed but auth user was created, clean up
+      if (authUserId) {
+        try {
+          await supabaseAdmin.auth.admin.deleteUser(authUserId)
+          console.log('Cleaned up auth user after profile creation failure:', authUserId)
+        } catch (cleanupError) {
+          console.error('Error cleaning up auth user after profile creation failure:', cleanupError)
+        }
+      }
+      
+      return new Response(JSON.stringify({
+        error: 'Failed to create profile',
+        details: profileError.message
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400
+      })
+    }
+
+    console.log(`Admin ${adminCheck.profile.email} created profile: ${email} with ID: ${profile.id} (createLogin: ${createLogin})`)
+
+    return new Response(JSON.stringify({ 
+      success: true,
+      profile: profile,
+      message: createLogin ? 
+        'Profile and user login created successfully' : 
+        'Profile created successfully',
+      temporaryPassword: temporaryPassword
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200
+    })
+
+  } catch (error) {
+    console.error('Error in handleAdminCreateProfileWithAuth:', error)
+    return new Response(JSON.stringify({ 
+      error: 'Failed to create profile',
+      details: error.message 
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500
+    })
+  }
+}
+
+// --- Handler for Admin Delete Auth User --- //
+async function handleAdminDeleteAuthUser(req, supabaseAdmin) {
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 405 
+    })
+  }
+
+  // Verify admin access
+  const adminCheck = await verifyAdminAccess(req, supabaseAdmin)
+  if (adminCheck.error) {
+    return new Response(JSON.stringify({ error: adminCheck.error }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: adminCheck.status
+    })
+  }
+
+  try {
+    const { userId } = await req.json()
+
+    if (!userId?.trim()) {
+      return new Response(JSON.stringify({ error: 'User ID is required' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400
+      })
+    }
+
+    // Delete the auth user
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(userId)
+
+    if (error) {
+      console.error('Error deleting auth user:', error)
+      return new Response(JSON.stringify({ 
+        error: 'Failed to delete auth user',
+        details: error.message 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400
+      })
+    }
+
+    console.log(`Admin ${adminCheck.profile.email} deleted auth user: ${userId}`)
+
+    return new Response(JSON.stringify({ 
+      success: true,
+      message: 'Auth user deleted successfully'
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200
+    })
+
+  } catch (error) {
+    console.error('Error in handleAdminDeleteAuthUser:', error)
+    return new Response(JSON.stringify({ 
+      error: 'Failed to delete auth user',
+      details: error.message 
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500
+    })
+  }
+}
+
+// --- Handler for Admin Get User By Email --- //
+async function handleAdminGetUserByEmail(req, supabaseAdmin) {
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 405 
+    })
+  }
+
+  // Verify admin access
+  const adminCheck = await verifyAdminAccess(req, supabaseAdmin)
+  if (adminCheck.error) {
+    return new Response(JSON.stringify({ error: adminCheck.error }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: adminCheck.status
+    })
+  }
+
+  try {
+    const { email } = await req.json()
+
+    if (!email?.trim()) {
+      return new Response(JSON.stringify({ error: 'Email is required' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400
+      })
+    }
+
+    // Get user by email using admin API
+    const { data, error } = await supabaseAdmin.auth.admin.getUserByEmail(email.trim().toLowerCase())
+    
+    if (error) {
+      console.error('Error getting user by email:', error)
+      return new Response(JSON.stringify({ 
+        error: 'Failed to get user by email',
+        details: error.message 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500
+      })
+    }
+    
+    console.log(`Admin ${adminCheck.profile.email} retrieved user by email: ${email} - found: ${!!data.user}`)
+    
+    return new Response(JSON.stringify({ 
+      user: data.user || null,
+      email: email.toLowerCase()
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200
+    })
+
+  } catch (error) {
+    console.error('Error in handleAdminGetUserByEmail:', error)
+    return new Response(JSON.stringify({ 
+      error: 'Failed to get user by email',
+      details: error.message 
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500
+    })
   }
 }
 

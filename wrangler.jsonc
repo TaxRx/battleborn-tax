@@ -25,6 +25,7 @@
     "NODE_ENV": "production",
     "REACT_APP_SUPABASE_URL": "https://ufxwqddayrydbgwaysfw.supabase.co",
     "REACT_APP_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVmeHdxZGRheXJ5ZGJnd2F5c2Z3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTAxODE3ODksImV4cCI6MjA2NTc1Nzc4OX0.FRSq5CgQLsaLe4QNBOgvUQFEsXZypZ2Nrg3Mr5Kswpw"
+    
   },
   
   // Build configuration for GitHub deployment
@@ -81,6 +82,7 @@
         "STRIPE_PUBLISHABLE_KEY": "pk_live_your_production_publishable_key",
         "STRIPE_SECRET_KEY": "sk_live_your_production_secret_key",
         "STRIPE_API_KEY": "sk_live_your_production_secret_key"
+        
       },
       // Production-specific routes (custom domains)
       // Note: Uncomment when galileo.tax domain is added to Cloudflare

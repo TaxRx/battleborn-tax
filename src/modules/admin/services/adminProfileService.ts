@@ -697,11 +697,25 @@ class AdminProfileService {
         throw new Error('Profile with this email already exists');
       }
 
-      // Check auth.users for existing user
-      const { data: authUser } = await supabase.auth.admin.getUserByEmail(data.email);
+      // Check auth.users for existing user using secure edge function
+      const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL;
+      const response = await fetch(`${functionsUrl}/user-service/admin/get-user-by-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+        },
+        body: JSON.stringify({ email: data.email })
+      });
 
-      if (authUser?.user) {
-        throw new Error('User with this email already exists in authentication system');
+      if (response.ok) {
+        const authUserData = await response.json();
+        if (authUserData?.user) {
+          throw new Error('User with this email already exists in authentication system');
+        }
+      } else {
+        // Log the error but don't fail profile creation - this is just a validation check
+        console.warn('Could not check auth user existence via edge function:', response.status, response.statusText);
       }
 
       // Create the profile
