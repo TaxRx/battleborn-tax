@@ -183,6 +183,147 @@ const applyActualizationVariations = (basePercentage: number): number => {
   return Math.max(0, Math.round(variedPercentage * 100) / 100);
 };
 
+// Auto-populate Research Design data for years missing subcomponent configuration
+const autoPopulateResearchDesignData = async (
+  targetBusinessYearId: string, 
+  assignedRoleId: string, 
+  targetYear: number, 
+  businessId: string
+): Promise<any[] | null> => {
+  try {
+    console.log(`🔄 Auto-populating Research Design data for year ${targetYear}...`);
+    
+    // Find the most recent year with Research Design data for this business
+    const { data: availableYears, error: yearsError } = await supabase
+      .from('rd_business_years')
+      .select('id, year')
+      .eq('business_id', businessId)
+      .lt('year', targetYear) // Only years before target year
+      .order('year', { ascending: false });
+    
+    if (yearsError || !availableYears?.length) {
+      console.log('⚠️ No previous years found to copy Research Design data from');
+      return null;
+    }
+    
+    // Try each year starting from most recent
+    for (const year of availableYears) {
+      const { data: templateSubcomponents, error: templateError } = await supabase
+        .from('rd_selected_subcomponents')
+        .select('*')
+        .eq('business_year_id', year.id)
+        .filter('selected_roles', 'cs', `[\"${String(assignedRoleId)}\"]`);
+      
+      if (!templateError && templateSubcomponents?.length > 0) {
+        console.log(`✅ Found template data from year ${year.year} with ${templateSubcomponents.length} subcomponents`);
+        
+        // Copy the template data to the target year
+        const newSubcomponents = templateSubcomponents.map(template => ({
+          business_year_id: targetBusinessYearId,
+          research_activity_id: template.research_activity_id,
+          step_id: template.step_id,
+          subcomponent_id: template.subcomponent_id,
+          frequency_percentage: template.frequency_percentage,
+          year_percentage: template.year_percentage,
+          start_month: template.start_month,
+          start_year: targetYear, // Update to target year
+          selected_roles: template.selected_roles,
+          step_name: template.step_name,
+          time_percentage: template.time_percentage,
+          practice_percent: template.practice_percent,
+          applied_percentage: template.applied_percentage,
+          general_description: template.general_description,
+          goal: template.goal,
+          hypothesis: template.hypothesis,
+          alternatives: template.alternatives,
+          uncertainties: template.uncertainties,
+          developmental_process: template.developmental_process,
+          primary_goal: template.primary_goal,
+          expected_outcome_type: template.expected_outcome_type,
+          cpt_codes: template.cpt_codes,
+          cdt_codes: template.cdt_codes,
+          alternative_paths: template.alternative_paths
+        }));
+        
+        // Also copy selected activities and steps data for consistency
+        const { data: templateActivities, error: activitiesError } = await supabase
+          .from('rd_selected_activities')
+          .select('*')
+          .eq('business_year_id', year.id);
+        
+        if (!activitiesError && templateActivities?.length > 0) {
+          const newActivities = templateActivities.map(activity => ({
+            business_year_id: targetBusinessYearId,
+            activity_id: activity.activity_id,
+            practice_percent: activity.practice_percent,
+            selected_roles: activity.selected_roles,
+            config: activity.config
+          }));
+          
+          // Insert activities (ignore conflicts if they already exist)
+          const { error: activitiesInsertError } = await supabase
+            .from('rd_selected_activities')
+            .upsert(newActivities, { onConflict: 'business_year_id,activity_id' });
+          
+          if (activitiesInsertError) {
+            console.warn('⚠️ Warning inserting auto-populated activities:', activitiesInsertError);
+          }
+        }
+        
+        const { data: templateSteps, error: stepsError } = await supabase
+          .from('rd_selected_steps')
+          .select('*')
+          .eq('business_year_id', year.id);
+        
+        if (!stepsError && templateSteps?.length > 0) {
+          const newSteps = templateSteps.map(step => ({
+            business_year_id: targetBusinessYearId,
+            research_activity_id: step.research_activity_id,
+            step_id: step.step_id,
+            time_percentage: step.time_percentage,
+            applied_percentage: step.applied_percentage,
+            non_rd_percentage: step.non_rd_percentage
+          }));
+          
+          // Insert steps (ignore conflicts if they already exist)
+          const { error: stepsInsertError } = await supabase
+            .from('rd_selected_steps')
+            .upsert(newSteps, { onConflict: 'business_year_id,step_id' });
+          
+          if (stepsInsertError) {
+            console.warn('⚠️ Warning inserting auto-populated steps:', stepsInsertError);
+          }
+        }
+        
+        // Insert the copied subcomponents data
+        const { error: insertError } = await supabase
+          .from('rd_selected_subcomponents')
+          .insert(newSubcomponents);
+        
+        if (insertError) {
+          console.error('❌ Error inserting auto-populated subcomponents:', insertError);
+          continue; // Try next year
+        }
+        
+        console.log(`✅ Successfully auto-populated ${newSubcomponents.length} subcomponents for year ${targetYear}`);
+        
+        // Optional: Show user notification about auto-population
+        // This could be enhanced with a toast notification in the UI
+        console.log(`📢 NOTICE: Research Design data was automatically copied from year ${year.year} to enable employee import for year ${targetYear}`);
+        
+        return newSubcomponents;
+      }
+    }
+    
+    console.log('⚠️ No suitable template year found with Research Design data');
+    return null;
+    
+  } catch (error) {
+    console.error('❌ Error in auto-population:', error);
+    return null;
+  }
+};
+
 const QuickEmployeeEntryForm: React.FC<{
   onAdd: (employee: QuickEmployeeEntry) => void;
   roles: Role[];
@@ -3596,6 +3737,10 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
   const handleCSVImport = async (file: File) => {
     setCsvImporting(true);
     setCsvError(null);
+    
+    // ✅ AUTO-POPULATION FEATURE: If importing employees into years without Research Design data,
+    // the system will automatically copy configuration from the most recent completed year.
+    // This resolves the dependency issue where CSV import relied on Research Design being loaded first.
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -3775,7 +3920,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
               console.log(`🔗 Creating subcomponent relationships for ${firstName} ${lastName} with role ${roleName}`);
               
               // Fetch all selected subcomponents for this business year and role
-              const { data: selectedSubcomponents, error: subcomponentsError } = await supabase
+              let { data: selectedSubcomponents, error: subcomponentsError } = await supabase
                 .from('rd_selected_subcomponents')
                 .select('*')
                 .eq('business_year_id', targetBusinessYearId)
@@ -3783,7 +3928,24 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
 
               if (subcomponentsError) {
                 console.error('❌ Error fetching selected subcomponents for import:', subcomponentsError);
-              } else if (selectedSubcomponents && selectedSubcomponents.length > 0) {
+              } 
+              
+              // ✅ DEPENDENCY FIX: Auto-populate Research Design data if missing
+              if (!selectedSubcomponents || selectedSubcomponents.length === 0) {
+                console.log(`⚠️ No Research Design data found for year ${yearNumber}. Attempting auto-population...`);
+                
+                // Try to copy from the most recent year with data
+                const autoPopulatedData = await autoPopulateResearchDesignData(targetBusinessYearId, assignedRoleId, yearNumber, businessId);
+                
+                if (autoPopulatedData && autoPopulatedData.length > 0) {
+                  selectedSubcomponents = autoPopulatedData;
+                  console.log(`✅ Auto-populated ${autoPopulatedData.length} subcomponents from template year`);
+                } else {
+                  console.log(`⚠️ Could not auto-populate Research Design data for year ${yearNumber}`);
+                }
+              }
+              
+              if (selectedSubcomponents && selectedSubcomponents.length > 0) {
                 console.log(`✅ Found ${selectedSubcomponents.length} subcomponents for role ${roleName}`);
                 
                 // Create employee subcomponent relationships with baseline values
