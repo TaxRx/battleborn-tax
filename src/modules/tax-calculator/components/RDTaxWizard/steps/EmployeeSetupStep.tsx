@@ -3607,8 +3607,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         let rolesAssignedCount = 0;
         let detailedErrors: Array<{employee: string, error: string, row: number}> = [];
         
-        // FIXED: Global actualization cache to ensure same actualized values across all employees/years
-        const globalActualizationCache: { [key: string]: any } = {};
+        // Each employee will get unique actualized values for proper randomization
         
         console.log('🔍 CSV Import - Processing', rows.length, 'rows');
         console.log('📋 CSV Headers detected:', results.meta.fields);
@@ -3795,60 +3794,55 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                   let frequencyPercentage = subcomponent.frequency_percentage || 0;
                   let appliedPercentage = subcomponent.applied_percentage || 0;
 
-                  // FIXED: Apply actualization variations if enabled - using global cache for consistency
+                  // Apply actualization variations if enabled - unique randomization per employee
                   if (csvUseActualization) {
-                    // Create a unique key for this subcomponent across all years and employees
-                    const cacheKey = `${subcomponent.subcomponent_id}_${targetBusinessYearId}`;
+                    // ✅ FIX: Generate fresh actualized values for EACH employee
+                    // Each employee gets their own randomized variation within established ranges
                     
-                    if (!globalActualizationCache[cacheKey]) {
-                      // First time seeing this subcomponent+year combination - calculate actualized values once
-                      globalActualizationCache[cacheKey] = {
-                        timePercentage: applyActualizationVariations(timePercentage),
-                        practicePercentage: applyActualizationVariations(practicePercentage),
-                        yearPercentage: applyActualizationVariations(yearPercentage),
-                        frequencyPercentage: applyActualizationVariations(frequencyPercentage),
-                        original: {
-                          time: timePercentage,
-                          practice: practicePercentage,
-                          year: yearPercentage,
-                          frequency: frequencyPercentage,
-                          applied: appliedPercentage
-                        }
-                      };
-                      
-                      // Calculate applied percentage with actualized values
-                      globalActualizationCache[cacheKey].appliedPercentage = (
-                        globalActualizationCache[cacheKey].practicePercentage / 100
-                      ) * (
-                        globalActualizationCache[cacheKey].yearPercentage / 100
-                      ) * (
-                        globalActualizationCache[cacheKey].frequencyPercentage / 100
-                      ) * (
-                        globalActualizationCache[cacheKey].timePercentage / 100
-                      ) * 100;
-                      
-                      console.log('🎲 CSV FIRST-TIME actualization for key:', cacheKey, {
-                        subcomponent: subcomponent.subcomponent_id,
-                        year: targetBusinessYearId,
-                        original: globalActualizationCache[cacheKey].original,
-                        actualized: {
-                          time: globalActualizationCache[cacheKey].timePercentage,
-                          practice: globalActualizationCache[cacheKey].practicePercentage,
-                          year: globalActualizationCache[cacheKey].yearPercentage,
-                          frequency: globalActualizationCache[cacheKey].frequencyPercentage,
-                          applied: globalActualizationCache[cacheKey].appliedPercentage
-                        }
-                      });
-                    }
+                    const actualizedValues = {
+                      timePercentage: applyActualizationVariations(timePercentage),
+                      practicePercentage: applyActualizationVariations(practicePercentage),
+                      yearPercentage: applyActualizationVariations(yearPercentage),
+                      frequencyPercentage: applyActualizationVariations(frequencyPercentage)
+                    };
                     
-                    // Use cached actualized values for ALL employees with this subcomponent+year
-                    timePercentage = globalActualizationCache[cacheKey].timePercentage;
-                    practicePercentage = globalActualizationCache[cacheKey].practicePercentage;
-                    yearPercentage = globalActualizationCache[cacheKey].yearPercentage;
-                    frequencyPercentage = globalActualizationCache[cacheKey].frequencyPercentage;
-                    appliedPercentage = globalActualizationCache[cacheKey].appliedPercentage;
+                    // Calculate applied percentage with this employee's unique actualized values
+                    const actualizedAppliedPercentage = (
+                      actualizedValues.practicePercentage / 100
+                    ) * (
+                      actualizedValues.yearPercentage / 100
+                    ) * (
+                      actualizedValues.frequencyPercentage / 100
+                    ) * (
+                      actualizedValues.timePercentage / 100
+                    ) * 100;
                     
-                    console.log('🎲 CSV USING CACHED actualization for employee:', firstName, lastName, 'key:', cacheKey);
+                    console.log(`🎲 CSV UNIQUE actualization for employee: ${firstName} ${lastName}`, {
+                      subcomponent: subcomponent.subcomponent_id,
+                      employee: `${firstName} ${lastName}`,
+                      year: targetBusinessYearId,
+                      original: {
+                        time: timePercentage,
+                        practice: practicePercentage,
+                        year: yearPercentage,
+                        frequency: frequencyPercentage,
+                        applied: appliedPercentage
+                      },
+                      actualized: {
+                        time: actualizedValues.timePercentage,
+                        practice: actualizedValues.practicePercentage,
+                        year: actualizedValues.yearPercentage,
+                        frequency: actualizedValues.frequencyPercentage,
+                        applied: actualizedAppliedPercentage
+                      }
+                    });
+                    
+                    // Use this employee's unique actualized values
+                    timePercentage = actualizedValues.timePercentage;
+                    practicePercentage = actualizedValues.practicePercentage;
+                    yearPercentage = actualizedValues.yearPercentage;
+                    frequencyPercentage = actualizedValues.frequencyPercentage;
+                    appliedPercentage = actualizedAppliedPercentage;
                   }
 
                   return {
