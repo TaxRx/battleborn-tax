@@ -3954,7 +3954,44 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                   let practicePercentage = subcomponent.practice_percent || 0;
                   let yearPercentage = subcomponent.year_percentage || 0;
                   let frequencyPercentage = subcomponent.frequency_percentage || 0;
-                  let appliedPercentage = subcomponent.applied_percentage || 0;
+                  
+                  // ✅ FIX: Calculate applied percentage from components instead of copying potentially 0 value
+                  let appliedPercentage = (practicePercentage / 100) * (timePercentage / 100) * (yearPercentage / 100) * (frequencyPercentage / 100) * 100;
+                  
+                  // Apply non-R&D reduction to base calculation (for both actualized and non-actualized)
+                  let nonRdPercent = 0;
+                  try {
+                    const { data: subStep, error: stepError } = await supabase
+                      .from('rd_selected_steps')
+                      .select('non_rd_percentage')
+                      .eq('business_year_id', targetBusinessYearId)
+                      .eq('step_id', subcomponent.step_id)
+                      .single();
+                    
+                    if (!stepError && subStep) {
+                      nonRdPercent = subStep.non_rd_percentage || 0;
+                    }
+                  } catch (error) {
+                    console.warn(`⚠️ Could not fetch non-R&D percentage for step ${subcomponent.step_id}:`, error);
+                  }
+                  
+                  // Apply non-R&D reduction to base calculation
+                  const beforeNonRd = appliedPercentage;
+                  if (nonRdPercent > 0) {
+                    appliedPercentage = appliedPercentage * ((100 - nonRdPercent) / 100);
+                  }
+                  
+                  console.log(`📊 CSV base calculation for ${firstName} ${lastName} subcomponent ${subcomponent.subcomponent_id}:`, {
+                    raw: {
+                      practice: practicePercentage,
+                      time: timePercentage,
+                      year: yearPercentage,
+                      frequency: frequencyPercentage
+                    },
+                    beforeNonRd: beforeNonRd,
+                    nonRdPercent: nonRdPercent,
+                    finalApplied: appliedPercentage
+                  });
 
                   // Apply actualization variations if enabled - unique randomization per employee
                   if (csvUseActualization) {
@@ -3979,26 +4016,8 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                       actualizedValues.timePercentage / 100
                     ) * 100;
                     
-                    // ✅ CRITICAL FIX: Apply Non-R&D reduction (same as role baseline calculation)
-                    // Find the step for this subcomponent to get non-R&D percentage
-                    let nonRdPercent = 0;
+                    // Apply non-R&D reduction to actualized percentage (using same nonRdPercent from above)
                     const beforeNonRdReduction = actualizedAppliedPercentage;
-                    
-                    try {
-                      const { data: subStep, error: stepError } = await supabase
-                        .from('rd_selected_steps')
-                        .select('non_rd_percentage')
-                        .eq('business_year_id', targetBusinessYearId)
-                        .eq('step_id', subcomponent.step_id)
-                        .single();
-                      
-                      if (!stepError && subStep) {
-                        nonRdPercent = subStep.non_rd_percentage || 0;
-                      }
-                    } catch (error) {
-                      console.warn(`⚠️ Could not fetch non-R&D percentage for step ${subcomponent.step_id}:`, error);
-                    }
-                    
                     if (nonRdPercent > 0) {
                       actualizedAppliedPercentage = actualizedAppliedPercentage * ((100 - nonRdPercent) / 100);
                     }
@@ -4040,12 +4059,12 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                     time_percentage: timePercentage,
                     applied_percentage: appliedPercentage,
                     is_included: true,
-                    baseline_applied_percent: subcomponent.applied_percentage || 0,
+                    baseline_applied_percent: beforeNonRd, // Use calculated baseline before non-R&D reduction
                     practice_percentage: practicePercentage,
                     year_percentage: yearPercentage,
                     frequency_percentage: frequencyPercentage,
-                    baseline_practice_percentage: subcomponent.practice_percent || 0,
-                    baseline_time_percentage: subcomponent.time_percentage || 0,
+                    baseline_practice_percentage: practicePercentage, // Use current values as baseline
+                    baseline_time_percentage: timePercentage, // Use current values as baseline
                     user_id: userId
                   };
                 }));
