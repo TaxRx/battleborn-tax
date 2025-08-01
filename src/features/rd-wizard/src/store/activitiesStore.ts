@@ -118,7 +118,7 @@ const useActivitiesStore = create<ActivitiesStore>()(
               // Calculate applied percentage with scaling to respect practice percentage limit
               const appliedPercentage = Math.round(
                 Math.min(
-                  (practicePercentage * frequencyPercentage * timePercentage) / 10000,
+                  (practicePercentage / 100) * (frequencyPercentage / 100) * (timePercentage / 100) * 100,
                   maxPerSubcomponent
                 )
               );
@@ -170,7 +170,7 @@ const useActivitiesStore = create<ActivitiesStore>()(
             // Recalculate applied percentages for all subcomponents
             updatedActivity.subcomponents = updatedActivity.subcomponents.map(sub => {
               if (!sub.isSelected) return sub;
-              const applied = (percentage * sub.frequencyPercentage * sub.timePercentage * sub.yearPercentage) / 1000000;
+              const applied = (percentage / 100) * (sub.frequencyPercentage / 100) * (sub.timePercentage / 100) * (sub.yearPercentage / 100) * 100;
               return {
                 ...sub,
                 appliedPercentage: parseFloat(applied.toFixed(2))
@@ -201,7 +201,7 @@ const useActivitiesStore = create<ActivitiesStore>()(
 
             const updatedSubcomponents = activity.subcomponents.map(sub => {
               if (sub.id === subcomponentId) {
-                const applied = (activity.practicePercentage * percentage * sub.timePercentage * sub.yearPercentage) / 1000000;
+                const applied = (activity.practicePercentage / 100) * (percentage / 100) * (sub.timePercentage / 100) * (sub.yearPercentage / 100) * 100;
                 return {
                   ...sub,
                   frequencyPercentage: parseFloat(percentage.toFixed(2)),
@@ -232,7 +232,7 @@ const useActivitiesStore = create<ActivitiesStore>()(
 
             const updatedSubcomponents = activity.subcomponents.map(sub => {
               if (sub.id === subcomponentId) {
-                const applied = (activity.practicePercentage * sub.frequencyPercentage * percentage * sub.yearPercentage) / 1000000;
+                const applied = (activity.practicePercentage / 100) * (sub.frequencyPercentage / 100) * (percentage / 100) * (sub.yearPercentage / 100) * 100;
                 return {
                   ...sub,
                   timePercentage: parseFloat(percentage.toFixed(2)),
@@ -259,7 +259,7 @@ const useActivitiesStore = create<ActivitiesStore>()(
           if (activity.id === activityId) {
             const updatedSubcomponents = activity.subcomponents.map(sub => {
               if (sub.id === subcomponentId) {
-                const applied = (activity.practicePercentage * sub.frequencyPercentage * sub.timePercentage * percentage) / 1000000;
+                const applied = (activity.practicePercentage / 100) * (sub.frequencyPercentage / 100) * (sub.timePercentage / 100) * (percentage / 100) * 100;
                 return {
                   ...sub,
                   yearPercentage: percentage,
@@ -286,7 +286,7 @@ const useActivitiesStore = create<ActivitiesStore>()(
           if (activity.id === activityId) {
             const updatedSubcomponents = activity.subcomponents.map(sub => {
               if (sub.id === subcomponentId) {
-                const applied = (activity.practicePercentage * sub.frequencyPercentage * sub.timePercentage * sub.yearPercentage) / 1000000;
+                const applied = (activity.practicePercentage / 100) * (sub.frequencyPercentage / 100) * (sub.timePercentage / 100) * (sub.yearPercentage / 100) * 100;
                 return {
                   ...sub,
                   appliedPercentage: parseFloat(applied.toFixed(2))
@@ -450,7 +450,7 @@ const useActivitiesStore = create<ActivitiesStore>()(
                 // Calculate applied percentage
                 const appliedPercentage = Math.round(
                   Math.min(
-                    (newPracticePercentage * frequencyPercentage * timePercentage) / 10000,
+                    (newPracticePercentage / 100) * (frequencyPercentage / 100) * (timePercentage / 100) * 100,
                     newPracticePercentage / activity.subcomponents.filter(s => s.isSelected).length
                   )
                 );
@@ -520,7 +520,7 @@ const useActivitiesStore = create<ActivitiesStore>()(
         const updatedActivities = state.selectedActivities.map(activity => {
           const updatedSubcomponents = activity.subcomponents.map(sub => {
             if (!sub.isSelected) return sub;
-            const applied = (activity.practicePercentage * sub.frequencyPercentage * sub.timePercentage * sub.yearPercentage) / 1000000;
+            const applied = (activity.practicePercentage / 100) * (sub.frequencyPercentage / 100) * (sub.timePercentage / 100) * (sub.yearPercentage / 100) * 100;
             const newAppliedPercentage = parseFloat(applied.toFixed(2));
             
             // Only update if the value has changed

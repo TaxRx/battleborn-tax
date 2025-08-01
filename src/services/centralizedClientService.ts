@@ -144,9 +144,25 @@ export class CentralizedClientService {
    */
   static async createClient(clientData: CreateClientData): Promise<{ success: boolean; clientId?: string; error?: string }> {
     try {
+      console.log('[CentralizedClientService] createClient called with data:', clientData);
+      
+      // Validate required fields
+      if (!clientData.full_name || clientData.full_name.trim() === '') {
+        console.error('[CentralizedClientService] Missing or empty full_name:', clientData.full_name);
+        return { success: false, error: 'Full name is required and cannot be empty' };
+      }
+      
+      if (!clientData.email || clientData.email.trim() === '') {
+        console.error('[CentralizedClientService] Missing or empty email:', clientData.email);
+        return { success: false, error: 'Email is required and cannot be empty' };
+      }
+
       // Get current user ID
       const { data: { user } } = await supabase.auth.getUser();
       const userId = user?.id;
+
+      console.log('[CentralizedClientService] Current user ID:', userId);
+      console.log('[CentralizedClientService] About to insert client with full_name:', clientData.full_name);
 
       // First, create the client
       const { data: clientDataResult, error: clientError } = await supabase
@@ -169,7 +185,7 @@ export class CentralizedClientService {
         .single();
 
       if (clientError) {
-        console.error('Error creating client:', clientError);
+        console.error('[CentralizedClientService] Error creating client:', clientError);
         
         // Handle duplicate email error specifically
         if (clientError.code === '23505' && clientError.message.includes('clients_email_key')) {
@@ -178,6 +194,8 @@ export class CentralizedClientService {
         
         return { success: false, error: clientError.message };
       }
+
+      console.log('[CentralizedClientService] Client created successfully with ID:', clientDataResult.id);
 
       const clientId = clientDataResult.id;
 
@@ -426,12 +444,92 @@ export class CentralizedClientService {
         }
       }
       
-      console.log('[CentralizedClientService] Calling enroll_client_in_tool RPC', { clientId, businessId, toolSlug, notes });
+      // First, check if we need to create a corresponding admin_client_files record
+      // for compatibility with the legacy tool_enrollments schema
+      let clientFileId = clientId;
       
-      // Remove legacy check for admin_client_files
-      // Directly enroll the client in the tool using the unified structure
+      try {
+        // Check if admin_client_files record exists for this client
+        const { data: existingClientFile, error: checkError } = await supabase
+          .from('admin_client_files')
+          .select('id')
+          .eq('id', clientId)
+          .single();
+          
+        if (checkError && checkError.code === 'PGRST116') {
+          // Record doesn't exist, we need to create it
+          console.log('[CentralizedClientService] Creating admin_client_files record for client:', clientId);
+          
+          // Get client data from the new clients table
+          const { data: clientData, error: clientError } = await supabase
+            .from('clients')
+            .select('*')
+            .eq('id', clientId)
+            .single();
+            
+          if (clientError) {
+            throw new Error(`Failed to fetch client data: ${clientError.message}`);
+          }
+          
+          // Get current user ID
+          const { data: { user } } = await supabase.auth.getUser();
+          const userId = user?.id;
+          
+          // Create admin_client_files record
+          const { data: newClientFile, error: insertError } = await supabase
+            .from('admin_client_files')
+            .insert({
+              id: clientId, // Use same ID for consistency
+              admin_id: userId,
+              full_name: clientData.full_name,
+              email: clientData.email,
+              phone: clientData.phone,
+              filing_status: clientData.filing_status,
+              dependents: clientData.dependents,
+              home_address: clientData.home_address,
+              state: clientData.state,
+              standard_deduction: clientData.standard_deduction,
+              custom_deduction: clientData.custom_deduction,
+              business_id: businessId,
+              archived: false,
+              tax_profile_data: {
+                fullName: clientData.full_name,
+                email: clientData.email,
+                phone: clientData.phone,
+                filingStatus: clientData.filing_status,
+                dependents: clientData.dependents,
+                homeAddress: clientData.home_address,
+                state: clientData.state,
+                standardDeduction: clientData.standard_deduction,
+                customDeduction: clientData.custom_deduction
+              }
+            })
+            .select('id')
+            .single();
+            
+          if (insertError) {
+            console.error('[CentralizedClientService] Error creating admin_client_files:', insertError);
+            throw new Error(`Failed to create admin_client_files record: ${insertError.message}`);
+          }
+          
+          console.log('[CentralizedClientService] Created admin_client_files record:', newClientFile.id);
+          clientFileId = newClientFile.id;
+        } else if (checkError) {
+          throw checkError;
+        } else {
+          clientFileId = existingClientFile.id;
+        }
+      } catch (adminFileError) {
+        console.error('[CentralizedClientService] Error handling admin_client_files:', adminFileError);
+        // Continue with original clientId if we can't create the admin file record
+        clientFileId = clientId;
+      }
+      
+      console.log('[CentralizedClientService] Calling enroll_client_in_tool RPC', { clientFileId, businessId, toolSlug, notes });
+      
+      // Use the RPC function with the correct client file ID
       const { data, error } = await supabase.rpc('enroll_client_in_tool', {
-        p_client_file_id: clientId,
+        p_client_file_id: clientFileId,
         p_business_id: businessId,
         p_tool_slug: toolSlug,
         p_notes: notes || null
@@ -716,7 +814,15 @@ export class CentralizedClientService {
    * Transform TaxInfo to CreateClientData format
    */
   static transformTaxInfoToCreateData(taxInfo: TaxInfo): CreateClientData {
-    return {
+    console.log('[CentralizedClientService] transformTaxInfoToCreateData called with:', taxInfo);
+    console.log('[CentralizedClientService] taxInfo.fullName:', taxInfo.fullName);
+    
+    if (!taxInfo.fullName || taxInfo.fullName.trim() === '') {
+      console.error('[CentralizedClientService] ERROR: TaxInfo fullName is missing or empty:', taxInfo.fullName);
+      throw new Error('Full name is required and cannot be empty');
+    }
+    
+    const transformedData = {
       full_name: taxInfo.fullName,
       email: taxInfo.email,
       phone: taxInfo.phone,
@@ -762,6 +868,11 @@ export class CentralizedClientService {
         }))
       }))
     };
+    
+    console.log('[CentralizedClientService] Transformed data:', transformedData);
+    console.log('[CentralizedClientService] Transformed full_name:', transformedData.full_name);
+    
+    return transformedData;
   }
 
   /**

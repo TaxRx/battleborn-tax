@@ -1,27 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { X, ChevronRight, ChevronDown } from 'lucide-react';
-import { supabase } from '../../../../../lib/supabase';
-import { ContractorWithExpenses } from '../../../../../services/contractorManagementService';
-
-const formatPercentage = (value: number | undefined): string => {
-  if (value === undefined || value === null) return '0.00';
-  return value.toFixed(2);
-};
+import { supabase } from '../../../lib/supabase';
+import { motion } from 'framer-motion';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 
 interface ContractorAllocationsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  contractor: ContractorWithExpenses | null;
+  contractor: {
+    id: string;
+    name: string;
+    role_id?: string;
+    cost_amount?: number;
+  } | null;
   businessYearId: string;
-  onUpdate: () => void;
-}
-
-interface ResearchActivityAllocation {
-  id: string;
-  name: string;
-  isEnabled: boolean;
-  practicePercentage: number;
-  subcomponents: SubcomponentAllocation[];
+  onUpdate?: () => void;
 }
 
 interface SubcomponentAllocation {
@@ -33,9 +25,21 @@ interface SubcomponentAllocation {
   yearPercentage: number;
   frequencyPercentage: number;
   isIncluded: boolean;
-  baselineTimePercentage?: number;
-  baselinePracticePercentage?: number;
+  baselineTimePercentage: number;
+  baselinePracticePercentage: number;
 }
+
+interface ResearchActivityAllocation {
+  id: string;
+  name: string;
+  isEnabled: boolean;
+  practicePercentage: number;
+  subcomponents: SubcomponentAllocation[];
+}
+
+const formatPercentage = (value: number): string => {
+  return (Math.round(value * 100) / 100).toString();
+};
 
 const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
   isOpen,
@@ -77,191 +81,31 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
   }, [nonRdPercentage, activities]);
 
   const loadAllocationData = async () => {
-    if (!contractor) {
-      console.log('⚠️ No contractor provided to loadAllocationData');
-      return;
-    }
-    
-    console.log('🔍 loadAllocationData called for contractor:', contractor.id, 'role:', contractor.role_id);
-    
-    if (!businessYearId) {
-      console.log('⚠️ No businessYearId provided to loadAllocationData');
-      setLoading(false);
-      return;
-    }
-    
+    if (!contractor) return;
     setLoading(true);
+    
     try {
-      console.log('🔍 Loading allocation data for contractor:', contractor.id, 'role:', contractor.role_id);
-      
-      if (!supabase) {
-        console.error('❌ Supabase client not available');
-        setLoading(false);
-        return;
-      }
-      
-      // Test basic table access
-      const { data: testData, error: testError } = await supabase
-        .from('rd_contractor_subcomponents')
-        .select('count')
-        .limit(1);
-      
-      if (testError) {
-        console.error('❌ Error testing table access:', testError);
-      } else {
-        console.log('✅ Table access test successful');
-      }
-      
-      // Test rd_selected_activities table access
-      const { data: activitiesTestData, error: activitiesTestError } = await supabase
+      // Get research activities
+      const { data: selectedActivities, error: activitiesError } = await supabase
         .from('rd_selected_activities')
-        .select('selected_roles')
-        .limit(1);
-      
-      if (activitiesTestError) {
-        console.error('❌ Error testing rd_selected_activities access:', activitiesTestError);
-      } else {
-        console.log('✅ rd_selected_activities table access successful');
-        console.log('📋 Sample selected_roles data:', activitiesTestData);
-      }
-      
-      // Get research activities that match the contractor's role
-      let selectedActivities;
-      let activitiesError;
-      
-      try {
-        // Check if contractor has a role before trying role filter
-        if (!contractor.role_id) {
-          console.log('⚠️ Contractor has no role, skipping role filter');
-          activitiesError = new Error('No role assigned to contractor');
-        } else {
-          // First try with role filter using proper JSON syntax
-          console.log('🔍 Trying role filter with role ID:', contractor.role_id);
-          console.log('🔍 JSON query:', JSON.stringify([contractor.role_id]));
-          
-          const { data, error } = await supabase
-            .from('rd_selected_activities')
-            .select(`
-              *,
-              activity:rd_research_activities (
-                id,
-                title
-              )
-            `)
-            .eq('business_year_id', businessYearId)
-            .contains('selected_roles', JSON.stringify([contractor.role_id]));
-          
-          selectedActivities = data;
-          activitiesError = error;
-        }
-      } catch (error) {
-        console.error('❌ Error with role filter query:', error);
-        activitiesError = error;
-      }
+        .select(`
+          *,
+          activity:rd_research_activities (
+            id,
+            title
+          )
+        `)
+        .eq('business_year_id', businessYearId);
 
       if (activitiesError) {
-        console.error('❌ Error loading activities with role filter:', activitiesError);
-        
-        // Try different JSON formats for the role filter
-        let fallbackAttempts = [
-          () => {
-            console.log('🔄 Fallback 1: JSON.stringify([roleId])');
-            return supabase.from('rd_selected_activities').select('*').eq('business_year_id', businessYearId).contains('selected_roles', JSON.stringify([contractor.role_id]));
-          },
-          () => {
-            console.log('🔄 Fallback 2: JSON.stringify(roleId)');
-            return supabase.from('rd_selected_activities').select('*').eq('business_year_id', businessYearId).contains('selected_roles', JSON.stringify(contractor.role_id));
-          },
-          () => {
-            console.log('🔄 Fallback 3: roleId directly');
-            return supabase.from('rd_selected_activities').select('*').eq('business_year_id', businessYearId).contains('selected_roles', contractor.role_id);
-          },
-          () => {
-            console.log('🔄 Fallback 4: ["roleId"] string');
-            return supabase.from('rd_selected_activities').select('*').eq('business_year_id', businessYearId).contains('selected_roles', `["${contractor.role_id}"]`);
-          },
-          () => {
-            console.log('🔄 Fallback 5: "roleId" string');
-            return supabase.from('rd_selected_activities').select('*').eq('business_year_id', businessYearId).contains('selected_roles', `"${contractor.role_id}"`);
-          }
-        ];
-        
-        for (let i = 0; i < fallbackAttempts.length; i++) {
-          try {
-            console.log(`🔄 Trying fallback attempt ${i + 1} for role filter`);
-            const { data: fallbackData, error: fallbackError } = await fallbackAttempts[i]();
-            
-            if (!fallbackError && fallbackData && fallbackData.length > 0) {
-              console.log(`✅ Fallback attempt ${i + 1} successful:`, fallbackData);
-              selectedActivities = fallbackData;
-              break;
-            }
-          } catch (attemptError) {
-            console.log(`❌ Fallback attempt ${i + 1} failed:`, attemptError);
-          }
-        }
-        
-        // If all role filter attempts failed, try without role filter
-        if (!selectedActivities) {
-          try {
-            console.log('🔄 Trying without role filter...');
-            const { data: allActivities, error: allActivitiesError } = await supabase
-              .from('rd_selected_activities')
-              .select(`
-                *,
-                activity:rd_research_activities (
-                  id,
-                  title
-                )
-              `)
-              .eq('business_year_id', businessYearId);
-            
-            if (allActivitiesError) {
-              console.error('❌ Error loading all activities:', allActivitiesError);
-              // Try a simpler query as last resort
-              console.log('🔄 Trying simple query as last resort...');
-              const { data: simpleActivities, error: simpleError } = await supabase
-                .from('rd_selected_activities')
-                .select('*')
-                .eq('business_year_id', businessYearId);
-              
-              if (simpleError) {
-                console.error('❌ Error loading simple activities:', simpleError);
-                // Create empty activities array as final fallback
-                console.log('⚠️ Creating empty activities array as final fallback');
-                selectedActivities = [];
-              } else {
-                console.log('⚠️ Using simple activities as fallback:', simpleActivities);
-                selectedActivities = simpleActivities;
-              }
-            } else {
-              console.log('⚠️ Using all activities as fallback:', allActivities);
-              selectedActivities = allActivities;
-            }
-          } catch (fallbackError) {
-            console.error('❌ Error in fallback queries:', fallbackError);
-            // Create empty activities array as final fallback
-            console.log('⚠️ Creating empty activities array as final fallback due to error');
-            selectedActivities = [];
-          }
-        }
+        console.error('Error loading activities:', activitiesError);
+        return;
       }
 
-      console.log('📋 Found activities:', selectedActivities);
-
-      // Ensure selectedActivities is always defined
-      if (!selectedActivities) {
-        console.log('⚠️ No activities found, creating empty array');
-        selectedActivities = [];
-      }
-
-      // Get subcomponents for each activity
       let activitiesWithSubcomponents: ResearchActivityAllocation[] = [];
       
       for (const selectedActivity of selectedActivities || []) {
-        console.log('🔍 Processing activity:', selectedActivity.activity?.title);
-        
-        const { data: subcomponents, error: subError } = await supabase
+        const { data: subcomponents } = await supabase
           .from('rd_selected_subcomponents')
           .select(`
             *,
@@ -277,81 +121,44 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
           .eq('business_year_id', businessYearId)
           .eq('research_activity_id', selectedActivity.activity_id);
 
-        if (subError) {
-          console.error('❌ Error loading subcomponents:', subError);
-          continue;
-        }
-
-        console.log('📋 Found subcomponents for activity:', subcomponents?.length);
-
-        // Get contractor's current allocations for this activity
-        const { data: contractorAllocations, error: allocError } = await supabase
+        const { data: contractorAllocations } = await supabase
           .from('rd_contractor_subcomponents')
-          .select('*, subcomponent:rd_research_subcomponents(name)')
+          .select('*')
           .eq('contractor_id', contractor.id)
           .eq('business_year_id', businessYearId)
           .in('subcomponent_id', subcomponents?.map(s => s.subcomponent_id) || []);
 
-        if (allocError) {
-          console.error('❌ Error loading contractor allocations:', allocError);
-          // Continue without contractor allocations
-        }
-
-        console.log('📋 Found contractor allocations:', contractorAllocations?.length);
-
         const subcomponentAllocations: SubcomponentAllocation[] = (subcomponents || []).map(sub => {
           const contractorAlloc = contractorAllocations?.find(ca => ca.subcomponent_id === sub.subcomponent_id);
-          
-          // If no contractor allocation exists, use subcomponent baseline values
-          const baselineTimePercentage = contractorAlloc?.baseline_time_percentage ?? sub.time_percentage ?? 0;
-          const baselinePracticePercentage = contractorAlloc?.baseline_practice_percentage ?? selectedActivity.practice_percent ?? 0;
-          
-          // Use contractor's custom time percentage if it exists, otherwise use baseline
-          const timePercentage = contractorAlloc?.time_percentage ?? baselineTimePercentage;
-          
-          // Handle null values in database by using subcomponent baseline values
-          const yearPercentage = contractorAlloc?.year_percentage ?? sub.year_percentage ?? 0;
-          const frequencyPercentage = contractorAlloc?.frequency_percentage ?? sub.frequency_percentage ?? 0;
-          const practicePercentage = contractorAlloc?.practice_percentage ?? selectedActivity.practice_percent ?? 0;
           
           return {
             id: sub.subcomponent_id,
             name: sub.subcomponent?.name || 'Unknown',
             stepName: sub.step?.name || 'Unknown',
-            timePercentage: timePercentage,
+            timePercentage: contractorAlloc?.time_percentage ?? sub.time_percentage ?? 0,
             maxTimePercentage: sub.time_percentage || 0,
-            yearPercentage: yearPercentage,
-            frequencyPercentage: frequencyPercentage,
+            yearPercentage: contractorAlloc?.year_percentage ?? sub.year_percentage ?? 0,
+            frequencyPercentage: contractorAlloc?.frequency_percentage ?? sub.frequency_percentage ?? 0,
             isIncluded: contractorAlloc?.is_included ?? true,
-            baselineTimePercentage: baselineTimePercentage,
-            baselinePracticePercentage: baselinePracticePercentage
+            baselineTimePercentage: sub.time_percentage ?? 0,
+            baselinePracticePercentage: selectedActivity.practice_percent ?? 0
           };
         });
-
-        // Get the activity's practice percentage from contractor allocations or use baseline
-        const activityContractorAlloc = contractorAllocations?.find(ca => 
-          subcomponents?.some(sub => sub.subcomponent_id === ca.subcomponent_id)
-        );
-        const activityPracticePercentage = activityContractorAlloc?.practice_percentage ?? selectedActivity.practice_percent ?? 0;
 
         activitiesWithSubcomponents.push({
           id: selectedActivity.activity_id,
           name: selectedActivity.activity?.title || 'Unknown Activity',
-          isEnabled: subcomponentAllocations.some(s => s.isIncluded),
-          practicePercentage: activityPracticePercentage,
+          isEnabled: selectedActivity.is_enabled ?? subcomponentAllocations.some(s => s.isIncluded),
+          practicePercentage: selectedActivity.practice_percent ?? 0,
           subcomponents: subcomponentAllocations
         });
       }
-
-      console.log('📋 Final activitiesWithSubcomponents:', activitiesWithSubcomponents);
       
       setActivities(activitiesWithSubcomponents);
       calculateTotalAllocated(activitiesWithSubcomponents);
       
-      console.log('✅ Allocation data loaded:', activitiesWithSubcomponents);
     } catch (error) {
-      console.error('❌ Error in loadAllocationData:', error);
-      // Set empty activities as fallback
+      console.error('Error in loadAllocationData:', error);
       setActivities([]);
       calculateTotalAllocated([]);
     } finally {
@@ -369,29 +176,24 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
     setTotalAllocated(total);
   };
 
-  // Calculate practice percentage segments for visualization (including non-R&D)
+  // FIXED: Calculate practice percentage segments showing remaining space
   const getPracticePercentageSegments = () => {
     const enabledActivities = activities.filter(a => a.isEnabled);
-    const segments = [];
+    const segments: any[] = [];
     let currentPosition = 0;
     
-    // Calculate total research time (excluding non-R&D)
-    const totalResearchTime = enabledActivities.reduce((sum, a) => sum + a.practicePercentage, 0);
-    const totalTime = totalResearchTime + nonRdPercentage;
-    
-    // Add research activities
+    // Add enabled research activities
     enabledActivities.forEach((activity, index) => {
       if (activity.practicePercentage > 0) {
-        const normalizedPercentage = (activity.practicePercentage / totalResearchTime) * (100 - nonRdPercentage);
         segments.push({
           activityId: activity.id,
           name: activity.name,
-          percentage: normalizedPercentage,
+          percentage: activity.practicePercentage,
           color: activityColors[index % activityColors.length],
           startPosition: currentPosition,
-          width: normalizedPercentage
+          width: activity.practicePercentage
         });
-        currentPosition += normalizedPercentage;
+        currentPosition += activity.practicePercentage;
       }
     });
     
@@ -401,105 +203,63 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
         activityId: 'non-rd',
         name: 'Non-R&D Time',
         percentage: nonRdPercentage,
-        color: '#6B7280', // gray-500
+        color: '#6B7280',
         startPosition: currentPosition,
         width: nonRdPercentage
+      });
+      currentPosition += nonRdPercentage;
+    }
+    
+    // Add remaining/available time if under 100%
+    const remainingPercentage = 100 - currentPosition;
+    if (remainingPercentage > 0) {
+      segments.push({
+        activityId: 'remaining',
+        name: 'Available Time',
+        percentage: remainingPercentage,
+        color: '#E5E7EB',
+        startPosition: currentPosition,
+        width: remainingPercentage
       });
     }
     
     return segments;
   };
 
-  // Calculate applied percentage segments for visualization (based on custom allocations or baseline)
   const getAppliedPercentageSegments = () => {
-    const segments = [];
+    const segments: any[] = [];
     let currentPosition = 0;
     
-    // Get the contractor's role baseline applied percentage
-    const roleBaseline = contractor?.baseline_applied_percent || 0;
-    
-    // Check if we have any custom allocations by looking at subcomponent time percentages
-    const hasCustomAllocations = activities.some(activity => 
-      activity.isEnabled && activity.subcomponents.some(sub => 
-        sub.isIncluded && sub.timePercentage !== sub.maxTimePercentage
-      )
-    );
-    
-    if (hasCustomAllocations) {
-      // Calculate custom applied percentages based on subcomponent time percentages
-      const subcomponentSegments = [];
-      
-      for (const activity of activities) {
-        if (activity.isEnabled) {
-          for (const subcomponent of activity.subcomponents) {
-            if (subcomponent.isIncluded) {
-              // Calculate applied percentage using the correct formula: Practice% × Year% × Frequency% × Time%
-              const appliedPercentage = (activity.practicePercentage / 100) * 
-                                     (subcomponent.yearPercentage / 100) * 
-                                     (subcomponent.frequencyPercentage / 100) * 
-                                     (subcomponent.timePercentage / 100) * 100;
-              
-              if (appliedPercentage > 0) {
-                subcomponentSegments.push({
-                  activityId: activity.id,
-                  subcomponentId: subcomponent.id,
-                  name: `${activity.name} - ${subcomponent.name}`,
-                  percentage: appliedPercentage,
-                  color: activityColors[activities.indexOf(activity) % activityColors.length],
-                  startPosition: currentPosition,
-                  width: appliedPercentage
-                });
-                currentPosition += appliedPercentage;
-              }
-            }
+    for (const activity of activities) {
+      if (activity.isEnabled) {
+        let activityTotalApplied = 0;
+        
+        for (const subcomponent of activity.subcomponents) {
+          if (subcomponent.isIncluded) {
+            const appliedPercentage = (activity.practicePercentage / 100) * 
+                                   (subcomponent.yearPercentage / 100) * 
+                                   (subcomponent.frequencyPercentage / 100) * 
+                                   (subcomponent.timePercentage / 100) * 100;
+            
+            activityTotalApplied += appliedPercentage;
           }
         }
-      }
-      
-      // Group by activity for visualization
-      const activityGroups = {};
-      subcomponentSegments.forEach(segment => {
-        if (!activityGroups[segment.activityId]) {
-          activityGroups[segment.activityId] = {
-            activityId: segment.activityId,
-            name: segment.name.split(' - ')[0], // Get activity name
-            percentage: 0,
-            color: segment.color,
-            startPosition: segment.startPosition,
-            width: 0
-          };
-        }
-        activityGroups[segment.activityId].percentage += segment.percentage;
-        activityGroups[segment.activityId].width += segment.width;
-      });
-      
-      return Object.values(activityGroups);
-    } else {
-      // No custom allocations - show baseline distribution across enabled activities
-      const enabledActivities = activities.filter(a => a.isEnabled);
-      const totalResearchTime = enabledActivities.reduce((sum, a) => sum + a.practicePercentage, 0);
-      
-      enabledActivities.forEach((activity, index) => {
-        // Calculate applied percentage based on proportion of research time
-        const activityAppliedPercentage = totalResearchTime > 0 
-          ? (roleBaseline * activity.practicePercentage) / totalResearchTime 
-          : 0;
         
-        if (activityAppliedPercentage > 0) {
+        if (activityTotalApplied > 0) {
           segments.push({
             activityId: activity.id,
             name: activity.name,
-            percentage: activityAppliedPercentage,
-            color: activityColors[index % activityColors.length],
+            percentage: activityTotalApplied,
+            color: activityColors[activities.indexOf(activity) % activityColors.length],
             startPosition: currentPosition,
-            width: activityAppliedPercentage
+            width: activityTotalApplied
           });
-          currentPosition += activityAppliedPercentage;
+          currentPosition += activityTotalApplied;
         }
-      });
-      
-      return segments;
+      }
     }
+    
+    return segments;
   };
 
   const updateActivityEnabled = (activityId: string, isEnabled: boolean) => {
@@ -527,25 +287,21 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
         return activity;
       });
       
-      // Redistribute to maintain 100% total (including non-R&D time)
+      // FIXED: Force redistribution to maintain 100% total
       const enabledActivities = updated.filter(a => a.isEnabled);
       const totalAllocated = enabledActivities.reduce((sum, a) => sum + a.practicePercentage, 0) + nonRdPercentage;
       
       if (totalAllocated > 100) {
-        // Reduce other activities proportionally
-        const excess = totalAllocated - 100;
-        const otherActivities = enabledActivities.filter(a => a.id !== activityId);
-        const totalOther = otherActivities.reduce((sum, a) => sum + a.practicePercentage, 0);
+        const availableForResearch = 100 - nonRdPercentage;
+        const totalResearchTime = enabledActivities.reduce((sum, a) => sum + a.practicePercentage, 0);
+        const scaleFactor = availableForResearch / totalResearchTime;
         
-        if (totalOther > 0) {
-          return updated.map(activity => {
-            if (activity.isEnabled && activity.id !== activityId) {
-              const reduction = (activity.practicePercentage / totalOther) * excess;
-              return { ...activity, practicePercentage: Math.max(0, activity.practicePercentage - reduction) };
-            }
-            return activity;
-          });
-        }
+        return updated.map(activity => {
+          if (activity.isEnabled) {
+            return { ...activity, practicePercentage: Math.round(activity.practicePercentage * scaleFactor * 100) / 100 };
+          }
+          return activity;
+        });
       }
       
       return updated;
@@ -559,7 +315,6 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
           ...activity,
           subcomponents: activity.subcomponents.map(sub => {
             if (sub.id === subcomponentId) {
-              // Allow up to 100% for any subcomponent, not limited by baseline
               return { ...sub, timePercentage: Math.max(0, Math.min(percentage, 100)) };
             }
             return sub;
@@ -575,128 +330,78 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
     
     setLoading(true);
     try {
-      console.log('💾 Saving allocations for contractor:', contractor.id);
+      // FIRST: Save activity enabled states
+      for (const activity of activities) {
+        try {
+          const { error: activityError } = await supabase
+            .from('rd_selected_activities')
+            .update({ 
+              is_enabled: activity.isEnabled,
+              practice_percent: activity.practicePercentage 
+            })
+            .eq('business_year_id', businessYearId)
+            .eq('activity_id', activity.id);
+          
+          if (activityError) {
+            console.error('Error saving activity enabled state:', activityError);
+          }
+        } catch (error) {
+          console.error('Error in activity state update:', error);
+        }
+      }
       
-      // Calculate and save allocations using modal's math (allows exceeding baseline)
+      // Handle disabled activities by removing their allocations
+      for (const activity of activities) {
+        if (!activity.isEnabled) {
+          const subcomponentIds = activity.subcomponents.map(sub => sub.id);
+          
+          if (subcomponentIds.length > 0) {
+            await supabase
+              .from('rd_contractor_subcomponents')
+              .delete()
+              .eq('contractor_id', contractor.id)
+              .eq('business_year_id', businessYearId)
+              .in('subcomponent_id', subcomponentIds);
+          }
+        }
+      }
+      
+      // Save enabled activities
       for (const activity of activities) {
         if (activity.isEnabled) {
           for (const subcomponent of activity.subcomponents) {
             if (subcomponent.isIncluded) {
-              // Calculate applied percentage using modal's formula: Practice% × Year% × Frequency% × Time%
               const appliedPercentage = (activity.practicePercentage / 100) * 
                                      (subcomponent.yearPercentage / 100) * 
                                      (subcomponent.frequencyPercentage / 100) * 
                                      (subcomponent.timePercentage / 100) * 100;
               
-              console.log('🔍 Calculated applied percentage for subcomponent:', {
-                subcomponent: subcomponent.name,
-                practicePercentage: activity.practicePercentage,
-                yearPercentage: subcomponent.yearPercentage,
-                frequencyPercentage: subcomponent.frequencyPercentage,
-                timePercentage: subcomponent.timePercentage,
-                appliedPercentage: appliedPercentage
-              });
-              
-              // Check if this subcomponent already exists to preserve baseline values
-              const { data: existingAllocations, error: queryError } = await supabase
-                .from('rd_contractor_subcomponents')
-                .select('baseline_applied_percent, baseline_time_percentage, baseline_practice_percentage')
-                .eq('contractor_id', contractor.id)
-                .eq('subcomponent_id', subcomponent.id)
-                .eq('business_year_id', businessYearId);
-              
-              if (queryError) {
-                console.error('❌ Error querying existing allocation:', queryError);
-              }
-              
-              // Get existing baseline values or use subcomponent original values as baseline
-              const existingAllocation = existingAllocations?.[0];
-              const baselineAppliedPercent = existingAllocation?.baseline_applied_percent ?? subcomponent.maxTimePercentage;
-              const baselineTimePercentage = existingAllocation?.baseline_time_percentage ?? subcomponent.baselineTimePercentage ?? subcomponent.maxTimePercentage;
-              const baselinePracticePercentage = existingAllocation?.baseline_practice_percentage ?? subcomponent.baselinePracticePercentage ?? activity.practicePercentage;
-              
-              // Prepare upsert data - save exact values from modal calculations
-              const upsertData: any = {
+              const upsertData = {
                 contractor_id: contractor.id,
                 business_year_id: businessYearId,
                 subcomponent_id: subcomponent.id,
                 time_percentage: subcomponent.timePercentage,
-                applied_percentage: appliedPercentage, // Use exact calculated value (no normalization)
+                applied_percentage: appliedPercentage,
                 practice_percentage: activity.practicePercentage,
                 year_percentage: subcomponent.yearPercentage,
                 frequency_percentage: subcomponent.frequencyPercentage,
-                is_included: subcomponent.isIncluded,
-                updated_at: new Date().toISOString()
+                is_included: subcomponent.isIncluded
               };
               
-              // Only set baseline values if no existing record (to preserve original)
-              if (!existingAllocation) {
-                upsertData.baseline_applied_percent = baselineAppliedPercent;
-                upsertData.baseline_time_percentage = baselineTimePercentage;
-                upsertData.baseline_practice_percentage = baselinePracticePercentage;
-                upsertData.created_at = new Date().toISOString();
-              }
-              
-              const { error } = await supabase
+              await supabase
                 .from('rd_contractor_subcomponents')
                 .upsert(upsertData, {
-                  onConflict: 'contractor_id,subcomponent_id,business_year_id'
+                  onConflict: 'contractor_id,business_year_id,subcomponent_id'
                 });
-
-              if (error) {
-                console.error('❌ Error saving subcomponent allocation:', error);
-              }
-            }
-          }
-        }
-      }
-
-      // --- Upsert rd_contractor_year_data ---
-      // Calculate total applied percent (sum of all included subcomponent applied %)
-      let totalAppliedPercent = 0;
-      for (const activity of activities) {
-        if (activity.isEnabled) {
-          for (const subcomponent of activity.subcomponents) {
-            if (subcomponent.isIncluded) {
-              const appliedPercentage = (activity.practicePercentage / 100) * 
-                                     (subcomponent.yearPercentage / 100) * 
-                                     (subcomponent.frequencyPercentage / 100) * 
-                                     (subcomponent.timePercentage / 100) * 100;
-              totalAppliedPercent += appliedPercentage;
             }
           }
         }
       }
       
-      // Use contractor's amount as cost_amount
-      const costAmount = Number(contractor.amount) || 0;
-      // Name for year data
-      const name = `${contractor.first_name} ${contractor.last_name}`.trim();
-      // Activity roles (if available)
-      const activityRoles = contractor.role_id ? [contractor.role_id] : null;
-      // Calculated QRE
-      const calculatedQRE = Math.round(costAmount * 0.65 * (totalAppliedPercent / 100));
-      // Activity link (required, plain object)
-      const activityLink = {};
-      
-      const yearDataUpsert: any = {
-        business_year_id: businessYearId,
-        contractor_id: contractor.id,
-        name,
-        cost_amount: costAmount,
-        applied_percent: totalAppliedPercent,
-        calculated_qre: calculatedQRE,
-        activity_link: activityLink
-      };
-      if (activityRoles) yearDataUpsert.activity_roles = activityRoles;
-      // Upsert by business_year_id + contractor_id
-      await supabase
-        .from('rd_contractor_year_data')
-        .upsert(yearDataUpsert, { onConflict: 'business_year_id,contractor_id' });
-
-      console.log('✅ Allocations and year data saved successfully');
-      onUpdate();
+      console.log('✅ Allocations saved successfully');
+      onUpdate?.();
       onClose();
+      
     } catch (error) {
       console.error('❌ Error saving allocations:', error);
     } finally {
@@ -704,64 +409,46 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
     }
   };
 
-  const revertToBaseline = async () => {
-    if (!contractor) return;
-    
-    setLoading(true);
-    try {
-      console.log('🔄 Reverting to baseline for contractor:', contractor.id);
-      
-      // Delete all custom allocations
-      const { error } = await supabase
-        .from('rd_contractor_subcomponents')
-        .delete()
-        .eq('contractor_id', contractor.id)
-        .eq('business_year_id', businessYearId);
-
-      if (error) {
-        console.error('❌ Error reverting to baseline:', error);
-      } else {
-        console.log('✅ Reverted to baseline successfully');
-        
-        // Reset subcomponent time percentages back to baseline
-        setActivities(prev => prev.map(activity => ({
-          ...activity,
-          subcomponents: activity.subcomponents.map(sub => ({
-            ...sub,
-            timePercentage: sub.baselineTimePercentage || sub.maxTimePercentage // Reset to baseline
-          }))
-        })));
-        
-        onUpdate();
-        onClose();
-      }
-    } catch (error) {
-      console.error('❌ Error reverting to baseline:', error);
-    } finally {
-      setLoading(false);
-    }
+  const revertToBaseline = () => {
+    setActivities(prev => prev.map(activity => ({
+      ...activity,
+      subcomponents: activity.subcomponents.map(sub => ({
+        ...sub,
+        timePercentage: sub.baselineTimePercentage
+      }))
+    })));
   };
 
   if (!isOpen || !contractor) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="px-6 py-4 border-b border-gray-200">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.9 }}
+        className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden"
+      >
+        <div className="p-6 border-b border-gray-200">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-medium text-gray-900">
-              Manage Allocations - {contractor.first_name} {contractor.last_name}
-            </h3>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">
+                Allocations for {contractor.name}
+              </h3>
+              <p className="text-sm text-gray-500">
+                Manage research activity allocations and time percentages
+              </p>
+            </div>
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-gray-600"
             >
-              <X className="w-6 h-6" />
+              ×
             </button>
           </div>
         </div>
         
-        <div className="p-6">
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
           {loading ? (
             <div className="flex items-center justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600"></div>
@@ -774,7 +461,7 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <h4 className="text-sm font-semibold text-gray-900">Practice Percentage Distribution</h4>
-                    <p className="text-xs text-gray-500">How time is allocated across activities and non-R&D work</p>
+                    <p className="text-xs text-gray-500">Shows remaining available time for allocation</p>
                   </div>
                   <div className="text-right">
                     <span className="text-lg font-bold text-gray-900">{formatPercentage(totalAllocated)}%</span>
@@ -797,7 +484,6 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
                   ))}
                 </div>
                 
-                {/* Enhanced Legend */}
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                   {getPracticePercentageSegments().map((segment, index) => (
                     <div key={`legend-practice-${segment.activityId}`} className="flex items-center space-x-2 p-2 bg-white rounded border">
@@ -815,7 +501,7 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
                 
                 {totalAllocated > 100 && (
                   <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded">
-                    <p className="text-red-600 text-sm">⚠️ Total exceeds 100%. Please adjust allocations.</p>
+                    <p className="text-red-600 text-sm">⚠️ Total exceeds 100%. Allocations will be redistributed proportionally.</p>
                   </div>
                 )}
               </div>
@@ -825,7 +511,7 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <h4 className="text-sm font-semibold text-gray-900">Applied Percentage (Research Activities)</h4>
-                    <p className="text-xs text-gray-500">Based on role baseline: {formatPercentage(contractor?.baseline_applied_percent || 0)}%</p>
+                    <p className="text-xs text-gray-500">Direct calculation from subcomponent allocations</p>
                   </div>
                   <div className="text-right">
                     <span className="text-lg font-bold text-orange-900">{formatPercentage(getAppliedPercentageSegments().reduce((sum, seg) => sum + seg.percentage, 0))}%</span>
@@ -848,7 +534,6 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
                   ))}
                 </div>
                 
-                {/* Enhanced Legend */}
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                   {getAppliedPercentageSegments().map((segment, index) => (
                     <div key={`legend-applied-${segment.activityId}`} className="flex items-center space-x-2 p-2 bg-white rounded border">
@@ -890,9 +575,6 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
                   <span>0%</span>
                   <span>100%</span>
                 </div>
-                <p className="text-xs text-orange-600 mt-2">
-                  ℹ️ This time is automatically redistributed across research activities in the practice percentage bar
-                </p>
               </div>
 
               {/* Research Activities */}
@@ -919,7 +601,6 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
                         </button>
                       </div>
 
-                      {/* Practice Percentage Slider */}
                       <div className="mb-3">
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-sm text-gray-600">Practice Percentage</span>
@@ -973,14 +654,14 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
                                   <span className="text-xs text-gray-500">({subcomponent.stepName})</span>
                                 </div>
                                 <span className="text-xs text-gray-500">
-                                  Max: {formatPercentage(subcomponent.maxTimePercentage)}%
+                                  Baseline: {formatPercentage(subcomponent.maxTimePercentage)}%
                                 </span>
                               </div>
                               <div className="flex items-center space-x-2">
                                 <input
                                   type="range"
                                   min="0"
-                                  max={subcomponent.maxTimePercentage}
+                                  max={100}
                                   step="0.01"
                                   value={subcomponent.timePercentage}
                                   onChange={(e) => updateSubcomponentTimePercentage(activity.id, subcomponent.id, parseFloat(e.target.value))}
@@ -1020,7 +701,7 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
                   </button>
                   <button
                     onClick={saveAllocations}
-                    disabled={loading || totalAllocated > 100}
+                    disabled={loading}
                     className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {loading ? 'Saving...' : 'Save Allocations'}
@@ -1030,9 +711,9 @@ const ContractorAllocationsModal: React.FC<ContractorAllocationsModalProps> = ({
             </>
           )}
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 };
 
-export default ContractorAllocationsModal; 
+export default ContractorAllocationsModal;

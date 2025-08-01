@@ -81,7 +81,7 @@ export interface CreditResult {
 // Calculation Functions
 export const calculateQRAPercentage = (qra: QRA): number => {
   const subcomponentTotal = qra.subcomponents.reduce((total, sub) => {
-    return total + (sub.utilizationPercentage * sub.timePercentage * sub.yearPercentage) / 1000000; // Convert from percentages
+    return total + (sub.utilizationPercentage / 100) * (sub.timePercentage / 100) * (sub.yearPercentage / 100) * 100; // Convert from percentages
   }, 0);
   
   return (qra.practicePercentage * subcomponentTotal) / 100;

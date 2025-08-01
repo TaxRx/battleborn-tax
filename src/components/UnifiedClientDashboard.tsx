@@ -810,6 +810,10 @@ export default function UnifiedClientDashboard({
                          (client.email?.toLowerCase() || '').includes(searchTerm.toLowerCase());
     const matchesFilter = statusFilter === 'all' || client.tool_status === statusFilter;
     return matchesSearch && matchesFilter;
+  }).sort((a, b) => {
+    const nameA = (a.full_name || '').toLowerCase();
+    const nameB = (b.full_name || '').toLowerCase();
+    return nameA.localeCompare(nameB);
   });
 
   if (loading) {

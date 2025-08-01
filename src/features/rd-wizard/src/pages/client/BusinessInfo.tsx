@@ -192,6 +192,8 @@ const BusinessInfo = () => {
     updateYearStarted,
     updateState,
     updateAddress,
+    updateCity,
+    updateZipCode,
     updateContactName,
     updateContactEmail,
     updatePhone,
@@ -444,14 +446,14 @@ const BusinessInfo = () => {
                     label="Business Name"
                     name="businessName"
                     value={formData.businessName}
-                    onChange={handleInputChange}
+                    onChange={(e) => updateName(e.target.value)}
                     placeholder="Enter business name"
                   />
                   <Input
                     label="EIN"
                     name="ein"
                     value={formData.ein}
-                    onChange={handleInputChange}
+                    onChange={(e) => updateEIN(e.target.value)}
                     placeholder="XX-XXXXXXX"
                   />
                   <div>
@@ -490,7 +492,7 @@ const BusinessInfo = () => {
                     label="Year Started"
                     name="yearStarted"
                     value={formData.yearStarted}
-                    onChange={handleInputChange}
+                    onChange={(e) => updateYearStarted(parseInt(e.target.value) || new Date().getFullYear())}
                     placeholder="Enter year"
                     min={1900}
                     max={new Date().getFullYear()}
@@ -499,7 +501,7 @@ const BusinessInfo = () => {
                     label="City"
                     name="city"
                     value={formData.city}
-                    onChange={handleInputChange}
+                    onChange={(e) => updateCity(e.target.value)}
                     placeholder="Enter city"
                   />
                 </div>
@@ -534,7 +536,7 @@ const BusinessInfo = () => {
                     label="Address"
                     name="address"
                     value={formData.address}
-                    onChange={handleInputChange}
+                    onChange={(e) => updateAddress(e.target.value)}
                     placeholder="Enter business address"
                   />
                 </div>

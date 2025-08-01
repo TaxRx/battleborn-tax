@@ -1,4 +1,8 @@
-import { supabase } from "../lib/supabase";
+import { supabase } from "../../../lib/supabase";
+
+// Standardized rounding functions
+const roundToDollar = (value: number): number => Math.round(value);
+const roundToPercentage = (value: number): number => Math.round(value * 100) / 100;
 
 export interface QREBreakdown {
   employee_wages: number;
@@ -82,7 +86,12 @@ export class RDCalculationsService {
 
       const employeeWages = (employeeData || []).reduce((total, emp) => {
         const annualWage = emp.employee?.annual_wage || 0;
-        return total + (annualWage * (emp.applied_percent || 0) / 100);
+        const appliedPercent = emp.applied_percent || 0;
+        const calculatedQRE = emp.calculated_qre || 0;
+        
+        // Use calculated QRE if available, otherwise calculate from wage and percent
+        const employeeQRE = calculatedQRE > 0 ? calculatedQRE : (annualWage * appliedPercent / 100);
+        return total + employeeQRE;
       }, 0);
 
       // Get contractor costs (from rd_contractor_year_data joined with rd_contractors)
@@ -100,27 +109,44 @@ export class RDCalculationsService {
       if (contractorError) throw contractorError;
 
       const contractorCosts = (contractorData || []).reduce((total, contractor) => {
-        const annualAmount = contractor.contractor?.amount || 0;
-        return total + (annualAmount * (contractor.applied_percent || 0) / 100);
+        const amount = contractor.contractor?.amount || 0;
+        const appliedPercent = contractor.applied_percent || 0;
+        const calculatedQRE = contractor.calculated_qre || 0;
+        
+        // Use calculated QRE if available, otherwise calculate from amount and percent
+        const contractorQRE = calculatedQRE > 0 ? calculatedQRE : (amount * appliedPercent / 100);
+        return total + contractorQRE;
       }, 0);
 
-      // Get supply costs (from rd_supply_year_data)
-      const { data: supplyData, error: supplyError } = await supabase
-        .from('rd_supply_year_data')
-        .select('cost_amount, applied_percent')
+      // Get supply costs (from rd_supply_subcomponents joined with rd_supplies)
+      const { data: supplySubcomponents, error: supplyError } = await supabase
+        .from('rd_supply_subcomponents')
+        .select(`
+          amount_applied,
+          applied_percentage,
+          supply:rd_supplies (
+            annual_cost
+          )
+        `)
         .eq('business_year_id', businessYearId);
 
       if (supplyError) throw supplyError;
 
-      const supplyCosts = (supplyData || []).reduce((total, supply) => {
-        return total + ((supply.cost_amount || 0) * (supply.applied_percent || 0) / 100);
+      const supplyCosts = (supplySubcomponents || []).reduce((total, ssc) => {
+        const amountApplied = ssc.amount_applied || 0;
+        const appliedPercentage = ssc.applied_percentage || 0;
+        const supplyCost = ssc.supply?.annual_cost || 0;
+        
+        // Use amount_applied if available, otherwise calculate from cost and percentage
+        const supplyQRE = amountApplied > 0 ? amountApplied : (supplyCost * appliedPercentage / 100);
+        return total + supplyQRE;
       }, 0);
 
       return {
-        employee_wages: employeeWages,
-        contractor_costs: contractorCosts,
-        supply_costs: supplyCosts,
-        total: employeeWages + contractorCosts + supplyCosts
+        employee_wages: roundToDollar(employeeWages),
+        contractor_costs: roundToDollar(contractorCosts),
+        supply_costs: roundToDollar(supplyCosts),
+        total: roundToDollar(employeeWages + contractorCosts + supplyCosts)
       };
     } catch (error) {
       console.error('Error getting QRE breakdown:', error);
@@ -189,8 +215,12 @@ export class RDCalculationsService {
     // Fixed base amount is avgQRE if no gross receipts, else basePercentage * avgGrossReceipts
     const fixedBaseAmount = avgGrossReceipts > 0 ? basePercentage * avgGrossReceipts : 0;
     calculationDetails.push(`Fixed Base Amount: $${fixedBaseAmount.toFixed(2)}`);
+    // Enforce minimum base amount (50% of current year QREs)
+    const minBaseAmount = 0.5 * currentYearQRE;
+    const baseAmount = Math.max(fixedBaseAmount, minBaseAmount);
+    calculationDetails.push(`Base Amount (after 50% QRE min): $${baseAmount.toFixed(2)}`);
     // Incremental QRE
-    const incrementalQRE = Math.max(currentYearQRE - fixedBaseAmount, 0);
+    const incrementalQRE = Math.max(currentYearQRE - baseAmount, 0);
     calculationDetails.push(`Incremental QRE: $${incrementalQRE.toFixed(2)}`);
     // Credit
     let credit = incrementalQRE * 0.20;
@@ -236,21 +266,27 @@ export class RDCalculationsService {
     if (validPriorYears.length === 3) {
       avgPriorQRE = validPriorYears.reduce((sum, year) => sum + year.qre, 0) / 3;
       calculationDetails.push(`ASC Multi-year: Avg Prior QRE = $${avgPriorQRE.toFixed(2)}`);
-      incrementalQRE = Math.max(currentYearQRE - avgPriorQRE, 0);
+      // FIXED: Use 50% of average prior QRE as base amount (IRS regulation)
+      const baseAmount = avgPriorQRE * 0.5;
+      incrementalQRE = Math.max(currentYearQRE - baseAmount, 0);
+      calculationDetails.push(`Base Amount (50% of Avg Prior QRE): $${baseAmount.toFixed(2)}`);
       calculationDetails.push(`Incremental QRE: $${incrementalQRE.toFixed(2)}`);
       credit = incrementalQRE * 0.14;
       calculationDetails.push(`Credit (14%): $${credit.toFixed(2)}`);
+      isStartup = false; // Multi-year method
     } else if (validPriorYears.length > 0) {
       avgPriorQRE = validPriorYears.reduce((sum, year) => sum + year.qre, 0) / validPriorYears.length;
       calculationDetails.push(`ASC Single-year: Avg Prior QRE = $${avgPriorQRE.toFixed(2)}`);
-      incrementalQRE = Math.max(currentYearQRE - avgPriorQRE, 0);
-      calculationDetails.push(`Incremental QRE: $${incrementalQRE.toFixed(2)}`);
+      // For single-year/startup method, use 6% of current year QRE (no incremental calculation)
+      incrementalQRE = 0; // Not used for startup provision
+      calculationDetails.push(`Using startup provision (6% of current QRE)`);
       credit = currentYearQRE * 0.06;
       calculationDetails.push(`Credit (6%): $${credit.toFixed(2)}`);
+      isStartup = true; // Single-year method (startup provision)
       missingData.push(`Using ${validPriorYears.length} prior year(s) for ASC calculation`);
     } else {
       avgPriorQRE = 0;
-      isStartup = true;
+      isStartup = true; // No prior years (startup provision)
       calculationDetails.push('No prior year QRE data available - using startup provision (6% of current year QRE)');
       credit = currentYearQRE * 0.06;
       calculationDetails.push(`Credit (6%): $${credit.toFixed(2)}`);

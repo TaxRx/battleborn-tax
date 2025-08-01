@@ -132,18 +132,20 @@ export class RDBusinessService {
       const { data: existingClient } = await supabase
         .from('clients')
         .select('id')
-        .eq('user_id', userId)
+        .eq('created_by', userId)
         .single();
 
       if (existingClient) {
         return existingClient.id;
       }
 
-      // Create new client (only user_id is required)
+      // Create new client (created_by is required)
       const { data: newClient, error } = await supabase
         .from('clients')
         .insert({
-          user_id: userId
+          created_by: userId,
+          full_name: 'R&D Client', // Required field
+          email: `client-${userId}@example.com` // Required field - temporary
         })
         .select('id')
         .single();
@@ -152,6 +154,31 @@ export class RDBusinessService {
       return newClient.id;
     } catch (error) {
       console.error('Error getting or creating client:', error);
+      throw error;
+    }
+  }
+
+  // Save historical data to rd_businesses.historical_data JSONB column
+  static async saveHistoricalData(businessId: string, historicalData: { year: number; grossReceipts: number; qre: number }[]): Promise<void> {
+    try {
+      // Transform data to match database schema (camelCase to snake_case)
+      const transformedData = historicalData.map(item => ({
+        year: item.year,
+        gross_receipts: item.grossReceipts,
+        qre: item.qre
+      }));
+
+      const { error } = await supabase
+        .from('rd_businesses')
+        .update({
+          historical_data: transformedData,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', businessId);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error saving historical data:', error);
       throw error;
     }
   }
@@ -165,7 +192,7 @@ export class RDBusinessService {
         .select('*')
         .eq('business_id', businessId)
         .eq('year', yearData.year)
-        .single();
+        .maybeSingle();
 
       let result;
       if (existingYear) {
@@ -211,10 +238,7 @@ export class RDBusinessService {
     try {
       const { data, error } = await supabase
         .from('rd_businesses')
-        .select(`
-          *,
-          rd_business_years (*)
-        `)
+        .select('*')
         .eq('id', businessId)
         .single();
 
@@ -231,11 +255,27 @@ export class RDBusinessService {
     try {
       // Handle demo mode
       if (this.isDemoMode(userId)) {
-        console.log('Demo mode detected, returning null for getBusinessByUser');
-        return null;
+        return {
+          id: 'demo-business-id',
+          client_id: 'demo-client-id',
+          name: 'Demo Business',
+          ein: '12-3456789',
+          entity_type: 'LLC',
+          start_year: 2020,
+          domicile_state: 'CA',
+          contact_info: {
+            address: '123 Demo St',
+            city: 'Demo City',
+            state: 'CA',
+            zip: '90210'
+          },
+          is_controlled_grp: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
       }
 
-      // First get the client ID for this user
+      // Get client ID for this user
       const { data: client } = await supabase
         .from('clients')
         .select('id')
@@ -246,21 +286,65 @@ export class RDBusinessService {
         return null;
       }
 
-      // Then get the business for this client with related business years
+      // Get business for this client
+      const { data: business } = await supabase
+        .from('rd_businesses')
+        .select('*')
+        .eq('client_id', client.id)
+        .single();
+
+      return business;
+    } catch (error) {
+      console.error('Error getting business by user:', error);
+      return null;
+    }
+  }
+
+  // Update business information
+  static async updateBusiness(businessId: string, updates: Partial<RDBusiness>): Promise<RDBusiness> {
+    try {
+      // Handle demo mode
+      if (this.isDemoMode(businessId)) {
+        console.log('Demo mode detected, returning mock updated business');
+        return {
+          id: 'demo-business-id',
+          client_id: 'demo-client-id',
+          name: updates.name || 'Demo Business',
+          ein: updates.ein || '12-3456789',
+          entity_type: updates.entity_type || 'LLC',
+          start_year: updates.start_year || 2020,
+          domicile_state: updates.domicile_state || 'CA',
+          contact_info: updates.contact_info || {
+            address: '123 Demo St',
+            city: 'Demo City',
+            state: 'CA',
+            zip: '90210'
+          },
+          website: updates.website || '',
+          naics: updates.naics || '',
+          image_path: updates.image_path || '',
+          is_controlled_grp: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+      }
+
+      // Update the business record
       const { data, error } = await supabase
         .from('rd_businesses')
-        .select(`
-          *,
-          rd_business_years (*)
-        `)
-        .eq('client_id', client.id)
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', businessId)
+        .select()
         .single();
 
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error('Error getting business by user:', error);
-      return null;
+      console.error('Error updating business:', error);
+      throw error;
     }
   }
 
@@ -272,7 +356,7 @@ export class RDBusinessService {
         .select('*')
         .eq('business_id', businessId)
         .eq('year', year)
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
       return data;
@@ -487,26 +571,65 @@ export class RDBusinessService {
     if (existingRdBusiness) {
       return existingRdBusiness;
     }
+    
     // 2. If not found in rd_businesses, copy from businesses table (initial enrollment only)
     const { data: businesses, error: fetchError } = await supabase
       .from('businesses')
       .select('*')
       .eq('id', businessId);
+    
     if (fetchError) {
       throw new Error(`Failed to fetch business: ${fetchError.message}`);
     }
+    
     if (!businesses || businesses.length === 0) {
       throw new Error('Business not found in businesses table');
     }
+    
     const business = businesses[0];
+    
+    // Validate required fields and provide warnings for missing data
+    if (!business.ein || business.ein.trim() === '') {
+      console.warn('[RDBusinessService] Warning: Business has no EIN. This may cause issues with R&D credit filing.', { 
+        businessId, 
+        businessName: business.business_name 
+      });
+      // You may want to throw an error here or prompt user to add EIN
+      // For now, we'll allow it to proceed but log the warning
+    }
+
+    // Map entity type from businesses table format to rd_businesses enum format
+    const mapEntityType = (entityType: string): 'LLC' | 'SCORP' | 'CCORP' | 'PARTNERSHIP' | 'SOLEPROP' | 'OTHER' => {
+      const normalized = entityType?.toUpperCase().replace(/[\s-]/g, '');
+      switch (normalized) {
+        case 'LLC':
+          return 'LLC';
+        case 'SCORP':
+        case 'SCORPORATION':
+          return 'SCORP';
+        case 'CCORP':
+        case 'CCORPORATION':
+        case 'CORPORATION':
+          return 'CCORP';
+        case 'PARTNERSHIP':
+          return 'PARTNERSHIP';
+        case 'SOLEPROPRIETORSHIP':
+        case 'SOLEPROP':
+        case 'SOLE':
+          return 'SOLEPROP';
+        default:
+          return 'OTHER';
+      }
+    };
+    
     const rdBusinessRecord = {
       id: businessId,
       client_id: clientId,
       name: business.business_name,
-      ein: business.ein,
-      entity_type: business.entity_type,
+      ein: business.ein || null, // Allow null EIN with warning
+      entity_type: mapEntityType(business.entity_type),
       start_year: business.year_established || new Date().getFullYear(),
-      domicile_state: business.business_state,
+      domicile_state: business.business_state || 'NV',
       contact_info: {
         address: business.business_address,
         city: business.business_city,
@@ -516,12 +639,17 @@ export class RDBusinessService {
       is_controlled_grp: false,
       historical_data: []
     };
+    
+    console.log('[RDBusinessService] Creating rd_business record:', rdBusinessRecord);
+    
     const { data: newRdBusiness, error: insertError } = await supabase
       .from('rd_businesses')
       .insert(rdBusinessRecord)
       .select()
       .single();
+    
     if (insertError) {
+      console.error('[RDBusinessService] Insert error:', insertError);
       throw new Error(`Failed to insert into rd_businesses: ${insertError.message}`);
     }
     // 3. Create business year entries for the previous 8 years (or up to start year)
