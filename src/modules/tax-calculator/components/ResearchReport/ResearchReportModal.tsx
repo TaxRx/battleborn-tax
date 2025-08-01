@@ -1328,14 +1328,14 @@ Please provide:
             <div class="footer-content">
               <div class="footer-left">
                 <span>Prepared by Direct Research</span>
-              </div>
+          </div>
               <div class="footer-center">
                 <span>Confidential & Proprietary</span>
-              </div>
+          </div>
               <div class="footer-right">
                 <span>Tax Year ${businessYearData?.year || 'N/A'}</span>
-              </div>
-            </div>
+          </div>
+        </div>
           </div>
         </div>
       </body>

@@ -662,6 +662,11 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
   const [expandedActivity, setExpandedActivity] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false); // Track if user is actively editing
   
+  // Employee editing state
+  const [editedFirstName, setEditedFirstName] = useState('');
+  const [editedLastName, setEditedLastName] = useState('');
+  const [editedIsOwner, setEditedIsOwner] = useState(false);
+  
   // Lock store for data protection
   const { isExpenseManagementLocked } = useLockStore();
   
@@ -693,6 +698,11 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
       setExpandedActivity(null);
       setHasUnsavedChanges(false); // Reset unsaved changes flag
       
+      // Initialize employee editing values
+      setEditedFirstName(employee.first_name || '');
+      setEditedLastName(employee.last_name || '');
+      setEditedIsOwner(employee.is_owner || false);
+      
       // Force a delay to ensure state is cleared before loading
       setTimeout(() => {
         console.log('🔄 Starting fresh data load after state clear...');
@@ -707,6 +717,11 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
       setNonRdPercentage(0);  
       setExpandedActivity(null);
       setHasUnsavedChanges(false); // Reset unsaved changes flag
+      
+      // Clear employee editing state
+      setEditedFirstName('');
+      setEditedLastName('');
+      setEditedIsOwner(false);
     }
   }, [isOpen, employee?.id]); // CHANGED: Depend on employee.id specifically
 
@@ -1489,7 +1504,40 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
         });
       }
 
-      console.log('✅ Allocations saved successfully - employee roster should now match allocation modal');
+      // Save employee information updates
+      const employeeNeedsUpdate = (
+        editedFirstName !== employee.first_name ||
+        editedLastName !== employee.last_name ||
+        editedIsOwner !== employee.is_owner
+      );
+      
+      if (employeeNeedsUpdate) {
+        console.log('👤 Saving employee information updates:', {
+          oldName: `${employee.first_name} ${employee.last_name}`,
+          newName: `${editedFirstName} ${editedLastName}`,
+          oldIsOwner: employee.is_owner,
+          newIsOwner: editedIsOwner
+        });
+        
+        const { error: employeeUpdateError } = await supabase
+          .from('rd_employees')
+          .update({
+            first_name: editedFirstName.trim(),
+            last_name: editedLastName.trim(),
+            is_owner: editedIsOwner,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', employee.id);
+        
+        if (employeeUpdateError) {
+          console.error('❌ Error updating employee information:', employeeUpdateError);
+          throw employeeUpdateError;
+        } else {
+          console.log('✅ Employee information updated successfully');
+        }
+      }
+
+      console.log('✅ Allocations and employee information saved successfully - employee roster should now match allocation modal');
       setHasUnsavedChanges(false); // Reset unsaved changes flag after successful save
       onUpdate();
       onClose();
@@ -1604,7 +1652,8 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-medium text-gray-900">
-              Manage Allocations - {employee.first_name} {employee.last_name}
+              Manage Allocations - {editedFirstName || employee.first_name} {editedLastName || employee.last_name}
+              {editedIsOwner && <span className="ml-2 px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">Owner</span>}
             </h3>
             <button
               onClick={onClose}
@@ -1616,6 +1665,56 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
         </div>
         
         <div className="p-6">
+          {/* Employee Information Editing */}
+          <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <h4 className="text-sm font-semibold text-blue-900 mb-3">Employee Information</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-blue-700 mb-1">First Name</label>
+                <input
+                  type="text"
+                  value={editedFirstName}
+                  onChange={(e) => {
+                    setEditedFirstName(e.target.value);
+                    setHasUnsavedChanges(true);
+                  }}
+                  disabled={isExpenseManagementLocked}
+                  className="w-full px-3 py-2 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:opacity-50"
+                  placeholder="First name"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-blue-700 mb-1">Last Name</label>
+                <input
+                  type="text"
+                  value={editedLastName}
+                  onChange={(e) => {
+                    setEditedLastName(e.target.value);
+                    setHasUnsavedChanges(true);
+                  }}
+                  disabled={isExpenseManagementLocked}
+                  className="w-full px-3 py-2 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:opacity-50"
+                  placeholder="Last name"
+                />
+              </div>
+              <div className="flex items-center">
+                <label className="flex items-center space-x-2 text-sm text-blue-700">
+                  <input
+                    type="checkbox"
+                    checked={editedIsOwner}
+                    onChange={(e) => {
+                      setEditedIsOwner(e.target.checked);
+                      setHasUnsavedChanges(true);
+                    }}
+                    disabled={isExpenseManagementLocked}
+                    className="w-4 h-4 text-blue-600 border-blue-300 rounded focus:ring-blue-500 disabled:opacity-50"
+                  />
+                  <span className="font-medium">Is Owner</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          
           {/* Lock Banner */}
           <LockBanner 
             section="expense-management" 
@@ -1898,7 +1997,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
                     disabled={loading || totalAllocated > 100}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {loading ? 'Saving...' : 'Save Allocations'}
+                    {loading ? 'Saving...' : 'Save Changes'}
                   </button>
                 </div>
               </div>
@@ -3915,34 +4014,57 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
               // Don't throw here, as the employee was created successfully
             }
 
-            // Create subcomponent relationships if role was assigned during import
+            // Create subcomponent relationships based on role baseline pattern
             if (assignedRoleId) {
-              console.log(`🔗 Creating subcomponent relationships for ${firstName} ${lastName} with role ${roleName}`);
+              console.log(`🔗 Creating baseline subcomponent relationships for ${firstName} ${lastName} with role ${assignedRoleId}`);
               
-              // Fetch all selected subcomponents for this business year and role
-              let { data: selectedSubcomponents, error: subcomponentsError } = await supabase
+              // ✅ FIX: Use role baseline approach - get ALL subcomponents for business year, then filter by role
+              const { data: allSubcomponents, error: subcomponentsError } = await supabase
                 .from('rd_selected_subcomponents')
                 .select('*')
-                .eq('business_year_id', targetBusinessYearId)
-                .filter('selected_roles', 'cs', `[\"${String(assignedRoleId)}\"]`);
+                .eq('business_year_id', targetBusinessYearId);
 
               if (subcomponentsError) {
-                console.error('❌ Error fetching selected subcomponents for import:', subcomponentsError);
-              } 
+                console.error('❌ Error fetching subcomponents for import:', subcomponentsError);
+              }
               
-              // ✅ DEPENDENCY FIX: Auto-populate Research Design data if missing
-              if (!selectedSubcomponents || selectedSubcomponents.length === 0) {
-                console.log(`⚠️ No Research Design data found for year ${yearNumber}. Attempting auto-population...`);
+              // ✅ FIX: Get the role name to filter across years (role IDs differ per year)
+              let assignedRoleName = 'Research Leader'; // Default fallback
+              const assignedRole = roles.find(r => r.id === assignedRoleId);
+              if (assignedRole && assignedRole.name) {
+                assignedRoleName = assignedRole.name;
+              }
+              
+              console.log(`🔍 CSV Import: Looking for subcomponents in year ${yearNumber} for role "${assignedRoleName}" (ID: ${assignedRoleId})`);
+              
+              // Get ALL roles for this business year to map role names to IDs
+              const { data: yearRoles, error: rolesError } = await supabase
+                .from('rd_roles')
+                .select('id, name')
+                .eq('business_id', businessId)
+                .eq('business_year_id', targetBusinessYearId);
+              
+              if (rolesError) {
+                console.error('❌ Error fetching roles for year:', rolesError);
+              }
+              
+              // Find the role ID in the target year that matches our role name
+              const targetYearRoleId = yearRoles?.find(r => r.name === assignedRoleName)?.id;
+              
+              console.log(`🔍 CSV Import: Role "${assignedRoleName}" has ID ${targetYearRoleId} in target year ${yearNumber}`);
+              
+              // Filter subcomponents to only include those that match the target year's role ID
+              let selectedSubcomponents: any[] = [];
+              if (allSubcomponents && allSubcomponents.length > 0 && targetYearRoleId) {
+                selectedSubcomponents = allSubcomponents.filter(subcomponent => {
+                  // Check if this subcomponent includes the role ID from the target year
+                  const hasMatchingRole = subcomponent.selected_roles?.includes(targetYearRoleId);
+                  return hasMatchingRole;
+                });
                 
-                // Try to copy from the most recent year with data
-                const autoPopulatedData = await autoPopulateResearchDesignData(targetBusinessYearId, assignedRoleId, yearNumber, businessId);
-                
-                if (autoPopulatedData && autoPopulatedData.length > 0) {
-                  selectedSubcomponents = autoPopulatedData;
-                  console.log(`✅ Auto-populated ${autoPopulatedData.length} subcomponents from template year`);
-                } else {
-                  console.log(`⚠️ Could not auto-populate Research Design data for year ${yearNumber}`);
-                }
+                console.log(`✅ Found ${allSubcomponents.length} total subcomponents, ${selectedSubcomponents.length} match role "${assignedRoleName}" (${targetYearRoleId})`);
+              } else {
+                console.log(`⚠️ No subcomponents found for role "${assignedRoleName}" in year ${yearNumber}. Either Research Design not set up or role not assigned to any activities.`);
               }
               
               if (selectedSubcomponents && selectedSubcomponents.length > 0) {
@@ -4079,8 +4201,9 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                   console.log(`✅ Created ${employeeSubcomponentData.length} subcomponent relationships for ${firstName} ${lastName}`);
                 }
               } else {
-                console.log(`ℹ️ No subcomponents found for role ${roleName} in year ${yearNumber}`);
-                console.log('⚠️ CSV IMPORT - Employee may not appear in allocation modals due to missing subcomponent records');
+                console.log(`ℹ️ No subcomponents found for role ${assignedRoleId} in year ${yearNumber}`);
+                console.log('⚠️ CSV IMPORT - This means Research Design step has no subcomponents set up for this business year, or none are assigned to this role');
+                console.log(`ℹ️ Employee ${firstName} ${lastName} will have QRE = $0 until subcomponents are set up in Research Design step`);
               }
             }
 
@@ -4291,7 +4414,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       
       const { data: subcomponentAllocations, error } = await supabase
         .from('rd_employee_subcomponents')
-        .select('applied_percentage')
+        .select('applied_percentage, subcomponent_id, practice_percentage, time_percentage, year_percentage, frequency_percentage, is_included')
         .eq('employee_id', employeeId)
         .eq('business_year_id', selectedYear || businessYearId)
         .eq('is_included', true);
@@ -4299,6 +4422,12 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       if (error) {
         console.error('❌ Error loading subcomponent allocations:', error);
         return 0;
+      }
+      
+      // ✅ DEBUG: Check what's actually in the database  
+      if (subcomponentAllocations?.length === 0) {
+        console.log(`🔍 DEBUG: Employee ${employeeId} has no subcomponent records - QRE will be $0`);
+        console.log(`📋 This likely means: (1) CSV import didn't create subcomponent relationships, or (2) Research Design step not set up for this business year`);
       }
       
       // ✅ NO RECALCULATION: Just sum the applied_percentage values that modal calculated and saved
