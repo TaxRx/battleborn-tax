@@ -3787,7 +3787,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                 console.log(`✅ Found ${selectedSubcomponents.length} subcomponents for role ${roleName}`);
                 
                 // Create employee subcomponent relationships with baseline values
-                const employeeSubcomponentData = selectedSubcomponents.map((subcomponent: any) => {
+                const employeeSubcomponentData = await Promise.all(selectedSubcomponents.map(async (subcomponent: any) => {
                   let timePercentage = subcomponent.time_percentage || 0;
                   let practicePercentage = subcomponent.practice_percent || 0;
                   let yearPercentage = subcomponent.year_percentage || 0;
@@ -3807,7 +3807,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                     };
                     
                     // Calculate applied percentage with this employee's unique actualized values
-                    const actualizedAppliedPercentage = (
+                    let actualizedAppliedPercentage = (
                       actualizedValues.practicePercentage / 100
                     ) * (
                       actualizedValues.yearPercentage / 100
@@ -3816,6 +3816,30 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                     ) * (
                       actualizedValues.timePercentage / 100
                     ) * 100;
+                    
+                    // ✅ CRITICAL FIX: Apply Non-R&D reduction (same as role baseline calculation)
+                    // Find the step for this subcomponent to get non-R&D percentage
+                    let nonRdPercent = 0;
+                    const beforeNonRdReduction = actualizedAppliedPercentage;
+                    
+                    try {
+                      const { data: subStep, error: stepError } = await supabase
+                        .from('rd_selected_steps')
+                        .select('non_rd_percentage')
+                        .eq('business_year_id', targetBusinessYearId)
+                        .eq('step_id', subcomponent.step_id)
+                        .single();
+                      
+                      if (!stepError && subStep) {
+                        nonRdPercent = subStep.non_rd_percentage || 0;
+                      }
+                    } catch (error) {
+                      console.warn(`⚠️ Could not fetch non-R&D percentage for step ${subcomponent.step_id}:`, error);
+                    }
+                    
+                    if (nonRdPercent > 0) {
+                      actualizedAppliedPercentage = actualizedAppliedPercentage * ((100 - nonRdPercent) / 100);
+                    }
                     
                     console.log(`🎲 CSV UNIQUE actualization for employee: ${firstName} ${lastName}`, {
                       subcomponent: subcomponent.subcomponent_id,
@@ -3833,7 +3857,9 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                         practice: actualizedValues.practicePercentage,
                         year: actualizedValues.yearPercentage,
                         frequency: actualizedValues.frequencyPercentage,
-                        applied: actualizedAppliedPercentage
+                        appliedBeforeNonRd: beforeNonRdReduction,
+                        nonRdPercent: nonRdPercent,
+                        appliedFinal: actualizedAppliedPercentage
                       }
                     });
                     
@@ -3860,7 +3886,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                     baseline_time_percentage: subcomponent.time_percentage || 0,
                     user_id: userId
                   };
-                });
+                }));
 
                 const { error: insertError } = await supabase
                   .from('rd_employee_subcomponents')
