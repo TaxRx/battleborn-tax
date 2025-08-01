@@ -3,14 +3,15 @@ import { Calculator, TrendingUp, Building2, MapPin, DollarSign, AlertTriangle, C
 import { RDCalculationsService, CalculationResults, FederalCreditResults } from '../../../services/rdCalculationsService';
 import { StateCalculationService, StateCalculationResult, QREBreakdown } from '../../../services/stateCalculationService';
 import { StateProFormaCalculationService } from '../../../services/stateProFormaCalculationService';
+import { ContractorManagementService } from '../../../../../services/contractorManagementService';
 import { toast } from 'react-hot-toast';
 import { supabase } from '../../../lib/supabase';
 import { FilingGuideModal } from '../../FilingGuide/FilingGuideModal';
 import AllocationReportModal from '../../AllocationReport/AllocationReportModal';
 import { IntegratedFederalCredits } from './IntegratedFederalCredits';
 import { IntegratedStateCredits } from './IntegratedStateCredits';
-import { FederalCreditProForma } from '../../FilingGuide/FederalCreditProForma';
 import { useUser } from '../../../../../context/UserContext';
+import StepCompletionBanner from '../../../../../components/common/StepCompletionBanner';
 
 // Standardized rounding functions
 const roundToDollar = (value: number): number => Math.round(value);
@@ -31,6 +32,7 @@ interface CalculationStepProps {
   onUpdate: (updates: any) => void;
   onNext: () => void;
   onPrevious: () => void;
+  yearRefreshTrigger?: number; // Trigger to refresh year dropdowns when business years are updated
 }
 
 // AccordionSection for showing calculation details
@@ -229,7 +231,8 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
   wizardState,
   onUpdate,
   onNext,
-  onPrevious
+  onPrevious,
+  yearRefreshTrigger
 }) => {
   // Get user information for userId
   const { user } = useUser();
@@ -241,12 +244,26 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
   const [corporateTaxRate, setCorporateTaxRate] = useState(21);
   const [selectedMethod, setSelectedMethod] = useState<'standard' | 'asc'>('asc');
 
+  // Wrapper function to update both local state and wizard state
+  const handleMethodChange = (method: 'standard' | 'asc') => {
+    setSelectedMethod(method);
+    onUpdate({ selectedMethod: method });
+  };
+
   // State calculation service instance
   const stateCalculationService = useMemo(() => StateCalculationService.getInstance(), []);
   
   // State for state calculations
   const [stateCredits, setStateCredits] = useState<any[]>([]);
   const [stateLoading, setStateLoading] = useState(false);
+  
+  // State for locked QRE values
+  const [lockedQREValues, setLockedQREValues] = useState<Record<string, {
+    employee_qre: number;
+    contractor_qre: number;
+    supply_qre: number;
+    qre_locked: boolean;
+  }>>({});
   const [selectedStateMethod, setSelectedStateMethod] = useState<string>('Standard');
   const [availableStateMethods, setAvailableStateMethods] = useState<string[]>([]);
   const [stateCalculations, setStateCalculations] = useState<any[]>([]);
@@ -290,11 +307,21 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
   // --- Add state for prior 3 years gross receipts average ---
   const [avgPrior3GrossReceipts, setAvgPrior3GrossReceipts] = useState<number>(0);
 
-  // --- Employee Wages QRE: Fetch from DB on load/year change ---
+  // --- Employee Wages QRE: Use locked values if available, otherwise fetch from DB ---
   const [employeeWagesQRE, setEmployeeWagesQRE] = useState<number>(0);
   useEffect(() => {
     async function fetchEmployeeWagesQRE() {
       if (!selectedActivityYearId) return;
+      
+      // CRITICAL FIX: Check if QRE values are locked first
+      const lockedValues = lockedQREValues[selectedActivityYearId];
+      if (lockedValues && lockedValues.qre_locked) {
+        setEmployeeWagesQRE(lockedValues.employee_qre);
+        return;
+      }
+      
+      // Fallback to calculated values if not locked
+      console.log(`🧮 Calculating employee QRE from database for year: ${selectedActivityYearId}`);
       const { data, error } = await supabase
         .from('rd_employee_year_data')
         .select('calculated_qre')
@@ -305,10 +332,49 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
         return;
       }
       const sum = (data || []).reduce((acc, row) => acc + (row.calculated_qre || 0), 0);
+      console.log(`🧮 Calculated employee QRE from database: ${sum}`);
       setEmployeeWagesQRE(sum);
     }
     fetchEmployeeWagesQRE();
-  }, [selectedActivityYearId]);
+  }, [selectedActivityYearId, lockedQREValues]);
+
+  // Load locked QRE values for all business years
+  const loadLockedQREValues = async () => {
+    if (!wizardState.business?.id) {
+      console.warn('⚠️ No business ID available for loading locked QRE values');
+      return;
+    }
+    
+    try {
+      console.log('🔒 CalculationStep - Loading locked QRE values for business:', wizardState.business.id);
+      
+      const { data, error } = await supabase
+        .from('rd_business_years')
+        .select('id, employee_qre, contractor_qre, supply_qre, qre_locked')
+        .eq('business_id', wizardState.business.id);
+
+      if (error) {
+        console.error('❌ Error loading locked QRE values:', error);
+        return;
+      }
+
+      if (data) {
+        const qreMap: Record<string, any> = {};
+        data.forEach(year => {
+          qreMap[year.id] = {
+            employee_qre: year.employee_qre || 0,
+            contractor_qre: year.contractor_qre || 0,
+            supply_qre: year.supply_qre || 0,
+            qre_locked: year.qre_locked || false
+          };
+        });
+        setLockedQREValues(qreMap);
+        console.log('✅ Loaded locked QRE values:', qreMap);
+      }
+    } catch (error) {
+      console.error('❌ Error loading locked QRE values:', error);
+    }
+  };
 
   // Derive selectedYearData from allYears and selectedYearId
   const selectedYearData = useMemo(() => {
@@ -339,7 +405,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           return;
         }
 
-        // For each year, fetch supply subcomponents to get the actual supply QREs
+        // For each year, fetch supply subcomponents and contractors to get the actual QREs
         const yearsWithSupplyData = await Promise.all(
           years.map(async (year) => {
             // Fetch supply subcomponents for this business year
@@ -356,7 +422,20 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
               return { ...year, supply_subcomponents: [] };
             }
 
-            return { ...year, supply_subcomponents: supplySubcomponents || [] };
+            // Fetch contractors using ContractorManagementService (same as EmployeeSetupStep)
+            let contractorsWithQRE = [];
+            try {
+              contractorsWithQRE = await ContractorManagementService.getContractors(year.id);
+              console.log(`✅ CalculationStep - Loaded ${contractorsWithQRE.length} contractors for year ${year.year}`);
+            } catch (error) {
+              console.error('Error fetching contractors:', error);
+            }
+
+            return { 
+              ...year, 
+              supply_subcomponents: supplySubcomponents || [],
+              contractors_with_qre: contractorsWithQRE
+            };
           })
         );
 
@@ -403,6 +482,15 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
 
         // Helper to get QRE for a year
         const getQRE = (year) => {
+          // Check if QRE values are locked for this year
+          const lockedValues = lockedQREValues[year.id];
+          if (lockedValues && lockedValues.qre_locked) {
+            // Use locked values as single source of truth
+            const totalQRE = lockedValues.employee_qre + lockedValues.contractor_qre + lockedValues.supply_qre;
+            console.log(`🔒 Using locked QRE for year ${year.year}:`, totalQRE);
+            return roundToDollar(totalQRE);
+          }
+          
           const currentYear = new Date().getFullYear();
           const isCurrentYear = year.year === currentYear;
           
@@ -441,6 +529,19 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
 
         // Helper to get QRE breakdown for a year
         const getQREBreakdown = (year) => {
+          // Check if QRE values are locked for this year
+          const lockedValues = lockedQREValues[year.id];
+          if (lockedValues && lockedValues.qre_locked) {
+            // Use locked values as single source of truth
+            console.log(`🔒 Using locked QRE breakdown for year ${year.year}:`, lockedValues);
+            return {
+              employeesQRE: lockedValues.employee_qre,
+              contractorsQRE: lockedValues.contractor_qre,
+              suppliesQRE: lockedValues.supply_qre,
+              directQRE: 0
+            };
+          }
+          
           const currentYear = new Date().getFullYear();
           const isCurrentYear = year.year === currentYear;
           
@@ -571,6 +672,9 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
         setAvailableActivityYears(yearsWithSupplyData.sort((a, b) => b.year - a.year));
         setAllYears(yearsWithSupplyData.sort((a, b) => b.year - a.year));
         
+        // Load locked QRE values after years are loaded
+        await loadLockedQREValues();
+        
         // Set initial selected year
         if (!selectedActivityYearId && yearsWithSupplyData.length > 0) {
           const currentYear = new Date().getFullYear();
@@ -624,14 +728,17 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
               const appliedPercent = e.applied_percent || 0;
               const calculatedQRE = e.calculated_qre || e.qre || 0;
               
+              // Apply 80% threshold rule for QRE calculation
+              const qreAppliedPercent = appliedPercent >= 80 ? 100 : appliedPercent;
               // Use calculated QRE if available, otherwise calculate from wage and percent
-              const employeeQRE = calculatedQRE > 0 ? calculatedQRE : (annualWage * appliedPercent / 100);
+              const employeeQRE = calculatedQRE > 0 ? calculatedQRE : (annualWage * qreAppliedPercent / 100);
               
               // Debug individual employee
               console.log('%c🔍 Employee Debug:', 'color: #fff; background: #f0f; font-weight: bold;', {
                 employeeId: e.employee_id,
                 annualWage: annualWage,
-                appliedPercent: appliedPercent,
+                originalAppliedPercent: appliedPercent,
+                qreAppliedPercentWith80Threshold: qreAppliedPercent,
                 calculatedQRE: calculatedQRE,
                 employeeQRE: roundToDollar(employeeQRE)
               });
@@ -645,8 +752,10 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
               const appliedPercent = c.applied_percent || 0;
               const calculatedQRE = c.calculated_qre || c.qre || 0;
               
+              // Apply 80% threshold rule for contractor QRE calculation
+              const qreAppliedPercent = appliedPercent >= 80 ? 100 : appliedPercent;
               // Use calculated QRE if available, otherwise calculate from amount and percent
-              const contractorQRE = calculatedQRE > 0 ? calculatedQRE : (amount * appliedPercent / 100);
+              const contractorQRE = calculatedQRE > 0 ? calculatedQRE : (amount * qreAppliedPercent / 100);
               
               return sum + roundToDollar(contractorQRE);
             }, 0) || 0;
@@ -891,6 +1000,24 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
     }
   }, [selectedActivityYearId]);
 
+  // CRITICAL: Recalculate when QRE values are locked/unlocked
+  useEffect(() => {
+    if (wizardState.qreValuesChanged) {
+      console.log('🔄 CalculationStep detected QRE values changed - triggering recalculation');
+      loadCalculations();
+      // Clear the flag to prevent repeated calculations
+      onUpdate({ qreValuesChanged: false });
+    }
+  }, [wizardState.qreValuesChanged]);
+
+  // Reload calculations when yearRefreshTrigger changes (business years updated)
+  useEffect(() => {
+    if (yearRefreshTrigger !== undefined && yearRefreshTrigger > 0) {
+      console.log('📅 [CalculationStep] Year refresh triggered - reloading calculations');
+      loadCalculations();
+    }
+  }, [yearRefreshTrigger]);
+
   const loadCalculations = async () => {
     if (!wizardState.selectedYear?.id) return;
 
@@ -902,10 +1029,11 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       const newResults = await RDCalculationsService.calculateCredits(
         wizardState.selectedYear.id,
         use280C,
-        corporateTaxRate / 100
+        corporateTaxRate / 100,
+        selectedMethod
       );
       setResults(newResults);
-      onUpdate({ calculations: newResults });
+      onUpdate({ calculations: newResults, selectedMethod });
     } catch (err) {
       console.error('Error loading calculations:', err);
       setError('Failed to load calculations. Please check your data and try again.');
@@ -925,11 +1053,12 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       const newResults = await RDCalculationsService.calculateCredits(
         wizardState.selectedYear.id,
         use280C,
-        corporateTaxRate / 100
+        corporateTaxRate / 100,
+        selectedMethod
       );
 
       setResults(newResults);
-      onUpdate({ calculations: newResults });
+      onUpdate({ calculations: newResults, selectedMethod });
       toast.success('Calculations updated successfully');
     } catch (err) {
       console.error('Error recalculating:', err);
@@ -1242,12 +1371,56 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
     return total;
   }, [selectedStateCredit, stateCredits]);
 
-  // Get current year QRE breakdown for summary cards
-  const currentYearQRE = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    const currentYearData = allYears.find(year => year.year === currentYear);
+  // Create QRE data hash to trigger state pro forma reload when QRE data changes
+  const qreDataHash = useMemo(() => {
+    if (!selectedYearData) return '';
     
-    if (!currentYearData) return null;
+    const employeeQRE = selectedYearData.employees?.reduce((sum, e) => sum + (e.calculated_qre || 0), 0) || 0;
+    const contractorQRE = selectedYearData.contractors_with_qre?.reduce((sum, c) => sum + (c.calculated_qre || 0), 0) || 0;
+    const supplyQRE = selectedYearData.supply_subcomponents?.reduce((sum, s) => {
+      const amountApplied = s.amount_applied || 0;
+      const appliedPercentage = s.applied_percentage || 0;
+      const supplyCost = s.supply?.cost_amount || 0;
+      return sum + (amountApplied > 0 ? amountApplied : (supplyCost * appliedPercentage / 100));
+    }, 0) || 0;
+    
+    const hash = `${employeeQRE}-${contractorQRE}-${supplyQRE}`;
+    console.log('🔧 CalculationStep - QRE Data Hash:', {
+      employeeQRE,
+      contractorQRE, 
+      supplyQRE,
+      hash,
+      selectedYearData_contractors_count: selectedYearData?.contractors_with_qre?.length || 0
+    });
+    return hash;
+  }, [selectedYearData]);
+
+  // Get SELECTED year QRE breakdown for summary cards (NOT current calendar year)
+  const currentYearQRE = useMemo(() => {
+    // CRITICAL FIX: Use selected year, not calendar year
+    const selectedYearData = allYears.find(year => year.id === selectedActivityYearId);
+    
+    if (!selectedYearData) {
+      console.log('⚠️ No selected year data found for summary cards');
+      return null;
+    }
+
+    // Calculate summary for selected year
+    
+    // CRITICAL FIX: Check if QRE values are locked for the SELECTED year
+    const lockedValues = lockedQREValues[selectedYearData.id];
+    if (lockedValues && lockedValues.qre_locked) {
+      // Use locked values as single source of truth
+      return {
+        supply_costs: lockedValues.supply_qre,
+        employee_costs: lockedValues.employee_qre,
+        contractor_costs: lockedValues.contractor_qre,
+        total_qre: roundToDollar(lockedValues.employee_qre + lockedValues.contractor_qre + lockedValues.supply_qre)
+      };
+    }
+    
+    console.log(`🧮 Using CALCULATED QRE for summary cards (year ${selectedYearData.year} - not locked)`);
+    const currentYearData = selectedYearData;
 
     // Calculate QREs using the same logic as Expense Management page
     const supplyQRE = currentYearData.supply_subcomponents?.reduce((sum, ssc) => {
@@ -1264,8 +1437,8 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       return sum + roundToDollar(calculatedQRE);
     }, 0) || 0;
     
-    // Use contractor.calculated_qre since amount is not populated correctly
-    const contractorQRE = currentYearData.contractors?.reduce((sum, c) => {
+    // Use contractor.calculated_qre from contractors_with_qre (loaded via ContractorManagementService)
+    const contractorQRE = currentYearData.contractors_with_qre?.reduce((sum, c) => {
       const calculatedQRE = c.calculated_qre || 0;
       return sum + roundToDollar(calculatedQRE);
     }, 0) || 0;
@@ -1278,7 +1451,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
     };
 
     return result;
-  }, [allYears]);
+  }, [allYears, lockedQREValues, selectedActivityYearId]);
 
   // Helper function to calculate chart data
   const calculateChartData = (allYears: any[], results: any, selectedMethod: string, totalStateCredits: number) => {
@@ -1525,6 +1698,14 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Step Completion Banner */}
+      <StepCompletionBanner 
+        stepName="calculations"
+        stepDisplayName="Calculations"
+        businessYearId={wizardState.selectedYear?.id || ''}
+        description="Review and calculate your R&D tax credit"
+      />
+      
       {/* Header with Year Selector and Filing Guide Button */}
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow-lg p-6 text-white">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between">
@@ -1538,12 +1719,40 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                 <label className="text-sm opacity-90">Year:</label>
                 <select
                   value={selectedActivityYearId}
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     const newYearId = e.target.value;
-                    setSelectedActivityYearId(newYearId);
                     const selectedYear = availableActivityYears.find(y => y.id === newYearId);
+                    
+                    console.log(`🔄 CRITICAL: CalculationStep year switch to ${newYearId} (${selectedYear?.year})`);
+                    console.log('🧹 FORCING QRE data isolation for CalculationStep');
+                    
+                    // CRITICAL: Update year selection and clear cached data
+                    setSelectedActivityYearId(newYearId);
+                    setSelectedYearId(newYearId);
                     if (selectedYear) {
                       setSelectedActivityYear(selectedYear.year);
+                    }
+                    
+                    // CRITICAL: Clear cached calculation results to prevent leakage
+                    setResults(null);
+                    setHistoricalCards([]);
+                    setAllYears([]);
+                    setStateCredits([]);
+                    setStateCalculations([]);
+                    setAvailableActivityYears([]);
+                    
+                    // CRITICAL: Reload locked QRE values and recalculate for the new year
+                    console.log('🔒 RELOADING locked QRE values and calculations for CalculationStep year:', newYearId);
+                    setLoading(true);
+                    try {
+                      await loadLockedQREValues();
+                      // CRITICAL: Force complete recalculation with new year data
+                      await loadCalculations();
+                      console.log('✅ CalculationStep year switch complete - QRE data isolated and recalculated');
+                    } catch (error) {
+                      console.error('❌ Error reloading QRE values and calculations in CalculationStep:', error);
+                    } finally {
+                      setLoading(false);
                     }
                   }}
                   className="px-3 py-1 bg-white/10 border border-white/20 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/50"
@@ -1614,7 +1823,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
             </div>
         <div className="bg-green-50 rounded-lg p-4">
           <div className="text-2xl font-bold text-green-900">
-            {selectedYearData?.contractors?.length || 0}
+            {selectedYearData?.contractors_with_qre?.length || 0}
               </div>
           <div className="text-sm text-green-600">Contractors</div>
               </div>
@@ -1632,7 +1841,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
         </div>
         <div className="bg-indigo-50 rounded-lg p-4">
           <div className="text-2xl font-bold text-indigo-900">
-            {(selectedYearData?.supply_subcomponents?.length || 0) + (selectedYearData?.employees?.length || 0) + (selectedYearData?.contractors?.length || 0)}
+            {(selectedYearData?.supply_subcomponents?.length || 0) + (selectedYearData?.employees?.length || 0) + (selectedYearData?.contractors_with_qre?.length || 0)}
           </div>
           <div className="text-sm text-indigo-600">Total Subcomponents</div>
             </div>
@@ -1702,7 +1911,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           selectedYear={selectedYearData}
           calculations={results}
           selectedMethod={selectedMethod}
-          onMethodChange={setSelectedMethod}
+          onMethodChange={handleMethodChange}
           corporateTaxRate={corporateTaxRate}
           use280C={use280C}
           onUse280CChange={setUse280C}
@@ -1729,30 +1938,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           businessData={wizardState.business}
           selectedYear={selectedYearData}
           wizardState={wizardState}
-        />
-      </div>
-
-      {/* Federal Pro Forma Section - Now Visible on Calculations Page */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-            <span className="text-blue-600 font-semibold text-sm">📝</span>
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">Federal Form 6765 Pro Forma</h3>
-            <p className="text-sm text-gray-600">
-              IRS Form 6765 calculation worksheet for detailed federal credit analysis
-            </p>
-          </div>
-        </div>
-
-        <FederalCreditProForma
-          businessData={wizardState.business}
-          selectedYear={selectedYearData}
-          calculations={results}
-          clientId={wizardState.business?.client_id || 'demo'}
-          userId={user?.id}
-          selectedMethod={selectedMethod}
+          qreDataHash={qreDataHash}
         />
       </div>
 

@@ -404,7 +404,8 @@ export class EmployeeManagementService {
       }
 
       console.log('✅ EmployeeManagementService.calculateEmployeeQRE - Final total QRE:', totalQRE);
-      return totalQRE;
+      // Apply Math.round() for consistency with other services
+      return Math.round(totalQRE);
     } catch (error) {
       console.error('❌ EmployeeManagementService.calculateEmployeeQRE - Error:', error);
       throw error;

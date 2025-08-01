@@ -46,18 +46,7 @@ export const QRESummaryTables: React.FC<QRESummaryTablesProps> = ({
   const totalQRE = calculations?.currentYearQRE?.total ?? calculations?.totalQRE ?? 0;
 
   // More granular logs
-  // eslint-disable-next-line no-console
-  console.log('%c[QRE SUMMARY] currentYearQRE:', 'background: #fffb00; color: #000; font-weight: bold;', currentYearQRE);
-  // eslint-disable-next-line no-console
-  console.log('%c[QRE SUMMARY] currentYearQRE DETAILED:', 'background: #ff0000; color: #fff; font-weight: bold;', JSON.stringify(calculations?.currentYearQRE, null, 2));
-  // eslint-disable-next-line no-console
-  console.log('%c[QRE SUMMARY] historicalData:', 'background: #fffb00; color: #000; font-weight: bold;', historicalData);
-  // eslint-disable-next-line no-console
-  console.log('%c[QRE SUMMARY] historicalData DETAILED:', 'background: #ff0000; color: #fff; font-weight: bold;', JSON.stringify(calculations?.historicalData, null, 2));
-  // eslint-disable-next-line no-console
-  console.log('%c[QRE SUMMARY] totalQRE:', 'background: #fffb00; color: #000; font-weight: bold;', totalQRE);
-  // eslint-disable-next-line no-console
-  console.log('%c[QRE SUMMARY] federalCredits DETAILED:', 'background: #ff0000; color: #fff; font-weight: bold;', JSON.stringify(calculations?.federalCredits, null, 2));
+  // QRE data processing complete
 
   // Check if we have data
   const hasData = totalQRE > 0 || (historicalData && historicalData.length > 0);
@@ -118,40 +107,59 @@ export const QRESummaryTables: React.FC<QRESummaryTablesProps> = ({
         </table>
       </div>
 
-      {/* Historical QRE Data */}
-      {historicalData && historicalData.length > 0 && (
-        <div className="qre-table-section">
-          <h3 className="qre-table-title">Historical QRE Data</h3>
-          <table className="qre-table">
-            <thead>
-              <tr>
-                <th>Year</th>
-                <th>QRE Amount</th>
-                <th>Gross Receipts</th>
-                <th>QRE % of Receipts</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(() => {
-                // Filter to show only report year + previous 3 years
-                const currentYear = selectedYear?.year || new Date().getFullYear();
-                const filteredData = historicalData
-                  .filter((year: any) => year.year <= currentYear && year.year >= (currentYear - 3))
-                  .sort((a: any, b: any) => b.year - a.year); // Sort descending (newest first)
-                
-                return filteredData.map((year: any, index: number) => (
-                  <tr key={index}>
-                    <td>{year.year}</td>
-                    <td className="qre-amount">{formatCurrency(year.qre)}</td>
-                    <td className="qre-amount">{formatCurrency(year.gross_receipts)}</td>
-                    <td className="qre-percentage">{formatPercentage((year.qre / year.gross_receipts) * 100)}</td>
-                  </tr>
-                ));
-              })()}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {/* Historical QRE Data - Only show if there's meaningful historical data */}
+      {(() => {
+        if (!historicalData || historicalData.length === 0) return null;
+        
+        const currentYear = selectedYear?.year || new Date().getFullYear();
+        const filteredData = historicalData
+          .filter((year: any) => year.year <= currentYear && year.year >= (currentYear - 3))
+          .sort((a: any, b: any) => b.year - a.year);
+        
+        // Only show if at least one year has meaningful data (QRE > 0 OR gross_receipts > 0)
+        const hasMeaningfulData = filteredData.some((year: any) => 
+          (year.qre && year.qre > 0) || (year.gross_receipts && year.gross_receipts > 0)
+        );
+        
+        if (!hasMeaningfulData) return null;
+        
+        return (
+          <div className="qre-table-section">
+            <h3 className="qre-table-title">Historical QRE Data</h3>
+            <table className="qre-table">
+              <thead>
+                <tr>
+                  <th>Year</th>
+                  <th>QRE Amount</th>
+                  <th>Gross Receipts</th>
+                  <th>QRE % of Receipts</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredData.map((year: any, index: number) => {
+                  const qrePercentage = year.gross_receipts && year.gross_receipts > 0 
+                    ? (year.qre / year.gross_receipts) * 100 
+                    : 0;
+                  
+                  return (
+                    <tr key={index}>
+                      <td>{year.year}</td>
+                      <td className="qre-amount">{formatCurrency(year.qre || 0)}</td>
+                      <td className="qre-amount">{formatCurrency(year.gross_receipts || 0)}</td>
+                      <td className="qre-percentage">
+                        {year.gross_receipts && year.gross_receipts > 0 
+                          ? formatPercentage(qrePercentage)
+                          : 'N/A'
+                        }
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+      })()}
 
       {/* Method Summary */}
       <div className="qre-table-section">

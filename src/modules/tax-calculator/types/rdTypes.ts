@@ -10,6 +10,7 @@ export interface RDBusiness {
   name: string;
   ein: string | null; // EIN can be null during initial enrollment
   entity_type: 'LLC' | 'SCORP' | 'CCORP' | 'PARTNERSHIP' | 'SOLEPROP' | 'OTHER';
+  category_id?: string | null; // Business research category (Healthcare, Software, etc.)
   start_year: number;
   domicile_state: string;
   contact_info: {
@@ -21,6 +22,7 @@ export interface RDBusiness {
   website?: string;
   naics?: string;
   image_path?: string;
+  github_token?: string; // Client-specific GitHub access token for Software R&D reports
   is_controlled_grp: boolean;
   historical_data?: Array<{
     year: number;

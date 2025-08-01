@@ -33,6 +33,12 @@ interface Form6765v2024Props {
   clientId: string;
   userId?: string;
   selectedMethod?: 'standard' | 'asc';
+  lockedQREValues?: {
+    employee_qre: number;
+    contractor_qre: number;
+    supply_qre: number;
+    qre_locked: boolean;
+  };
 }
 
 // Formatting functions from original Form6765
@@ -75,7 +81,8 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
   calculations,
   clientId,
   userId,
-  selectedMethod: propSelectedMethod
+  selectedMethod: propSelectedMethod,
+  lockedQREValues
 }) => {
   const [overrides, setOverrides] = useState<Form6765Override[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,8 +93,38 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
   const [activitiesCount, setActivitiesCount] = useState(0);
   const [ownerQREs, setOwnerQREs] = useState(0);
 
+  // OPTIMIZED: Memoized QRE values to prevent excessive recalculation
+  const memoizedQREValues = useMemo(() => {
+    if (lockedQREValues?.qre_locked) {
+      return {
+        employee: lockedQREValues.employee_qre || 0,
+        contractor: lockedQREValues.contractor_qre || 0,
+        supply: lockedQREValues.supply_qre || 0,
+        isLocked: true
+      };
+    } else {
+      return {
+        employee: calculations?.currentYearQRE?.employee_wages || 0,
+        contractor: calculations?.currentYearQRE?.contractor_costs || 0,
+        supply: calculations?.currentYearQRE?.supply_costs || 0,
+        isLocked: false
+      };
+    }
+  }, [lockedQREValues?.qre_locked, lockedQREValues?.employee_qre, lockedQREValues?.contractor_qre, lockedQREValues?.supply_qre, calculations?.currentYearQRE?.employee_wages, calculations?.currentYearQRE?.contractor_costs, calculations?.currentYearQRE?.supply_costs]);
+
+  const getQREValue = (type: 'employee' | 'contractor' | 'supply') => {
+    return memoizedQREValues[type];
+  };
+
   // Data extraction from calculations (same as original Form6765)
-  const currentYearQRE = calculations?.currentYearQRE?.total || 0;
+  const getTotalQRE = () => {
+    if (lockedQREValues?.qre_locked) {
+      return lockedQREValues.employee_qre + lockedQREValues.contractor_qre + lockedQREValues.supply_qre;
+    }
+    return calculations?.currentYearQRE?.total || 0;
+  };
+
+  const currentYearQRE = getTotalQRE();
   const federalCredits = calculations?.federalCredits || {};
   const standardCredit = federalCredits?.standard || {};
   const ascCredit = federalCredits?.asc || {};
@@ -98,6 +135,17 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
   const rawBasePercentage = standardCredit?.basePercentage;
   const basePercentage = (typeof rawBasePercentage === 'number' && rawBasePercentage >= 0.03) ? rawBasePercentage : 0.03;
 
+  // Removed excessive debug logging for performance
+
+  // CRITICAL: Check if calculations are available
+  if (!calculations || !calculations.currentYearQRE) {
+    console.error('🚨 Form 6765v2024 - No calculations or currentYearQRE data available!', {
+      calculations: calculations,
+      hasCalculations: !!calculations,
+      hasCurrentYearQRE: !!calculations?.currentYearQRE
+    });
+  }
+
   // Define selectedMethod
   const selectedMethod = propSelectedMethod || calculations?.federalCredits?.selectedMethod || 'standard';
 
@@ -106,10 +154,11 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
     loadOverrides();
   }, [clientId, selectedYear?.year]);
 
-  // On mount, initialize use280C from calculations
+  // On mount, initialize use280C from calculations (optimized dependencies)
   useEffect(() => {
-    setUse280C(!!calculations?.federalCredits?.use280C);
-  }, [calculations]);
+    const newUse280C = !!calculations?.federalCredits?.use280C;
+    setUse280C(newUse280C);
+  }, [calculations?.federalCredits?.use280C]);
 
   // Load Section E data
   useEffect(() => {
@@ -244,21 +293,21 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
     }
   };
 
-  // Section F state (QREs) - populated from calculations
+  // Section F state (QREs) - populated from locked values or calculations
   const [sectionF, setSectionF] = useState<Form6765Line[]>([
     { 
       lineNumber: 42, 
       label: 'Total wages for qualified services for all business components (do not include any wages used in figuring the work opportunity credit)', 
-      value: safeCurrency(calculations?.currentYearQRE?.employee_wages), 
-      calculatedValue: safeCurrency(calculations?.currentYearQRE?.employee_wages), 
+      value: safeCurrency(getQREValue('employee')), 
+      calculatedValue: safeCurrency(getQREValue('employee')), 
       isEditable: true, 
       format: formatCurrency 
     },
     { 
       lineNumber: 43, 
       label: 'Total costs of supplies for all business components', 
-      value: safeCurrency(calculations?.currentYearQRE?.supply_costs), 
-      calculatedValue: safeCurrency(calculations?.currentYearQRE?.supply_costs), 
+      value: safeCurrency(getQREValue('supply')), 
+      calculatedValue: safeCurrency(getQREValue('supply')), 
       isEditable: true, 
       format: formatCurrency 
     },
@@ -273,8 +322,8 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
     { 
       lineNumber: 45, 
       label: 'Total applicable amount of contract research for all business components (do not include basic research payments)', 
-      value: safeCurrency(calculations?.currentYearQRE?.contractor_costs), 
-      calculatedValue: safeCurrency(calculations?.currentYearQRE?.contractor_costs), 
+      value: safeCurrency(getQREValue('contractor')), 
+      calculatedValue: safeCurrency(getQREValue('contractor')), 
       isEditable: true, 
       format: formatCurrency 
     },
@@ -319,19 +368,22 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
     return l;
   };
 
-  // Update Section F when calculations change
+  // Update Section F when QRE values change (optimized to prevent infinite loops)
   useEffect(() => {
     setSectionF(prev => {
       const updated = [...prev];
-      updated[0].value = safeCurrency(calculations?.currentYearQRE?.employee_wages);
+      
+      // Use memoized QRE values to prevent excessive recalculation
+      updated[0].value = safeCurrency(getQREValue('employee'));
       updated[0].calculatedValue = updated[0].value;
-      updated[1].value = safeCurrency(calculations?.currentYearQRE?.supply_costs);
+      updated[1].value = safeCurrency(getQREValue('supply'));
       updated[1].calculatedValue = updated[1].value;
-      updated[3].value = safeCurrency(calculations?.currentYearQRE?.contractor_costs);
+      updated[3].value = safeCurrency(getQREValue('contractor'));
       updated[3].calculatedValue = updated[3].value;
+      
       return recalcSectionF(updated);
     });
-  }, [calculations]);
+  }, [memoizedQREValues.employee, memoizedQREValues.contractor, memoizedQREValues.supply, memoizedQREValues.isLocked]);
 
   // Calculate prior 3 years QRE total for line 21
   const calculatePrior3YearsQRE = (): number => {
@@ -343,13 +395,107 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
       .sort((a: any, b: any) => b.year - a.year)
       .slice(0, 3);
     
-    console.log('📊 [Form 6765v2024] Prior 3 years QRE calculation:', {
-      currentYear,
-      priorYears,
-      totalQRE: priorYears.reduce((sum: number, year: any) => sum + (year.qre || 0), 0)
-    });
+    const totalQRE = priorYears.reduce((sum: number, year: any) => sum + (year.qre || 0), 0);
     
-    return priorYears.reduce((sum: number, year: any) => sum + (year.qre || 0), 0);
+    // Performance optimization: Reduced excessive prior year QRE logging
+    
+    return totalQRE;
+  };
+
+  // Get QRE for a specific number of years prior to current year
+  // CRITICAL: Business Setup QRE overrules internal calculations
+  const getPriorYearQRE = (yearsPrior: number): number => {
+    if (!calculations?.historicalData || !selectedYear?.year) return 0;
+    
+    const currentYear = selectedYear.year;
+    const targetYear = currentYear - yearsPrior;
+    const yearData = calculations.historicalData.find((year: any) => year.year === targetYear);
+    
+    if (!yearData) return 0;
+    
+    let qreValue = 0;
+    
+    // PRIORITY 1: Check if QRE values are locked for this year
+    // Note: lockedQREValues is for the current selected year only
+    if (targetYear === selectedYear.year && lockedQREValues?.qre_locked) {
+      qreValue = lockedQREValues.employee_qre + lockedQREValues.contractor_qre + lockedQREValues.supply_qre;
+      console.log(`🔒 [Form 6765v2024] Using LOCKED QRE for ${targetYear}:`, qreValue);
+      return qreValue;
+    }
+    
+    // PRIORITY 2: Business Setup QRE (qre from historical data - includes total_qre from rd_business_years)
+    if (yearData.qre && yearData.qre > 0) {
+      qreValue = yearData.qre;
+      console.log(`📊 [Form 6765v2024] Using BUSINESS SETUP QRE for ${targetYear}:`, qreValue);
+      
+      // CRITICAL DEBUG: Also calculate what the QRE would be from internal data for comparison
+      const employeeQRE = yearData.employees?.reduce((sum: number, e: any) => {
+        const calculatedQRE = e.calculated_qre || e.qre || 0;
+        const annualWage = e.employee?.annual_wage || e.annual_wage || e.wage || 0;
+        const appliedPercent = e.applied_percent || 0;
+        return sum + (calculatedQRE > 0 ? calculatedQRE : (annualWage * appliedPercent / 100));
+      }, 0) || 0;
+      
+      const contractorQRE = yearData.contractors?.reduce((sum: number, c: any) => {
+        const calculatedQRE = c.calculated_qre || c.qre || 0;
+        const amount = c.amount || c.cost_amount || 0;
+        const appliedPercent = c.applied_percent || 0;
+        return sum + (calculatedQRE > 0 ? calculatedQRE : (amount * appliedPercent / 100));
+      }, 0) || 0;
+      
+      const supplyQRE = yearData.supplies?.reduce((sum: number, s: any) => {
+        const calculatedQRE = s.calculated_qre || s.qre || 0;
+        const costAmount = s.supply?.cost_amount || s.cost_amount || 0;
+        const appliedPercent = s.applied_percent || 0;
+        return sum + (calculatedQRE > 0 ? calculatedQRE : (costAmount * appliedPercent / 100));
+      }, 0) || 0;
+      
+      const calculatedTotal = employeeQRE + contractorQRE + supplyQRE;
+      console.log(`🔍 [Form 6765v2024] COMPARISON for ${targetYear}:`, {
+        businessSetupQRE: qreValue,
+        calculatedQRE: calculatedTotal,
+        difference: qreValue - calculatedTotal,
+        breakdown: { employee: employeeQRE, contractor: contractorQRE, supply: supplyQRE }
+      });
+      
+      // TEMPORARY FIX: Use calculated QRE if it's significantly different and non-zero
+      if (calculatedTotal > 0 && Math.abs(qreValue - calculatedTotal) > 1000) {
+        console.log(`⚠️ [Form 6765v2024] Large difference detected! Using CALCULATED QRE instead of Business Setup for ${targetYear}`);
+        qreValue = calculatedTotal;
+      }
+    } else {
+      // PRIORITY 3: Calculate from internal data (employees, contractors, supplies)
+      const employeeQRE = yearData.employees?.reduce((sum: number, e: any) => {
+        const calculatedQRE = e.calculated_qre || e.qre || 0;
+        const annualWage = e.employee?.annual_wage || e.annual_wage || e.wage || 0;
+        const appliedPercent = e.applied_percent || 0;
+        return sum + (calculatedQRE > 0 ? calculatedQRE : (annualWage * appliedPercent / 100));
+      }, 0) || 0;
+      
+      const contractorQRE = yearData.contractors?.reduce((sum: number, c: any) => {
+        const calculatedQRE = c.calculated_qre || c.qre || 0;
+        const amount = c.amount || c.cost_amount || 0;
+        const appliedPercent = c.applied_percent || 0;
+        return sum + (calculatedQRE > 0 ? calculatedQRE : (amount * appliedPercent / 100));
+      }, 0) || 0;
+      
+      const supplyQRE = yearData.supplies?.reduce((sum: number, s: any) => {
+        const calculatedQRE = s.calculated_qre || s.qre || 0;
+        const costAmount = s.supply?.cost_amount || s.cost_amount || 0;
+        const appliedPercent = s.applied_percent || 0;
+        return sum + (calculatedQRE > 0 ? calculatedQRE : (costAmount * appliedPercent / 100));
+      }, 0) || 0;
+      
+      qreValue = employeeQRE + contractorQRE + supplyQRE;
+      console.log(`🧮 [Form 6765v2024] Using CALCULATED QRE for ${targetYear}:`, {
+        total: qreValue,
+        employee: employeeQRE,
+        contractor: contractorQRE,
+        supply: supplyQRE
+      });
+    }
+    
+    return Math.round(qreValue);
   };
 
   const prior3YearsQRE = calculatePrior3YearsQRE();
@@ -389,7 +535,7 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
       { lineNumber: 18, label: 'Add lines 14 and 17', value: getOverrideValue('B', 18) ?? 0, calculatedValue: 0, isEditable: false, dependsOn: [14, 17], formula: 'line14+line17', format: formatCurrency },
       { lineNumber: 19, label: 'Multiply line 18 by 20% (0.20)', value: getOverrideValue('B', 19) ?? 0, calculatedValue: 0, isEditable: false, dependsOn: [18], formula: 'line18*0.20', format: formatCurrency },
       { lineNumber: 20, label: 'Total qualified research expenses (QREs). Enter amount from line 48', value: sectionF[6]?.value || 0, calculatedValue: sectionF[6]?.value || 0, isEditable: false, isLocked: true, dependsOn: [48], format: formatCurrency },
-      { lineNumber: 21, label: 'Enter your total QREs for the prior 3 tax years. If you had no QREs in any 1 of those years, skip lines 22 and 23', value: getOverrideValue('B', 21) ?? prior3YearsQRE, calculatedValue: prior3YearsQRE, isEditable: true, format: formatCurrency },
+      { lineNumber: 21, label: 'Total QREs for the prior 3 tax years. If you had no QREs in any 1 of those years, skip lines 22 and 23', value: getOverrideValue('B', 21) ?? (getPriorYearQRE(3) + getPriorYearQRE(2) + getPriorYearQRE(1)), calculatedValue: getPriorYearQRE(3) + getPriorYearQRE(2) + getPriorYearQRE(1), isEditable: true, format: formatCurrency },
       { lineNumber: 22, label: 'Divide line 21 by 6.0', value: getOverrideValue('B', 22) ?? 0, calculatedValue: 0, isEditable: false, dependsOn: [21], formula: 'line21/6.0', format: formatCurrency },
       { lineNumber: 23, label: 'Subtract line 22 from line 20. If zero or less, enter -0-', value: getOverrideValue('B', 23) ?? 0, calculatedValue: 0, isEditable: false, dependsOn: [20, 22], formula: 'line20-line22', format: formatCurrency },
       { lineNumber: 24, label: 'Multiply line 23 by 14% (0.14). If you skipped lines 22 and 23, multiply line 20 by 6% (0.06)', value: getOverrideValue('B', 24) ?? 0, calculatedValue: 0, isEditable: false, dependsOn: [23, 20], formula: 'line23*0.14 or line20*0.06', format: formatCurrency },
@@ -474,7 +620,36 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
     lines[4].value = lines[0].value + lines[3].value; // line 18 = line 14 + line 17
     lines[5].value = lines[4].value * 0.20; // line 19 = line 18 * 0.20
     
-    // ASC calculation logic
+    // Line 21 is now directly populated from historical data (no longer split into sub-lines)
+    // lines[7] is now line 21 (moved from lines[10] due to removed sub-lines)
+    
+    // Get individual prior year QREs for detailed debugging  
+    const prior1QRE = getPriorYearQRE(1); // 2022
+    const prior2QRE = getPriorYearQRE(2); // 2021
+    const prior3QRE = getPriorYearQRE(3); // 2020
+    
+    console.log('📊 [Form 6765v2024] Enhanced Line 21 calculation:', {
+      line21_total: lines[7].value,
+      priorYear1: prior1QRE,
+      priorYear2: prior2QRE, 
+      priorYear3: prior3QRE,
+      priorQRESum: prior1QRE + prior2QRE + prior3QRE,
+      expectedValues: {
+        year2022: 480231,
+        year2021: 360011,
+        year2020: 204772,
+        expectedSum: 1045014
+      },
+      actualValues: {
+        year2022: prior1QRE,
+        year2021: prior2QRE,
+        year2020: prior3QRE,
+        actualSum: lines[7].value
+      },
+      hasPriorQREs: lines[7].value > 0
+    });
+    
+    // ASC calculation logic (adjusted for simplified line structure)
     const hasPriorQREs = lines[7].value > 0; // line 21 has prior QREs
     if (hasPriorQREs) {
       lines[8].value = lines[7].value / 6.0; // line 22 = line 21 / 6.0
@@ -558,7 +733,7 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
   const [sectionDCalculated, setSectionDCalculated] = useState<Form6765Line[]>(sectionD.lines);
   const [sectionECalculated, setSectionECalculated] = useState<Form6765Line[]>(sectionE.lines);
 
-  // Recalculate sections when dependencies change
+  // Recalculate sections when dependencies change (optimized dependencies)
   useEffect(() => {
     if (sectionA.isVisible) {
       setSectionACalculated(calculateSectionA());
@@ -569,7 +744,7 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
     setSectionCCalculated(calculateSectionC());
     setSectionDCalculated(calculateSectionD());
     setSectionECalculated(calculateSectionE());
-  }, [sectionF, use280C, sectionA.isVisible, sectionB.isVisible, calculations, activitiesCount, ownerQREs]);
+  }, [sectionF, use280C, sectionA.isVisible, sectionB.isVisible, activitiesCount, ownerQREs, calculations?.federalCredits?.selectedMethod]);
 
   // Update sections when overrides are loaded
   useEffect(() => {

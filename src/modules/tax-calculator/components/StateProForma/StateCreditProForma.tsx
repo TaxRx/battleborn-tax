@@ -20,6 +20,7 @@ interface StateCreditProFormaProps {
   onSave?: (data: Record<string, number>, businessYearId: string) => Promise<void>;
   title?: string;
   businessYearId?: string;
+  readOnly?: boolean; // Add read-only mode for client portal
   // Validation rules props
   validationRules?: ValidationRule[];
   alternativeValidationRules?: ValidationRule[];
@@ -62,6 +63,7 @@ export const StateCreditProForma: React.FC<StateCreditProFormaProps> = ({
   onSave,
   title = 'State Credit Pro Forma',
   businessYearId,
+  readOnly = false,
   // Validation rules props
   validationRules = [],
   alternativeValidationRules = [],
@@ -202,7 +204,8 @@ export const StateCreditProForma: React.FC<StateCreditProFormaProps> = ({
                           }
                           e.target.value = getDisplayValue(line.field, numValue, line);
                         }}
-                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-right font-mono"
+                        readOnly={readOnly}
+                        className={`w-full px-2 py-1 border border-gray-300 rounded text-sm text-right font-mono ${readOnly ? 'bg-gray-50 cursor-not-allowed' : ''}`}
                         placeholder={
                           isYesNoField(line) ? 'Yes/No' :
                           isPercentageField(line.field, line) ? '3.00%' : 
@@ -223,7 +226,7 @@ export const StateCreditProForma: React.FC<StateCreditProFormaProps> = ({
         </table>
       </div>
 
-      {onSave && businessYearId && (
+      {onSave && businessYearId && !readOnly && (
         <div className="state-proforma-save">
           <button
             onClick={handleSave}

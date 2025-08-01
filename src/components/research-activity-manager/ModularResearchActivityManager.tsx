@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -25,8 +25,18 @@ import {
   Search,
   Filter,
   X,
-  Upload
+  Upload,
+  MoreVertical,
+  ChevronDown,
+  ChevronRight,
+  SortAsc,
+  SortDesc,
+  FileText,
+  Download,
+  GripVertical
 } from 'lucide-react';
+import LockBanner from '../common/LockBanner';
+import useLockStore from '../../store/lockStore';
 import { 
   ResearchActivitiesService, 
   ResearchActivity, 
@@ -45,6 +55,7 @@ import SubcomponentModal from './SubcomponentModal';
 import MoveSubcomponentModal from './MoveSubcomponentModal';
 import AddFilterEntryModal from './AddFilterEntryModal';
 import EditActivityModal from './EditActivityModal';
+import EditStepModal from './EditStepModal';
 import CSVImportModal from './CSVImportModal';
 import EditableSelectableChip from './EditableSelectableChip';
 import EditFocusModal from './EditFocusModal';
@@ -143,10 +154,18 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   const [showEditActivityModal, setShowEditActivityModal] = useState(false);
   const [editingActivity, setEditingActivity] = useState<ResearchActivity | null>(null);
 
+  // Edit step modal state
+  const [showEditStepModal, setShowEditStepModal] = useState(false);
+  const [editingStep, setEditingStep] = useState<ResearchStep | null>(null);
+  const [editingStepActivityId, setEditingStepActivityId] = useState<string>('');
+
+  // Lock store for data protection
+  const { isResearchActivitiesLocked } = useLockStore();
+
   // CSV import modal state
   const [showCSVImportModal, setShowCSVImportModal] = useState(false);
 
-  // Edit focus modal state
+  // Edit focus modal state  
   const [showEditFocusModal, setShowEditFocusModal] = useState(false);
   const [editingFocus, setEditingFocus] = useState<ResearchFocus | null>(null);
 
@@ -336,6 +355,44 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
     const activeData = active.data.current;
     const overData = over.data.current;
 
+    // Handle step reordering
+    if (activeData?.type === 'step' && overData?.type === 'step') {
+      const activeStepId = active.id as string;
+      const overStepId = over.id as string;
+
+      if (activeStepId !== overStepId) {
+        try {
+          // Find the activity that contains both steps
+          const activity = activities.find(act => 
+            act.steps.some(step => step.id === activeStepId) && 
+            act.steps.some(step => step.id === overStepId)
+          );
+
+          if (activity) {
+            const steps = activity.steps.filter(step => step.is_active);
+            const oldIndex = steps.findIndex(step => step.id === activeStepId);
+            const newIndex = steps.findIndex(step => step.id === overStepId);
+
+            // Create new order array
+            const reorderedSteps = arrayMove(steps, oldIndex, newIndex);
+            
+            // Update step_order in database
+            const updatePromises = reorderedSteps.map((step, index) => 
+              ResearchActivitiesService.updateResearchStep(step.id, { 
+                step_order: index + 1 
+              })
+            );
+
+            await Promise.all(updatePromises);
+            loadActivities(); // Refresh data
+          }
+        } catch (error) {
+          console.error('Error reordering steps:', error);
+        }
+      }
+    }
+
+    // Handle subcomponent movement between steps
     if (activeData?.type === 'subcomponent' && overData?.type === 'step') {
       const subcomponent = activeData.subcomponent;
       const fromStepId = activeData.stepId;
@@ -395,11 +452,27 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   };
 
   const handleEditActivity = (activity: ResearchActivity) => {
+    if (isResearchActivitiesLocked) return;
     setEditingActivity(activity);
     setShowEditActivityModal(true);
   };
 
+  const handleEditStep = (step: ResearchStep, activityId: string) => {
+    if (isResearchActivitiesLocked) return;
+    setEditingStep(step);
+    setEditingStepActivityId(activityId);
+    setShowEditStepModal(true);
+  };
+
+  const handleAddStep = (activityId: string) => {
+    if (isResearchActivitiesLocked) return;
+    setEditingStep(null);
+    setEditingStepActivityId(activityId);
+    setShowEditStepModal(true);
+  };
+
   const handleDuplicateActivity = async (activity: ResearchActivity) => {
+    if (isResearchActivitiesLocked) return;
     try {
       await ResearchActivitiesService.duplicateResearchActivity(activity.id, businessId);
       loadActivities();
@@ -409,6 +482,7 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   };
 
   const handleDeactivateActivity = async (activity: ResearchActivity) => {
+    if (isResearchActivitiesLocked) return;
     try {
       await ResearchActivitiesService.deactivateResearchActivity(activity.id, 'Deactivated via UI');
       loadActivities();
@@ -418,24 +492,28 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   };
 
   const handleAddSubcomponent = (stepId: string) => {
-    setSelectedStepId(stepId);
+    if (isResearchActivitiesLocked) return;
     setEditingSubcomponent(null);
+    setSelectedStepId(stepId);
     setShowSubcomponentModal(true);
   };
 
   const handleEditSubcomponent = (subcomponent: ResearchSubcomponent) => {
+    if (isResearchActivitiesLocked) return;
     setEditingSubcomponent(subcomponent);
     setSelectedStepId(subcomponent.step_id);
     setShowSubcomponentModal(true);
   };
 
   const handleMoveSubcomponent = (subcomponentId: string, fromStepId: string) => {
+    if (isResearchActivitiesLocked) return;
     setMoveSubcomponentId(subcomponentId);
     setMoveFromStepId(fromStepId);
     setShowMoveModal(true);
   };
 
   const handleSaveSubcomponent = async (subcomponentData: Omit<ResearchSubcomponent, 'id' | 'created_at' | 'updated_at'>) => {
+    if (isResearchActivitiesLocked) return;
     try {
       if (editingSubcomponent) {
         await ResearchActivitiesService.updateResearchSubcomponent(editingSubcomponent.id, subcomponentData);
@@ -450,6 +528,7 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   };
 
   const handleMoveSubcomponentToStep = async (targetStepId: string) => {
+    if (isResearchActivitiesLocked) return;
     try {
       await ResearchActivitiesService.moveSubcomponentToStep(
         moveSubcomponentId,
@@ -529,6 +608,13 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
       onDragEnd={handleDragEnd}
     >
       <div className="space-y-6">
+        {/* Lock Banner */}
+        <LockBanner 
+          section="research-activities" 
+          title="Research Activities Management"
+          description="Lock prevents accidental modifications to research activities, steps, and subcomponents"
+        />
+
         {/* Header Controls */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <div className="flex items-center justify-between mb-4">
@@ -711,6 +797,8 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
                 onDuplicate={handleDuplicateActivity}
                 onDeactivate={handleDeactivateActivity}
                 onRefresh={loadActivities}
+                onEditStep={handleEditStep}
+                onAddStep={handleAddStep}
               />
             ))
           ) : (
@@ -847,6 +935,24 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
           categories={categories}
           areas={areas}
           focuses={focuses}
+        />
+
+        {/* Edit Step Modal */}
+        <EditStepModal
+          isOpen={showEditStepModal}
+          step={editingStep}
+          activityId={editingStepActivityId}
+          onClose={() => {
+            setShowEditStepModal(false);
+            setEditingStep(null);
+            setEditingStepActivityId('');
+          }}
+          onSuccess={() => {
+            loadActivities();
+            setShowEditStepModal(false);
+            setEditingStep(null);
+            setEditingStepActivityId('');
+          }}
         />
 
         {/* CSV Import Modal */}

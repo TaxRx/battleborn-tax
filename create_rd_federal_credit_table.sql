@@ -3,11 +3,11 @@ CREATE TABLE IF NOT EXISTS rd_federal_credit (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     -- Core identification
-    business_year_id UUID NOT NULL REFERENCES business_years(id),
-    client_id UUID NOT NULL REFERENCES clients(id),
+    business_year_id UUID NOT NULL REFERENCES rd_business_years(id),
+    client_id UUID NOT NULL REFERENCES rd_clients(id),
     
     -- Research activity details
-    research_activity_id UUID REFERENCES research_activities(id),
+    research_activity_id UUID REFERENCES rd_research_activities(id),
     research_activity_name TEXT,
     
     -- QRE breakdown
@@ -130,7 +130,7 @@ DROP POLICY IF EXISTS "Users can update own rd_federal_credit" ON rd_federal_cre
 CREATE POLICY "Users can view own rd_federal_credit" ON rd_federal_credit
     FOR SELECT USING (
         client_id IN (
-            SELECT id FROM clients WHERE created_by = auth.uid()
+            SELECT id FROM rd_clients WHERE created_by = auth.uid()
         )
     );
 
@@ -138,7 +138,7 @@ CREATE POLICY "Users can view own rd_federal_credit" ON rd_federal_credit
 CREATE POLICY "Users can insert own rd_federal_credit" ON rd_federal_credit
     FOR INSERT WITH CHECK (
         client_id IN (
-            SELECT id FROM clients WHERE created_by = auth.uid()
+            SELECT id FROM rd_clients WHERE created_by = auth.uid()
         )
     );
 
@@ -146,7 +146,7 @@ CREATE POLICY "Users can insert own rd_federal_credit" ON rd_federal_credit
 CREATE POLICY "Users can update own rd_federal_credit" ON rd_federal_credit
     FOR UPDATE USING (
         client_id IN (
-            SELECT id FROM clients WHERE created_by = auth.uid()
+            SELECT id FROM rd_clients WHERE created_by = auth.uid()
         )
     );
 

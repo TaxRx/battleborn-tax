@@ -1,7 +1,8 @@
 // Report Generator Helper Functions for Clinical Practice Guideline Report
 // aiService removed - using static report generation
 
-import { aiService } from "../../../../services/aiService";
+import { supabase } from '../../lib/supabase';
+import { GitHubIntegrationService } from '../../../../services/githubIntegrationService';
 
 export interface ReportData {
   businessProfile: any;
@@ -228,12 +229,14 @@ export const generateActivitySection = async (
   activityId: string,
   data: any,
   activityIndex: number,
-  businessRoles: Array<{id: string, name: string}> = []
+  businessRoles: Array<{id: string, name: string}> = [],
+  businessCategory: string = 'healthcare',
+  businessProfile: any = null
 ): Promise<string> => {
   const { activity, steps, subcomponents } = data;
   const activityTitle = activity.activity?.title || `Research Activity ${activityIndex + 1}`;
 
-  const subcomponentGuidelines = await generateSubcomponentGuidelines(subcomponents, steps, businessRoles);
+  const subcomponentGuidelines = await generateSubcomponentGuidelines(subcomponents, steps, businessRoles, businessCategory, businessProfile);
 
   return `
     <section id="activity-${activityId}" class="report-section">
@@ -331,8 +334,7 @@ export const generateStepsTable = (steps: any[], subcomponents: any[]): string =
         <thead>
           <tr>
             <th>Step Name</th>
-            <th>Time %</th>
-            <th>Applied %</th>
+            <th style="width: 35%;">Time %</th>
             <th>Subcomponents</th>
             <th>Status</th>
           </tr>
@@ -341,21 +343,15 @@ export const generateStepsTable = (steps: any[], subcomponents: any[]): string =
           ${steps.map(step => {
             const stepSubcomponents = subcomponents.filter(sub => sub.step_id === step.step_id);
             
-            // Calculate step-level applied percentage by summing subcomponent applied percentages
-            const stepAppliedPercent = stepSubcomponents.reduce((sum, sub) => {
-              return sum + (sub.applied_percentage || 0);
-            }, 0);
-            
             return `
               <tr id="step-${step.id}">
                 <td><strong>${step.step?.name || 'Unnamed Step'}</strong></td>
-                <td>
-                  <div class="progress-bar">
+                <td style="width: 35%;">
+                  <div class="progress-bar-extended">
                     <div class="progress-fill" style="width: ${step.time_percentage || 0}%"></div>
+                    <span class="progress-text">${step.time_percentage || 0}%</span>
                   </div>
-                  ${step.time_percentage || 0}%
                 </td>
-                <td>${stepAppliedPercent.toFixed(2)}%</td>
                 <td>${stepSubcomponents.length}</td>
                 <td><span class="chip chip-success">Active</span></td>
               </tr>
@@ -370,62 +366,112 @@ export const generateStepsTable = (steps: any[], subcomponents: any[]): string =
 export const generateSubcomponentGuidelines = async (
   subcomponents: any[], 
   steps: any[], 
-  businessRoles: Array<{id: string, name: string}> = []
+  businessRoles: Array<{id: string, name: string}> = [],
+  businessCategory: string = 'healthcare',
+  businessProfile: any = null
 ): Promise<string> => {
   if (subcomponents.length === 0) return '';
+
+  const isSoftwareReport = businessCategory === 'software';
 
   // Ensure businessRoles is always an array with fallback values
   const safeBusinessRoles = businessRoles && businessRoles.length > 0 
     ? businessRoles 
-    : [
-        { id: 'default-1', name: 'Medical Staff' },
-        { id: 'default-2', name: 'Administrative Staff' },
-        { id: 'default-3', name: 'Research Coordinators' }
-      ];
+    : isSoftwareReport 
+      ? [
+          { id: 'default-1', name: 'Software Developers' },
+          { id: 'default-2', name: 'Technical Leads' },
+          { id: 'default-3', name: 'QA Engineers' },
+          { id: 'default-4', name: 'DevOps Engineers' },
+          { id: 'default-5', name: 'Product Managers' }
+        ]
+      : [
+          { id: 'default-1', name: 'Medical Staff' },
+          { id: 'default-2', name: 'Administrative Staff' },
+          { id: 'default-3', name: 'Research Coordinators' }
+        ];
 
-  // Generate static best practices for each subcomponent
+  // Import AI service for generating content
+  let AIService: any = null;
+  try {
+    const aiModule = await import('../../../../services/aiService');
+    AIService = aiModule.AIService;
+  } catch (error) {
+    console.warn('AI Service not available, using fallback content');
+  }
+
+  // Generate AI-powered best practices for each subcomponent
   const subcomponentSummaries = [];
   
   for (const sub of subcomponents) {
     const subData = sub.rd_research_subcomponents || sub;
     
-    // Generate static best practices content
+    // Generate AI-powered or fallback content
     const componentName = subData.name || subData.general_description || 'Subcomponent';
     const description = subData.general_description || subData.description || '';
     
-    const bestPractices = `<h4>Best Practices for ${componentName}</h4>
-<p><strong>Research Component Overview:</strong><br>
-${description || 'Detailed research component focused on systematic investigation and development activities.'}</p>
+    let bestPractices = '';
+    
+    // Try to generate AI content first
+    if (AIService) {
+      try {
+        console.log(`🤖 Generating AI content for: ${componentName}`);
+        
+        const prompt = isSoftwareReport ? 
+          `Generate comprehensive IRS R&D tax credit documentation for "${componentName}" in a software development environment.
 
-<h5>Key Implementation Guidelines:</h5>
-<ul>
-  <li><strong>Documentation Standards:</strong> Maintain comprehensive records of all research activities, methodologies, and findings for this component</li>
-  <li><strong>Quality Assurance:</strong> Implement systematic review processes and validation procedures specific to ${componentName}</li>
-  <li><strong>Resource Management:</strong> Optimize allocation of personnel, equipment, and materials for maximum research efficiency</li>
-  <li><strong>Compliance Management:</strong> Ensure adherence to regulatory requirements and industry standards relevant to this research area</li>
-  <li><strong>Progress Monitoring:</strong> Regular assessment and refinement of research processes and methodologies</li>
-</ul>
+Component Description: ${description}
 
-<h5>Role Assignments:</h5>
-<ul>
-  ${safeBusinessRoles.map(role => `<li><strong>${role.name}:</strong> Participate in research activities according to their expertise and defined responsibilities</li>`).join('')}
-</ul>
+Development Team Roles: ${safeBusinessRoles.map(role => role.name).join(', ')}
 
-<h5>Performance Metrics:</h5>
-<ul>
-  <li>Research milestone completion rates for ${componentName}</li>
-  <li>Quality of deliverables and outcomes</li>
-  <li>Resource utilization efficiency</li>
-  <li>Compliance audit results</li>
-  <li>Innovation impact assessment</li>
-</ul>`;
+Please provide:
+1. Technical uncertainty documentation and challenges addressed
+2. Process of experimentation details (iterations, testing, alternatives)
+3. Qualified purpose demonstration (functionality, performance, reliability improvements)
+4. Technological nature evidence (computer science/engineering principles)
+5. Specific role assignments with time allocation estimates
+6. Documentation requirements for IRS audit defense
+
+Format the response with proper HTML headings (h4, h5) and lists (ul, li) for integration into a research report.` :
+          `Generate professional clinical practice guidelines for implementing "${componentName}" in a healthcare setting.
+
+Subcomponent Description: ${description}
+
+Available Staff Roles: ${safeBusinessRoles.map(role => role.name).join(', ')}
+
+Please provide:
+1. Step-by-step implementation guidelines with clear headings
+2. For each step, specify which staff roles should be involved
+3. Use professional medical/clinical language
+4. Include bullet points for role assignments under each step
+5. Quality assurance and documentation requirements
+
+Format the response with proper HTML headings (h4, h5) and lists (ul, li) for integration into a research report.`;
+
+        const aiResponse = await AIService.getInstance().generateResearchContent(prompt, {
+          businessCategory: businessCategory,
+          componentName,
+          availableRoles: safeBusinessRoles
+        });
+        
+        bestPractices = formatAIContent(aiResponse);
+        console.log(`✅ AI content generated for: ${componentName}`);
+        
+      } catch (error) {
+        console.warn(`❌ AI generation failed for ${componentName}, using fallback:`, error);
+        bestPractices = await generateFallbackContent(componentName, description, safeBusinessRoles, isSoftwareReport, businessProfile?.github_token);
+      }
+    } else {
+      // Use fallback content when AI is not available
+      bestPractices = await generateFallbackContent(componentName, description, safeBusinessRoles, isSoftwareReport, businessProfile?.github_token);
+    }
 
     subcomponentSummaries.push({ ...sub, aiGeneratedBestPractices: bestPractices });
   }
 
   return `
     <div class="guidelines-section">
-      <h3>Clinical Practice Guidelines</h3>
+      <h3>${isSoftwareReport ? 'IRS R&D Substantiation Documentation' : 'Clinical Practice Guidelines'}</h3>
       
       ${subcomponentSummaries.map((sub, index) => {
         const step = steps.find(s => s.step_id === sub.step_id);
@@ -515,22 +561,208 @@ ${description || 'Detailed research component focused on systematic investigatio
   `;
 };
 
+const generateGitHubContent = async (
+  githubToken: string,
+  repositoryName?: string
+): Promise<string> => {
+  try {
+    const githubService = new GitHubIntegrationService();
+    githubService.setApiKey(githubToken);
+
+    // Get user's repositories (up to 5 most recent)
+    const repos = await githubService.getUserRepositories('updated', 5);
+    
+    if (!repos || repos.length === 0) {
+      return `
+        <li><strong>GitHub Status:</strong> Token configured but no repositories found</li>
+        <li><strong>Recommendation:</strong> Verify repository access permissions for the provided token</li>
+      `;
+    }
+
+    let content = '';
+    
+    // Process up to 3 repositories for the report
+    const reposToAnalyze = repos.slice(0, 3);
+    
+    for (const repo of reposToAnalyze) {
+      try {
+        // Get commit data for the repository
+        const commits = await githubService.getCommits(repo.owner.login, repo.name);
+        const recentCommits = commits.slice(0, 10); // Last 10 commits
+        
+        // Calculate development metrics
+        const totalCommits = commits.length;
+        const recentActivity = recentCommits.length;
+        const linesChanged = recentCommits.reduce((total, commit) => 
+          total + (commit.stats?.total || 0), 0);
+        
+        content += `
+          <li><strong>Repository: ${repo.name}</strong>
+            <ul>
+              <li>Total commits: ${totalCommits}</li>
+              <li>Recent activity: ${recentActivity} commits in last analysis</li>
+              <li>Lines of code changed: ${linesChanged.toLocaleString()}</li>
+              <li>Primary language: ${repo.language || 'Not specified'}</li>
+              <li>Last updated: ${new Date(repo.updated_at).toLocaleDateString()}</li>
+            </ul>
+          </li>
+        `;
+        
+        // Get pull requests for R&D documentation
+        try {
+          const pullRequests = await githubService.getPullRequests(repo.owner.login, repo.name);
+          const openPRs = pullRequests.filter(pr => pr.state === 'open').length;
+          const mergedPRs = pullRequests.filter(pr => pr.state === 'closed' && pr.merged_at).length;
+          
+          if (pullRequests.length > 0) {
+            content += `
+              <li><strong>Pull Requests for ${repo.name}:</strong>
+                <ul>
+                  <li>Total PRs: ${pullRequests.length}</li>
+                  <li>Open PRs: ${openPRs}</li>
+                  <li>Merged PRs: ${mergedPRs}</li>
+                  <li>Code review evidence: ${mergedPRs} technical discussions documented</li>
+                </ul>
+              </li>
+            `;
+          }
+        } catch (prError) {
+          console.warn(`Could not fetch PRs for ${repo.name}:`, prError);
+        }
+        
+      } catch (repoError) {
+        console.warn(`Error analyzing repository ${repo.name}:`, repoError);
+        content += `
+          <li><strong>Repository: ${repo.name}</strong> - Analysis error (check token permissions)</li>
+        `;
+      }
+    }
+    
+    return content;
+    
+  } catch (error) {
+    console.error('GitHub integration error:', error);
+    return `
+      <li><strong>GitHub Integration Error:</strong> ${error.message || 'Unable to connect to GitHub API'}</li>
+      <li><strong>Troubleshooting:</strong> Verify token validity and repository access permissions</li>
+    `;
+  }
+};
+
+// Helper function to generate fallback content when AI is not available
+const generateFallbackContent = async (
+  componentName: string, 
+  description: string, 
+  businessRoles: Array<{id: string, name: string}>, 
+  isSoftwareReport: boolean,
+  githubToken?: string
+): Promise<string> => {
+  let githubContent = '';
+  if (githubToken) {
+    try {
+      githubContent = await generateGitHubContent(githubToken);
+    } catch (error) {
+      console.warn('Failed to generate GitHub content from token, using fallback:', error);
+      githubContent = `
+        <li><strong>GitHub Status:</strong> Token configured but failed to fetch data (check token permissions)</li>
+        <li><strong>Recommendation:</strong> Verify repository access permissions for the provided token</li>
+      `;
+    }
+  }
+
+  return isSoftwareReport ? `<h4>IRS Substantiation Documentation for ${componentName}</h4>
+<p><strong>R&D Activity Overview:</strong><br>
+${description || 'Software development research and experimentation activities qualifying under IRC Section 41.'}</p>
+
+<h5>IRS Compliance Requirements:</h5>
+<ul>
+  <li><strong>Technical Uncertainty:</strong> Document the technological challenges and uncertainties addressed by ${componentName}</li>
+  <li><strong>Process of Experimentation:</strong> Maintain detailed records of development iterations, testing, and alternative approaches</li>
+  <li><strong>Qualified Purpose:</strong> Demonstrate how this work improves functionality, performance, reliability, or quality</li>
+  <li><strong>Technological in Nature:</strong> Evidence that the work relies on principles of computer science, engineering, or physical sciences</li>
+  <li><strong>Documentation Standards:</strong> Version control logs, commit histories, sprint retrospectives, and technical specifications</li>
+</ul>
+
+<h5>Development Team Roles & Time Allocation:</h5>
+<ul>
+  ${businessRoles.map(role => `<li><strong>${role.name}:</strong> Qualified personnel directly engaged in R&D activities with documented time tracking</li>`).join('')}
+</ul>
+
+<h5>GitHub Integration & Documentation:</h5>
+<ul>
+  ${githubContent}
+  <li>Repository commit analysis and feature development tracking</li>
+  <li>Pull request reviews and technical discussions</li>
+  <li>Issue tracking for technical challenges and resolutions</li>
+  <li>Release notes documenting technological improvements</li>
+  <li>Automated testing results and quality metrics</li>
+</ul>
+
+<h5>Key Performance Indicators:</h5>
+<ul>
+  <li>Lines of code developed for ${componentName}</li>
+  <li>Number of technical challenges resolved</li>
+  <li>Testing coverage and quality improvements</li>
+  <li>Time spent on qualified research activities</li>
+  <li>Documentation completeness for IRS audit defense</li>
+</ul>` : `<h4>Best Practices for ${componentName}</h4>
+<p><strong>Research Component Overview:</strong><br>
+${description || 'Detailed research component focused on systematic investigation and development activities.'}</p>
+
+<h5>Key Implementation Guidelines:</h5>
+<ul>
+  <li><strong>Documentation Standards:</strong> Maintain comprehensive records of all research activities, methodologies, and findings for this component</li>
+  <li><strong>Quality Assurance:</strong> Implement systematic review processes and validation procedures specific to ${componentName}</li>
+  <li><strong>Resource Management:</strong> Optimize allocation of personnel, equipment, and materials for maximum research efficiency</li>
+  <li><strong>Compliance Management:</strong> Ensure adherence to regulatory requirements and industry standards relevant to this research area</li>
+  <li><strong>Progress Monitoring:</strong> Regular assessment and refinement of research processes and methodologies</li>
+</ul>
+
+<h5>Role Assignments:</h5>
+<ul>
+  ${businessRoles.map(role => `<li><strong>${role.name}:</strong> Participate in research activities according to their expertise and defined responsibilities</li>`).join('')}
+</ul>
+
+<h5>Performance Metrics:</h5>
+<ul>
+  <li>Research milestone completion rates for ${componentName}</li>
+  <li>Quality of deliverables and outcomes</li>
+  <li>Resource utilization efficiency</li>
+  <li>Compliance audit results</li>
+  <li>Innovation impact assessment</li>
+</ul>`;
+};
+
 // Helper function to format AI-generated content with proper markdown support
 export const formatAIContent = (content: string): string => {
   if (!content) return '';
   
-  // Convert markdown headings to proper HTML
+  // Convert markdown headings and formatting to proper HTML
   let formatted = content
+    // Convert headings first
     .replace(/^### (.+)$/gm, '<h3 class="ai-section-heading">$1</h3>')
     .replace(/^## (.+)$/gm, '<h2 class="ai-main-heading">$1</h2>')
-    .replace(/^\*\*(.+)\*\*:$/gm, '<h4 class="ai-step-title">$1:</h4>')
-    .replace(/^\*\*(.+)\*\*$/gm, '<strong>$1</strong>')
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    // Convert **bold**: at start of line to step titles
+    .replace(/^\*\*(.+?)\*\*:$/gm, '<h4 class="ai-step-title">$1:</h4>')
+    // Convert **bold** anywhere in text (fixed regex)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Convert bullet points
+    .replace(/^[\-\*] (.+)$/gm, '<li>$1</li>')
+    // Convert numbered lists
+    .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+    // Handle line breaks
     .replace(/\n\n/g, '</p><p>')
+    // Wrap non-HTML content in paragraphs
     .replace(/^([^<\n].+)$/gm, '<p>$1</p>');
 
   // Wrap consecutive <li> elements in <ul>
-  formatted = formatted.replace(/(<li>.*?<\/li>)(?:\s*<li>.*?<\/li>)*/gs, '<ul>$&</ul>');
+  formatted = formatted.replace(/(<li>.*?<\/li>)(?:\s*<li>.*?<\/li>)*/g, '<ul>$&</ul>');
+  
+  // Clean up empty paragraphs and fix spacing
+  formatted = formatted
+    .replace(/<p><\/p>/g, '')
+    .replace(/<p>\s*<\/p>/g, '')
+    .replace(/\n\s*\n/g, '\n');
   
   return formatted;
 };

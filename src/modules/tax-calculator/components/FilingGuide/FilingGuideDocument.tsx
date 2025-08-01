@@ -9,6 +9,7 @@ import { getStateConfig, getAvailableStates, StateConfig } from '../StateProForm
 import { saveStateProFormaData, loadStateProFormaData, StateCreditDataService } from '../../services/stateCreditDataService';
 import { FederalCreditProForma } from './FederalCreditProForma';
 import { CalculationSpecifics } from './CalculationSpecifics';
+import { supabase } from '../../lib/supabase';
 
 interface FilingGuideDocumentProps {
   businessData: any;
@@ -16,6 +17,7 @@ interface FilingGuideDocumentProps {
   calculations: any;
   selectedMethod?: 'asc' | 'standard';
   debugData?: any;
+  readOnly?: boolean; // Add read-only mode for client portal
 }
 
 export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
@@ -23,8 +25,17 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
   selectedYear,
   calculations,
   selectedMethod,
-  debugData
+  debugData,
+  readOnly = false
 }) => {
+  // State for locked QRE values
+  const [lockedQREValues, setLockedQREValues] = useState<{
+    employee_qre: number;
+    contractor_qre: number;
+    supply_qre: number;
+    qre_locked: boolean;
+  } | null>(null);
+
   const currentDate = new Date().toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
@@ -39,9 +50,66 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
   // eslint-disable-next-line no-console
   console.log('%c[FILING GUIDE] calculations:', 'background: #fffb00; color: #000; font-weight: bold; padding: 2px 8px;', calculations);
   // eslint-disable-next-line no-console
+  console.log('%c[FILING GUIDE] calculations.currentYearQRE:', 'background: #ff6b00; color: #fff; font-weight: bold; padding: 2px 8px;', calculations?.currentYearQRE);
+  // eslint-disable-next-line no-console
   console.log('%c[FILING GUIDE] selectedMethod:', 'background: #fffb00; color: #000; font-weight: bold; padding: 2px 8px;', selectedMethod);
   // eslint-disable-next-line no-console
   console.log('%c[FILING GUIDE] debugData:', 'background: #fffb00; color: #000; font-weight: bold; padding: 2px 8px;', debugData);
+
+  // Load locked QRE values for the selected year
+  useEffect(() => {
+    const loadLockedQREValues = async () => {
+      if (!selectedYear?.id) return;
+      
+      try {
+        console.log('🔒 FilingGuideDocument - Loading locked QRE values for year:', selectedYear.id);
+        
+        const { data, error } = await supabase
+          .from('rd_business_years')
+          .select('employee_qre, contractor_qre, supply_qre, qre_locked')
+          .eq('id', selectedYear.id)
+          .single();
+
+        if (error) {
+          if (error.code === 'PGRST116') {
+            console.warn('🔒 FilingGuideDocument - QRE columns not available, using calculated values');
+            setLockedQREValues(null);
+          } else {
+            console.error('❌ FilingGuideDocument - Error loading locked QRE values:', error);
+            setLockedQREValues(null);
+          }
+          return;
+        }
+
+        if (data) {
+          const qreValues = {
+            employee_qre: data.employee_qre || 0,
+            contractor_qre: data.contractor_qre || 0,
+            supply_qre: data.supply_qre || 0,
+            qre_locked: data.qre_locked || false
+          };
+          
+          console.log('🔒 FilingGuideDocument - Loaded QRE values:', qreValues);
+          setLockedQREValues(qreValues);
+        }
+      } catch (error) {
+        console.error('❌ FilingGuideDocument - Error loading locked QRE values:', error);
+        setLockedQREValues(null);
+      }
+    };
+
+    loadLockedQREValues();
+  }, [selectedYear?.id]);
+
+  // CRITICAL: Alert if calculations.currentYearQRE is missing
+  if (!calculations?.currentYearQRE) {
+    // eslint-disable-next-line no-console
+    console.error('%c🚨 [FILING GUIDE] CRITICAL: calculations.currentYearQRE is missing! This will break Form6765 QRE auto-population!', 'background: #ff0000; color: #fff; font-weight: bold; padding: 4px 8px;', {
+      calculations: calculations,
+      hasCalculations: !!calculations,
+      calculationsKeys: calculations ? Object.keys(calculations) : 'no calculations object'
+    });
+  }
 
   // Debug output (collapsible)
   const [showDebug, setShowDebug] = React.useState(false);
@@ -50,7 +118,13 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
   const businessState = businessData?.domicile_state || businessData?.contact_info?.state || businessData?.state || 'CA';
   
   const [state, setState] = useState(businessState);
-  const [method, setMethod] = useState('standard');
+  const [method, setMethod] = useState(() => {
+    // Determine initial method based on selectedMethod or federal calculation defaults
+    if (selectedMethod === 'asc') return 'alternative';
+    if (selectedMethod === 'standard') return 'standard';
+    // Default to 'standard' if selectedMethod is undefined
+    return 'standard';
+  });
   const [stateProFormaData, setStateProFormaData] = useState<Record<string, number>>({});
   const [isLoadingData, setIsLoadingData] = useState(false);
 
@@ -63,10 +137,32 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
     }
   }, [businessData, state]);
 
+  // Sync state method with federal selectedMethod
+  useEffect(() => {
+    if (selectedMethod) {
+      const stateMethod = selectedMethod === 'asc' ? 'alternative' : 'standard';
+      if (stateMethod !== method) {
+        setMethod(stateMethod);
+        console.log('[FilingGuideDocument] Synced state method with federal method:', selectedMethod, '->', stateMethod);
+      }
+    }
+  }, [selectedMethod, method]);
+
   const availableStates = getAvailableStates();
   const currentStateConfig = getStateConfig(state);
   // Get lines from the appropriate form method
   const availableLines = currentStateConfig?.forms?.[method]?.lines || [];
+  
+  // Debug logging for state pro forma
+  console.log('[FilingGuideDocument] State Pro Forma Debug:', {
+    state,
+    method,
+    selectedMethod,
+    currentStateConfig: !!currentStateConfig,
+    availableLines: availableLines.length,
+    stateProFormaData,
+    isLoadingData
+  });
 
   // Load existing data when state or method changes
   useEffect(() => {
@@ -125,7 +221,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
     };
 
     loadExistingData();
-  }, [state, method, businessData?.client_id, selectedYear?.id]);
+  }, [state, method, businessData?.client_id, selectedYear?.id, calculations?.currentYearQRE]);
 
   const handleSaveStateProForma = async (data: Record<string, number>, businessYearId: string) => {
     await saveStateProFormaData(businessYearId, state, method as 'standard' | 'alternative', data);
@@ -322,6 +418,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
           clientId={businessData?.client_id || 'demo'}
           userId={businessData?.user_id}
           selectedMethod={selectedMethod}
+          lockedQREValues={lockedQREValues}
         />
       </div>
 
@@ -341,6 +438,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
             <select 
               value={state} 
               onChange={e => handleStateChange(e.target.value)}
+              disabled={readOnly}
             >
               {availableStates.map(stateConfig => (
                 <option key={stateConfig.code} value={stateConfig.code}>
@@ -354,7 +452,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
             <select 
               value={method} 
               onChange={e => handleMethodChange(e.target.value)}
-              disabled={!currentStateConfig?.hasAlternativeMethod}
+              disabled={readOnly || !currentStateConfig?.hasAlternativeMethod}
             >
               <option value="standard">Standard</option>
               {currentStateConfig?.hasAlternativeMethod && (
@@ -373,6 +471,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
             onSave={handleSaveStateProForma}
             title={`${currentStateConfig.name} (${currentStateConfig.code}) State Credit – ${currentStateConfig.forms?.[method]?.name || currentStateConfig.formName} Pro Forma (${method.charAt(0).toUpperCase() + method.slice(1)})`}
             businessYearId={selectedYear?.id}
+            readOnly={readOnly}
             // Pass validation rules and metadata
             validationRules={currentStateConfig.validationRules}
             alternativeValidationRules={currentStateConfig.alternativeValidationRules}

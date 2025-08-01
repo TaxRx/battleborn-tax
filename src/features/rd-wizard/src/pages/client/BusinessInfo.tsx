@@ -30,10 +30,70 @@ const entityTypes = [
   { value: 's_corp' as EntityType, label: 'S Corporation' },
 ];
 
-// NAICS code options
+// NAICS code options organized by industry
 const naicsCodes = [
+  // Healthcare & Medical
   { value: '621210' as NaicsCode, label: 'Dental Office (621210)' },
   { value: '621111' as NaicsCode, label: 'Medical Office (621111)' },
+  { value: '621310' as NaicsCode, label: 'Offices of Chiropractors (621310)' },
+  { value: '621320' as NaicsCode, label: 'Offices of Optometrists (621320)' },
+  { value: '621330' as NaicsCode, label: 'Offices of Mental Health Practitioners (621330)' },
+  { value: '621340' as NaicsCode, label: 'Offices of Physical, Occupational and Speech Therapists (621340)' },
+  { value: '621391' as NaicsCode, label: 'Offices of Podiatrists (621391)' },
+  { value: '621399' as NaicsCode, label: 'Offices of All Other Miscellaneous Health Practitioners (621399)' },
+  
+  // Software & Technology
+  { value: '541511' as NaicsCode, label: 'Custom Computer Programming Services (541511)' },
+  { value: '541512' as NaicsCode, label: 'Computer Systems Design Services (541512)' },
+  { value: '541513' as NaicsCode, label: 'Computer Facilities Management Services (541513)' },
+  { value: '541519' as NaicsCode, label: 'Other Computer Related Services (541519)' },
+  { value: '518210' as NaicsCode, label: 'Data Processing, Hosting, and Related Services (518210)' },
+  
+  // Financial Services
+  { value: '522110' as NaicsCode, label: 'Commercial Banking (522110)' },
+  { value: '522120' as NaicsCode, label: 'Savings Institutions (522120)' },
+  { value: '522130' as NaicsCode, label: 'Credit Unions (522130)' },
+  { value: '522210' as NaicsCode, label: 'Credit Card Issuing (522210)' },
+  { value: '522291' as NaicsCode, label: 'Consumer Lending (522291)' },
+  { value: '522310' as NaicsCode, label: 'Mortgage and Nonmortgage Loan Brokers (522310)' },
+  { value: '523110' as NaicsCode, label: 'Investment Banking and Securities Dealing (523110)' },
+  { value: '523120' as NaicsCode, label: 'Securities Brokerage (523120)' },
+  { value: '523920' as NaicsCode, label: 'Portfolio Management (523920)' },
+  { value: '523930' as NaicsCode, label: 'Investment Advice (523930)' },
+  { value: '524113' as NaicsCode, label: 'Direct Life Insurance Carriers (524113)' },
+  { value: '524114' as NaicsCode, label: 'Direct Health and Medical Insurance Carriers (524114)' },
+  { value: '524126' as NaicsCode, label: 'Direct Property and Casualty Insurance Carriers (524126)' },
+  { value: '524210' as NaicsCode, label: 'Insurance Agencies and Brokerages (524210)' },
+  
+  // Consulting Services
+  { value: '541110' as NaicsCode, label: 'Offices of Lawyers (541110)' },
+  { value: '541211' as NaicsCode, label: 'Offices of Certified Public Accountants (541211)' },
+  { value: '541213' as NaicsCode, label: 'Tax Preparation Services (541213)' },
+  { value: '541214' as NaicsCode, label: 'Payroll Services (541214)' },
+  { value: '541219' as NaicsCode, label: 'Other Accounting Services (541219)' },
+  { value: '541310' as NaicsCode, label: 'Architectural Services (541310)' },
+  { value: '541330' as NaicsCode, label: 'Engineering Services (541330)' },
+  { value: '541611' as NaicsCode, label: 'Administrative Management and General Management Consulting Services (541611)' },
+  { value: '541612' as NaicsCode, label: 'Human Resources Consulting Services (541612)' },
+  { value: '541613' as NaicsCode, label: 'Marketing Consulting Services (541613)' },
+  { value: '541614' as NaicsCode, label: 'Process, Physical Distribution, and Logistics Consulting Services (541614)' },
+  { value: '541618' as NaicsCode, label: 'Other Management Consulting Services (541618)' },
+  { value: '541620' as NaicsCode, label: 'Environmental Consulting Services (541620)' },
+  { value: '541690' as NaicsCode, label: 'Other Scientific and Technical Consulting Services (541690)' },
+  { value: '541715' as NaicsCode, label: 'Research and Development in the Physical, Engineering, and Life Sciences (541715)' },
+  { value: '541720' as NaicsCode, label: 'Research and Development in the Social Sciences and Humanities (541720)' },
+  { value: '541810' as NaicsCode, label: 'Advertising Agencies (541810)' },
+  { value: '541820' as NaicsCode, label: 'Public Relations Agencies (541820)' },
+  { value: '541910' as NaicsCode, label: 'Marketing Research and Public Opinion Polling (541910)' },
+  { value: '541990' as NaicsCode, label: 'All Other Professional, Scientific, and Technical Services (541990)' },
+  
+  // Real Estate
+  { value: '531110' as NaicsCode, label: 'Lessors of Residential Buildings and Dwellings (531110)' },
+  { value: '531120' as NaicsCode, label: 'Lessors of Nonresidential Buildings (531120)' },
+  { value: '531210' as NaicsCode, label: 'Offices of Real Estate Agents and Brokers (531210)' },
+  { value: '531311' as NaicsCode, label: 'Residential Property Managers (531311)' },
+  { value: '531312' as NaicsCode, label: 'Nonresidential Property Managers (531312)' },
+  { value: '531320' as NaicsCode, label: 'Offices of Real Estate Appraisers (531320)' }
 ];
 
 // US States

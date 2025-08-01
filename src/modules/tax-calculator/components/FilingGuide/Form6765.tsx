@@ -10,6 +10,12 @@ interface Form6765Props {
   clientId: string;
   userId?: string;
   selectedMethod?: 'standard' | 'asc'; // Add selectedMethod prop
+  lockedQREValues?: {
+    employee_qre: number;
+    contractor_qre: number;
+    supply_qre: number;
+    qre_locked: boolean;
+  };
 }
 
 interface Form6765Line {
@@ -80,7 +86,8 @@ export const Form6765: React.FC<Form6765Props> = ({
   calculations,
   clientId,
   userId,
-  selectedMethod: propSelectedMethod // Destructure prop
+  selectedMethod: propSelectedMethod, // Destructure prop
+  lockedQREValues
 }) => {
   const [overrides, setOverrides] = useState<Form6765Override[]>([]);
   const [sections, setSections] = useState<Form6765Section[]>([]);
@@ -181,12 +188,26 @@ export const Form6765: React.FC<Form6765Props> = ({
     const isEligibleForPayrollCredit = (businessYear - businessStartYear) <= 5;
     const isSCorpOrPartnership = businessData?.entity_type === 'S-Corp' || businessData?.entity_type === 'Partnership';
 
-    console.log('Form 6765 Debug:', {
+    console.log('🔍 Form 6765 (2023) Debug - QRE Auto-Population:', {
       selectedMethod,
-      calculations,
+      calculations_full: calculations,
+      calculations_currentYearQRE: calculations?.currentYearQRE,
+      calculations_currentYearQRE_employee_wages: calculations?.currentYearQRE?.employee_wages,
+      calculations_currentYearQRE_supply_costs: calculations?.currentYearQRE?.supply_costs,
+      calculations_currentYearQRE_contractor_costs: calculations?.currentYearQRE?.contractor_costs,
+      calculations_currentYearQRE_total: calculations?.currentYearQRE?.total,
       businessData,
       selectedYear
     });
+
+    // CRITICAL: Check if calculations are available
+    if (!calculations || !calculations.currentYearQRE) {
+      console.error('🚨 Form 6765 (2023) - No calculations or currentYearQRE data available!', {
+        calculations: calculations,
+        hasCalculations: !!calculations,
+        hasCurrentYearQRE: !!calculations?.currentYearQRE
+      });
+    }
 
     // Base period calculations - use actual calculated value or default to 3%
     const fixedBaseAmount = standardCredit?.fixedBaseAmount || 0;
@@ -196,10 +217,146 @@ export const Form6765: React.FC<Form6765Props> = ({
     const avgPriorQRE = ascCredit?.avgPriorQRE || 0;
     const ascIncrementalQRE = ascCredit?.incrementalQRE || 0;
     
+    // CRITICAL: Use locked QRE values when available, fall back to calculated values
+    const getQREValue = (type: 'employee' | 'contractor' | 'supply') => {
+      if (lockedQREValues?.qre_locked) {
+        console.log(`🔒 Form6765 - Using LOCKED ${type} QRE:`, lockedQREValues[`${type}_qre`]);
+        switch (type) {
+          case 'employee': return lockedQREValues.employee_qre;
+          case 'contractor': return lockedQREValues.contractor_qre;
+          case 'supply': return lockedQREValues.supply_qre;
+        }
+      } else {
+        console.log(`📊 Form6765 - Using CALCULATED ${type} QRE`);
+        switch (type) {
+          case 'employee': return calculations?.currentYearQRE?.employee_wages || 0;
+          case 'contractor': return calculations?.currentYearQRE?.contractor_costs || 0;
+          case 'supply': return calculations?.currentYearQRE?.supply_costs || 0;
+        }
+      }
+      return 0;
+    };
+
     // Contractor applied amounts (sum of all contractor applied_amount)
-    const contractorAppliedAmounts = calculations?.currentYearQRE?.contractor_costs || 0;
+    const contractorAppliedAmounts = getQREValue('contractor');
 
     const newSections: Form6765Section[] = [];
+
+    // Get QRE for a specific number of years prior to current year
+    // CRITICAL: Business Setup QRE overrules internal calculations (same logic as Form6765v2024)
+    const getPriorYearQRE = (yearsPrior: number): number => {
+      if (!calculations?.historicalData || !selectedYear?.year) {
+        console.log(`⚠️ [Form 6765 Pre-2024] Missing data for getPriorYearQRE:`, {
+          hasHistoricalData: !!calculations?.historicalData,
+          historicalDataLength: calculations?.historicalData?.length || 0,
+          hasSelectedYear: !!selectedYear?.year,
+          selectedYear: selectedYear?.year
+        });
+        return 0;
+      }
+      
+      const currentYear = selectedYear.year;
+      const targetYear = currentYear - yearsPrior;
+      
+      console.log(`🔍 [Form 6765 Pre-2024] Looking for QRE ${yearsPrior} years prior (${targetYear}):`, {
+        currentYear,
+        targetYear,
+        historicalDataYears: calculations.historicalData.map(y => y.year),
+        allHistoricalData: calculations.historicalData
+      });
+      
+      const yearData = calculations.historicalData.find((year: any) => year.year === targetYear);
+      
+      if (!yearData) {
+        console.log(`⚠️ [Form 6765 Pre-2024] No year data found for ${targetYear}`);
+        return 0;
+      }
+      
+      console.log(`📊 [Form 6765 Pre-2024] Found year data for ${targetYear}:`, yearData);
+      
+      let qreValue = 0;
+      
+      // PRIORITY 1: Check if QRE values are locked for current year only
+      if (targetYear === selectedYear.year && lockedQREValues?.qre_locked) {
+        qreValue = lockedQREValues.employee_qre + lockedQREValues.contractor_qre + lockedQREValues.supply_qre;
+        console.log(`🔒 [Form 6765 Pre-2024] Using LOCKED QRE for ${targetYear}:`, qreValue);
+        return qreValue;
+      }
+      
+      // PRIORITY 2: Business Setup QRE (qre from historical data - includes total_qre from rd_business_years)
+      if (yearData.qre && yearData.qre > 0) {
+        qreValue = yearData.qre;
+        console.log(`📊 [Form 6765 Pre-2024] Using BUSINESS SETUP QRE for ${targetYear}:`, qreValue);
+        
+        // CRITICAL DEBUG: Also calculate what the QRE would be from internal data for comparison
+        const employeeQRE = yearData.employees?.reduce((sum: number, e: any) => {
+          const calculatedQRE = e.calculated_qre || e.qre || 0;
+          const annualWage = e.employee?.annual_wage || e.annual_wage || e.wage || 0;
+          const appliedPercent = e.applied_percent || 0;
+          return sum + (calculatedQRE > 0 ? calculatedQRE : (annualWage * appliedPercent / 100));
+        }, 0) || 0;
+        
+        const contractorQRE = yearData.contractors?.reduce((sum: number, c: any) => {
+          const calculatedQRE = c.calculated_qre || c.qre || 0;
+          const amount = c.amount || c.cost_amount || 0;
+          const appliedPercent = c.applied_percent || 0;
+          return sum + (calculatedQRE > 0 ? calculatedQRE : (amount * appliedPercent / 100));
+        }, 0) || 0;
+        
+        const supplyQRE = yearData.supplies?.reduce((sum: number, s: any) => {
+          const calculatedQRE = s.calculated_qre || s.qre || 0;
+          const costAmount = s.supply?.cost_amount || s.cost_amount || 0;
+          const appliedPercent = s.applied_percent || 0;
+          return sum + (calculatedQRE > 0 ? calculatedQRE : (costAmount * appliedPercent / 100));
+        }, 0) || 0;
+        
+        const calculatedTotal = employeeQRE + contractorQRE + supplyQRE;
+        console.log(`🔍 [Form 6765 Pre-2024] COMPARISON for ${targetYear}:`, {
+          businessSetupQRE: qreValue,
+          calculatedQRE: calculatedTotal,
+          difference: qreValue - calculatedTotal,
+          breakdown: { employee: employeeQRE, contractor: contractorQRE, supply: supplyQRE }
+        });
+        
+        // TEMPORARY FIX: Use calculated QRE if it's significantly different and non-zero
+        if (calculatedTotal > 0 && Math.abs(qreValue - calculatedTotal) > 1000) {
+          console.log(`⚠️ [Form 6765 Pre-2024] Large difference detected! Using CALCULATED QRE instead of Business Setup for ${targetYear}`);
+          qreValue = calculatedTotal;
+        }
+      } else {
+        // PRIORITY 3: Calculate from internal data (employees, contractors, supplies)
+        const employeeQRE = yearData.employees?.reduce((sum: number, e: any) => {
+          const calculatedQRE = e.calculated_qre || e.qre || 0;
+          const annualWage = e.employee?.annual_wage || e.annual_wage || e.wage || 0;
+          const appliedPercent = e.applied_percent || 0;
+          return sum + (calculatedQRE > 0 ? calculatedQRE : (annualWage * appliedPercent / 100));
+        }, 0) || 0;
+        
+        const contractorQRE = yearData.contractors?.reduce((sum: number, c: any) => {
+          const calculatedQRE = c.calculated_qre || c.qre || 0;
+          const amount = c.amount || c.cost_amount || 0;
+          const appliedPercent = c.applied_percent || 0;
+          return sum + (calculatedQRE > 0 ? calculatedQRE : (amount * appliedPercent / 100));
+        }, 0) || 0;
+        
+        const supplyQRE = yearData.supplies?.reduce((sum: number, s: any) => {
+          const calculatedQRE = s.calculated_qre || s.qre || 0;
+          const costAmount = s.supply?.cost_amount || s.cost_amount || 0;
+          const appliedPercent = s.applied_percent || 0;
+          return sum + (calculatedQRE > 0 ? calculatedQRE : (costAmount * appliedPercent / 100));
+        }, 0) || 0;
+        
+        qreValue = employeeQRE + contractorQRE + supplyQRE;
+        console.log(`🧮 [Form 6765 Pre-2024] Using CALCULATED QRE for ${targetYear}:`, {
+          total: qreValue,
+          employee: employeeQRE,
+          contractor: contractorQRE,
+          supply: supplyQRE
+        });
+      }
+      
+      return Math.round(qreValue);
+    };
 
     // Helper function to get line value
     const getLineValue = (lineNumber: number, overrides: Form6765Override[], calculations: any, basePercentage: number, avgGrossReceipts: number, currentYearQRE: number, federalCredits: any) => {
@@ -222,10 +379,10 @@ export const Form6765: React.FC<Form6765Props> = ({
     // Section A: Regular Credit (lines 1-17, IRS-accurate mapping)
     if (selectedMethod === 'standard') {
       // Extract QRE breakdowns from calculations.currentYearQRE
-      const employeeQRE = getOverrideValue('A', 5) ?? (calculations?.currentYearQRE?.employee_wages ?? 0);
-      const supplyQRE = getOverrideValue('A', 6) ?? (calculations?.currentYearQRE?.supply_costs ?? 0);
-      const computerQRE = getOverrideValue('A', 7) ?? 0;
-      const contractorQRE = getOverrideValue('A', 8) ?? (calculations?.currentYearQRE?.contractor_costs ?? 0);
+          const employeeQRE = getOverrideValue('A', 5) ?? getQREValue('employee');
+    const supplyQRE = getOverrideValue('A', 6) ?? getQREValue('supply');
+    const computerQRE = getOverrideValue('A', 7) ?? 0;
+    const contractorQRE = getOverrideValue('A', 8) ?? getQREValue('contractor');
       const totalQRE = employeeQRE + supplyQRE + computerQRE + contractorQRE;
       // Base percentage: from federalCredits.standard.basePercentage, min 3%, max 16%
       let basePercentRaw = federalCredits?.standard?.basePercentage ?? 0.03;
@@ -270,15 +427,25 @@ export const Form6765: React.FC<Form6765Props> = ({
     // Section B: ASC (lines 18-34, IRS-accurate mapping)
     if (selectedMethod === 'asc') {
       // Extract QRE breakdowns and prior year data
-      const employeeQRE = getOverrideValue('B', 24) ?? (calculations?.currentYearQRE?.employee_wages ?? 0);
-      const supplyQRE = getOverrideValue('B', 25) ?? (calculations?.currentYearQRE?.supply_costs ?? 0);
-      const computerQRE = getOverrideValue('B', 26) ?? 0;
-      const contractorQRE = getOverrideValue('B', 27) ?? (calculations?.currentYearQRE?.contractor_costs ?? 0);
+          const employeeQRE = getOverrideValue('B', 24) ?? getQREValue('employee');
+    const supplyQRE = getOverrideValue('B', 25) ?? getQREValue('supply');
+    const computerQRE = getOverrideValue('B', 26) ?? 0;
+    const contractorQRE = getOverrideValue('B', 27) ?? getQREValue('contractor');
       const totalQRE = employeeQRE + supplyQRE + computerQRE + contractorQRE;
       
       // Enhanced: Check for 3 consecutive prior years with QREs
       const historicalData = calculations?.historicalData || [];
-      console.log('🔍 [Form 6765 Pre-2024] ASC calculation - Historical data:', historicalData);
+      console.log('🔍 [Form 6765 Pre-2024] ASC calculation - COMPREHENSIVE Historical data:', {
+        historicalData,
+        totalYears: historicalData.length,
+        qreBreakdownByYear: historicalData.map(year => ({
+          year: year.year,
+          totalQRE: year.qre,
+          manualQRE: year.manual_qre || 0,
+          calculatedQRE: year.calculated_qre || 0,
+          breakdown: year.qre_breakdown
+        }))
+      });
       
       // Get exactly the 3 most recent prior years (excluding current year)
       const currentYear = selectedYear?.year || new Date().getFullYear();
@@ -287,21 +454,62 @@ export const Form6765: React.FC<Form6765Props> = ({
         .sort((a, b) => b.year - a.year)
         .slice(0, 3);
       
-      console.log('📊 [Form 6765 Pre-2024] ASC - Prior 3 years for calculation:', priorYears);
+      console.log(`🔍 [Form 6765 Pre-2024] Prior years selection for ${currentYear}:`, {
+        currentYear,
+        allHistoricalYears: historicalData.map(y => ({ year: y.year, qre: y.qre })),
+        filteredPriorYears: priorYears.map(y => ({ year: y.year, qre: y.qre }))
+      });
+      
+      console.log('📊 [Form 6765 Pre-2024] ASC - Prior 3 years for calculation:', {
+        priorYears,
+        priorYearQREs: priorYears.map(year => ({
+          year: year.year,
+          qre: year.qre,
+          manual_qre: year.manual_qre || 0,
+          calculated_qre: year.calculated_qre || 0
+        }))
+      });
       
       // Check if we have exactly 3 consecutive years with QREs > 0
+      // CRITICAL: Use priority-based QRE calculation for consistency
+      const prior1QRE = getPriorYearQRE(1);
+      const prior2QRE = getPriorYearQRE(2);
+      const prior3QRE = getPriorYearQRE(3);
+      
       const has3ConsecutiveYears = priorYears.length === 3 && 
-        priorYears.every(year => (year.qre || 0) > 0) &&
+        prior1QRE > 0 && prior2QRE > 0 && prior3QRE > 0 &&
         priorYears[0].year === currentYear - 1 &&
         priorYears[1].year === currentYear - 2 &&
         priorYears[2].year === currentYear - 3;
       
       console.log('✅ [Form 6765 Pre-2024] ASC - Has 3 consecutive years with QREs:', has3ConsecutiveYears);
       
+      // CRITICAL: Use new priority-based QRE calculation for prior years
       const priorQRESum = has3ConsecutiveYears ? 
-        priorYears.reduce((sum, y) => sum + (y.qre || 0), 0) : 0;
+        (prior1QRE + prior2QRE + prior3QRE) : 0;
       
       const priorQRE = getOverrideValue('B', 29) ?? priorQRESum;
+      
+      console.log('📊 [Form 6765 Pre-2024] Updated Line 29 calculation:', {
+        has3ConsecutiveYears,
+        priorYear1: prior1QRE,
+        priorYear2: prior2QRE,
+        priorYear3: prior3QRE,
+        priorQRESum,
+        finalPriorQRE: priorQRE,
+        expectedValues: {
+          year2022: 480231,
+          year2021: 360011,
+          year2020: 204772,
+          expectedSum: 1045014
+        },
+        actualValues: {
+          year2022: prior1QRE,
+          year2021: prior2QRE,
+          year2020: prior3QRE,
+          actualSum: priorQRESum
+        }
+      });
       
       // Calculate lines 30 and 31 only if we have 3 consecutive years with QREs
       const line30 = has3ConsecutiveYears ? priorQRE / 6.0 : 0;

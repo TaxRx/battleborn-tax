@@ -16,7 +16,6 @@ import {
   Zap
 } from 'lucide-react';
 import { CentralizedClientService, ToolEnrollment, ClientTool } from '../services/centralizedClientService';
-import { RDBusinessService } from '../modules/tax-calculator/services/rdBusinessService';
 import { toast } from 'react-hot-toast';
 
 interface BusinessAccordionProps {
@@ -43,7 +42,6 @@ const BusinessYearCard: React.FC<BusinessYearCardProps> = ({
   onRefresh
 }) => {
   const [isEnrolling, setIsEnrolling] = useState(false);
-  const [isTesting, setIsTesting] = useState(false);
 
   const handleEnrollInTool = async (toolSlug: ToolEnrollment['tool_slug']) => {
     setIsEnrolling(true);
@@ -61,25 +59,7 @@ const BusinessYearCard: React.FC<BusinessYearCardProps> = ({
     }
   };
 
-  const handleTestEnrollment = async () => {
-    setIsTesting(true);
-    try {
-      console.log('[BusinessYearCard] Testing enrollment for business:', business.id, 'client:', clientId);
-      const result = await RDBusinessService.testEnrollment(business.id, clientId);
-      console.log('[BusinessYearCard] Test result:', result);
-      
-      if (result.success) {
-        toast.success('Enrollment test passed!');
-      } else {
-        toast.error(`Enrollment test failed: ${result.message}`);
-      }
-    } catch (error) {
-      console.error('[BusinessYearCard] Test enrollment error:', error);
-      toast.error(`Test failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setIsTesting(false);
-    }
-  };
+
 
   const getToolStatusIcon = (status: string) => {
     switch (status) {
@@ -183,27 +163,7 @@ const BusinessYearCard: React.FC<BusinessYearCardProps> = ({
         <div className="space-y-2">
           <h6 className="text-xs font-medium text-gray-700 uppercase tracking-wide">Available Tools</h6>
           
-          {/* Test Enrollment Button */}
-          <div className="flex items-center justify-between p-3 border border-yellow-200 rounded-md bg-yellow-50">
-            <div className="flex-1">
-              <div className="flex items-center space-x-2">
-                <AlertTriangle className="w-4 h-4 text-yellow-500" />
-                <span className="text-sm font-medium">Test Enrollment Process</span>
-              </div>
-              <p className="text-xs text-gray-600 mt-1">Debug the business enrollment process</p>
-            </div>
-            <button
-              onClick={handleTestEnrollment}
-              disabled={isTesting}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                isTesting
-                  ? 'bg-gray-100 text-gray-500 cursor-not-allowed'
-                  : 'bg-yellow-600 text-white hover:bg-yellow-700'
-              }`}
-            >
-              {isTesting ? 'Testing...' : 'Test'}
-            </button>
-          </div>
+
           
           {availableTools.map((tool) => {
             const isEnrolled = enrolledTools.some(t => t.tool_slug === tool.slug);

@@ -1,9 +1,16 @@
 import { StateCreditBaseData } from '../../services/stateCreditDataService';
 
 export const WA_PROFORMA_LINES = [
-  // --- WA Standard Method (Form 40) ---
-  { line: '1', label: 'Enter the amount of Washington qualified research expenses for the current year.', field: 'waQRE', editable: false, method: 'standard', calc: (data: StateCreditBaseData) => (data.wages || 0) + (data.supplies || 0) + (data.contractResearch || 0) },
-  { line: '2', label: 'Multiply Line 1 by 2.5% (.025). This is your Washington R&D credit.', field: 'waFinalCredit', editable: false, method: 'standard', calc: (data: any) => (data.waQRE || 0) * 0.025 },
+  // --- WASHINGTON STATE R&D INCENTIVES ---
+  // IMPORTANT: Washington has NO standalone R&D credit (no state income tax)
+  // Available incentives are sales tax exemptions and industry-specific programs
+  
+  { line: 'INFO', label: 'Washington State has no standalone R&D tax credit', field: 'waNoCredit', editable: false, method: 'standard', sort_order: 1 },
+  { line: '1', label: 'Sales & Use Tax Exemption: M&E for R&D Operations (6.5% + local)', field: 'waSalesTaxSavings', editable: true, method: 'standard', sort_order: 2 },
+  { line: '2', label: 'Aerospace R&D Credit: B&O credit for preproduction development', field: 'waAerospaceRD', editable: true, method: 'standard', sort_order: 3 },
+  { line: '3', label: 'Rural County R&D Employment Credit: $3,000 per new R&D employee', field: 'waRuralRDCredit', editable: true, method: 'standard', sort_order: 4 },
+  { line: '4', label: 'Clean Technology Investment Deferral: Sales tax deferral for clean tech R&D', field: 'waCleanTechDeferral', editable: true, method: 'standard', sort_order: 5 },
+  { line: '5', label: 'Total estimated Washington R&D tax savings', field: 'waFinalCredit', editable: true, method: 'standard', sort_order: 6 },
 ];
 
 export const waConfig = {
@@ -11,54 +18,100 @@ export const waConfig = {
   name: 'Washington',
   forms: {
     standard: {
-      name: 'WA Form 40 - Research and Development Credit',
+      name: 'Washington R&D Incentives (No Standalone Credit Available)',
       method: 'standard',
       lines: WA_PROFORMA_LINES.filter(line => line.method === 'standard'),
     },
   },
   hasAlternativeMethod: false,
-  creditRate: 0.025,
-  creditType: "total_qre",
-  formReference: "WA Form 40",
+  creditRate: "No standalone R&D credit - Sales tax exemptions only",
+  creditType: "sales_tax_exemptions_and_industry_specific_incentives",
+  formReference: "Various Forms - No General R&D Credit Form",
   validationRules: [
     {
-      type: "max_credit",
-      value: 2000000,
-      message: "Credit capped at $2 million per taxpayer per year"
+      type: "no_standalone_credit",
+      value: "Washington has no state income tax",
+      message: "Washington cannot offer income tax credits because it has no state income tax"
     },
     {
-      type: "carryforward_limit",
-      value: 7,
-      message: "Unused credits may be carried forward for up to 7 years"
+      type: "sales_tax_exemption_available",
+      value: "M&E Sales & Use Tax Exemption (RCW 82.08.02565)",
+      message: "Sales & use tax exemption available for machinery & equipment used directly in R&D operations"
     },
     {
-      type: "entity_type_restriction",
-      value: "Corporations and partnerships",
-      message: "Available to corporations and partnerships with Washington source income"
+      type: "terrapower_case",
+      value: "Terrapower decision clarifies M&E exemption for R&D",
+      message: "2022 Board of Tax Appeals decision confirms M&E exemption applies to R&D even without manufacturing for sale"
     },
     {
-      type: "gross_receipts_threshold",
-      value: 50000,
-      message: "Minimum $50,000 in gross receipts in the taxable year to qualify"
+      type: "aerospace_rd_credit",
+      value: "Aerospace R&D B&O credit available",
+      message: "B&O tax credit for preproduction development expenditures in aerospace industry (RCW 82.04.4461)"
     },
     {
-      type: "other",
-      value: "Application required",
-      message: "Must file Form 40 and attach Schedule R&D to claim the credit"
+      type: "rural_employment_credit",
+      value: "$3,000 per new R&D employee in rural counties",
+      message: "B&O tax credit for new R&D employees in rural counties or CEZ (RCW 82.04.4452)"
     },
     {
-      type: "other",
-      value: "Deadline: April 15",
-      message: "Application must be filed by April 15th of the year following the taxable year"
+      type: "clean_tech_deferrals",
+      value: "Clean technology investment deferrals",
+      message: "Sales tax deferrals available for clean energy investment projects including R&D facilities"
+    },
+    {
+      type: "business_structure",
+      value: "B&O tax system (gross receipts)",
+      message: "Washington uses Business & Occupation tax (gross receipts) instead of income tax"
     }
   ],
   notes: [
-    "Credit is non-refundable and may only be used to offset Washington Business and Occupation Tax liability",
-    "Research must be conducted in Washington to qualify for the credit",
-    "Qualified research expenses must meet the same criteria as the federal credit under IRC Section 41",
-    "Taxpayers must maintain detailed records of qualified research activities and expenses",
-    "No base calculation is required for Washington - credit is calculated on total QRE",
-    "Washington offers a 2.5% credit on total qualified research expenses",
-    "Credit is capped at $2 million per taxpayer per year"
+    "⚠️ IMPORTANT: Washington State has NO standalone R&D tax credit",
+    "Washington has no state income tax, so no income tax credits are available",
+    "",
+    "AVAILABLE R&D INCENTIVES:",
+    "",
+    "1. SALES & USE TAX EXEMPTION FOR M&E (Primary R&D Incentive):",
+    "• Exemption from 6.5% state + local sales tax on machinery & equipment",
+    "• Must be used directly in R&D operations by manufacturers",
+    "• Clarified by 2022 Terrapower case - no requirement to manufacture for sale",
+    "• Use Manufacturers' Sales and Use Tax Exemption Certificate",
+    "• Significant savings on lab equipment, computers, software, etc.",
+    "",
+    "2. AEROSPACE R&D CREDIT (Industry-Specific):",
+    "• B&O tax credit for preproduction development expenditures",
+    "• Available to manufacturers of commercial airplanes/components",
+    "• Available to aerospace product developers and FAR repair stations",
+    "• Electronic filing required, Annual Tax Performance Report due May 31",
+    "",
+    "3. RURAL COUNTY R&D EMPLOYMENT CREDIT:",
+    "• $3,000 B&O tax credit per new full-time R&D employee",
+    "• Must be in rural county or Community Empowerment Zone",
+    "• Requires 15% increase in employment at facility",
+    "• Available to R&D facilities and commercial testing facilities",
+    "",
+    "4. CLEAN TECHNOLOGY INVESTMENT DEFERRALS:",
+    "• Sales tax deferrals for clean energy investment projects",
+    "• Includes R&D facilities for renewable energy storage",
+    "• $2 million minimum investment required",
+    "• Potential tax reductions based on labor standards compliance",
+    "",
+    "5. MANUFACTURING & R&D DEFERRAL (Qualifying Counties):",
+    "• Sales tax deferral for counties with population < 650,000",
+    "• Up to $400,000 in deferred taxes per applicant",
+    "• Available for qualified buildings and machinery & equipment",
+    "",
+    "TAX STRUCTURE DIFFERENCES:",
+    "• Washington uses Business & Occupation (B&O) tax on gross receipts",
+    "• No state income tax = no income tax credits available",
+    "• Focus on sales tax incentives and industry-specific programs",
+    "• Some B&O tax credits available for specific activities/locations",
+    "",
+    "APPLICATION REQUIREMENTS:",
+    "• M&E exemption: Use exemption certificate, no application required",
+    "• Aerospace credit: No application, but electronic filing required",
+    "• Rural employment: No application, maintain employment records",
+    "• Clean tech deferral: Application required before construction",
+    "",
+    "For more information: Washington Department of Revenue Tax Incentives"
   ]
 }; 

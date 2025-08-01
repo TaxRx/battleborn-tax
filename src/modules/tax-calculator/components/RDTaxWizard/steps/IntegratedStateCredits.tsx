@@ -8,12 +8,14 @@ interface IntegratedStateCreditsProps {
   selectedYear: any;
   businessData: any;
   wizardState: any; // Get business state from wizard state like CalculationStep does
+  qreDataHash?: string; // Hash of QRE data to trigger reload when data changes
 }
 
 export const IntegratedStateCredits: React.FC<IntegratedStateCreditsProps> = ({
   selectedYear,
   businessData,
-  wizardState
+  wizardState,
+  qreDataHash
 }) => {
   // Get business state from wizardState like CalculationStep does (prioritize domicile_state, then contact_info.state)
   const businessState = wizardState?.business?.domicile_state || wizardState?.business?.contact_info?.state || wizardState?.business?.state || 'CA';
@@ -73,9 +75,17 @@ export const IntegratedStateCredits: React.FC<IntegratedStateCreditsProps> = ({
         return;
       }
 
+      if (!availableLines.length) {
+        console.log('⚠️ IntegratedStateCredits - No available lines for state:', state, 'method:', method);
+        setProFormaData({});
+        setTotalCredit(0);
+        return;
+      }
+
       try {
         setLoading(true);
         console.log('🔍 IntegratedStateCredits - Loading base QRE data AND calculating real pro forma credit for state:', state);
+        console.log('🔧 IntegratedStateCredits - QRE Data Hash:', qreDataHash);
         
         // 🔧 Step 1: Load base QRE data for the form (same as Filing Guide)
         const baseQREData = await StateCreditDataService.getAggregatedQREData(selectedYear.id);
@@ -96,9 +106,23 @@ export const IntegratedStateCredits: React.FC<IntegratedStateCreditsProps> = ({
         
         // 🔧 Step 3: Set both the form data AND the calculated credit
         if (baseQREData && baseQREData.wages > 0) {
-          // Use the base QRE data for the form
-          setProFormaData(baseQREData);
-          console.log('✅ IntegratedStateCredits - Form populated with base QRE data');
+          // Pre-calculate derived fields for editable lines based on their calc functions
+          const formDataWithCalculatedFields = { ...baseQREData };
+          
+          // Calculate values for editable fields that have calc functions
+          console.log(`🔧 IntegratedStateCredits - Processing ${availableLines.length} lines for field calculations`);
+          availableLines.forEach(line => {
+            if (line.editable && line.calc) {
+              const calculatedValue = line.calc(baseQREData);
+              formDataWithCalculatedFields[line.field] = calculatedValue;
+              console.log(`🔧 IntegratedStateCredits - Pre-calculated ${line.field}: ${calculatedValue} (from line: ${line.line}, label: ${line.label})`);
+            } else if (line.editable) {
+              console.log(`🔧 IntegratedStateCredits - Editable field ${line.field} has no calc function (line: ${line.line})`);
+            }
+          });
+          
+          setProFormaData(formDataWithCalculatedFields);
+          console.log('✅ IntegratedStateCredits - Form populated with base QRE data and calculated fields');
         } else {
           console.log('⚠️ IntegratedStateCredits - No QRE data available');
           setProFormaData({});
@@ -117,7 +141,7 @@ export const IntegratedStateCredits: React.FC<IntegratedStateCreditsProps> = ({
     };
 
     loadProFormaData();
-  }, [selectedYear?.id, state, method]);
+  }, [selectedYear?.id, state, method, qreDataHash, availableLines]);
 
   // Update state when business state changes from wizard
   useEffect(() => {

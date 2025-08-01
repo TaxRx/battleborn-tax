@@ -104,9 +104,73 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
 
   const [businesses, setBusinesses] = useState<BusinessFormData[]>([]);
 
+  // Helper function to clean up duplicate businesses for a client
+  const cleanupDuplicateBusinesses = async (clientId: string) => {
+    try {
+      console.log(`[cleanupDuplicateBusinesses] Checking for duplicate businesses for client: ${clientId}`);
+      
+      // Get all businesses for this client
+      const { data: allBusinesses, error: fetchError } = await supabase
+        .from('rd_businesses')
+        .select('id, business_name, ein, created_at')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false }); // Newest first
+
+      if (fetchError) {
+        console.error(`[cleanupDuplicateBusinesses] Error fetching businesses:`, fetchError);
+        return;
+      }
+
+      if (!allBusinesses || allBusinesses.length <= 1) {
+        console.log(`[cleanupDuplicateBusinesses] No duplicates found`);
+        return;
+      }
+
+      // Group by business name and EIN to find duplicates
+      const businessGroups = allBusinesses.reduce((groups, business) => {
+        const key = `${business.business_name}-${business.ein || 'no-ein'}`;
+        if (!groups[key]) {
+          groups[key] = [];
+        }
+        groups[key].push(business);
+        return groups;
+      }, {} as Record<string, typeof allBusinesses>);
+
+      // Find groups with duplicates and keep only the newest one
+      for (const [key, group] of Object.entries(businessGroups)) {
+        if (group.length > 1) {
+          console.log(`[cleanupDuplicateBusinesses] Found ${group.length} duplicates for business: ${key}`);
+          
+          // Keep the newest one, delete the rest
+          const [keepBusiness, ...deleteBusiness] = group;
+          const idsToDelete = deleteBusiness.map(b => b.id);
+          
+          console.log(`[cleanupDuplicateBusinesses] Keeping business ID: ${keepBusiness.id}, deleting IDs: ${idsToDelete.join(', ')}`);
+          
+          const { error: deleteError } = await supabase
+            .from('rd_businesses')
+            .delete()
+            .in('id', idsToDelete);
+            
+          if (deleteError) {
+            console.error(`[cleanupDuplicateBusinesses] Error deleting duplicate businesses:`, deleteError);
+          } else {
+            console.log(`[cleanupDuplicateBusinesses] Successfully deleted ${idsToDelete.length} duplicate businesses`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`[cleanupDuplicateBusinesses] Unexpected error:`, error);
+    }
+  };
+
   useEffect(() => {
     console.log(`[NewClientModal] useEffect triggered with initialData:`, initialData);
     if (initialData) {
+      // Clean up any existing duplicate businesses when opening an existing client
+      if (initialData.id) {
+        cleanupDuplicateBusinesses(initialData.id);
+      }
       console.log(`[NewClientModal] Processing initialData for client: ${initialData.id}`);
       console.log(`[NewClientModal] initialData.businesses:`, initialData.businesses);
       console.log(`[NewClientModal] initialData.years:`, initialData.years);
@@ -661,17 +725,10 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
               }
             }
 
-            // Update business data
-            // First, delete existing businesses for this client
-            console.log(`[handleSubmit] Deleting existing businesses for client ${initialData.id}`);
-            await supabase
-              .from('businesses')
-              .delete()
-              .eq('client_id', initialData.id);
-
+            // Update business data - Use upsert logic to prevent duplicates
             if (completeTaxInfo.businesses && completeTaxInfo.businesses.length > 0) {
-              console.log(`[handleSubmit] Inserting ${completeTaxInfo.businesses.length} businesses`);
-              // Then insert the new business data
+              console.log(`[handleSubmit] Processing ${completeTaxInfo.businesses.length} businesses`);
+              
               for (const business of completeTaxInfo.businesses) {
                 console.log(`[handleSubmit] Processing business: ${business.businessName}`);
                 console.log(`[handleSubmit] Business years:`, business.years);
@@ -699,43 +756,81 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                   is_active: business.isActive
                 };
 
-                console.log(`[handleSubmit] Business data to insert:`, businessData);
+                // Check if business already exists for this client
+                const { data: existingBusiness, error: checkError } = await supabase
+                  .from('rd_businesses')
+                  .select('id')
+                  .eq('client_id', initialData.id)
+                  .eq('business_name', business.businessName)
+                  .eq('ein', business.ein || '')
+                  .maybeSingle();
 
-                const { data: businessResult, error: businessError } = await supabase
-                  .from('businesses')
-                  .insert(businessData)
-                  .select()
-                  .single();
-
-                if (businessError) {
-                  console.error(`[handleSubmit] Error saving business:`, businessError);
+                if (checkError) {
+                  console.error(`[handleSubmit] Error checking for existing business:`, checkError);
                   continue;
                 }
 
-                console.log(`[handleSubmit] Business saved with ID: ${businessResult.id}`);
+                let businessResult;
+                if (existingBusiness) {
+                  // Update existing business
+                  console.log(`[handleSubmit] Updating existing business ID: ${existingBusiness.id}`);
+                  const { data: updateResult, error: updateError } = await supabase
+                    .from('rd_businesses')
+                    .update(businessData)
+                    .eq('id', existingBusiness.id)
+                    .select()
+                    .single();
 
-                // Save business years data
+                  if (updateError) {
+                    console.error(`[handleSubmit] Error updating business:`, updateError);
+                    continue;
+                  }
+                  businessResult = updateResult;
+                  console.log(`[handleSubmit] Business updated successfully with ID: ${businessResult.id}`);
+                } else {
+                  // Create new business
+                  console.log(`[handleSubmit] Creating new business: ${business.businessName}`);
+                  const { data: insertResult, error: insertError } = await supabase
+                    .from('rd_businesses')
+                    .insert(businessData)
+                    .select()
+                    .single();
+
+                  if (insertError) {
+                    console.error(`[handleSubmit] Error creating business:`, insertError);
+                    continue;
+                  }
+                  businessResult = insertResult;
+                  console.log(`[handleSubmit] Business created successfully with ID: ${businessResult.id}`);
+                }
+
+                // Save business years data using upsert logic
                 if (business.years && business.years.length > 0) {
-                  const businessYearsData = business.years.map(year => ({
-                    business_id: businessResult.id,
-                    year: year.year,
-                    is_active: year.isActive ?? true,
-                    ordinary_k1_income: year.ordinaryK1Income || 0,
-                    guaranteed_k1_income: year.guaranteedK1Income || 0,
-                    annual_revenue: year.annualRevenue || 0,
-                    employee_count: year.employeeCount || 0
-                  }));
+                  console.log(`[handleSubmit] Processing ${business.years.length} business years for business ${business.businessName}`);
+                  
+                  for (const year of business.years) {
+                    const yearData = {
+                      business_id: businessResult.id,
+                      year: year.year,
+                      is_active: year.isActive ?? true,
+                      ordinary_k1_income: year.ordinaryK1Income || 0,
+                      guaranteed_k1_income: year.guaranteedK1Income || 0,
+                      annual_revenue: year.annualRevenue || 0,
+                      employee_count: year.employeeCount || 0
+                    };
 
-                  console.log(`[handleSubmit] Business years data to insert:`, businessYearsData);
+                    // Use upsert to prevent duplicate business year records
+                    const { error: upsertError } = await supabase
+                      .from('rd_business_years')
+                      .upsert(yearData, {
+                        onConflict: 'business_id,year'
+                      });
 
-                  const { error: businessYearsError } = await supabase
-                    .from('business_years')
-                    .insert(businessYearsData);
-
-                  if (businessYearsError) {
-                    console.error(`[handleSubmit] Error saving business years:`, businessYearsError);
-                  } else {
-                    console.log(`[handleSubmit] Business years saved successfully for business ${business.businessName}`);
+                    if (upsertError) {
+                      console.error(`[handleSubmit] Error upserting business year ${year.year}:`, upsertError);
+                    } else {
+                      console.log(`[handleSubmit] Business year ${year.year} saved successfully for business ${business.businessName}`);
+                    }
                   }
                 }
               }

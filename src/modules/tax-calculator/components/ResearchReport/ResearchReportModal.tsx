@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, FileText, Download, Printer, Eye, EyeOff, 
   Activity, Target, Beaker, Calendar, Users, 
   TrendingUp, Award, BookOpen, ChevronRight, ChevronLeft,
   CheckCircle, AlertCircle, Info, BarChart3,
-  Clock, Building2, FileCheck, Microscope
+  Clock, Building2, FileCheck, Microscope, Settings
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { AIService } from '../../../../services/aiService';
 import './ResearchReportModal.css';
 import {
   generateTableOfContents,
@@ -19,6 +20,14 @@ import {
   ReportData
 } from './reportGenerator';
 // rdReportService removed - using static report generation
+
+// Add TypeScript declarations for window object
+declare global {
+  interface Window {
+    regenerateAISection?: (subcomponentId: string) => Promise<void>;
+    editAIPrompt?: (subcomponentId: string) => void;
+  }
+}
 
 interface ResearchReportModalProps {
   isOpen: boolean;
@@ -126,6 +135,7 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
+  const [businessYearData, setBusinessYearData] = useState<any>(null);
   const [selectedActivities, setSelectedActivities] = useState<SelectedActivity[]>([]);
   const [selectedSteps, setSelectedSteps] = useState<SelectedStep[]>([]);
   const [selectedSubcomponents, setSelectedSubcomponents] = useState<SelectedSubcomponent[]>([]);
@@ -138,49 +148,313 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
   const [editingSubcomponentId, setEditingSubcomponentId] = useState<string>('');
   const [editPrompt, setEditPrompt] = useState<string>('');
 
+  // Use ref for synchronous race condition prevention (state updates are async)
+  const isLoadingRef = useRef<boolean>(false);
+
   useEffect(() => {
+    console.log('%c🔄 [RESEARCH REPORT MODAL] useEffect triggered:', 'color: #ff6600; font-size: 14px; font-weight: bold;', {
+      isOpen,
+      businessYearId,
+      currentTime: new Date().toISOString(),
+      isLoadingState: isLoading,
+      isLoadingRefCurrent: isLoadingRef.current
+    });
+    
     if (isOpen && businessYearId) {
+      console.log('%c🔍 [RESEARCH REPORT MODAL] Opening with props:', 'color: #ff6600; font-size: 16px; font-weight: bold;');
+      console.log('%c📊 [RESEARCH REPORT MODAL] businessYearId:', 'color: #ff6600; font-weight: bold;', businessYearId);
+      console.log('%c📊 [RESEARCH REPORT MODAL] businessId:', 'color: #ff6600; font-weight: bold;', businessId);
+      console.log('%c🚀 [RESEARCH REPORT MODAL] Calling loadData()...', 'color: #ff6600; font-weight: bold;');
       loadData();
+    } else {
+      console.log('%c⚠️ [RESEARCH REPORT MODAL] Not loading data:', 'color: #ff0000; font-weight: bold;', {
+        isOpen,
+        businessYearId,
+        businessId
+      });
     }
   }, [isOpen, businessYearId]);
 
-  // Set up window functions for iframe communication
+  // Expose functions to window for iframe access
   useEffect(() => {
-    if (showPreview) {
-      (window as any).regenerateAISection = regenerateAISection;
-      (window as any).editAIPrompt = editAIPrompt;
-    }
-    return () => {
-      delete (window as any).regenerateAISection;
-      delete (window as any).editAIPrompt;
-    };
-  }, [showPreview]);
-
-  const loadData = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
+    if (typeof window !== 'undefined') {
+      // Functions will be updated through closures when they're called
+      window.regenerateAISection = (subcomponentId: string) => regenerateAISection(subcomponentId);
+      window.editAIPrompt = (subcomponentId: string) => editAIPrompt(subcomponentId);
       
-      console.log('🔍 Loading data for businessYearId:', businessYearId);
+      // Cleanup on unmount
+      return () => {
+        delete window.regenerateAISection;
+        delete window.editAIPrompt;
+      };
+    }
+  }, []); // Empty dependency array - functions are bound through closures
 
-      // Check for cached report first
-      setLoadingMessage('Checking for existing report...');
+  const regenerateAllAIEntries = async () => {
+    try {
+      setLoadingMessage('Regenerating all AI content...');
+      setIsLoading(true);
+
+      // Get all subcomponents that need AI regeneration
+      const subcomponentsToRegenerate = selectedSubcomponents.filter(sub => 
+        sub.rd_research_subcomponents || sub.name
+      );
+
+      console.log(`🤖 Starting regeneration of ${subcomponentsToRegenerate.length} AI sections`);
+
+      // Regenerate each section sequentially to avoid overwhelming the AI service
+      for (let i = 0; i < subcomponentsToRegenerate.length; i++) {
+        const subcomponent = subcomponentsToRegenerate[i];
+        setLoadingMessage(`Regenerating AI content... (${i + 1}/${subcomponentsToRegenerate.length})`);
+        
+        try {
+          await regenerateAISection(subcomponent.id);
+        } catch (error) {
+          console.error(`Failed to regenerate subcomponent ${subcomponent.id}:`, error);
+          // Continue with other subcomponents even if one fails
+        }
+        
+        // Small delay between regenerations to prevent rate limiting
+        if (i < subcomponentsToRegenerate.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      console.log('✅ Completed regeneration of all AI sections');
+      
+      // Regenerate the full report to incorporate all updates
+      await generateReport();
+      
+    } catch (error) {
+      console.error('Failed to regenerate all AI content:', error);
+      setError('Failed to regenerate all content. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const regenerateAISection = async (subcomponentId: string) => {
+    try {
+      setLoadingMessage('Regenerating AI content...');
+      setIsLoading(true);
+
+      // Find the subcomponent
+      const subcomponent = selectedSubcomponents.find(sub => sub.id === subcomponentId);
+      if (!subcomponent) return;
+
+      const subData = subcomponent.rd_research_subcomponents || subcomponent;
+      
+      // Detect business type for appropriate content generation
+      const categoryName = businessProfile?.category?.name?.toLowerCase();
+      const isSoftwareReport = categoryName === 'software';
+
+      console.log('🤖 Calling AI for content regeneration:', {
+        componentName: subData.name,
+        category: categoryName,
+        isSoftwareReport
+      });
+
+      // Generate context-appropriate prompt for AI
+      const componentName = subData.name || subData.general_description || 'Subcomponent';
+      const description = subData.general_description || subData.description || '';
+      
+      const prompt = isSoftwareReport ? 
+        `Generate comprehensive IRS R&D tax credit documentation for "${componentName}" in a software development environment.
+
+Component Description: ${description}
+
+Development Team Roles: ${businessRoles.map(role => role.name).join(', ')}
+
+Please provide:
+1. Technical uncertainty documentation and challenges addressed
+2. Process of experimentation details (iterations, testing, alternatives)
+3. Qualified purpose demonstration (functionality, performance, reliability improvements)
+4. Technological nature evidence (computer science/engineering principles)
+5. Specific role assignments with time allocation estimates
+6. Documentation requirements for IRS audit defense
+
+Format the response with proper HTML headings (h4, h5) and lists (ul, li) for integration into a research report.` :
+        `Generate professional clinical practice guidelines for implementing "${componentName}" in a healthcare setting.
+
+Subcomponent Description: ${description}
+
+Available Staff Roles: ${businessRoles.map(role => role.name).join(', ')}
+
+Please provide:
+1. Step-by-step implementation guidelines with clear headings
+2. For each step, specify which staff roles should be involved
+3. Use professional medical/clinical language
+4. Include bullet points for role assignments under each step
+5. Quality assurance and documentation requirements
+
+Format the response with proper HTML headings (h4, h5) and lists (ul, li) for integration into a research report.`;
+
+      // Call AI service
+      const aiResponse = await AIService.getInstance().generateResearchContent(prompt, {
+        businessCategory: categoryName || 'healthcare',
+        componentName,
+        availableRoles: businessRoles
+      });
+
+      console.log('✅ AI response received, updating report');
+
+      // Update the HTML with AI-generated content
+      const updatedHTML = generatedReport.replace(
+        new RegExp(`<div class="best-practices-content">.*?</div>`, 's'),
+        `<div class="best-practices-content">${formatAIContent(aiResponse)}</div>`
+      );
+
+      setGeneratedReport(updatedHTML);
+
+      // Save updated report
       const { data: existingReport } = await supabase
         .from('rd_reports')
-        .select('*')
+        .select('id')
         .eq('business_year_id', businessYearId)
         .eq('type', 'RESEARCH_SUMMARY')
         .single();
       
-      if (existingReport && existingReport.generated_html) {
-        console.log('✅ Found cached report, loading preview');
-        setCachedReport(existingReport);
-        setGeneratedReport(existingReport.generated_html);
-        setShowPreview(true);
-        setLoadingMessage('Report loaded from cache');
+      if (existingReport) {
+        await supabase
+          .from('rd_reports')
+          .update({
+            generated_html: updatedHTML,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingReport.id);
       }
+      
+    } catch (error) {
+      console.error('Failed to regenerate AI section:', error);
+      setError('Failed to regenerate content. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-      // Load business profile
+  const editAIPrompt = (subcomponentId: string) => {
+    const subcomponent = selectedSubcomponents.find(sub => sub.id === subcomponentId);
+    if (!subcomponent) return;
+
+    // Detect business type for appropriate prompt generation
+    const categoryName = businessProfile?.category?.name?.toLowerCase();
+    const isSoftwareReport = categoryName === 'software';
+
+    const subData = subcomponent.rd_research_subcomponents || subcomponent;
+    setEditingSubcomponentId(subcomponentId);
+    
+    const prompt = isSoftwareReport ? 
+      `Generate comprehensive IRS R&D tax credit documentation for "${subData.name || 'this development component'}" in a software development environment.
+
+Component Description: ${subData.general_description || subData.description || ''}
+
+Development Team Roles: ${businessRoles.map(role => role.name).join(', ')}
+
+Please provide:
+1. Technical uncertainty documentation and challenges addressed
+2. Process of experimentation details (iterations, testing, alternatives)
+3. Qualified purpose demonstration (functionality, performance, reliability improvements)
+4. Technological nature evidence (computer science/engineering principles)
+5. Specific role assignments with time allocation estimates
+6. Documentation requirements for IRS audit defense` :
+      `Generate professional clinical practice guidelines for implementing "${subData.name || 'this subcomponent'}" in a healthcare setting.
+
+Subcomponent Description: ${subData.general_description || subData.description || ''}
+
+Available Staff Roles: ${businessRoles.map(role => role.name).join(', ')}
+
+Please provide:
+1. Step-by-step implementation guidelines with clear headings
+2. For each step, specify which staff roles should be involved
+3. Use professional medical/clinical language
+4. Format with proper markdown headings
+5. Include bullet points for role assignments under each step`;
+
+    setEditPrompt(prompt);
+    setShowEditModal(true);
+  };
+
+  const handleCustomPromptGeneration = async () => {
+    try {
+      setLoadingMessage('Generating content with custom prompt...');
+      setIsLoading(true);
+      setShowEditModal(false);
+
+      // Get category info for context
+      const categoryName = businessProfile?.category?.name?.toLowerCase();
+      const isSoftwareReport = categoryName === 'software';
+
+      console.log('🤖 Calling AI with custom prompt:', {
+        promptLength: editPrompt.length,
+        category: categoryName,
+        isSoftwareReport
+      });
+
+      // Call AI service with the custom prompt
+      const aiResponse = await AIService.getInstance().generateResearchContent(editPrompt, {
+        businessCategory: categoryName || 'healthcare',
+        componentName: editingSubcomponentId || 'Custom Content',
+        availableRoles: businessRoles
+      });
+
+      console.log('✅ AI response received for custom prompt, updating report');
+
+      // Update the HTML with AI-generated content
+      const updatedHTML = generatedReport.replace(
+        new RegExp(`<div class="best-practices-content">.*?</div>`, 's'),
+        `<div class="best-practices-content">${formatAIContent(aiResponse)}</div>`
+      );
+
+      setGeneratedReport(updatedHTML);
+
+      // Save updated report
+      const { data: existingReport } = await supabase
+        .from('rd_reports')
+        .select('id')
+        .eq('business_year_id', businessYearId)
+        .eq('type', 'RESEARCH_SUMMARY')
+        .single();
+      
+      if (existingReport) {
+        await supabase
+          .from('rd_reports')
+          .update({
+            generated_html: updatedHTML,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingReport.id);
+      }
+      
+    } catch (error) {
+      console.error('Failed to generate custom content:', error);
+      setError('Failed to generate content. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadData = async () => {
+    // RACE CONDITION PREVENTION: Use ref for synchronous check (state is async)
+    if (isLoadingRef.current) {
+      console.log('🚫 [RESEARCH REPORT MODAL] Skipping loadData - already loading (ref check)');
+      return;
+    }
+
+    // Set loading flag immediately (synchronous)
+    isLoadingRef.current = true;
+
+    // Generate unique call ID for tracking
+    const callId = Math.random().toString(36).substr(2, 9);
+    console.log(`🎯 [RESEARCH REPORT MODAL] Starting loadData call: ${callId}`);
+
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      console.log(`🔍 [${callId}] Loading data for businessYearId:`, businessYearId);
+
+      // Load business profile with category FIRST (before checking cache)
+      setLoadingMessage('Loading business profile...');
       const { data: yearData, error: yearError } = await supabase
         .from('rd_business_years')
         .select(`
@@ -190,7 +464,11 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
             entity_type,
             domicile_state,
             start_year,
-            contact_info
+            contact_info,
+            category:category_id (
+              id,
+              name
+            )
           )
         `)
         .eq('id', businessYearId)
@@ -203,7 +481,67 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
       }
 
       setBusinessProfile(yearData?.business);
+      setBusinessYearData(yearData);
       console.log('✅ Business profile loaded:', yearData?.business?.name);
+      console.log('✅ Business year data loaded:', yearData?.year);
+      console.log('🏷️ Business category loaded:', {
+        categoryId: yearData?.business?.category?.id,
+        categoryName: yearData?.business?.category?.name,
+        businessName: yearData?.business?.name
+      });
+
+      // NOW check for cached report (after we know the category)
+      const categoryName = yearData?.business?.category?.name?.toLowerCase();
+      const isSoftwareReport = categoryName === 'software';
+      
+      console.log('🔍 Category analysis:', {
+        categoryName,
+        isSoftwareReport,
+        expectedReportType: isSoftwareReport ? 'Software R&D Documentation' : 'Clinical Practice Guideline'
+      });
+
+      setLoadingMessage('Checking for existing report...');
+      const { data: existingReport } = await supabase
+        .from('rd_reports')
+        .select('*')
+        .eq('business_year_id', businessYearId)
+        .eq('type', 'RESEARCH_SUMMARY')
+        .single();
+      
+      // Only use cached report if it matches the current category expectations
+      if (existingReport && existingReport.generated_html) {
+        const reportHtml = existingReport.generated_html;
+        const containsSoftwareTitle = reportHtml.includes('Software Development R&D Documentation');
+        const containsHealthcareTitle = reportHtml.includes('Clinical Practice Guideline Report');
+        
+        const cacheMatchesCategory = isSoftwareReport ? containsSoftwareTitle : containsHealthcareTitle;
+        
+        console.log('🔍 Cache analysis:', {
+          reportExists: true,
+          containsSoftwareTitle,
+          containsHealthcareTitle,
+          isSoftwareReport,
+          cacheMatchesCategory
+        });
+        
+        if (cacheMatchesCategory) {
+          console.log('✅ Found valid cached report for current category, loading preview');
+          setCachedReport(existingReport);
+          setGeneratedReport(cleanupExistingFormatting(existingReport.generated_html));
+          setShowPreview(true);
+          setLoadingMessage('Report loaded from cache');
+        } else {
+          console.log('⚠️ Cached report exists but doesn\'t match current category');
+          console.log('📋 Using existing report as user already completed it - avoiding forced regeneration');
+          // Load the existing report anyway since user already completed it
+          setCachedReport(existingReport);
+          setGeneratedReport(cleanupExistingFormatting(existingReport.generated_html));
+          setShowPreview(true);
+          setLoadingMessage('Report loaded from cache (category mismatch ignored)');
+        }
+      } else {
+        console.log('📝 No cached report found, will generate new');
+      }
 
       // Load selected activities with names
       const { data: activitiesData, error: activitiesError } = await supabase
@@ -315,16 +653,70 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
         ]);
       }
 
+      console.log(`🎯 [${callId}] Data loading completed successfully`);
+      console.log(`🎯 [${callId}] Final data summary:`, {
+        hasBusinessProfile: !!businessProfile,
+        hasBusinessYearData: !!businessYearData,
+        activitiesCount: selectedActivities.length,
+        stepsCount: selectedSteps.length,
+        subcomponentsCount: selectedSubcomponents.length,
+        rolesCount: businessRoles.length,
+        hasCachedReport: !!cachedReport
+      });
+
     } catch (err) {
-      console.error('❌ Data loading error:', err);
+      console.error(`❌ [${callId}] Data loading error:`, err);
       setError('Failed to load data');
     } finally {
+      console.log(`🏁 [${callId}] loadData completed - resetting loading flags`);
+      isLoadingRef.current = false;
       setIsLoading(false);
     }
   };
 
+  // Helper function to generate activity sections with proper async handling
+  const generateActivitySections = async (activitiesMap, businessRoles, reportType, businessProfile) => {
+    try {
+      console.log('🔄 Generating activity sections...');
+      const activitySections = await Promise.all(
+        Array.from(activitiesMap.entries()).map(async ([activityId, data], index) => {
+          try {
+            return await generateActivitySection(activityId, data, index, businessRoles, reportType, businessProfile);
+          } catch (error) {
+            console.error(`❌ Error generating activity section for ${activityId}:`, error);
+            // Return a fallback section if generation fails
+            return `
+              <section class="activity-section">
+                <h2>Activity ${index + 1}: ${data.activity?.activity?.title || 'Unknown Activity'}</h2>
+                <p>Error generating detailed section for this activity.</p>
+              </section>
+            `;
+          }
+        })
+      );
+      
+      console.log('✅ Generated', activitySections.length, 'activity sections');
+      return activitySections.join('\n');
+    } catch (error) {
+      console.error('❌ Error generating activity sections:', error);
+      return '<section><h2>Error generating activity sections</h2></section>';
+    }
+  };
+
   const generateReport = async () => {
+    console.log(`🎯 [RESEARCH REPORT MODAL] generateReport() called`);
+    console.log(`🎯 [RESEARCH REPORT MODAL] Pre-generation state:`, {
+      hasBusinessProfile: !!businessProfile,
+      selectedActivitiesCount: selectedActivities.length,
+      hasBusinessYearData: !!businessYearData,
+      hasCachedReport: !!cachedReport
+    });
+    
     if (!businessProfile || selectedActivities.length === 0) {
+      console.error(`❌ [RESEARCH REPORT MODAL] Missing required data:`, {
+        hasBusinessProfile: !!businessProfile,
+        selectedActivitiesCount: selectedActivities.length
+      });
       setError('No data available to generate report');
       return;
     }
@@ -376,12 +768,24 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
       selectedSubcomponents
     };
 
+    // Determine report type based on business category
+    const categoryName = businessProfile?.category?.name?.toLowerCase();
+    const isSoftwareReport = categoryName === 'software';
+    
+    const reportTitle = isSoftwareReport 
+      ? 'Software Development R&D Documentation'
+      : 'Clinical Practice Guideline Report';
+    
+    const reportSubtitle = isSoftwareReport
+      ? 'Research & Development Tax Credit Substantiation'
+      : 'Research & Development Documentation';
+
     let report = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Clinical Practice Guideline Report</title>
+  <title>${reportTitle}</title>
   <style>
     ${getReportStyles()}
   </style>
@@ -393,8 +797,8 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
     <div class="report-main-content">
       <div class="report-header">
         <div class="header-content">
-          <h1 class="report-main-title">Clinical Practice Guideline Report</h1>
-          <h2 class="report-subtitle">Research & Development Documentation</h2>
+          <h1 class="report-main-title">${reportTitle}</h1>
+          <h2 class="report-subtitle">${reportSubtitle}</h2>
           <div class="report-date">Generated: ${new Date().toLocaleDateString()}</div>
         </div>
       </div>
@@ -448,11 +852,7 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
         </div>
       </section>
 
-      ${(await Promise.all(
-        Array.from(activitiesMap.entries()).map(([activityId, data], index) => {
-          return generateActivitySection(activityId, data, index, businessRoles);
-        })
-      )).join('')}
+      ${await generateActivitySections(activitiesMap, businessRoles, isSoftwareReport ? 'software' : 'healthcare', businessProfile)}
 
       ${generateComplianceSummary()}
       ${generateDocumentationChecklist()}
@@ -534,6 +934,10 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
     `;
 
     try {
+      console.log('📊 Final report length:', report.length, 'characters');
+      console.log('📄 Report preview (first 500 chars):', report.substring(0, 500));
+      console.log('🔍 Report contains main content:', report.includes('report-main-content'));
+      
       setGeneratedReport(report);
       setShowPreview(true);
 
@@ -590,165 +994,16 @@ const ResearchReportModal: React.FC<ResearchReportModalProps> = ({
       setError('Failed to generate report. Please try again.');
     } finally {
       setIsLoading(false);
+      console.log(`🚀 [RESEARCH REPORT MODAL] setIsLoading(false) called - should show content now`);
+      console.log(`🚀 [RESEARCH REPORT MODAL] Final state check:`, {
+        isLoading: false,
+        hasError: !!error,
+        showPreview: showPreview,
+        hasGeneratedReport: !!generatedReport,
+        generatedReportPreview: generatedReport ? generatedReport.substring(0, 100) + '...' : 'EMPTY'
+      });
     }
   };
-
-  const regenerateAISection = async (subcomponentId: string) => {
-    try {
-      setLoadingMessage('Regenerating AI content...');
-      setIsLoading(true);
-
-      // Find the subcomponent
-      const subcomponent = selectedSubcomponents.find(sub => sub.id === subcomponentId);
-      if (!subcomponent) return;
-
-      const subData = subcomponent.rd_research_subcomponents || subcomponent;
-      
-      // Generate static best practices content
-      const componentName = subData.name || subData.general_description || 'Subcomponent';
-      const description = subData.general_description || subData.description || '';
-      
-      const newContent = `<h4>Best Practices for ${componentName}</h4>
-<p><strong>Research Component Overview:</strong><br>
-${description || 'Detailed research component focused on systematic investigation and development activities.'}</p>
-
-<h5>Key Best Practices:</h5>
-<ul>
-  <li><strong>Documentation Standards:</strong> Maintain comprehensive records of all research activities, methodologies, and findings</li>
-  <li><strong>Quality Assurance:</strong> Implement systematic review processes and validation procedures</li>
-  <li><strong>Resource Management:</strong> Optimize allocation of personnel, equipment, and materials for maximum research efficiency</li>
-  <li><strong>Compliance Management:</strong> Ensure adherence to regulatory requirements and industry standards</li>
-  <li><strong>Continuous Improvement:</strong> Regular assessment and refinement of research processes and methodologies</li>
-</ul>
-
-<h5>Performance Metrics:</h5>
-<ul>
-  <li>Research milestone completion rates</li>
-  <li>Quality of deliverables and outcomes</li>
-  <li>Resource utilization efficiency</li>
-  <li>Compliance audit results</li>
-  <li>Innovation impact assessment</li>
-</ul>`;
-
-      // Update the HTML with new content
-      const updatedHTML = generatedReport.replace(
-        new RegExp(`<div class="best-practices-content">.*?</div>`, 's'),
-        `<div class="best-practices-content">${formatAIContent(newContent)}</div>`
-      );
-
-      setGeneratedReport(updatedHTML);
-
-      // Save updated report
-      const { data: existingReport } = await supabase
-        .from('rd_reports')
-        .select('id')
-        .eq('business_year_id', businessYearId)
-        .eq('type', 'RESEARCH_SUMMARY')
-        .single();
-      
-      if (existingReport) {
-        await supabase
-          .from('rd_reports')
-          .update({
-            generated_html: updatedHTML,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingReport.id);
-      }
-      
-    } catch (error) {
-      console.error('Failed to regenerate AI section:', error);
-      setError('Failed to regenerate content. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const editAIPrompt = (subcomponentId: string) => {
-    const subcomponent = selectedSubcomponents.find(sub => sub.id === subcomponentId);
-    if (!subcomponent) return;
-
-    const subData = subcomponent.rd_research_subcomponents || subcomponent;
-    setEditingSubcomponentId(subcomponentId);
-    setEditPrompt(`Generate professional clinical practice guidelines for implementing "${subData.name || 'this subcomponent'}" in a healthcare setting.
-
-Subcomponent Description: ${subData.general_description || subData.description || ''}
-
-Available Staff Roles: ${businessRoles.map(role => role.name).join(', ')}
-
-Please provide:
-1. Step-by-step implementation guidelines with clear headings
-2. For each step, specify which staff roles should be involved
-3. Use professional medical/clinical language
-4. Format with proper markdown headings
-5. Include bullet points for role assignments under each step`);
-    setShowEditModal(true);
-  };
-
-  const handleCustomPromptGeneration = async () => {
-    try {
-      setLoadingMessage('Generating content with custom prompt...');
-      setIsLoading(true);
-      setShowEditModal(false);
-
-      // Generate static content based on prompt
-      const newContent = `<h4>Custom Research Analysis</h4>
-<p><strong>Analysis Prompt:</strong> ${editPrompt}</p>
-<p><strong>Generated Response:</strong></p>
-<p>Based on the research parameters and methodology outlined, this analysis provides comprehensive insights into the specified research area. The findings demonstrate adherence to established research protocols and regulatory compliance requirements.</p>
-
-<h5>Key Findings:</h5>
-<ul>
-  <li>Research activities align with established industry standards</li>
-  <li>Methodology demonstrates systematic approach to investigation</li>
-  <li>Documentation supports R&D tax credit qualification requirements</li>
-  <li>Quality assurance measures ensure reliable outcomes</li>
-</ul>
-
-<h5>Recommendations:</h5>
-<ul>
-  <li>Continue systematic documentation of research processes</li>
-  <li>Maintain regular review and validation procedures</li>
-  <li>Ensure ongoing compliance with regulatory requirements</li>
-  <li>Optimize resource allocation for maximum research efficiency</li>
-</ul>`;
-
-      // Update the HTML with new content for the specific subcomponent
-      const subcomponentElement = `id="${editingSubcomponentId}"`;
-      const updatedHTML = generatedReport.replace(
-        new RegExp(`<div class="best-practices-content">.*?</div>`, 's'),
-        `<div class="best-practices-content">${formatAIContent(newContent)}</div>`
-      );
-
-      setGeneratedReport(updatedHTML);
-
-      // Save updated report
-      const { data: existingReport } = await supabase
-        .from('rd_reports')
-        .select('id')
-        .eq('business_year_id', businessYearId)
-        .eq('type', 'RESEARCH_SUMMARY')
-        .single();
-      
-      if (existingReport) {
-        await supabase
-          .from('rd_reports')
-          .update({
-            generated_html: updatedHTML,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingReport.id);
-      }
-      
-    } catch (error) {
-      console.error('Failed to generate custom content:', error);
-      setError('Failed to generate content. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-
 
   const handlePrint = () => {
     const printWindow = window.open('', '_blank');
@@ -803,11 +1058,904 @@ Please provide:
     URL.revokeObjectURL(url);
   };
 
+  const cleanupExistingFormatting = (htmlContent: string): string => {
+    if (!htmlContent) return '';
+    
+    // Basic cleanup of HTML content for display
+    return htmlContent
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+  };
+
+  const generateCleanReportHTML = () => {
+    if (!generatedReport) {
+      throw new Error('No report content available');
+    }
+
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    // Clean the report content for PDF
+    const cleanContent = generatedReport
+      .replace(/style="[^"]*"/g, '') // Remove inline styles
+      .replace(/class="[^"]*interactive[^"]*"/g, '') // Remove interactive elements
+      .replace(/<script[\s\S]*?<\/script>/gi, '') // Remove scripts
+      .replace(/<button[\s\S]*?<\/button>/gi, '') // Remove buttons
+      .replace(/onclick="[^"]*"/g, ''); // Remove click handlers
+
+    return `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Research Report - ${businessProfile?.name || 'Client'}</title>
+        
+        <!-- Google Fonts - Plus Jakarta Sans -->
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;0,800;1,200;1,300;1,400;1,500;1,600;1,700;1,800&display=swap" rel="stylesheet">
+        
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          
+          html {
+            font-size: 14px;
+            line-height: 1.6;
+          }
+
+          body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', system-ui, sans-serif;
+            font-weight: 400;
+            font-size: 11px;
+            color: #1f2937;
+            background: white;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            line-height: 1.5;
+          }
+
+          .pdf-wrapper {
+            width: 100%;
+            max-width: 8.5in;
+            margin: 0 auto;
+            background: white;
+            min-height: 11in;
+            position: relative;
+          }
+
+          /* Header Styling */
+          .pdf-header {
+            background: linear-gradient(135deg, #1e40af 0%, #3730a3 50%, #6366f1 100%);
+            color: white;
+            padding: 12px 8px;
+            margin-bottom: 16px;
+            position: relative;
+            overflow: hidden;
+          }
+
+          .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            position: relative;
+            z-index: 1;
+          }
+
+          .logo-section {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 8px 12px;
+            border-radius: 8px;
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+
+          .logo-img {
+            height: 24px;
+            width: auto;
+            object-fit: contain;
+            filter: brightness(0) invert(1);
+          }
+
+          .company-name {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            margin: 0;
+            color: white;
+            letter-spacing: -0.025em;
+            line-height: 1.2;
+          }
+
+          .document-title {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 18px;
+            font-weight: 800;
+            margin: 0;
+            color: white;
+            letter-spacing: -0.025em;
+            line-height: 1.2;
+            text-align: right;
+          }
+
+          /* Content Area */
+          .pdf-content {
+            padding: 0 8px;
+            min-height: 600px;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+          }
+
+          /* Typography */
+          h1 { font-size: 24px; font-weight: 700; margin-bottom: 16px; color: #1f2937; }
+          h2 { font-size: 20px; font-weight: 600; margin: 20px 0 12px 0; color: #374151; }
+          h3 { font-size: 16px; font-weight: 600; margin: 16px 0 8px 0; color: #4b5563; }
+          h4 { font-size: 14px; font-weight: 600; margin: 12px 0 6px 0; color: #6b7280; }
+
+          p {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 11px;
+            font-weight: 400;
+            line-height: 1.6;
+            color: #374151;
+            margin: 12px 0;
+          }
+
+          /* Tables */
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+          }
+
+          th {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-weight: 600;
+            font-size: 10px;
+            text-align: left;
+            padding: 12px 16px;
+            color: #1f2937;
+            border-bottom: 2px solid #e5e7eb;
+            letter-spacing: 0.025em;
+            text-transform: uppercase;
+          }
+
+          td {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 11px;
+            font-weight: 400;
+            padding: 12px 16px;
+            border-bottom: 1px solid #f3f4f6;
+            color: #374151;
+            vertical-align: top;
+          }
+
+          /* Activity and Step Cards */
+          .activity-card, .step-card, .subcomponent-item {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 8px 0;
+            page-break-inside: avoid;
+          }
+
+          .activity-card {
+            border-left: 4px solid #3b82f6;
+            padding: 16px;
+            margin: 16px 0;
+          }
+
+          /* Professional Footer */
+          .pdf-footer {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            border-top: 3px solid #e5e7eb;
+            padding: 12px 16px;
+            margin-top: 24px;
+            position: relative;
+          }
+
+          .footer-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 10px;
+            color: #6b7280;
+          }
+
+          /* Print Optimizations */
+          @page {
+            margin: 0.25in 0.1in 0.4in 0.1in;
+            size: Letter;
+          }
+
+          @media print {
+            body {
+              font-size: 10px;
+            }
+            .pdf-header {
+              background: #1e40af !important;
+              -webkit-print-color-adjust: exact;
+              color-adjust: exact;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="pdf-wrapper">
+          <!-- Professional Header -->
+          <div class="pdf-header">
+            <div class="header-content">
+              <div class="header-left">
+                <div class="logo-section">
+                  <div class="company-logo">
+                    <img src="/images/Direct Research_horizontal advisors logo.png" alt="Direct Research Logo" class="logo-img">
+                  </div>
+                  <div class="company-info">
+                    <h2 class="company-name">Direct Research</h2>
+                  </div>
+                </div>
+              </div>
+              <div class="header-right">
+                <h1 class="document-title">R&D Research Report</h1>
+              </div>
+            </div>
+          </div>
+
+          <!-- Document Content -->
+          <div class="pdf-content">
+            ${cleanContent}
+          </div>
+
+          <!-- Professional Footer -->
+          <div class="pdf-footer">
+            <div class="footer-content">
+              <div class="footer-left">
+                <span>Prepared by Direct Research</span>
+              </div>
+              <div class="footer-center">
+                <span>Confidential & Proprietary</span>
+              </div>
+              <div class="footer-right">
+                <span>Tax Year ${businessYearData?.year || 'N/A'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+  };
+
+  const handlePDFDownload = async () => {
+    if (!generatedReport) {
+      setError('Please generate report first');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      console.log('🔄 Starting PDF generation...');
+      
+      // Generate PDF using Puppeteer backend
+      const cleanedContent = generateCleanReportHTML();
+      
+      console.log('📄 Sending content to Puppeteer server...');
+      const response = await fetch('http://localhost:3001/api/generate-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          html: cleanedContent,
+          filename: `Research_Report_${businessProfile?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Report'}_${new Date().toISOString().split('T')[0]}.pdf`
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.text();
+        throw new Error(`PDF generation failed: ${errorData}`);
+      }
+
+      console.log('✅ [PUPPETEER API] PDF downloaded successfully');
+      
+      // Download the PDF
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Research_Report_${businessProfile?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Report'}_${new Date().toISOString().split('T')[0]}.pdf`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+
+      console.log('✅ [PUPPETEER PDF] PDF generated successfully');
+      
+    } catch (error) {
+      console.error('❌ Error generating PDF:', error);
+      setError(`Failed to generate PDF: ${error.message}. Please try again.`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const createCoverPage = () => {
+    const coverPage = document.createElement('div');
+    coverPage.id = 'cover-page';
+    coverPage.className = 'pdf-cover-page';
+    
+    const currentDate = new Date().toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+    
+    coverPage.innerHTML = `
+      <div class="cover-content">
+        <div class="cover-header">
+          <div class="company-logo">
+            <div class="logo-placeholder">
+              <div class="logo-icon">R&D</div>
+            </div>
+          </div>
+          <div class="company-info">
+            <h3>Direct Research Advisors</h3>
+            <p>R&D Tax Credit Specialists</p>
+          </div>
+        </div>
+        
+        <div class="cover-main">
+          <h1 class="cover-title">
+            Qualified Research Activities<br/>
+            Documentation Report
+          </h1>
+          
+          <div class="cover-subtitle">
+            IRC Section 41 Compliance Documentation
+          </div>
+          
+          <div class="cover-details">
+            <div class="detail-item">
+              <label>Business Entity:</label>
+              <span>${businessProfile?.name || 'Unknown Business'}</span>
+            </div>
+                         <div class="detail-item">
+               <label>Tax Year:</label>
+               <span>${businessYearData?.year || new Date().getFullYear()}</span>
+             </div>
+            <div class="detail-item">
+              <label>Report Generated:</label>
+              <span>${currentDate}</span>
+            </div>
+            <div class="detail-item">
+              <label>Activities Documented:</label>
+              <span>${selectedActivities.length} Qualified Research Activities</span>
+            </div>
+            <div class="detail-item">
+              <label>Research Steps:</label>
+              <span>${selectedSteps.length} Research Process Steps</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="cover-footer">
+          <div class="confidentiality-notice">
+            <h4>CONFIDENTIAL</h4>
+            <p>This document contains proprietary business information and research documentation 
+            prepared for tax compliance purposes under IRC Section 41. Unauthorized distribution is prohibited.</p>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    return coverPage;
+  };
+
+  const createTableOfContents = () => {
+    const tocPage = document.createElement('div');
+    tocPage.id = 'table-of-contents';
+    tocPage.className = 'pdf-toc-page';
+    
+    tocPage.innerHTML = `
+      <div class="toc-content">
+        <h2 class="toc-title">Table of Contents</h2>
+        
+        <div class="toc-entries">
+          <div class="toc-entry">
+            <span class="toc-item">Executive Summary</span>
+            <span class="toc-dots"></span>
+            <span class="toc-page">3</span>
+          </div>
+          
+          <div class="toc-entry">
+            <span class="toc-item">R&D Tax Credit Overview</span>
+            <span class="toc-dots"></span>
+            <span class="toc-page">4</span>
+          </div>
+          
+          <div class="toc-entry">
+            <span class="toc-item">Qualified Research Activities</span>
+            <span class="toc-dots"></span>
+            <span class="toc-page">5</span>
+          </div>
+          
+          ${selectedActivities.map((activity, index) => `
+            <div class="toc-entry toc-sub-entry">
+              <span class="toc-item">${activity.name || `Activity ${index + 1}`}</span>
+              <span class="toc-dots"></span>
+              <span class="toc-page">${6 + index}</span>
+            </div>
+          `).join('')}
+          
+          <div class="toc-entry">
+            <span class="toc-item">Research Process Documentation</span>
+            <span class="toc-dots"></span>
+            <span class="toc-page">${6 + selectedActivities.length}</span>
+          </div>
+          
+          <div class="toc-entry">
+            <span class="toc-item">Compliance Summary</span>
+            <span class="toc-dots"></span>
+            <span class="toc-page">${7 + selectedActivities.length}</span>
+          </div>
+          
+          <div class="toc-entry">
+            <span class="toc-item">Appendices</span>
+            <span class="toc-dots"></span>
+            <span class="toc-page">${8 + selectedActivities.length}</span>
+          </div>
+        </div>
+        
+        <div class="toc-footer">
+                     <p><strong>Document Purpose:</strong> This report provides comprehensive documentation of qualified research activities 
+           conducted during the ${businessYearData?.year || new Date().getFullYear()} tax year, prepared in accordance with 
+           Internal Revenue Code Section 41 requirements for R&D tax credit claims.</p>
+        </div>
+      </div>
+    `;
+    
+    return tocPage;
+  };
+
+  const addPDFHeadersFooters = (content) => {
+    // Add page headers and footers to main content sections
+    const sections = content.querySelectorAll('.report-section, .activity-section, .step-section');
+    sections.forEach((section, index) => {
+      if (index > 0) { // Skip first section
+        const pageBreak = document.createElement('div');
+        pageBreak.className = 'pdf-page-break';
+        section.parentNode.insertBefore(pageBreak, section);
+      }
+      
+      // Add header to each section
+      const header = document.createElement('div');
+      header.className = 'pdf-page-header';
+      header.innerHTML = `
+        <div class="header-content">
+          <div class="header-left">${businessProfile?.name || 'R&D Documentation'}</div>
+                     <div class="header-right">Tax Year ${businessYearData?.year || new Date().getFullYear()}</div>
+        </div>
+      `;
+      section.insertBefore(header, section.firstChild);
+    });
+    
+    // Add footer to the container
+    const footer = document.createElement('div');
+    footer.className = 'pdf-page-footer';
+    footer.innerHTML = `
+      <div class="footer-content">
+        <div class="footer-left">Direct Research Advisors • R&D Tax Credit Documentation</div>
+        <div class="footer-center">CONFIDENTIAL</div>
+        <div class="footer-right">Generated ${new Date().toLocaleDateString()}</div>
+      </div>
+    `;
+    content.appendChild(footer);
+  };
+
+  const getPDFStyles = () => {
+    return `
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+      
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      .pdf-document-container {
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #1f2937;
+        line-height: 1.6;
+        background: white;
+        width: 8.5in;
+        min-height: 11in;
+      }
+      
+      /* Cover Page Styles */
+      .pdf-cover-page {
+        width: 100%;
+        height: 11in;
+        display: flex;
+        flex-direction: column;
+        background: linear-gradient(135deg, #1e3a8a 0%, #3730a3 50%, #6366f1 100%);
+        color: white;
+        page-break-after: always;
+      }
+      
+      .cover-content {
+        padding: 1in;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+      
+      .cover-header {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+      
+      .logo-placeholder {
+        width: 60px;
+        height: 60px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      
+      .logo-icon {
+        font-size: 24px;
+        font-weight: 700;
+        color: white;
+      }
+      
+      .company-info h3 {
+        font-size: 20px;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      
+      .company-info p {
+        font-size: 14px;
+        opacity: 0.9;
+      }
+      
+      .cover-main {
+        text-align: center;
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 30px;
+      }
+      
+      .cover-title {
+        font-size: 48px;
+        font-weight: 700;
+        line-height: 1.2;
+        margin-bottom: 16px;
+      }
+      
+      .cover-subtitle {
+        font-size: 24px;
+        font-weight: 400;
+        opacity: 0.9;
+        margin-bottom: 40px;
+      }
+      
+      .cover-details {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 30px;
+        border-radius: 12px;
+        backdrop-filter: blur(10px);
+        max-width: 500px;
+        margin: 0 auto;
+      }
+      
+      .detail-item {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 12px;
+        font-size: 16px;
+      }
+      
+      .detail-item:last-child {
+        margin-bottom: 0;
+      }
+      
+      .detail-item label {
+        font-weight: 500;
+        opacity: 0.9;
+      }
+      
+      .detail-item span {
+        font-weight: 600;
+      }
+      
+      .cover-footer {
+        margin-top: auto;
+      }
+      
+      .confidentiality-notice {
+        background: rgba(220, 38, 38, 0.1);
+        border: 1px solid rgba(220, 38, 38, 0.3);
+        padding: 20px;
+        border-radius: 8px;
+        text-align: center;
+      }
+      
+      .confidentiality-notice h4 {
+        color: #fca5a5;
+        font-size: 18px;
+        font-weight: 700;
+        margin-bottom: 8px;
+        letter-spacing: 2px;
+      }
+      
+      .confidentiality-notice p {
+        font-size: 12px;
+        line-height: 1.5;
+        opacity: 0.9;
+      }
+      
+      /* Table of Contents Styles */
+      .pdf-toc-page {
+        width: 100%;
+        min-height: 11in;
+        padding: 1in;
+        background: white;
+        page-break-after: always;
+      }
+      
+      .toc-title {
+        font-size: 36px;
+        font-weight: 700;
+        color: #1e3a8a;
+        margin-bottom: 40px;
+        text-align: center;
+      }
+      
+      .toc-entries {
+        margin-bottom: 40px;
+      }
+      
+      .toc-entry {
+        display: flex;
+        align-items: baseline;
+        margin-bottom: 16px;
+        font-size: 16px;
+      }
+      
+      .toc-sub-entry {
+        margin-left: 24px;
+        font-size: 14px;
+        color: #6b7280;
+      }
+      
+      .toc-item {
+        font-weight: 500;
+      }
+      
+      .toc-dots {
+        flex-grow: 1;
+        height: 1px;
+        background: repeating-linear-gradient(to right, transparent, transparent 2px, #d1d5db 2px, #d1d5db 6px);
+        margin: 0 12px;
+        align-self: end;
+        margin-bottom: 6px;
+      }
+      
+      .toc-page {
+        font-weight: 600;
+        color: #1e3a8a;
+      }
+      
+      .toc-footer {
+        background: #f9fafb;
+        padding: 24px;
+        border-radius: 8px;
+        border-left: 4px solid #3730a3;
+      }
+      
+      .toc-footer p {
+        font-size: 14px;
+        line-height: 1.6;
+        color: #4b5563;
+      }
+      
+      /* Main Content Styles */
+      .pdf-main-content {
+        padding: 0.75in;
+        background: white;
+      }
+      
+      /* Page Break Controls */
+      .pdf-page-break {
+        page-break-before: always;
+        height: 0;
+      }
+      
+      .pdf-keep-together {
+        page-break-inside: avoid;
+      }
+      
+      /* Header and Footer Styles */
+      .pdf-page-header {
+        margin-bottom: 24px;
+        padding-bottom: 12px;
+        border-bottom: 2px solid #e5e7eb;
+      }
+      
+      .header-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 12px;
+        color: #6b7280;
+      }
+      
+      .header-left {
+        font-weight: 600;
+      }
+      
+      .header-right {
+        font-weight: 500;
+      }
+      
+      .pdf-page-footer {
+        position: fixed;
+        bottom: 0.5in;
+        left: 0.75in;
+        right: 0.75in;
+        padding-top: 12px;
+        border-top: 1px solid #e5e7eb;
+      }
+      
+      .footer-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 10px;
+        color: #6b7280;
+      }
+      
+      .footer-center {
+        font-weight: 600;
+        color: #dc2626;
+        letter-spacing: 1px;
+      }
+      
+      /* Enhanced Content Styling */
+      .pdf-main-content h1 {
+        font-size: 28px;
+        font-weight: 700;
+        color: #1e3a8a;
+        margin-bottom: 24px;
+        page-break-after: avoid;
+      }
+      
+      .pdf-main-content h2 {
+        font-size: 24px;
+        font-weight: 600;
+        color: #1e3a8a;
+        margin-top: 32px;
+        margin-bottom: 16px;
+        page-break-after: avoid;
+      }
+      
+      .pdf-main-content h3 {
+        font-size: 20px;
+        font-weight: 600;
+        color: #374151;
+        margin-top: 24px;
+        margin-bottom: 12px;
+        page-break-after: avoid;
+      }
+      
+      .pdf-main-content h4 {
+        font-size: 16px;
+        font-weight: 600;
+        color: #374151;
+        margin-top: 20px;
+        margin-bottom: 8px;
+        page-break-after: avoid;
+      }
+      
+      .pdf-main-content p {
+        margin-bottom: 12px;
+        text-align: justify;
+      }
+      
+      .pdf-main-content ul, .pdf-main-content ol {
+        margin-left: 24px;
+        margin-bottom: 16px;
+      }
+      
+      .pdf-main-content li {
+        margin-bottom: 6px;
+      }
+      
+      /* Card and Section Styling */
+      .activity-card, .step-card, .report-section {
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+        page-break-inside: avoid;
+      }
+      
+      .activity-card h3, .step-card h3 {
+        color: #1e3a8a;
+        border-bottom: 2px solid #3730a3;
+        padding-bottom: 8px;
+        margin-bottom: 16px;
+      }
+      
+      /* Table Styling */
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 20px;
+        font-size: 14px;
+      }
+      
+      th, td {
+        padding: 12px;
+        border: 1px solid #d1d5db;
+        text-align: left;
+      }
+      
+      th {
+        background: #f3f4f6;
+        font-weight: 600;
+        color: #374151;
+      }
+      
+      /* Print Optimization */
+      @media print {
+        .pdf-document-container {
+          background: white !important;
+          color: black !important;
+        }
+        
+        * {
+          -webkit-print-color-adjust: exact !important;
+          color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+      }
+      
+      @page {
+        size: letter;
+        margin: 0.75in 0.75in 1in 0.75in;
+      }
+    `;
+  };
+
   const getReportStyles = () => {
     return `
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body { 
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         color: #1f2937;
         line-height: 1.6;
         background: #f8fafc;
@@ -1107,13 +2255,26 @@ Please provide:
 
   if (!isOpen) return null;
 
+  // DEBUG: Log render state
+  console.log(`🖼️ [RESEARCH REPORT MODAL] Rendering with state:`, {
+    isOpen,
+    isLoading,
+    error: !!error,
+    showPreview,
+    hasGeneratedReport: !!generatedReport,
+    hasBusinessProfile: !!businessProfile,
+    activitiesCount: selectedActivities.length
+  });
+
   return (
     <div className="research-report-modal-overlay">
-      <div className="research-report-modal">
+      <div className="research-report-modal" style={{ fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
         <div className="research-report-modal-header">
           <h2>
             <FileText />
-            Clinical Practice Guideline Report Generator
+            {businessProfile?.category?.name?.toLowerCase() === 'software' 
+              ? 'Research Summary Report' 
+              : 'Clinical Practice Guideline Report Generator'}
           </h2>
           <button onClick={onClose} className="modal-close-button">
             <X />
@@ -1135,7 +2296,7 @@ Please provide:
               </button>
             </div>
           ) : showPreview ? (
-            <div className="report-preview-container">
+            <div className="report-preview-container" style={{ fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
               <iframe
                 srcDoc={generatedReport}
                 style={{
@@ -1148,7 +2309,7 @@ Please provide:
               />
             </div>
           ) : (
-            <div className="report-main-content" style={{ padding: '40px' }}>
+            <div className="report-main-content" style={{ padding: '40px', fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
               <div className="report-section">
                 <div className="section-header">
                   <div className="section-icon">📊</div>
@@ -1236,9 +2397,23 @@ Please provide:
                     About This Report
                   </h4>
                   <p style={{ color: '#0369a1', lineHeight: '1.6' }}>
-                    This comprehensive Clinical Practice Guideline report will document all qualified research 
-                    activities in accordance with IRC Section 41 requirements. The report includes detailed 
-                    hierarchical structures, visual guides, compliance summaries, and documentation checklists.
+                    {businessProfile?.category?.name?.toLowerCase() === 'software' ? (
+                      <>This comprehensive Software R&D Documentation report will document all qualified research 
+                      activities in accordance with IRC Section 41 requirements. The report includes detailed 
+                      hierarchical structures, technical documentation, compliance summaries, and IRS audit defense materials.
+                      <br /><br />
+                      <strong>GitHub Integration:</strong> {businessProfile?.github_token ? (
+                        <span className="text-green-600">✓ Configured - Repository analysis enabled for this client</span>
+                      ) : (
+                        <>To enable GitHub repository analysis and commit tracking, add your GitHub token in the 
+                        Business Setup step under "GitHub Access Token". This will automatically generate repository summaries, 
+                        commit analysis, and development activity tracking for R&D substantiation.</>
+                      )}</>
+                    ) : (
+                      <>This comprehensive Clinical Practice Guideline report will document all qualified research 
+                      activities in accordance with IRC Section 41 requirements. The report includes detailed 
+                      hierarchical structures, visual guides, compliance summaries, and documentation checklists.</>
+                    )}
                   </p>
                 </div>
               </div>
@@ -1268,6 +2443,19 @@ Please provide:
                 <ChevronLeft />
                 Back to Summary
               </button>
+              <button 
+                onClick={regenerateAllAIEntries} 
+                className="action-button action-button-warning"
+                disabled={isLoading}
+                style={{
+                  backgroundColor: '#f59e0b',
+                  color: 'white',
+                  border: '1px solid #d97706'
+                }}
+              >
+                <FileText />
+                {isLoading ? 'Regenerating...' : 'Regenerate All AI Entries'}
+              </button>
               <button onClick={handlePrint} className="action-button action-button-primary">
                 <Printer />
                 Print Report
@@ -1275,6 +2463,10 @@ Please provide:
               <button onClick={handleDownload} className="action-button action-button-primary">
                 <Download />
                 Download HTML
+              </button>
+              <button onClick={handlePDFDownload} className="action-button action-button-primary">
+                <FileText />
+                Download PDF
               </button>
             </>
           )}

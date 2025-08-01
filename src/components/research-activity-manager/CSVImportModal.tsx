@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { X, Upload, Download, Info, AlertCircle, CheckCircle, FileText } from 'lucide-react';
+import { X, Upload, Download, Info, AlertCircle, CheckCircle, FileText, AlertTriangle, Check, RefreshCw, Database } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import ImportVerificationModal from './ImportVerificationModal';
 
 interface CSVImportModalProps {
   isOpen: boolean;
@@ -9,34 +10,66 @@ interface CSVImportModalProps {
   businessId?: string;
 }
 
+interface BatchImportSettings {
+  globalAction: 'ask_each' | 'overwrite_all' | 'skip_all' | 'create_new_all';
+  preserveIds: boolean;
+  updateStepNames: boolean;
+  skipIdenticalData: boolean;
+}
+
 interface ImportResult {
   success: number;
   failed: number;
-  errors: Array<{ row: number; error: string; data?: any }>;
+  updated: number;
+  errors: Array<{
+    row: number;
+    error: string;
+    data?: any;
+  }>;
 }
 
-const CSVImportModal: React.FC<CSVImportModalProps> = ({
-  isOpen,
-  onClose,
-  onSuccess,
-  businessId
-}) => {
+interface DuplicateInfo {
+  existingId: string;
+  existingData: any;
+  newData: any;
+  rowNumber: number;
+}
+
+interface DuplicateResolution {
+  action: 'update' | 'skip' | 'create_new';
+  subcomponentName: string;
+}
+
+const CSVImportModal: React.FC<CSVImportModalProps> = ({ isOpen, onClose, onSuccess, businessId }) => {
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [showInstructions, setShowInstructions] = useState(false);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [showBatchSettingsModal, setShowBatchSettingsModal] = useState(false);
+  const [duplicates, setDuplicates] = useState<DuplicateInfo[]>([]);
+  const [duplicateResolutions, setDuplicateResolutions] = useState<{ [key: string]: DuplicateResolution }>({});
+  const [processingDuplicates, setProcessingDuplicates] = useState(false);
+  const [batchSettings, setBatchSettings] = useState<BatchImportSettings>({
+    globalAction: 'overwrite_all',
+    preserveIds: true,
+    updateStepNames: true,
+    skipIdenticalData: true
+  });
+  const [currentRows, setCurrentRows] = useState<any[]>([]);
+  const [showVerificationModal, setShowVerificationModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const csvTemplate = `title,category,area,focus,description,general_description,goal,hypothesis,alternatives,uncertainties,developmental_process,primary_goal,expected_outcome_type,cpt_codes,cdt_codes,alternative_paths
-"Advanced MRI Analysis","Medical Technology","Diagnostic Imaging","MRI Enhancement","Development of advanced MRI analysis algorithms","Creating innovative approaches to enhance MRI imaging quality and diagnostic accuracy","Improve diagnostic precision through enhanced imaging","We hypothesize that machine learning algorithms can significantly improve MRI image clarity","Alternative approaches include CT enhancement or ultrasound improvements","Uncertain about FDA approval timeline and computational requirements","Following iterative development with clinical validation phases","Primary goal is to achieve 95% diagnostic accuracy improvement","Improved diagnostic imaging software platform","70553, 70551, 70552","","Machine learning integration, cloud-based processing, hybrid imaging approaches"
-"Robotic Surgery Platform","Medical Technology","Surgical Robotics","Precision Surgery","Development of next-generation robotic surgical platform","Creating precise robotic systems for minimally invasive surgical procedures","Enhance surgical precision and reduce patient recovery time","We believe robotic assistance will reduce surgical complications by 40%","Manual laparoscopic techniques, traditional open surgery","Regulatory approval complexity and surgeon training requirements","Multi-phase development with prototype testing and clinical trials","Achieve sub-millimeter surgical precision with haptic feedback","FDA-approved surgical robotic system","64568, 64569, 64570","D7210, D7220","AI-assisted guidance, modular instrument design, real-time imaging integration"`;
+  const csvTemplate = `research_activity,category,area,focus,step,subcomponent,hint,general_description,goal,hypothesis,alternatives,uncertainties,developmental_process,primary_goal,expected_outcome_type,cpt_codes,cdt_codes,alternative_paths
+"Advanced MRI Analysis","Medical Technology","Diagnostic Imaging","MRI Enhancement","Algorithm Development","Pattern Recognition Module","Focus on edge detection and noise reduction","Creating innovative approaches to enhance MRI imaging quality and diagnostic accuracy","Improve diagnostic precision through enhanced imaging","We hypothesize that machine learning algorithms can significantly improve MRI image clarity","Alternative approaches include CT enhancement or ultrasound improvements","Uncertain about FDA approval timeline and computational requirements","Following iterative development with clinical validation phases","Primary goal is to achieve 95% diagnostic accuracy improvement","Improved diagnostic imaging software platform","70553, 70551, 70552","","Machine learning integration, cloud-based processing, hybrid imaging approaches"
+"Robotic Surgery Platform","Medical Technology","Surgical Robotics","Precision Surgery","Instrument Control","Haptic Feedback System","Implement force feedback with sub-newton precision","Creating precise robotic systems for minimally invasive surgical procedures","Enhance surgical precision and reduce patient recovery time","We believe robotic assistance will reduce surgical complications by 40%","Manual laparoscopic techniques, traditional open surgery","Regulatory approval complexity and surgeon training requirements","Multi-phase development with prototype testing and clinical trials","Achieve sub-millimeter surgical precision with haptic feedback","FDA-approved surgical robotic system","64568, 64569, 64570","D7210, D7220","AI-assisted guidance, modular instrument design, real-time imaging integration"`;
 
   const requiredColumns = [
-    'title', 'category', 'area', 'focus'
+    'research_activity', 'category', 'area', 'focus', 'step', 'subcomponent'
   ];
 
   const optionalColumns = [
-    'description', 'general_description', 'goal', 'hypothesis', 'alternatives', 
+    'hint', 'general_description', 'goal', 'hypothesis', 'alternatives', 
     'uncertainties', 'developmental_process', 'primary_goal', 'expected_outcome_type', 
     'cpt_codes', 'cdt_codes', 'alternative_paths'
   ];
@@ -46,7 +79,7 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'research_activities_template.csv';
+    a.download = 'research_subcomponents_template.csv';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -167,7 +200,296 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
     return focus.data.id;
   };
 
-  const handleImport = async () => {
+  const detectDuplicateSubcomponents = async (rows: any[]): Promise<DuplicateInfo[]> => {
+    const duplicates: DuplicateInfo[] = [];
+    
+    console.log(`🔍 Checking ${rows.length} rows for duplicate subcomponents...`);
+    
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row.subcomponent) continue;
+      
+      try {
+        // Simplified query to avoid 406 errors - just get basic subcomponent info
+        const { data: existingSubcomponents, error } = await supabase
+          .from('rd_research_subcomponents')
+          .select('id, name, step_id, description, general_description, goal, hypothesis')
+          .eq('name', row.subcomponent.trim());
+        
+        if (error) {
+          console.warn(`⚠️ Error checking duplicate for "${row.subcomponent}":`, error);
+          continue;
+        }
+
+        // If we found any matches, get the first one as the duplicate
+        if (existingSubcomponents && existingSubcomponents.length > 0) {
+          const existingSubcomponent = existingSubcomponents[0];
+          
+          // Get additional step/activity info separately to avoid complex joins
+          const { data: stepInfo } = await supabase
+            .from('rd_research_steps')
+            .select('id, name, research_activity_id')
+            .eq('id', existingSubcomponent.step_id)
+            .single();
+
+          const { data: activityInfo } = stepInfo ? await supabase
+            .from('rd_research_activities')
+            .select('id, title')
+            .eq('id', stepInfo.research_activity_id)
+            .single() : { data: null };
+
+          duplicates.push({
+            existingId: existingSubcomponent.id,
+            existingData: {
+              ...existingSubcomponent,
+              step: stepInfo,
+              research_activity: activityInfo
+            },
+            newData: row,
+            rowNumber: row._rowNumber
+          });
+
+          console.log(`🔍 Found duplicate: "${row.subcomponent}" (existing ID: ${existingSubcomponent.id})`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ Error checking duplicate for "${row.subcomponent}":`, error);
+        continue;
+      }
+    }
+    
+    console.log(`📊 Duplicate detection complete: ${duplicates.length} duplicates found`);
+    return duplicates;
+  };
+
+  const handleDuplicateResolution = (subcomponentName: string, action: 'update' | 'skip' | 'create_new') => {
+    setDuplicateResolutions(prev => ({
+      ...prev,
+      [subcomponentName]: { action, subcomponentName }
+    }));
+  };
+
+  const processDuplicates = async () => {
+    setProcessingDuplicates(true);
+    
+    // Process the import with duplicate resolutions
+    await handleImportWithResolutions();
+    
+    setShowDuplicateModal(false);
+    setProcessingDuplicates(false);
+  };
+
+  const handleStepProcessing = async (row: any, activityId: string, result: ImportResult) => {
+    if (!(row.step && row.subcomponent)) return;
+
+    // Find or create the step (handle potential URL encoding issues)
+    let existingStep = null;
+    let stepFindError = null;
+    
+    try {
+      const { data, error } = await supabase
+        .from('rd_research_steps')
+        .select('id, step_order, name')
+        .eq('research_activity_id', activityId)
+        .eq('name', row.step.trim());
+        
+      if (error) {
+        console.warn(`⚠️ Error finding step "${row.step}":`, error);
+        stepFindError = error;
+      } else if (data && data.length > 0) {
+        existingStep = data[0]; // Get first match
+      } else {
+        stepFindError = new Error('No step found');
+      }
+    } catch (error) {
+      console.warn(`⚠️ Exception finding step "${row.step}":`, error);
+      stepFindError = error;
+    }
+
+    let stepId;
+    if (stepFindError || !existingStep) {
+      // Create new step
+      const { data: stepsCount } = await supabase
+        .from('rd_research_steps')
+        .select('id', { count: 'exact' })
+        .eq('research_activity_id', activityId);
+
+      const stepData = {
+        research_activity_id: activityId,
+        name: row.step.trim(),
+        description: `Step for ${row.step.trim()}`,
+        step_order: (stepsCount?.length || 0) + 1,
+        is_active: true
+      };
+
+      const { data: newStep, error: stepError } = await supabase
+        .from('rd_research_steps')
+        .insert(stepData)
+        .select('id')
+        .single();
+
+      if (stepError) throw stepError;
+      stepId = newStep.id;
+    } else {
+      stepId = existingStep.id;
+      
+      // Update step name if batch settings allow and it's different
+      if (batchSettings.updateStepNames && existingStep.name !== row.step.trim()) {
+        await supabase
+          .from('rd_research_steps')
+          .update({ name: row.step.trim() })
+          .eq('id', stepId);
+        console.log(`📝 Updated step name: ${existingStep.name} → ${row.step.trim()}`);
+      }
+    }
+
+    // Handle subcomponent processing with batch settings
+    await handleSubcomponentProcessing(row, stepId, result);
+  };
+
+  const handleSubcomponentProcessing = async (row: any, stepId: string, result: ImportResult) => {
+    // Check if this subcomponent is in our duplicates list
+    const duplicateInfo = duplicates.find(d => d.newData.subcomponent === row.subcomponent);
+    
+    if (duplicateInfo) {
+      // Apply batch settings for duplicates
+      let action = 'skip'; // default
+      
+      switch (batchSettings.globalAction) {
+        case 'overwrite_all':
+          action = 'overwrite';
+          break;
+        case 'skip_all':
+          action = 'skip';
+          break;
+        case 'create_new_all':
+          action = 'create_new';
+          break;
+        case 'ask_each':
+          action = duplicateResolutions[row.subcomponent]?.action || 'skip';
+          break;
+      }
+
+      switch (action) {
+        case 'overwrite':
+          await handleSubcomponentOverwrite(duplicateInfo, row, result);
+          break;
+        case 'skip':
+          console.log(`⏭️ Skipping duplicate subcomponent: ${row.subcomponent}`);
+          break;
+        case 'create_new':
+          await handleSubcomponentCreateNew(row, stepId, result);
+          break;
+        default:
+          result.failed++;
+          result.errors.push({
+            row: row._rowNumber,
+            error: `No resolution provided for duplicate: ${row.subcomponent}`,
+            data: row
+          });
+      }
+    } else {
+      // No duplicate, create normally
+      await handleSubcomponentCreateNew(row, stepId, result);
+    }
+  };
+
+  const handleSubcomponentOverwrite = async (duplicateInfo: any, row: any, result: ImportResult) => {
+    const existingId = duplicateInfo.existingId;
+    
+    // Prepare update data
+    const updateData = {
+      name: row.subcomponent.trim(),
+      description: row.hint || null,
+      general_description: row.general_description || null,
+      goal: row.goal || null,
+      hypothesis: row.hypothesis || null,
+      alternatives: row.alternatives || null,
+      uncertainties: row.uncertainties || null,
+      developmental_process: row.developmental_process || null,
+      primary_goal: row.primary_goal || null,
+      expected_outcome_type: row.expected_outcome_type || null,
+      cpt_codes: row.cpt_codes || null,
+      cdt_codes: row.cdt_codes || null,
+      alternative_paths: row.alternative_paths || null,
+      updated_at: new Date().toISOString()
+    };
+
+    // Skip identical data if setting is enabled
+    if (batchSettings.skipIdenticalData) {
+      const existing = duplicateInfo.existingData;
+      const isIdentical = Object.keys(updateData).every(key => {
+        if (key === 'updated_at') return true;
+        return existing[key] === updateData[key];
+      });
+      
+      if (isIdentical) {
+        console.log(`🔄 Skipping identical data for: ${row.subcomponent}`);
+        return;
+      }
+    }
+
+    const { error } = await supabase
+      .from('rd_research_subcomponents')
+      .update(updateData)
+      .eq('id', existingId);
+
+    if (error) {
+      result.failed++;
+      result.errors.push({
+        row: row._rowNumber,
+        error: `Failed to update subcomponent: ${error.message}`,
+        data: row
+      });
+    } else {
+      result.updated++;
+      console.log(`✅ Updated subcomponent (ID preserved): ${row.subcomponent} [${existingId}]`);
+    }
+  };
+
+  const handleSubcomponentCreateNew = async (row: any, stepId: string, result: ImportResult) => {
+    const { data: subcomponentsCount } = await supabase
+      .from('rd_research_subcomponents')
+      .select('id', { count: 'exact' })
+      .eq('step_id', stepId);
+
+    const subcomponentData = {
+      step_id: stepId,
+      name: row.subcomponent.trim(),
+      description: row.hint || null,
+      subcomponent_order: (subcomponentsCount?.length || 0) + 1,
+      general_description: row.general_description || null,
+      goal: row.goal || null,
+      hypothesis: row.hypothesis || null,
+      alternatives: row.alternatives || null,
+      uncertainties: row.uncertainties || null,
+      developmental_process: row.developmental_process || null,
+      primary_goal: row.primary_goal || null,
+      expected_outcome_type: row.expected_outcome_type || null,
+      cpt_codes: row.cpt_codes || null,
+      cdt_codes: row.cdt_codes || null,
+      alternative_paths: row.alternative_paths || null
+    };
+
+    const { data, error } = await supabase
+      .from('rd_research_subcomponents')
+      .insert(subcomponentData)
+      .select('id')
+      .single();
+
+    if (error) {
+      result.failed++;
+      result.errors.push({
+        row: row._rowNumber,
+        error: `Failed to create subcomponent: ${error.message}`,
+        data: row
+      });
+    } else {
+      result.success++;
+      console.log(`✅ Created new subcomponent: ${row.subcomponent} [${data.id}]`);
+    }
+  };
+
+  const handleImportWithResolutions = async () => {
     if (!file) return;
 
     setImporting(true);
@@ -181,9 +503,13 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
         throw new Error('No data found in CSV file');
       }
 
+      console.log(`🚀 Starting batch import with settings:`, batchSettings);
+      console.log(`📊 Processing ${rows.length} rows with ${duplicates.length} duplicates detected`);
+
       const result: ImportResult = {
         success: 0,
         failed: 0,
+        updated: 0,
         errors: []
       };
 
@@ -202,68 +528,40 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
 
           const focusId = await findOrCreateFilterEntries(row);
 
-          // Create the research activity
-          const activityData = {
-            title: row.title.trim(),
-            focus_id: focusId,
-            is_active: true,
-            default_roles: {},
-            default_steps: {},
-            ...(businessId && { business_id: businessId })
-          };
-
-          const { data: activity, error: activityError } = await supabase
+          // Find or create the research activity
+          let { data: existingActivity, error: activityFindError } = await supabase
             .from('rd_research_activities')
-            .insert(activityData)
             .select('id')
+            .eq('title', row.research_activity.trim())
+            .eq('focus_id', focusId)
             .single();
 
-          if (activityError) throw activityError;
-
-          // Create default step if we have additional data
-          if (row.description || row.general_description) {
-            const stepData = {
-              research_activity_id: activity.id,
-              name: 'Research Implementation',
-              description: row.description || 'Imported research step',
-              step_order: 1,
-              is_active: true
+          let activityId;
+          if (activityFindError || !existingActivity) {
+            // Create new research activity
+            const activityData = {
+              title: row.research_activity.trim(),
+              focus_id: focusId,
+              is_active: true,
+              default_roles: {},
+              default_steps: {},
+              ...(businessId && { business_id: businessId })
             };
 
-            const { data: step, error: stepError } = await supabase
-              .from('rd_research_steps')
-              .insert(stepData)
+            const { data: newActivity, error: activityError } = await supabase
+              .from('rd_research_activities')
+              .insert(activityData)
               .select('id')
               .single();
 
-            if (stepError) throw stepError;
-
-            // Create subcomponent with detailed data
-            const subcomponentData = {
-              step_id: step.id,
-              name: `${row.title} - Main Component`,
-              description: row.description || '',
-              subcomponent_order: 1,
-              is_active: true,
-              general_description: row.general_description || '',
-              goal: row.goal || '',
-              hypothesis: row.hypothesis || '',
-              alternatives: row.alternatives || '',
-              uncertainties: row.uncertainties || '',
-              developmental_process: row.developmental_process || '',
-              primary_goal: row.primary_goal || '',
-              expected_outcome_type: row.expected_outcome_type || '',
-              cpt_codes: row.cpt_codes || '',
-              cdt_codes: row.cdt_codes || '',
-              alternative_paths: row.alternative_paths || ''
-            };
-
-            await supabase
-              .from('rd_research_subcomponents')
-              .insert(subcomponentData);
+            if (activityError) throw activityError;
+            activityId = newActivity.id;
+          } else {
+            activityId = existingActivity.id;
           }
 
-          result.success++;
+          // Enhanced step handling with batch settings
+          await handleStepProcessing(row, activityId, result);
         } catch (error: any) {
           result.failed++;
           result.errors.push({
@@ -276,7 +574,7 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
 
       setResult(result);
 
-      if (result.success > 0) {
+      if (result.success > 0 || result.updated > 0) {
         onSuccess();
       }
     } catch (error: any) {
@@ -284,9 +582,57 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
       setResult({
         success: 0,
         failed: 1,
+        updated: 0,
         errors: [{ row: 0, error: error.message || 'Failed to process file' }]
       });
     } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!file) return;
+
+    setImporting(true);
+    setResult(null);
+
+    try {
+      const text = await file.text();
+      const rows = parseCSV(text);
+
+      if (rows.length === 0) {
+        throw new Error('No data found in CSV file');
+      }
+
+      // Store rows for modal reference
+      setCurrentRows(rows);
+
+      // Check for duplicates before processing
+      console.log('🔍 Checking for duplicate subcomponents...');
+      const foundDuplicates = await detectDuplicateSubcomponents(rows);
+      
+      // TESTING: Force batch settings modal for testing (remove this for production)
+      const forceTestModal = rows.length > 5; // Show modal for batches > 5 items
+      
+      if (foundDuplicates.length > 0 || forceTestModal) {
+        console.log(`⚠️ Found ${foundDuplicates.length} duplicate subcomponents${forceTestModal ? ' (+ forced test modal)' : ''}`);
+        setDuplicates(foundDuplicates);
+        setShowBatchSettingsModal(true);
+        setImporting(false);
+        return;
+      }
+
+      // No duplicates found, proceed with normal import
+      await handleImportWithResolutions();
+      
+    } catch (error: any) {
+      console.error('Import error:', error);
+      setResult({
+        success: 0,
+        failed: 1,
+        updated: 0,
+        errors: [{ row: 0, error: error.message || 'Failed to process file' }]
+      });
       setImporting(false);
     }
   };
@@ -443,12 +789,29 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
                     <CheckCircle className="w-5 h-5 text-green-600" />
                     <span className="text-green-600 font-medium">{result.success} Successful</span>
                   </div>
+                  {result.updated > 0 && (
+                    <div className="flex items-center space-x-2">
+                      <RefreshCw className="w-5 h-5 text-orange-600" />
+                      <span className="text-orange-600 font-medium">{result.updated} Updated</span>
+                    </div>
+                  )}
                   {result.failed > 0 && (
                     <div className="flex items-center space-x-2">
                       <AlertCircle className="w-5 h-5 text-red-600" />
                       <span className="text-red-600 font-medium">{result.failed} Failed</span>
                     </div>
                   )}
+                </div>
+
+                {/* Verification Button */}
+                <div className="mt-4">
+                  <button
+                    onClick={() => setShowVerificationModal(true)}
+                    className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <Database className="w-4 h-4" />
+                    <span>🔍 Verify ID Preservation</span>
+                  </button>
                 </div>
               </div>
 
@@ -486,6 +849,352 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* Duplicate Resolution Modal */}
+      {showDuplicateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-60">
+          <div className="bg-white rounded-lg shadow-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto mx-4">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="flex items-center">
+                <AlertTriangle className="text-orange-500 mr-3" size={24} />
+                <h3 className="text-lg font-semibold text-gray-900">Duplicate Subcomponents Detected</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowDuplicateModal(false);
+                  setImporting(false);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 mb-4">
+                  Found {duplicates.length} subcomponent(s) that already exist in the database. 
+                  Choose how to handle each duplicate:
+                </p>
+                
+                <div className="space-y-4">
+                  {duplicates.map((duplicate, index) => (
+                    <div key={index} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Existing Data */}
+                        <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                          <h4 className="font-medium text-blue-900 mb-2">Existing in Database</h4>
+                          <div className="text-sm space-y-1">
+                            <div><strong>Name:</strong> {duplicate.existingData.name}</div>
+                            <div><strong>Step:</strong> {duplicate.existingData.step?.name}</div>
+                            <div><strong>Activity:</strong> {duplicate.existingData.step?.research_activity?.title}</div>
+                            <div><strong>Description:</strong> {duplicate.existingData.description || 'None'}</div>
+                          </div>
+                        </div>
+                        
+                        {/* New Data */}
+                        <div className="bg-green-50 border border-green-200 rounded p-3">
+                          <h4 className="font-medium text-green-900 mb-2">New from CSV (Row {duplicate.rowNumber})</h4>
+                          <div className="text-sm space-y-1">
+                            <div><strong>Name:</strong> {duplicate.newData.subcomponent}</div>
+                            <div><strong>Step:</strong> {duplicate.newData.step}</div>
+                            <div><strong>Activity:</strong> {duplicate.newData.research_activity}</div>
+                            <div><strong>Description:</strong> {duplicate.newData.general_description || 'None'}</div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Resolution Options */}
+                      <div className="mt-3 border-t border-gray-200 pt-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          How should this duplicate be handled?
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => handleDuplicateResolution(duplicate.newData.subcomponent.trim(), 'update')}
+                            className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                              duplicateResolutions[duplicate.newData.subcomponent.trim()]?.action === 'update'
+                                ? 'bg-orange-600 text-white border-orange-600'
+                                : 'bg-white text-orange-600 border-orange-600 hover:bg-orange-50'
+                            }`}
+                          >
+                            <RefreshCw className="inline mr-1" size={14} />
+                            Update Existing (Preserve ID)
+                          </button>
+                          <button
+                            onClick={() => handleDuplicateResolution(duplicate.newData.subcomponent.trim(), 'create_new')}
+                            className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                              duplicateResolutions[duplicate.newData.subcomponent.trim()]?.action === 'create_new'
+                                ? 'bg-green-600 text-white border-green-600'
+                                : 'bg-white text-green-600 border-green-600 hover:bg-green-50'
+                            }`}
+                          >
+                            <Check className="inline mr-1" size={14} />
+                            Create New (Allow Duplicate)
+                          </button>
+                          <button
+                            onClick={() => handleDuplicateResolution(duplicate.newData.subcomponent.trim(), 'skip')}
+                            className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                              duplicateResolutions[duplicate.newData.subcomponent.trim()]?.action === 'skip'
+                                ? 'bg-gray-600 text-white border-gray-600'
+                                : 'bg-white text-gray-600 border-gray-600 hover:bg-gray-50'
+                            }`}
+                          >
+                            <X className="inline mr-1" size={14} />
+                            Skip Row
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowDuplicateModal(false);
+                  setImporting(false);
+                }}
+                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={processDuplicates}
+                disabled={processingDuplicates || Object.keys(duplicateResolutions).length !== duplicates.length}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
+              >
+                {processingDuplicates ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="mr-2" size={16} />
+                    Process Import
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Settings Modal */}
+      {showBatchSettingsModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-60">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-semibold text-gray-900">Batch Import Settings</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  {duplicates.length > 0 
+                    ? `Found ${duplicates.length} duplicate subcomponents. Choose how to handle them.`
+                    : `Testing batch import with ${currentRows.length} items. Choose import strategy.`
+                  }
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowBatchSettingsModal(false);
+                  setImporting(false);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="px-6 py-6 space-y-6">
+              {/* Important Warning */}
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <div className="flex items-start">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 mr-3 flex-shrink-0" />
+                  <div>
+                    <h4 className="font-semibold text-amber-800">⚠️ CRITICAL: Business Data Preservation</h4>
+                    <p className="text-sm text-amber-700 mt-1">
+                      Subcomponents have existing business relationships (employee allocations, expenses, calculations). 
+                      <strong> Overwriting preserves IDs and maintains data linkages.</strong> Creating new duplicates will 
+                      break existing business connections.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Global Action Setting */}
+              <div className="space-y-3">
+                <label className="block text-sm font-semibold text-gray-900">
+                  🎯 How should duplicates be handled?
+                </label>
+                <div className="grid grid-cols-1 gap-3">
+                  <label className="flex items-start p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="globalAction"
+                      value="overwrite_all"
+                      checked={batchSettings.globalAction === 'overwrite_all'}
+                      onChange={(e) => setBatchSettings(prev => ({ ...prev, globalAction: e.target.value as any }))}
+                      className="mt-1 mr-3"
+                    />
+                    <div>
+                      <div className="font-medium text-green-700">✅ Overwrite All (RECOMMENDED)</div>
+                      <div className="text-sm text-gray-600">
+                        Update existing subcomponents with new data. <strong>Preserves IDs and business relationships.</strong>
+                      </div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="globalAction"
+                      value="skip_all"
+                      checked={batchSettings.globalAction === 'skip_all'}
+                      onChange={(e) => setBatchSettings(prev => ({ ...prev, globalAction: e.target.value as any }))}
+                      className="mt-1 mr-3"
+                    />
+                    <div>
+                      <div className="font-medium text-gray-700">⏭️ Skip All Duplicates</div>
+                      <div className="text-sm text-gray-600">
+                        Ignore duplicate subcomponents, only import new ones.
+                      </div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="globalAction"
+                      value="create_new_all"
+                      checked={batchSettings.globalAction === 'create_new_all'}
+                      onChange={(e) => setBatchSettings(prev => ({ ...prev, globalAction: e.target.value as any }))}
+                      className="mt-1 mr-3"
+                    />
+                    <div>
+                      <div className="font-medium text-red-700">⚠️ Create New Duplicates</div>
+                      <div className="text-sm text-gray-600">
+                        Create new subcomponents with different IDs. <strong className="text-red-600">Will break business relationships!</strong>
+                      </div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="globalAction"
+                      value="ask_each"
+                      checked={batchSettings.globalAction === 'ask_each'}
+                      onChange={(e) => setBatchSettings(prev => ({ ...prev, globalAction: e.target.value as any }))}
+                      className="mt-1 mr-3"
+                    />
+                    <div>
+                      <div className="font-medium text-blue-700">🤔 Ask for Each Duplicate</div>
+                      <div className="text-sm text-gray-600">
+                        Review each duplicate individually (not recommended for 500+ items).
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Additional Settings */}
+              <div className="space-y-4">
+                <h4 className="font-semibold text-gray-900">🔧 Additional Settings</h4>
+                
+                <label className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    checked={batchSettings.updateStepNames}
+                    onChange={(e) => setBatchSettings(prev => ({ ...prev, updateStepNames: e.target.checked }))}
+                    className="rounded border-gray-300"
+                  />
+                  <div>
+                    <div className="font-medium">Update Step Names</div>
+                    <div className="text-sm text-gray-600">Update step names when they differ from CSV data</div>
+                  </div>
+                </label>
+
+                <label className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    checked={batchSettings.skipIdenticalData}
+                    onChange={(e) => setBatchSettings(prev => ({ ...prev, skipIdenticalData: e.target.checked }))}
+                    className="rounded border-gray-300"
+                  />
+                  <div>
+                    <div className="font-medium">Skip Identical Data</div>
+                    <div className="text-sm text-gray-600">Don't update if the data is identical to existing</div>
+                  </div>
+                </label>
+
+                <label className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    checked={batchSettings.preserveIds}
+                    onChange={(e) => setBatchSettings(prev => ({ ...prev, preserveIds: e.target.checked }))}
+                    className="rounded border-gray-300"
+                    disabled={true}
+                  />
+                  <div>
+                    <div className="font-medium text-gray-500">Preserve Business IDs (Always Enabled)</div>
+                    <div className="text-sm text-gray-600">Maintains existing database relationships for business calculations</div>
+                  </div>
+                </label>
+              </div>
+
+              {/* Preview */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h4 className="font-semibold text-blue-800 mb-2">📊 Import Preview</h4>
+                <div className="text-sm text-blue-700 space-y-1">
+                  <div>• <strong>{duplicates.length}</strong> duplicate subcomponents will be {
+                    batchSettings.globalAction === 'overwrite_all' ? 'updated (IDs preserved)' :
+                    batchSettings.globalAction === 'skip_all' ? 'skipped' :
+                    batchSettings.globalAction === 'create_new_all' ? 'created as new duplicates' :
+                    'handled individually'
+                  }</div>
+                  <div>• Step names will {batchSettings.updateStepNames ? 'be updated' : 'remain unchanged'}</div>
+                  <div>• Identical data will {batchSettings.skipIdenticalData ? 'be skipped' : 'be processed'}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowBatchSettingsModal(false);
+                  setImporting(false);
+                }}
+                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowBatchSettingsModal(false);
+                  if (batchSettings.globalAction === 'ask_each') {
+                    setShowDuplicateModal(true);
+                  } else {
+                    handleImportWithResolutions();
+                  }
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+              >
+                <Upload className="mr-2" size={16} />
+                Proceed with Import
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Verification Modal */}
+      <ImportVerificationModal 
+        isOpen={showVerificationModal} 
+        onClose={() => setShowVerificationModal(false)} 
+      />
     </div>
   );
 };

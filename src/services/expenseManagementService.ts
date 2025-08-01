@@ -3,6 +3,11 @@ import { RDExpense, RDContractor, RDSupply, EmployeeWithExpenses } from '../type
 
 export class ExpenseManagementService {
   
+  // Utility function to apply 80% threshold rule (matches display logic)
+  private static applyEightyPercentThreshold(appliedPercentage: number): number {
+    return appliedPercentage >= 80 ? 100 : appliedPercentage;
+  }
+
   // Create expense records for an employee across all their subcomponents
   static async createEmployeeExpenses(
     employeeId: string,
@@ -202,6 +207,276 @@ export class ExpenseManagementService {
       console.log(`Created ${expenseRecords.length} expense records for contractor ${contractor.first_name} ${contractor.last_name}`);
     } catch (error) {
       console.error('Error creating contractor expenses:', error);
+      throw error;
+    }
+  }
+
+  // NEW METHOD: Save contractor data to rd_contractor_year_data table
+  static async saveContractorYearData(
+    businessYearId: string,
+    contractorName: string,
+    costAmount: number,
+    appliedPercent: number,
+    activityLink: any[] = [],
+    contractorId?: string,
+    userId?: string
+  ): Promise<string> {
+    try {
+      // Calculate QRE using 80% threshold rule
+      const effectivePercent = this.applyEightyPercentThreshold(appliedPercent);
+      const calculatedQre = (costAmount * effectivePercent) / 100;
+
+      const contractorData = {
+        business_year_id: businessYearId,
+        name: contractorName,
+        cost_amount: costAmount,
+        applied_percent: appliedPercent,
+        activity_link: activityLink, // jsonb field for activity associations
+        contractor_id: contractorId || null,
+        user_id: userId || null,
+        calculated_qre: calculatedQre,
+        activity_roles: null // jsonb field, can be populated later if needed
+      };
+
+      const { data, error } = await supabase
+        .from('rd_contractor_year_data')
+        .insert(contractorData)
+        .select('id')
+        .single();
+
+      if (error) throw error;
+
+      console.log(`✅ Saved contractor data to rd_contractor_year_data: ${contractorName} - $${costAmount} (${appliedPercent}%)`);
+      return data.id;
+    } catch (error) {
+      console.error('❌ Error saving contractor to rd_contractor_year_data:', error);
+      throw error;
+    }
+  }
+
+  // NEW METHOD: Update contractor data in rd_contractor_year_data table  
+  static async updateContractorYearData(
+    contractorYearDataId: string,
+    updates: {
+      name?: string;
+      costAmount?: number;
+      appliedPercent?: number;
+      activityLink?: any[];
+      contractorId?: string;
+    }
+  ): Promise<void> {
+    try {
+      const updateData: any = {};
+
+      if (updates.name !== undefined) updateData.name = updates.name;
+      if (updates.costAmount !== undefined) updateData.cost_amount = updates.costAmount;
+      if (updates.appliedPercent !== undefined) {
+        updateData.applied_percent = updates.appliedPercent;
+        // Recalculate QRE if cost or percent changed
+        if (updates.costAmount !== undefined) {
+          const effectivePercent = this.applyEightyPercentThreshold(updates.appliedPercent);
+          updateData.calculated_qre = (updates.costAmount * effectivePercent) / 100;
+        }
+      }
+      if (updates.activityLink !== undefined) updateData.activity_link = updates.activityLink;
+      if (updates.contractorId !== undefined) updateData.contractor_id = updates.contractorId;
+
+      updateData.updated_at = new Date().toISOString();
+
+      const { error } = await supabase
+        .from('rd_contractor_year_data')
+        .update(updateData)
+        .eq('id', contractorYearDataId);
+
+      if (error) throw error;
+
+      console.log(`✅ Updated contractor data in rd_contractor_year_data: ${contractorYearDataId}`);
+    } catch (error) {
+      console.error('❌ Error updating contractor in rd_contractor_year_data:', error);
+      throw error;
+    }
+  }
+
+  // NEW METHOD: Get contractor data from rd_contractor_year_data table
+  static async getContractorYearData(businessYearId: string): Promise<any[]> {
+    try {
+      const { data, error } = await supabase
+        .from('rd_contractor_year_data')
+        .select(`
+          id,
+          business_year_id,
+          name,
+          cost_amount,
+          applied_percent,
+          activity_link,
+          contractor_id,
+          user_id,
+          activity_roles,
+          calculated_qre,
+          created_at,
+          updated_at
+        `)
+        .eq('business_year_id', businessYearId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      return data || [];
+    } catch (error) {
+      console.error('❌ Error fetching contractor year data:', error);
+      throw error;
+    }
+  }
+
+  // NEW METHOD: Delete contractor data from rd_contractor_year_data table
+  static async deleteContractorYearData(contractorYearDataId: string): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from('rd_contractor_year_data')
+        .delete()
+        .eq('id', contractorYearDataId);
+
+      if (error) throw error;
+
+      console.log(`✅ Deleted contractor data from rd_contractor_year_data: ${contractorYearDataId}`);
+    } catch (error) {
+      console.error('❌ Error deleting contractor from rd_contractor_year_data:', error);
+      throw error;
+    }
+  }
+
+  // NEW METHODS: Supply data management for rd_supply_year_data table
+  
+  // Save supply data to rd_supply_year_data table
+  static async saveSupplyYearData(
+    businessYearId: string,
+    supplyName: string,
+    costAmount: number,
+    appliedPercent: number,
+    activityLink: any[] = [],
+    supplyId?: string,
+    userId?: string
+  ): Promise<string> {
+    try {
+      // Calculate QRE using 80% threshold rule
+      const effectivePercent = this.applyEightyPercentThreshold(appliedPercent);
+      const calculatedQre = (costAmount * effectivePercent) / 100;
+
+      const supplyData = {
+        business_year_id: businessYearId,
+        name: supplyName,
+        cost_amount: costAmount,
+        applied_percent: appliedPercent,
+        activity_link: activityLink, // jsonb field for activity associations
+        supply_id: supplyId || null,
+        user_id: userId || null,
+        calculated_qre: calculatedQre,
+        activity_roles: null // jsonb field, can be populated later if needed
+      };
+
+      const { data, error } = await supabase
+        .from('rd_supply_year_data')
+        .insert(supplyData)
+        .select('id')
+        .single();
+
+      if (error) throw error;
+
+      console.log(`✅ Saved supply data to rd_supply_year_data: ${supplyName} - $${costAmount} (${appliedPercent}%)`);
+      return data.id;
+    } catch (error) {
+      console.error('❌ Error saving supply to rd_supply_year_data:', error);
+      throw error;
+    }
+  }
+
+  // Update supply data in rd_supply_year_data table  
+  static async updateSupplyYearData(
+    supplyYearDataId: string,
+    updates: {
+      name?: string;
+      costAmount?: number;
+      appliedPercent?: number;
+      activityLink?: any[];
+      supplyId?: string;
+    }
+  ): Promise<void> {
+    try {
+      const updateData: any = {};
+
+      if (updates.name !== undefined) updateData.name = updates.name;
+      if (updates.costAmount !== undefined) updateData.cost_amount = updates.costAmount;
+      if (updates.appliedPercent !== undefined) {
+        updateData.applied_percent = updates.appliedPercent;
+        // Recalculate QRE if cost or percent changed
+        if (updates.costAmount !== undefined) {
+          const effectivePercent = this.applyEightyPercentThreshold(updates.appliedPercent);
+          updateData.calculated_qre = (updates.costAmount * effectivePercent) / 100;
+        }
+      }
+      if (updates.activityLink !== undefined) updateData.activity_link = updates.activityLink;
+      if (updates.supplyId !== undefined) updateData.supply_id = updates.supplyId;
+
+      updateData.updated_at = new Date().toISOString();
+
+      const { error } = await supabase
+        .from('rd_supply_year_data')
+        .update(updateData)
+        .eq('id', supplyYearDataId);
+
+      if (error) throw error;
+
+      console.log(`✅ Updated supply data in rd_supply_year_data: ${supplyYearDataId}`);
+    } catch (error) {
+      console.error('❌ Error updating supply in rd_supply_year_data:', error);
+      throw error;
+    }
+  }
+
+  // Get supply data from rd_supply_year_data table
+  static async getSupplyYearData(businessYearId: string): Promise<any[]> {
+    try {
+      const { data, error } = await supabase
+        .from('rd_supply_year_data')
+        .select(`
+          id,
+          business_year_id,
+          name,
+          cost_amount,
+          applied_percent,
+          activity_link,
+          supply_id,
+          user_id,
+          activity_roles,
+          calculated_qre,
+          created_at,
+          updated_at
+        `)
+        .eq('business_year_id', businessYearId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      return data || [];
+    } catch (error) {
+      console.error('❌ Error fetching supply year data:', error);
+      throw error;
+    }
+  }
+
+  // Delete supply data from rd_supply_year_data table
+  static async deleteSupplyYearData(supplyYearDataId: string): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from('rd_supply_year_data')
+        .delete()
+        .eq('id', supplyYearDataId);
+
+      if (error) throw error;
+
+      console.log(`✅ Deleted supply data from rd_supply_year_data: ${supplyYearDataId}`);
+    } catch (error) {
+      console.error('❌ Error deleting supply from rd_supply_year_data:', error);
       throw error;
     }
   }
@@ -565,8 +840,21 @@ export class ExpenseManagementService {
 
           if (employeeSubcomponent) {
             const annualWage = employee.annual_wage || 0;
-            const appliedDollarAmount = Math.round((annualWage * (employeeSubcomponent.applied_percentage || 0)) / 100);
+            const originalAppliedPercentage = employeeSubcomponent.applied_percentage || 0;
+            // Apply 80% threshold rule for QRE calculation
+            const qreAppliedPercentage = this.applyEightyPercentThreshold(originalAppliedPercentage);
+            const appliedDollarAmount = Math.round((annualWage * qreAppliedPercentage) / 100);
             const calculatedQRE = appliedDollarAmount;
+
+            console.log('🧮 [CSV Export] Employee calculation:', {
+              name: `${employee.first_name} ${employee.last_name}`,
+              annual_wage: annualWage,
+              original_applied_percentage: originalAppliedPercentage,
+              qre_applied_percentage_with_80_threshold: qreAppliedPercentage,
+              applied_dollar_amount: appliedDollarAmount,
+              calculated_qre: calculatedQRE,
+              calculation_method: 'Math.round(wage * (applied_percentage >= 80 ? 100 : applied_percentage) / 100)'
+            });
 
             const row = [
               subcomponentName,
@@ -606,9 +894,22 @@ export class ExpenseManagementService {
 
           if (contractorSubcomponent) {
             const annualCost = contractor.amount || 0;
-            const appliedDollarAmount = Math.round((annualCost * (contractorSubcomponent.applied_percentage || 0)) / 100);
+            const originalAppliedPercentage = contractorSubcomponent.applied_percentage || 0;
+            // Apply 80% threshold rule for contractor calculation
+            const qreAppliedPercentage = this.applyEightyPercentThreshold(originalAppliedPercentage);
+            const appliedDollarAmount = Math.round((annualCost * qreAppliedPercentage) / 100);
             // Calculate QRE (65% reduction for contractors)
             const calculatedQRE = Math.round(appliedDollarAmount * 0.65);
+
+            console.log('🧮 [CSV Export] Contractor calculation:', {
+              name: `${contractor.first_name} ${contractor.last_name}`,
+              annual_cost: annualCost,
+              original_applied_percentage: originalAppliedPercentage,
+              qre_applied_percentage_with_80_threshold: qreAppliedPercentage,
+              applied_dollar_amount: appliedDollarAmount,
+              calculated_qre_with_65_percent: calculatedQRE,
+              calculation_method: 'Math.round(Math.round(cost * (applied_percentage >= 80 ? 100 : applied_percentage) / 100) * 0.65)'
+            });
 
             const row = [
               subcomponentName,

@@ -48,6 +48,8 @@ export interface ActivityCardProps {
   onDuplicate: (activity: ResearchActivity) => void;
   onDeactivate: (activity: ResearchActivity) => void;
   onRefresh: () => void;
+  onEditStep?: (step: ResearchStep, activityId: string) => void;
+  onAddStep?: (activityId: string) => void;
 }
 
 export interface StepCardProps {

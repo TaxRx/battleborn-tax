@@ -58,6 +58,11 @@ interface SupplyData {
   }>;
 }
 
+// Apply 80% threshold rule (matches calculations logic)
+const applyEightyPercentThreshold = (appliedPercentage: number): number => {
+  return appliedPercentage >= 80 ? 100 : appliedPercentage;
+};
+
 // Color palette for subcomponents (matching Filing Guide colors)
 const SUBCOMPONENT_COLORS = [
   '#3B82F6', // Blue
@@ -152,7 +157,26 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
         };
       });
 
-      // Load employees with subcomponent data
+      // ✅ ALLOCATION MODAL SYNC FIX: Load employees even without subcomponent data
+      // ISSUE: Previous query only showed employees with rd_employee_subcomponents records
+      // SOLUTION: First get all employees with year data, then get their subcomponent data separately
+      
+      // Load all employees who have year data for this business year
+      const { data: employeeYearData, error: empYearError } = await supabase
+        .from('rd_employee_year_data')
+        .select(`
+          employee_id,
+          rd_employees!inner(id, first_name, last_name, annual_wage, role_id, rd_roles(id, name))
+        `)
+        .eq('business_year_id', selectedYear.id);
+
+      if (empYearError) throw empYearError;
+
+      // Extract unique employees
+      const allEmployees = employeeYearData?.map(item => item.rd_employees).filter(Boolean) || [];
+      console.log('🔍 Found employees with year data:', allEmployees.length);
+
+      // Now load subcomponent data for these employees (if any exists)
       const { data: employeeData, error: empError } = await supabase
         .from('rd_employee_subcomponents')
         .select(`
@@ -161,12 +185,20 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
           rd_research_subcomponents!inner(id, name)
         `)
         .eq('business_year_id', selectedYear.id)
-        .eq('is_included', true);
+        .eq('is_included', true)
+        .in('employee_id', allEmployees.map(emp => emp.id));
 
       if (empError) throw empError;
 
-      // Process employee data with correct activity mapping
-      const processedEmployees = processEmployeeData(employeeData || [], activityLookup, subcomponentToActivity);
+      // ✅ SYNC FIX: Process employee data including those without subcomponent allocations
+      // Merge all employees with their subcomponent data (if any)
+      const processedEmployees = processEmployeeData(
+        employeeData || [], 
+        activityLookup, 
+        subcomponentToActivity,
+        allEmployees // Pass all employees to ensure they're included even without subcomponents
+      );
+      console.log('🔍 Processed employees (including those without subcomponents):', processedEmployees.length);
       setEmployees(processedEmployees);
 
       // Load contractors
@@ -203,7 +235,8 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
   const processEmployeeData = (
     data: any[], 
     activityLookup: Record<string, { title: string }>,
-    subcomponentToActivity: Record<string, { activity_id: string; step_id: string }>
+    subcomponentToActivity: Record<string, { activity_id: string; step_id: string }>,
+    allEmployees?: any[] // ✅ SYNC FIX: Optional parameter for all employees even without subcomponents
   ): EmployeeData[] => {
     const employeeMap = new Map<string, EmployeeData>();
     
@@ -327,8 +360,27 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
       });
     });
     
+    // ✅ SYNC FIX: Include all employees even if they have no subcomponent allocations
+    if (allEmployees) {
+      allEmployees.forEach(emp => {
+        if (!employeeMap.has(emp.id)) {
+          console.log('✅ SYNC FIX - Adding employee without subcomponents:', emp.first_name, emp.last_name);
+          employeeMap.set(emp.id, {
+            id: emp.id,
+            name: `${emp.first_name} ${emp.last_name}`,
+            total_qre: emp.annual_wage || 0,
+            applied_percentage: 0,
+            roles: emp.rd_roles ? [emp.rd_roles.name] : [],
+            roleIds: emp.rd_roles ? [emp.rd_roles.id] : [],
+            activities: [],
+            subcomponents: []
+          });
+        }
+      });
+    }
+    
     const result = Array.from(employeeMap.values());
-    console.log('🎉 AllocationReport - Final processed employees:', result.length);
+    console.log('🎉 AllocationReport - Final processed employees (including those without subcomponents):', result.length);
     result.forEach(emp => {
       console.log(`📈 ${emp.name}: ${emp.activities.length} activities, ${emp.subcomponents.length} subcomponents`);
     });
@@ -370,7 +422,10 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
   };
 
   const getTotalEmployeeQRE = () => {
-    return employees.reduce((sum, emp) => sum + (emp.total_qre * (emp.applied_percentage / 100)), 0);
+    return employees.reduce((sum, emp) => {
+      const qreAppliedPercentage = applyEightyPercentThreshold(emp.applied_percentage);
+      return sum + (emp.total_qre * (qreAppliedPercentage / 100));
+    }, 0);
   };
 
   const getTotalContractorQRE = () => {
@@ -695,7 +750,7 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
                                 </div>
                             </div>
                             <div class="applied-amount">
-                                <div class="applied-value">${formatCurrency(emp.total_qre * (emp.applied_percentage / 100))}</div>
+                                <div class="applied-value">${formatCurrency(emp.total_qre * (applyEightyPercentThreshold(emp.applied_percentage) / 100))}</div>
                                 <div class="applied-label">Applied Amount</div>
                             </div>
                         </div>
@@ -819,6 +874,381 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
 </html>`;
   };
 
+  const generatePuppeteerHTML = () => {
+    const totalQRE = getTotalQRE();
+    const empQRE = getTotalEmployeeQRE();
+    const contQRE = getTotalContractorQRE();
+    const supQRE = getTotalSupplyQRE();
+
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    return `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Allocation Report - ${businessProfile?.name || 'Business'} - ${selectedYear?.year || new Date().getFullYear()}</title>
+        
+        <!-- Google Fonts - Plus Jakarta Sans -->
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;0,800;1,200;1,300;1,400;1,500;1,600;1,700;1,800&display=swap" rel="stylesheet">
+        
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          
+          html {
+            font-size: 14px;
+            line-height: 1.6;
+          }
+
+          body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', system-ui, sans-serif;
+            font-weight: 400;
+            font-size: 11px;
+            color: #1f2937;
+            background: white;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            line-height: 1.5;
+          }
+
+          .pdf-wrapper {
+            width: 100%;
+            max-width: 8.5in;
+            margin: 0 auto;
+            background: white;
+            min-height: 11in;
+            position: relative;
+          }
+
+          /* Header Styling */
+          .pdf-header {
+            background: linear-gradient(135deg, #10b981 0%, #047857 100%);
+            color: white;
+            padding: 12px 8px;
+            margin-bottom: 16px;
+            position: relative;
+            overflow: hidden;
+          }
+
+          .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            position: relative;
+            z-index: 1;
+          }
+
+          .logo-section {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 8px 12px;
+            border-radius: 8px;
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+
+          .logo-img {
+            height: 24px;
+            width: auto;
+            object-fit: contain;
+            filter: brightness(0) invert(1);
+          }
+
+          .company-name {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            margin: 0;
+            color: white;
+            letter-spacing: -0.025em;
+            line-height: 1.2;
+          }
+
+          .document-title {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 18px;
+            font-weight: 800;
+            margin: 0;
+            color: white;
+            letter-spacing: -0.025em;
+            line-height: 1.2;
+            text-align: right;
+          }
+
+          /* Content Area */
+          .pdf-content {
+            padding: 0 8px;
+            min-height: 600px;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+          }
+
+          /* Meta Information */
+          .report-meta { 
+            background: #f8fafc; 
+            padding: 12px; 
+            border-radius: 6px; 
+            margin-bottom: 16px; 
+            page-break-inside: avoid;
+          }
+          .meta-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); 
+            gap: 12px; 
+          }
+          .meta-item { text-align: center; }
+          .meta-label { 
+            font-size: 9px; 
+            color: #6b7280; 
+            text-transform: uppercase; 
+            letter-spacing: 0.05em; 
+          }
+          .meta-value { font-size: 11px; font-weight: 600; color: #1f2937; }
+
+          /* Section Styling */
+          .section { 
+            margin-bottom: 20px; 
+            page-break-inside: avoid;
+          }
+          .section-title { 
+            font-size: 16px; 
+            font-weight: 600; 
+            margin-bottom: 12px; 
+            color: #1f2937; 
+            border-bottom: 2px solid #10b981; 
+            padding-bottom: 6px; 
+          }
+
+          /* Summary Cards */
+          .summary-grid { 
+            display: grid; 
+            grid-template-columns: repeat(3, 1fr); 
+            gap: 12px; 
+            margin-bottom: 16px; 
+          }
+          .summary-card { 
+            background: white; 
+            border: 1px solid #e5e7eb; 
+            border-radius: 6px; 
+            padding: 12px; 
+            text-align: center; 
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); 
+          }
+          .summary-value { font-size: 16px; font-weight: 700; color: #10b981; }
+          .summary-label { 
+            font-size: 9px; 
+            color: #6b7280; 
+            text-transform: uppercase; 
+            letter-spacing: 0.05em; 
+          }
+
+          /* Allocation Sections */
+          .allocation-section { 
+            background: white; 
+            border: 1px solid #e5e7eb; 
+            border-radius: 6px; 
+            padding: 12px; 
+            margin-bottom: 12px;
+            page-break-inside: avoid;
+          }
+          .allocation-header { 
+            display: flex; 
+            align-items: center; 
+            margin-bottom: 10px; 
+          }
+          .allocation-icon { margin-right: 6px; }
+          .allocation-title { font-size: 14px; font-weight: 600; }
+
+          /* Employee Items */
+          .employee-item {
+            border-bottom: 1px solid #f3f4f6;
+            padding: 12px 0;
+            page-break-inside: avoid;
+          }
+          .employee-item:last-child { border-bottom: none; }
+          .employee-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
+          }
+          .employee-info { flex: 1; }
+          .employee-name { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+          .roles-container { margin-bottom: 6px; }
+          .role-tag {
+            display: inline-block;
+            background: #dbeafe;
+            color: #1e40af;
+            padding: 2px 6px;
+            border-radius: 12px;
+            font-size: 8px;
+            margin-right: 3px;
+            margin-bottom: 2px;
+          }
+          .employee-details {
+            font-size: 9px;
+            color: #6b7280;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+          }
+          .applied-amount {
+            text-align: right;
+            margin-left: 12px;
+          }
+          .applied-value { 
+            font-size: 14px; 
+            font-weight: 700; 
+            color: #10b981; 
+          }
+          .applied-label { 
+            font-size: 8px; 
+            color: #6b7280; 
+          }
+
+          /* Progress and Legend */
+          .breakdown-title {
+            font-size: 10px;
+            font-weight: 600;
+            color: #4b5563;
+            margin: 10px 0 6px 0;
+          }
+          .progress-bar { 
+            width: 100%; 
+            height: 20px; 
+            background: #f3f4f6; 
+            border-radius: 10px; 
+            overflow: hidden; 
+            margin-bottom: 10px;
+          }
+          .progress-segment { height: 100%; display: inline-block; }
+          .legend-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 6px;
+          }
+          .legend-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px;
+            background: #f9fafb;
+            border-radius: 4px;
+            font-size: 9px;
+          }
+          .legend-color {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 6px;
+            flex-shrink: 0;
+          }
+          .legend-info { flex: 1; font-weight: 500; }
+          .legend-amounts { text-align: right; }
+          .legend-amount { font-weight: 600; }
+          .legend-percent { font-size: 8px; color: #6b7280; }
+          .no-data { text-align: center; color: #6b7280; font-style: italic; padding: 24px; }
+
+          /* Professional Footer */
+          .pdf-footer {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            border-top: 3px solid #e5e7eb;
+            padding: 12px 16px;
+            margin-top: 24px;
+            position: relative;
+          }
+
+          .footer-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 10px;
+            color: #6b7280;
+          }
+
+          /* Print Optimizations */
+          @page {
+            margin: 0.25in 0.1in 0.4in 0.1in;
+            size: Letter;
+          }
+
+          @media print {
+            body {
+              font-size: 10px;
+            }
+            .pdf-header {
+              background: #10b981 !important;
+              -webkit-print-color-adjust: exact;
+              color-adjust: exact;
+            }
+            .progress-segment {
+              -webkit-print-color-adjust: exact;
+              color-adjust: exact;
+            }
+            .role-tag {
+              -webkit-print-color-adjust: exact;
+              color-adjust: exact;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="pdf-wrapper">
+          <!-- Professional Header -->
+          <div class="pdf-header">
+            <div class="header-content">
+              <div class="header-left">
+                <div class="logo-section">
+                  <div class="company-logo">
+                    <img src="/images/Direct Research_horizontal advisors logo.png" alt="Direct Research Logo" class="logo-img">
+                  </div>
+                  <div class="company-info">
+                    <h2 class="company-name">Direct Research</h2>
+                  </div>
+                </div>
+              </div>
+              <div class="header-right">
+                <h1 class="document-title">Allocation Report</h1>
+              </div>
+            </div>
+          </div>
+
+          <!-- Document Content -->
+          <div class="pdf-content">
+            ${generateAllocationHTML().match(/<body[^>]*>([\s\S]*)<\/body>/)?.[1] || '<!-- Content extraction failed -->'}
+          </div>
+
+          <!-- Professional Footer -->
+          <div class="pdf-footer">
+            <div class="footer-content">
+              <div class="footer-left">
+                <span>Prepared by Direct Research</span>
+              </div>
+              <div class="footer-center">
+                <span>Confidential & Proprietary</span>
+              </div>
+              <div class="footer-right">
+                <span>Tax Year ${selectedYear?.year || 'N/A'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+  };
+
   const handlePrint = () => {
     const printWindow = window.open('', '_blank');
     if (printWindow) {
@@ -839,6 +1269,52 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const handlePDFDownload = async () => {
+    setLoading(true);
+    try {
+      console.log('🔄 Starting Allocation Report PDF generation...');
+      
+      // Generate PDF using Puppeteer backend
+      const cleanedContent = generatePuppeteerHTML();
+      
+      console.log('📄 Sending content to Puppeteer server...');
+      const response = await fetch('http://localhost:3001/api/generate-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          html: cleanedContent,
+          filename: `Allocation_Report_${businessProfile?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Business'}_${selectedYear?.year || new Date().getFullYear()}.pdf`
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.text();
+        throw new Error(`PDF generation failed: ${errorData}`);
+      }
+
+      console.log('✅ [PUPPETEER API] PDF downloaded successfully');
+      
+      // Download the PDF
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Allocation_Report_${businessProfile?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Business'}_${selectedYear?.year || new Date().getFullYear()}.pdf`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+
+      console.log('✅ [PUPPETEER PDF] Allocation Report PDF generated successfully');
+      
+    } catch (error) {
+      console.error('❌ Error generating PDF:', error);
+      alert(`Failed to generate PDF: ${error.message}. Please try again.`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const scrollToSection = (sectionId: string) => {
@@ -886,10 +1362,18 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
               </button>
               <button
                 onClick={handleDownload}
-                className="flex items-center px-4 py-2 bg-white text-emerald-600 rounded-lg hover:bg-gray-50 transition-colors"
+                className="flex items-center px-3 py-2 bg-white text-emerald-600 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 <Download className="w-4 h-4 mr-2" />
-                Download
+                HTML
+              </button>
+              <button
+                onClick={handlePDFDownload}
+                disabled={loading}
+                className="flex items-center px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                {loading ? 'Generating...' : 'PDF'}
               </button>
               <button
                 onClick={onClose}
@@ -1038,7 +1522,7 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
                               </div>
                               <div className="text-right ml-4">
                                 <div className="text-xl font-bold text-blue-600">
-                                  {formatCurrency(emp.total_qre * (emp.applied_percentage / 100))}
+                                  {formatCurrency(emp.total_qre * (applyEightyPercentThreshold(emp.applied_percentage) / 100))}
                                 </div>
                                 <div className="text-sm text-gray-600">
                                   Applied Amount

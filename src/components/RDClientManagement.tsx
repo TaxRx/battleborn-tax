@@ -20,7 +20,6 @@ import {
   Building,
   Calculator,
   Calendar,
-  DollarSign,
   Eye,
   AlertTriangle,
   CheckCircle,
@@ -46,6 +45,7 @@ import { formatCurrency } from '../utils/formatting';
 import { useNavigationSidebar } from '../hooks/useNavigationSidebar';
 import ModularResearchActivityManager from './research-activity-manager/ModularResearchActivityManager';
 import RDTaxWizard from '../modules/tax-calculator/components/RDTaxWizard/RDTaxWizard';
+import ClientProgressIndicator from './common/ClientProgressIndicator';
 
 interface RDClientManagementProps {
   onClientSelect?: (client: UnifiedClientRecord) => void;
@@ -124,6 +124,16 @@ const BusinessAccordion: React.FC<BusinessAccordionProps> = ({
           </button>
         </div>
       </div>
+      
+      {/* Progress Cards - Full Width Row Below */}
+      <div className="px-4 pb-4">
+        <ClientProgressIndicator 
+          businessId={business.id}
+          className="w-full"
+          showYearLabels={true}
+          maxYears={4}
+        />
+      </div>
     </div>
   );
 };
@@ -198,10 +208,7 @@ const ClientCard: React.FC<ClientCardProps> = ({
                   <Zap className="w-4 h-4 mr-1" />
                   {rdEnrollments.length} R&D enrollment{rdEnrollments.length !== 1 ? 's' : ''}
                 </span>
-                <span className="flex items-center">
-                  <DollarSign className="w-4 h-4 mr-1" />
-                  ${client.total_income?.toLocaleString() || '0'}
-                </span>
+
               </div>
             </div>
           </div>

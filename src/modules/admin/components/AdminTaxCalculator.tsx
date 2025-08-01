@@ -4,7 +4,6 @@ import {
   UserPlus, 
   Users, 
   FileText, 
-  DollarSign, 
   ArrowRight,
   Plus,
   Search,
@@ -219,10 +218,7 @@ const ClientCard: React.FC<ClientCardProps> = ({
                     {client.company}
                   </span>
                 )}
-                <span className="flex items-center">
-                  <DollarSign className="w-4 h-4 mr-1" />
-                  ${client.annual_income.toLocaleString()}
-                </span>
+
               </div>
             </div>
 

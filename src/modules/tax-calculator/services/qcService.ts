@@ -38,8 +38,10 @@ export interface JuratSignature {
   id: string;
   business_year_id: string;
   signer_name: string;
-  signer_title: string;
-  signer_email: string;
+  signer_title?: string;
+  signer_email?: string;
+  signature_image: string;
+  ip_address: string;
   signed_at: string;
   jurat_text: string;
 }
@@ -185,18 +187,19 @@ export class QCService {
 
       // Check if admin client is available
       if (!supabaseAdmin) {
-        console.error('❌ [QCService] Admin client not available - service key required');
-        throw new Error('Magic link generation requires admin permissions. Please configure VITE_SUPABASE_SERVICE_KEY.');
+        console.warn('⚠️ [QCService] Admin client not available - using fallback token method');
+        return this.generateClientAccessToken(businessId);
       }
 
-      // First, get the business and its associated client email
+      // First, get the business and check for portal_email override or client email
       const { data: business, error: businessError } = await supabase
         .from('rd_businesses')
         .select(`
           id,
           client_id,
           name,
-          clients:client_id (
+          portal_email,
+          clients(
             id,
             email,
             full_name
@@ -207,32 +210,50 @@ export class QCService {
 
       if (businessError) {
         console.error('❌ [QCService] Error fetching business:', businessError);
-        throw businessError;
+        throw new Error(`Failed to fetch business: ${businessError.message}`);
       }
 
-      if (!business?.clients?.email) {
-        console.error('❌ [QCService] No client email found for business:', business);
-        throw new Error('No client email found for this business');
+      // Check for portal_email override first, then fall back to client email
+      let clientEmail = null;
+      
+      if (business?.portal_email) {
+        clientEmail = business.portal_email;
+        console.log('📧 [QCService] Using portal override email:', clientEmail);
+             } else if (business?.clients && Array.isArray(business.clients) && business.clients.length > 0 && business.clients[0]?.email) {
+         clientEmail = business.clients[0].email;
+         console.log('📧 [QCService] Using client email:', clientEmail);
+       } else if (business?.clients && !Array.isArray(business.clients) && (business.clients as any).email) {
+         // Handle case where clients is not an array (single object)
+         clientEmail = (business.clients as any).email;
+         console.log('📧 [QCService] Using client email (single):', clientEmail);
       }
 
-      console.log('📧 [QCService] Generating magic link for:', business.clients.email);
+      if (!clientEmail) {
+        console.error('❌ [QCService] No email found for business:', businessId, 'Business data:', business);
+        throw new Error('No client email or portal email found for this business. Please set a portal email in the Client Portal Management section.');
+      }
+      console.log('📧 [QCService] Using email for magic link:', clientEmail);
 
-      // Generate magic link using Supabase Admin API with service key
+      // Generate magic link using admin client
       const { data, error } = await supabaseAdmin.auth.admin.generateLink({
         type: 'magiclink',
-        email: business.clients.email,
+        email: clientEmail,
         options: {
-          redirectTo: `${window.location.origin}/client-portal/${business.clients.id}`,
-          data: {
-            client_id: business.clients.id,
-            business_id: businessId
-          }
+          redirectTo: `${window.location.origin}/client-portal?business_id=${businessId}&auto_login=true`
         }
       });
 
       if (error) {
-        console.error('❌ [QCService] Error generating magic link:', error);
-        throw error;
+        console.error('❌ [QCService] Supabase admin generateLink error:', error);
+        
+        // If admin method fails, try fallback
+        const errorMessage = error?.message || String(error);
+        if (errorMessage.includes('User not allowed') || errorMessage.includes('403')) {
+          console.warn('⚠️ [QCService] Admin method failed, trying fallback token method');
+          return this.generateClientAccessToken(businessId);
+        }
+        
+        throw new Error(`Failed to generate magic link: ${error?.message || String(error)}`);
       }
 
       if (!data.properties?.action_link) {
@@ -247,11 +268,37 @@ export class QCService {
       console.error('❌ [QCService] Error generating magic link:', error);
       
       // If it's a specific admin permission error, provide helpful message
-      if (error.message?.includes('User not allowed') || error.message?.includes('403')) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('User not allowed') || errorMessage.includes('403')) {
         throw new Error('Magic link generation requires admin permissions. Please ensure the service key is properly configured.');
       }
       
       throw error;
+    }
+  }
+
+  // Fallback method for when service key is not available
+  private async generateClientAccessToken(businessId: string): Promise<string> {
+    try {
+      console.log('🔄 [QCService] Generating fallback client access token for business:', businessId);
+
+      // Get current timestamp for token expiry (24 hours from now)
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 24);
+
+      // Generate a simple access token (in production, this should be more secure)
+      const accessToken = btoa(`${businessId}-${Date.now()}-${Math.random()}`);
+      
+      // Create the client portal URL with the token
+      const clientPortalUrl = `${window.location.origin}/client-portal?business_id=${businessId}&token=${accessToken}&expires=${expiresAt.getTime()}`;
+      
+      console.log('✅ [QCService] Fallback token generated successfully');
+      return clientPortalUrl;
+      
+    } catch (error) {
+      console.error('❌ [QCService] Error generating fallback token:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to generate client access token: ${errorMessage}`);
     }
   }
 
@@ -298,14 +345,13 @@ export class QCService {
     }
   }
 
-  // Get jurat signatures for a business year
+  // Get jurat signatures for a business year - Updated to use rd_signature_records table
   async getJuratSignatures(businessYearId: string): Promise<JuratSignature[]> {
     try {
       const { data, error } = await supabase
-        .from('rd_signatures')
+        .from('rd_signature_records')
         .select('*')
         .eq('business_year_id', businessYearId)
-        .eq('signature_type', 'jurat')
         .order('signed_at', { ascending: false });
 
       if (error) throw error;

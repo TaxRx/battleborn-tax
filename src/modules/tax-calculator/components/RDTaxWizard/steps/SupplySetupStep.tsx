@@ -150,19 +150,29 @@ const SupplySetupStep: React.FC<SupplySetupStepProps> = ({
   const loadData = async () => {
     if (!businessYearId) return;
     
+    console.log('🔄 SupplySetupStep.loadData: Starting for businessYearId:', businessYearId);
     setLoading(true);
     try {
       const suppliesData = await SupplyManagementService.getSupplies(businessYearId);
-      onUpdate({ supplies: suppliesData });
+      console.log('✅ SupplySetupStep.loadData: Found', suppliesData?.length || 0, 'supplies');
+      console.log('🔄 SupplySetupStep.loadData: Calling onUpdate with supplies data');
+      onUpdate({ supplies: suppliesData, supplyDataReloaded: true });
     } catch (error) {
-      console.error('Error loading supplies:', error);
+      console.error('❌ SupplySetupStep.loadData: Error loading supplies:', error);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    console.log('🔍 SupplySetupStep: businessYearId changed to:', businessYearId);
+    console.log('🔍 SupplySetupStep: Current supplies length:', supplies.length);
+    
+    // Always load data when businessYearId changes (year switching)
+    if (businessYearId) {
+      console.log('🔄 SupplySetupStep: Loading supplies for year:', businessYearId);
+      loadData();
+    }
   }, [businessYearId]);
 
   const handleQuickAddSupply = async (supplyData: QuickSupplyEntry) => {
@@ -171,10 +181,10 @@ const SupplySetupStep: React.FC<SupplySetupStepProps> = ({
     try {
       console.log('🔄 Adding supply:', supplyData);
       
-      await SupplyManagementService.addSupply(supplyData, businessId);
+      await SupplyManagementService.addSupply(supplyData, businessId, businessYearId);
       
-      // Reload data to show new supply
-      await loadData();
+      // CRITICAL FIX: Signal parent to reload data instead of loading here
+      onUpdate({ supplyDataChanged: true });
       
       console.log('✅ Supply added successfully');
     } catch (error) {
@@ -192,8 +202,8 @@ const SupplySetupStep: React.FC<SupplySetupStepProps> = ({
       
       await SupplyManagementService.deleteSupply(supplyId);
       
-      // Reload data
-      await loadData();
+      // CRITICAL FIX: Signal parent to reload data instead of loading here  
+      onUpdate({ supplyDataChanged: true });
       
       console.log('✅ Supply deleted successfully');
     } catch (error) {
@@ -209,7 +219,8 @@ const SupplySetupStep: React.FC<SupplySetupStepProps> = ({
   const handleAllocationsModalClose = () => {
     setIsAllocationsModalOpen(false);
     setSelectedSupply(null);
-    loadData(); // Reload data after modal closes
+    // CRITICAL FIX: Signal parent to reload data instead of loading here
+    onUpdate({ supplyDataChanged: true });
   };
 
   const totalQRE = supplies.reduce((sum, supply) => sum + (supply.calculated_qre || 0), 0);

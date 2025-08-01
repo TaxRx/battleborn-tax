@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import { SectionGQREService } from '../../services/sectionGQREService';
-import { AIService } from "../../../../../services/aiService";
+import { AIService } from "../../../../services/aiService";
 
 // Note: OpenAI API key should be configured in environment variables (VITE_OPENAI_API_KEY)
 
@@ -28,23 +28,25 @@ const formatCurrency = (amount: number): string => {
 const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYear, clientId }) => {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  useEffect(() => {
-    if (!selectedYear?.id || !businessData?.id) return;
-    loadSectionGData();
-  }, [selectedYear?.id, businessData?.id]);
-
-  const loadSectionGData = async () => {
+  const loadSectionGData = useCallback(async () => {
+    // Prevent duplicate executions
+    if (isProcessing) {
+      console.log('%c🚫 [SECTION G] Already processing, skipping duplicate call', 'background: #f90; color: #000; font-weight: bold;');
+      return;
+    }
+    
+    setIsProcessing(true);
     setLoading(true);
     try {
-      console.log('%c[SECTION G DEBUG] Starting loadSectionGData', 'background: #0f0; color: #000; font-weight: bold;');
-      console.log('%c[SECTION G DEBUG] Business year ID:', 'background: #0f0; color: #000; font-weight: bold;', selectedYear.id);
-      console.log('%c[SECTION G DEBUG] Business data:', 'background: #0f0; color: #000; font-weight: bold;', businessData);
-      
-      // First, let's get the raw QRE data to debug
-      console.log('%c[SECTION G DEBUG] Getting raw QRE data...', 'background: #0f0; color: #000; font-weight: bold;');
+      console.log('%c✅ [SECTION G] Starting loadSectionGData', 'background: #0f0; color: #000; font-weight: bold;', {
+        businessYearId: selectedYear.id,
+        businessId: businessData.id,
+        clientId
+      });
       const rawQREData = await SectionGQREService.getQREDataForSectionG(selectedYear.id);
-      console.log('%c[SECTION G DEBUG] Raw QRE data:', 'background: #0f0; color: #000; font-weight: bold;', rawQREData);
+      // QRE data loaded
       
       // Group by activity
       const activitiesMap = new Map();
@@ -70,10 +72,8 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
       });
       
       const activitiesWithQRE = Array.from(activitiesMap.values());
-      console.log('%c[SECTION G DEBUG] Grouped activities:', 'background: #0f0; color: #000; font-weight: bold;', activitiesWithQRE);
       
       if (!activitiesWithQRE || activitiesWithQRE.length === 0) {
-        console.log('%c[SECTION G DEBUG] No activities with QRE found', 'background: #ff0; color: #000; font-weight: bold;');
         setRows([]);
         setLoading(false);
         return;
@@ -82,10 +82,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
       // Process each activity to build Section G rows
       const newRows = await Promise.all(
         activitiesWithQRE.map(async (activity, activityIndex) => {
-          console.log(`%c[SECTION G DEBUG] Processing activity ${activityIndex + 1}:`, 'background: #0f0; color: #000; font-weight: bold;', activity);
-          
-          // Debug employee data
-          console.log(`%c[SECTION G DEBUG] Activity ${activityIndex + 1} employees:`, 'background: #0f0; color: #000; font-weight: bold;', activity.employees);
+          // Process activity QRE data
           
           // Calculate QREs by type
           const directWages = activity.employees
@@ -95,17 +92,11 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
               const isSupervisor = e.role?.toLowerCase().includes('supervisor');
               const isAdmin = e.role?.toLowerCase().includes('admin');
               
-              console.log(`[SECTION G DEBUG] Employee ${e.name} (${e.role}):`, {
-                isOwner,
-                isResearchLeader,
-                isSupervisor,
-                isAdmin,
-                calculated_qre: e.calculated_qre
-              });
+              // Debug: Employee role classification (reduced logging)
               
               // Include Research Leaders and owners in Direct Research Wages
               if (isOwner || isResearchLeader) {
-                console.log(`[SECTION G DEBUG] Including ${e.name} in Direct Wages (owner: ${isOwner}, research leader: ${isResearchLeader})`);
+                // Performance optimization: Reduced excessive employee logging
                 return true;
               }
               // Exclude supervisors and admins from Direct Research Wages
@@ -114,15 +105,15 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
                 return false;
               }
               // Include other employees in Direct Research Wages
-              console.log(`[SECTION G DEBUG] Including ${e.name} in Direct Wages (other employee)`);
+              // Performance optimization: Reduced excessive employee logging
               return true;
             })
             .reduce((sum, e) => {
-              console.log(`[SECTION G DEBUG] Adding ${e.name} QRE to direct wages: ${e.calculated_qre}`);
+              // Performance optimization: reduced excessive employee QRE logging
               return sum + (e.calculated_qre || 0);
             }, 0) || 0;
           
-          console.log(`[SECTION G DEBUG] Activity ${activityIndex + 1} direct wages total:`, directWages);
+          // Activity direct wages calculated
           
           const supervisionWages = activity.employees
             ?.filter(e => e.role?.toLowerCase().includes('supervisor'))
@@ -136,13 +127,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
           const contractResearch = activity.contractors?.reduce((sum, c) => sum + (c.calculated_qre || 0), 0) || 0;
           const rentalLease = 0; // Manual entry
           
-          console.log(`[SECTION G DEBUG] Activity ${activityIndex + 1} totals:`, {
-            directWages,
-            supervisionWages,
-            supportWages,
-            supplies,
-            contractResearch
-          });
+          // Activity totals calculated
           
           // EIN/NAICS from business data
           const ein = businessData?.ein || '';
@@ -164,12 +149,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
             activity.supplies?.forEach(s => uniqueSubcomponentIds.add(s.subcomponent_id));
             const actualSubcomponentCount = uniqueSubcomponentIds.size;
             
-            console.log('[SECTION G DEBUG] Subcomponent count calculation:', {
-              employeeSubcomponents: activity.employees?.length || 0,
-              contractorSubcomponents: activity.contractors?.length || 0,
-              supplySubcomponents: activity.supplies?.length || 0,
-              uniqueSubcomponentCount: actualSubcomponentCount
-            });
+            // Subcomponent count calculated
             
             // Use the new Section G Line 49(f) specific method with correct field names
             const line49fContext = {
@@ -183,38 +163,20 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
             
             console.log('[SECTION G DEBUG] AI Context for Line 49(f):', line49fContext);
             
-            // Generate static description based on the line49fContext
-            description = `The company evaluated ${line49fContext.subcomponent_count} ${line49fContext.subcomponent_groups} to resolve technical uncertainty in ${line49fContext.research_activity_name}. Experimental testing was conducted using systematic research methodologies within the ${line49fContext.industry} industry. ${line49fContext.guideline_notes || 'Research activities were performed in accordance with established protocols and regulatory requirements.'}`;
+            // Generate AI description using the AI service
+            try {
+              console.log('[SECTION G DEBUG] Calling AI service for Line 49(f) description...');
+              description = await AIService.getInstance().generateLine49fDescription(line49fContext);
+              console.log('[SECTION G DEBUG] AI-generated description:', description);
+            } catch (aiError) {
+              console.warn('[SECTION G WARNING] AI service failed, using fallback description:', aiError);
+              // Fallback to static description if AI service fails
+              description = `The company evaluated ${line49fContext.subcomponent_count} ${line49fContext.subcomponent_groups} to resolve technical uncertainty in ${line49fContext.research_activity_name}. Experimental testing was conducted using systematic research methodologies within the ${line49fContext.industry} industry. ${line49fContext.guideline_notes || 'Research activities were performed in accordance with established protocols and regulatory requirements.'}`;
+            }
             
-            // Save to rd_federal_credit table
-            await saveToFederalCreditTable({
-              business_year_id: selectedYear.id,
-              client_id: clientId,
-              research_activity_id: activity.activity_id,
-              research_activity_name: activity.activity_title,
-              direct_research_wages: activity.direct_research_wages || 0,
-              supplies_expenses: activity.supplies_expenses || 0,
-              contractor_expenses: activity.contractor_expenses || 0,
-              total_qre: (activity.direct_research_wages || 0) + (activity.supplies_expenses || 0) + (activity.contractor_expenses || 0),
-              subcomponent_count: actualSubcomponentCount,
-              subcomponent_groups: line49fContext.subcomponent_groups,
-              applied_percent: line49fContext.shrinkback_percent,
-              line_49f_description: description,
-              ai_generation_timestamp: new Date().toISOString(),
-              ai_prompt_used: JSON.stringify(line49fContext),
-              industry_type: businessData?.industry,
-              focus_area: businessData?.focus,
-              general_description: activity.general_description,
-              data_snapshot: {
-                activity_data: activity,
-                qre_breakdown: {
-                  employees: activity.employees,
-                  contractors: activity.contractors,
-                  supplies: activity.supplies
-                },
-                calculation_timestamp: new Date().toISOString()
-              }
-            });
+            // NOTE: Removed automatic save from loadSectionGData
+            // Save should only happen when user clicks the "Save" button
+            // This prevents circular behavior where every activity gets saved on component load
             
           } catch (error) {
             console.error('[SECTION G ERROR] Failed to generate AI description:', error);
@@ -241,12 +203,19 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
       );
       
       setRows(newRows);
-      console.log('%c[SECTION G DEBUG] Final rows created:', 'background: #0f0; color: #000; font-weight: bold;', newRows);
+      // Section G rows generated
     } catch (err) {
       console.error('%c[SECTION G ERROR] Unexpected error:', 'background: #f00; color: #fff; font-weight: bold;', err);
+    } finally {
+      setLoading(false);
+      setIsProcessing(false);
     }
-    setLoading(false);
-  };
+  }, [selectedYear?.id, businessData?.id, clientId]);
+
+  useEffect(() => {
+    if (!selectedYear?.id || !businessData?.id) return;
+    loadSectionGData();
+  }, [selectedYear?.id, businessData?.id, loadSectionGData]);
 
   // Method to save data to rd_federal_credit table
   const saveToFederalCreditTable = async (data: {
@@ -270,86 +239,193 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
     data_snapshot: any;
   }): Promise<void> => {
     try {
+      console.log('🔍 [SECTION G SAVE] Starting save operation...');
+      console.log('🔍 [SECTION G SAVE] Data to save:', {
+        business_year_id: data.business_year_id,
+        client_id: data.client_id,
+        research_activity_id: data.research_activity_id,
+        research_activity_name: data.research_activity_name,
+        line_49f_description_length: data.line_49f_description?.length || 0,
+        has_ai_description: !!data.line_49f_description,
+        total_qre: data.total_qre
+      });
+      
       console.log('[SECTION G DEBUG] Attempting to save with business_year_id:', data.business_year_id);
       console.log('[SECTION G DEBUG] clientId:', clientId);
       
-      // First, check if the business_year_id exists in the database
+      // CRITICAL FIX: First validate that business_year_id exists in rd_business_years table
       const { data: businessYearCheck, error: checkError } = await supabase
-        .from('business_years')
-        .select('id, year')
+        .from('rd_business_years')
+        .select('id, year, business_id')
         .eq('id', data.business_year_id)
         .single();
       
-      if (checkError) {
-        console.log('[SECTION G ERROR] Failed to check business_year_id:', checkError);
-        console.log('[SECTION G DEBUG] Business year ID being used:', data.business_year_id);
+      let validBusinessYearId = data.business_year_id;
+      
+      if (checkError || !businessYearCheck) {
+        console.error('❌ [SECTION G SAVE] Business year ID does not exist:', data.business_year_id);
+        console.log('[SECTION G DEBUG] Error details:', checkError);
         
-        // If the business_year_id doesn't exist, try to find a valid business year for this client
-        console.log('[SECTION G DEBUG] Attempting to find valid business year for client:', clientId);
+        // If the business_year_id doesn't exist, try to find/create a valid business year
+        console.log('[SECTION G DEBUG] Attempting to find/create valid business year for client:', clientId);
         
-        // Get the business_id for this client first
-        const { data: businessData, error: businessError } = await supabase
-          .from('businesses')
-          .select('id')
+        // Get the business for this client
+        const { data: clientBusiness, error: businessError } = await supabase
+          .from('rd_businesses')
+          .select('id, name')
           .eq('client_id', clientId)
           .single();
         
-        if (businessError) {
-          console.log('[SECTION G ERROR] Failed to find business for client:', businessError);
+        if (businessError || !clientBusiness) {
+          console.error('❌ [SECTION G SAVE] Failed to find business for client:', businessError);
+          alert('❌ Cannot save Section G data: No business found for this client. Please ensure the business is properly set up.');
           return;
         }
         
-        // Now get the business year for this business
-        const { data: validBusinessYear, error: yearError } = await supabase
-          .from('business_years')
+        console.log('✅ [SECTION G SAVE] Found business for client:', clientBusiness);
+        
+        // Try to find any existing business year for this business
+        const { data: existingBusinessYears, error: yearError } = await supabase
+          .from('rd_business_years')
           .select('id, year')
-          .eq('business_id', businessData.id)
-          .order('year', { ascending: false })
-          .limit(1)
-          .single();
+          .eq('business_id', clientBusiness.id)
+          .order('year', { ascending: false });
         
         if (yearError) {
-          console.log('[SECTION G ERROR] Failed to find valid business year:', yearError);
+          console.error('❌ [SECTION G SAVE] Failed to fetch business years:', yearError);
+          alert('❌ Cannot save Section G data: Failed to fetch business years. Please try again.');
           return;
         }
         
-        // Use the valid business year ID
-        data.business_year_id = validBusinessYear.id;
-        console.log('[SECTION G DEBUG] Using valid business year ID:', validBusinessYear.id);
-      }
-      
-      // Now save to rd_federal_credit table
-      const { error: insertError } = await supabase
-        .from('rd_federal_credit')
-        .insert({
-          business_year_id: data.business_year_id,
-          client_id: data.client_id,
-          research_activity_id: data.research_activity_id,
-          research_activity_name: data.research_activity_name,
-          direct_research_wages: data.direct_research_wages,
-          supplies_expenses: data.supplies_expenses,
-          contractor_expenses: data.contractor_expenses,
-          total_qre: data.total_qre,
-          subcomponent_count: data.subcomponent_count,
-          subcomponent_groups: data.subcomponent_groups,
-          applied_percent: data.applied_percent,
-          line_49f_description: data.line_49f_description,
-          ai_generation_timestamp: data.ai_generation_timestamp,
-          ai_prompt_used: data.ai_prompt_used,
-          industry_type: data.industry_type,
-          focus_area: data.focus_area,
-          general_description: data.general_description,
-          data_snapshot: data.data_snapshot,
-          is_latest: true
-        });
-      
-      if (insertError) {
-        console.log('[SECTION G ERROR] Failed to save to rd_federal_credit:', insertError);
+        if (existingBusinessYears && existingBusinessYears.length > 0) {
+          // Use the most recent business year
+          validBusinessYearId = existingBusinessYears[0].id;
+          console.log('✅ [SECTION G SAVE] Using existing business year ID:', validBusinessYearId, 'for year:', existingBusinessYears[0].year);
+        } else {
+          // No business years exist - create one for the current year
+          const currentYear = new Date().getFullYear();
+          console.log('⚠️ [SECTION G SAVE] No business years found, creating one for year:', currentYear);
+          
+          const { data: newBusinessYear, error: createError } = await supabase
+            .from('rd_business_years')
+            .insert({
+              business_id: clientBusiness.id,
+              year: currentYear,
+              gross_receipts: 0,
+              total_qre: 0
+            })
+            .select()
+            .single();
+          
+          if (createError || !newBusinessYear) {
+            console.error('❌ [SECTION G SAVE] Failed to create business year:', createError);
+            alert('❌ Cannot save Section G data: Failed to create business year. Please try again.');
+            return;
+          }
+          
+          validBusinessYearId = newBusinessYear.id;
+          console.log('✅ [SECTION G SAVE] Created new business year ID:', validBusinessYearId);
+        }
       } else {
-        console.log('[SECTION G DEBUG] Successfully saved to rd_federal_credit table');
+        console.log('✅ [SECTION G SAVE] Business year ID is valid:', businessYearCheck);
       }
+      
+      // Validate research_activity_id if provided
+      let validResearchActivityId = data.research_activity_id;
+      if (data.research_activity_id) {
+        const { data: researchActivityCheck, error: researchActivityError } = await supabase
+          .from('rd_research_activities')
+          .select('id')
+          .eq('id', data.research_activity_id)
+          .single();
+        
+        if (researchActivityError || !researchActivityCheck) {
+          console.log('⚠️ [SECTION G SAVE] research_activity_id does not exist:', data.research_activity_id);
+          console.log('[SECTION G WARNING] Saving without research_activity_id reference');
+          validResearchActivityId = null; // Set to null to avoid foreign key violation
+        } else {
+          console.log('✅ [SECTION G SAVE] Research activity ID is valid');
+        }
+      }
+      
+      // Check if a record already exists and update instead of insert to avoid conflicts
+      const { data: existingRecord, error: existingError } = await supabase
+        .from('rd_federal_credit')
+        .select('id')
+        .eq('business_year_id', validBusinessYearId)
+        .eq('client_id', data.client_id)
+        .eq('research_activity_name', data.research_activity_name)
+        .single();
+      
+      console.log('🔍 [SECTION G SAVE] Checking for existing record:', {
+        found: !!existingRecord,
+        error: !!existingError,
+        existingId: existingRecord?.id
+      });
+      
+      const recordData = {
+        business_year_id: validBusinessYearId,
+        client_id: data.client_id,
+        research_activity_id: validResearchActivityId,
+        research_activity_name: data.research_activity_name,
+        direct_research_wages: data.direct_research_wages,
+        supplies_expenses: data.supplies_expenses,
+        contractor_expenses: data.contractor_expenses,
+        total_qre: data.total_qre,
+        subcomponent_count: data.subcomponent_count,
+        subcomponent_groups: data.subcomponent_groups,
+        applied_percent: data.applied_percent,
+        line_49f_description: data.line_49f_description,
+        ai_generation_timestamp: data.ai_generation_timestamp,
+        ai_prompt_used: data.ai_prompt_used,
+        industry_type: data.industry_type,
+        focus_area: data.focus_area,
+        general_description: data.general_description,
+        data_snapshot: data.data_snapshot,
+        is_latest: true
+      };
+      
+      console.log('📝 [SECTION G SAVE] Record data prepared:', {
+        hasDescription: !!recordData.line_49f_description,
+        descriptionLength: recordData.line_49f_description?.length || 0,
+        totalQre: recordData.total_qre,
+        activityName: recordData.research_activity_name
+      });
+      
+      if (existingRecord && !existingError) {
+        // Update existing record
+        console.log('🔄 [SECTION G SAVE] Updating existing record...');
+        const { error: updateError } = await supabase
+          .from('rd_federal_credit')
+          .update(recordData)
+          .eq('id', existingRecord.id);
+        
+        if (updateError) {
+          console.error('❌ [SECTION G SAVE] Failed to update rd_federal_credit:', updateError);
+          alert('❌ Failed to update Section G data. Please try again.');
+        } else {
+          console.log('✅ [SECTION G SAVE] Updated existing rd_federal_credit record successfully');
+          alert('✅ Section G data updated successfully!');
+        }
+      } else {
+        // Insert new record
+        console.log('➕ [SECTION G SAVE] Inserting new record...');
+        const { error: insertError } = await supabase
+          .from('rd_federal_credit')
+          .insert(recordData);
+        
+        if (insertError) {
+          console.error('❌ [SECTION G SAVE] Failed to insert to rd_federal_credit:', insertError);
+          alert('❌ Failed to save Section G data. Please try again.');
+        } else {
+          console.log('✅ [SECTION G SAVE] Inserted new rd_federal_credit record successfully');
+          alert('✅ Section G data saved successfully!');
+        }
+      }
+      
     } catch (error) {
-      console.error('[SECTION G ERROR] Unexpected error in saveToFederalCreditTable:', error);
+      console.error('❌ [SECTION G SAVE] Unexpected error in saveToFederalCreditTable:', error);
+      alert('❌ Unexpected error saving Section G data. Please try again.');
     }
   };
 
@@ -432,7 +508,7 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
                   await saveToFederalCreditTable({
                     business_year_id: selectedYear.id,
                     client_id: clientId,
-                    research_activity_id: row.id,
+                    research_activity_id: row.id, // This will be validated in saveToFederalCreditTable
                     research_activity_name: row.name,
                     direct_research_wages: row.wages || 0,
                     supplies_expenses: row.supplies || 0,

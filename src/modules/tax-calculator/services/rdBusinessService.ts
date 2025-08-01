@@ -670,163 +670,14 @@ export class RDBusinessService {
     return newRdBusiness;
   }
 
-  /**
-   * Test method to verify enrollment process
-   */
-  static async testEnrollment(businessId: string, clientId: string): Promise<{ success: boolean; message: string; data?: any }> {
-    try {
-      console.log('[RDBusinessService] Testing enrollment process', { businessId, clientId });
-      
-      // Test 1: Check if business exists in businesses table
-      const { data: business, error: fetchError } = await supabase
-        .from('businesses')
-        .select('*')
-        .eq('id', businessId)
-        .single();
-        
-      if (fetchError || !business) {
-        return { 
-          success: false, 
-          message: `Business not found in businesses table: ${fetchError?.message || 'Business not found'}` 
-        };
-      }
-      
-      console.log('[RDBusinessService] Test 1 PASSED: Business found in businesses table', { businessName: business.business_name });
-      
-      // Test 2: Check if client exists in clients table
-      const { data: client, error: clientError } = await supabase
-        .from('clients')
-        .select('*')
-        .eq('id', clientId)
-        .single();
-        
-      if (clientError || !client) {
-        return { 
-          success: false, 
-          message: `Client not found in clients table: ${clientError?.message || 'Client not found'}` 
-        };
-      }
-      
-      console.log('[RDBusinessService] Test 2 PASSED: Client found in clients table', { clientName: client.full_name });
-      
-      // Test 3: Check rd_businesses table structure
-      const { data: rdBusinesses, error: rdError } = await supabase
-        .from('rd_businesses')
-        .select('*')
-        .limit(1);
-        
-      if (rdError) {
-        return { 
-          success: false, 
-          message: `Error accessing rd_businesses table: ${rdError.message}` 
-        };
-      }
-      
-      console.log('[RDBusinessService] Test 3 PASSED: rd_businesses table accessible');
-      
-      // Test 4: Try to insert a test record (will be rolled back)
-      const testRecord = {
-        client_id: clientId,
-        name: 'TEST_BUSINESS_DELETE_ME',
-        ein: '00-0000000',
-        entity_type: 'LLC',
-        start_year: 2024,
-        domicile_state: 'CA',
-        contact_info: { address: 'TEST', city: 'TEST', state: 'CA', zip: '00000' },
-        is_controlled_grp: false
-      };
-      
-      const { data: testInsert, error: insertError } = await supabase
-        .from('rd_businesses')
-        .insert(testRecord)
-        .select()
-        .single();
-        
-      if (insertError) {
-        return { 
-          success: false, 
-          message: `Error inserting test record into rd_businesses: ${insertError.message}`,
-          data: { insertError, testRecord }
-        };
-      }
-      
-      console.log('[RDBusinessService] Test 4 PASSED: Can insert into rd_businesses table');
-      
-      // Test 5: Check rd_business_years table structure
-      const { data: rdBusinessYears, error: rdYearsError } = await supabase
-        .from('rd_business_years')
-        .select('*')
-        .limit(1);
-        
-      if (rdYearsError) {
-        return { 
-          success: false, 
-          message: `Error accessing rd_business_years table: ${rdYearsError.message}` 
-        };
-      }
-      
-      console.log('[RDBusinessService] Test 5 PASSED: rd_business_years table accessible');
-      
-      // Test 6: Try to insert a test business year record (will be rolled back)
-      const testYearRecord = {
-        business_id: testInsert.id,
-        year: 2024,
-        gross_receipts: 100000,
-        total_qre: 0
-      };
-      
-      const { data: testYearInsert, error: yearInsertError } = await supabase
-        .from('rd_business_years')
-        .insert(testYearRecord)
-        .select()
-        .single();
-        
-      if (yearInsertError) {
-        return { 
-          success: false, 
-          message: `Error inserting test record into rd_business_years: ${yearInsertError.message}`,
-          data: { yearInsertError, testYearRecord }
-        };
-      }
-      
-      console.log('[RDBusinessService] Test 6 PASSED: Can insert into rd_business_years table');
-      
-      // Clean up test year record
-      await supabase
-        .from('rd_business_years')
-        .delete()
-        .eq('id', testYearInsert.id);
-        
-      console.log('[RDBusinessService] Test cleanup: Removed test year record');
-      
-      // Clean up test record
-      await supabase
-        .from('rd_businesses')
-        .delete()
-        .eq('id', testInsert.id);
-        
-      console.log('[RDBusinessService] Test cleanup: Removed test record');
-      
-      return { 
-        success: true, 
-        message: 'All enrollment tests passed successfully',
-        data: { business, client }
-      };
-      
-    } catch (error) {
-      console.error('[RDBusinessService] Test enrollment error:', error);
-      return { 
-        success: false, 
-        message: `Test enrollment failed: ${error instanceof Error ? error.message : 'Unknown error'}` 
-      };
-    }
-  }
+
 
   /**
-   * Create or update rd_business_years entries for the specified years
-   * @param businessId - The ID of the business in rd_businesses table
-   * @param years - Array of years to create/update
-   * @param removeUnusedYears - Whether to remove years not in the specified array (default: false)
+   * Create or update business year records for the given years.
+   * CRITICAL: Preserve existing business years with QRE data to prevent data loss.
+   * @param businessId ID of the business
+   * @param years Array of years to ensure exist
+   * @param removeUnusedYears Whether to remove business years not in the years array
    * @returns Array of created/updated business year records
    */
   static async createOrUpdateBusinessYears(businessId: string, years: number[], removeUnusedYears: boolean = false): Promise<any[]> {
@@ -838,10 +689,17 @@ export class RDBusinessService {
     }
 
     try {
-      // First, get existing business years for this business
+      // First, get existing business years for this business with QRE data check
       const { data: existingYears, error: fetchError } = await supabase
         .from('rd_business_years')
-        .select('*')
+        .select(`
+          *,
+          employee_year_data:rd_employee_year_data(id),
+          contractor_year_data:rd_contractor_year_data(id),
+          supply_year_data:rd_supply_year_data(id),
+          selected_activities:rd_selected_activities(id),
+          selected_subcomponents:rd_selected_subcomponents(id)
+        `)
         .eq('business_id', businessId);
 
       if (fetchError) {
@@ -851,20 +709,52 @@ export class RDBusinessService {
 
       console.log('[RDBusinessService] Existing business years:', existingYears);
 
+      // Categorize existing years based on whether they have QRE data
+      const existingYearMap = new Map();
+      const yearsWithData = new Set();
+      const yearsWithoutData = new Set();
+
+      existingYears?.forEach(year => {
+        existingYearMap.set(year.year, year);
+        
+        const hasQREData = (
+          year.total_qre > 0 || 
+          year.employee_qre > 0 || 
+          year.contractor_qre > 0 || 
+          year.supply_qre > 0 ||
+          year.employee_year_data?.length > 0 ||
+          year.contractor_year_data?.length > 0 ||
+          year.supply_year_data?.length > 0 ||
+          year.selected_activities?.length > 0 ||
+          year.selected_subcomponents?.length > 0
+        );
+
+        if (hasQREData) {
+          yearsWithData.add(year.year);
+          console.log(`🔒 [RDBusinessService] Year ${year.year} has QRE data - will be preserved`);
+        } else {
+          yearsWithoutData.add(year.year);
+          console.log(`📝 [RDBusinessService] Year ${year.year} has no QRE data`);
+        }
+      });
+
       const existingYearSet = new Set(existingYears?.map(y => y.year) || []);
       const yearsToCreate = years.filter(year => !existingYearSet.has(year));
-      const yearsToUpdate = years.filter(year => existingYearSet.has(year));
 
       console.log('[RDBusinessService] Years to create:', yearsToCreate);
-      console.log('[RDBusinessService] Years to update:', yearsToUpdate);
+      console.log('[RDBusinessService] Years with QRE data (preserved):', Array.from(yearsWithData));
+      console.log('[RDBusinessService] Years without QRE data:', Array.from(yearsWithoutData));
 
       const results = [];
 
-      // Remove unused years if requested
+      // CRITICAL: Never remove years that have QRE data
       if (removeUnusedYears && existingYears) {
-        const yearsToRemove = existingYears.filter(year => !years.includes(year.year));
+        const yearsToRemove = existingYears.filter(year => 
+          !years.includes(year.year) && !yearsWithData.has(year.year)
+        );
+        
         if (yearsToRemove.length > 0) {
-          console.log('[RDBusinessService] Removing unused years:', yearsToRemove.map(y => y.year));
+          console.log('[RDBusinessService] Removing unused years (without QRE data):', yearsToRemove.map(y => y.year));
           
           const { error: deleteError } = await supabase
             .from('rd_business_years')
@@ -878,9 +768,18 @@ export class RDBusinessService {
             console.log('[RDBusinessService] Successfully removed unused years');
           }
         }
+
+        // Log if any years with data would have been removed (for user awareness)
+        const protectedYears = existingYears.filter(year => 
+          !years.includes(year.year) && yearsWithData.has(year.year)
+        );
+        if (protectedYears.length > 0) {
+          console.log('🔒 [RDBusinessService] Protected years with QRE data from removal:', 
+            protectedYears.map(y => y.year));
+        }
       }
 
-      // Create new business year entries
+      // Create new business year entries only for missing years
       if (yearsToCreate.length > 0) {
         const newYearRecords = yearsToCreate.map(year => ({
           business_id: businessId,
@@ -905,18 +804,22 @@ export class RDBusinessService {
         results.push(...(createdYears || []));
       }
 
-      // Update existing business year entries (if needed)
-      if (yearsToUpdate.length > 0) {
-        console.log('[RDBusinessService] Years already exist, no update needed:', yearsToUpdate);
-        // For now, we don't update existing records, just return them
-        const existingRecords = existingYears?.filter(y => yearsToUpdate.includes(y.year)) || [];
-        results.push(...existingRecords);
+      // Include all existing business years in results (both with and without data)
+      const existingRecords = existingYears?.filter(y => years.includes(y.year)) || [];
+      results.push(...existingRecords);
+
+      // Log summary for user awareness
+      const totalYearsWithData = Array.from(yearsWithData).filter(year => years.includes(year)).length;
+      if (totalYearsWithData > 0) {
+        console.log(`✅ [RDBusinessService] Preserved ${totalYearsWithData} years with existing QRE data:`, 
+          Array.from(yearsWithData).filter(year => years.includes(year)));
       }
 
       console.log('[RDBusinessService] createOrUpdateBusinessYears completed successfully', {
         totalResults: results.length,
         createdCount: yearsToCreate.length,
-        existingCount: yearsToUpdate.length
+        preservedWithData: totalYearsWithData,
+        existingCount: existingRecords.length
       });
 
       return results;

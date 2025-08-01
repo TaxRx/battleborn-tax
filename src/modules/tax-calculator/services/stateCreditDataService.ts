@@ -11,6 +11,17 @@ export interface StateCreditBaseData {
   computerLeases: number; // Add computer leases for completeness
   businessEntityType?: 'LLC' | 'S-Corp' | 'C-Corp' | 'Partnership' | 'Sole-Proprietor' | 'Other'; // Add business entity type for 280C
   
+  // Individual year gross receipts for Utah and other states requiring specific year data
+  grossReceipts1Prior?: number; // 1 year prior gross receipts
+  grossReceipts2Prior?: number; // 2 years prior gross receipts
+  grossReceipts3Prior?: number; // 3 years prior gross receipts
+  grossReceipts4Prior?: number; // 4 years prior gross receipts
+  
+  // Individual year QREs for ASC calculations
+  qre1Prior?: number; // 1 year prior QRE
+  qre2Prior?: number; // 2 years prior QRE
+  qre3Prior?: number; // 3 years prior QRE
+  
   // Alaska specific fields
   federalGeneralBusinessCredit?: number;
   federalInvestmentCredit?: number;
@@ -117,7 +128,12 @@ export interface StateCreditQREEntry {
 }
 
 export class StateCreditDataService {
-  
+
+  // Utility function to apply 80% threshold rule (matches display logic)
+  private static applyEightyPercentThreshold(appliedPercentage: number): number {
+    return appliedPercentage >= 80 ? 100 : appliedPercentage;
+  }
+
   // Get all QRE data for state credits using the same approach as Section G
   static async getQREDataForStateCredits(businessYearId: string): Promise<StateCreditQREEntry[]> {
     try {
@@ -327,14 +343,18 @@ export class StateCreditDataService {
 
           if (employeeSubcomponent) {
             const annualWage = employee.annual_wage || 0;
-            const appliedDollarAmount = Math.round((annualWage * (employeeSubcomponent.applied_percentage || 0)) / 100);
+            const originalAppliedPercentage = employeeSubcomponent.applied_percentage || 0;
+            // Apply 80% threshold rule for QRE calculation
+            const qreAppliedPercentage = this.applyEightyPercentThreshold(originalAppliedPercentage);
+            const appliedDollarAmount = Math.round((annualWage * qreAppliedPercentage) / 100);
             const calculatedQRE = appliedDollarAmount;
 
             console.log(`🔍 [StateCreditDataService] Employee ${employee.first_name} ${employee.last_name}:`, {
               role: employee.role?.name,
               is_owner: employee.is_owner,
               annual_wage: annualWage,
-              applied_percentage: employeeSubcomponent.applied_percentage,
+              original_applied_percentage: originalAppliedPercentage,
+              qre_applied_percentage_with_80_threshold: qreAppliedPercentage,
               calculated_qre: calculatedQRE
             });
 
@@ -351,7 +371,7 @@ export class StateCreditDataService {
               last_name: employee.last_name,
               role: employee.role?.name,
               annual_cost: annualWage,
-              applied_percentage: employeeSubcomponent.applied_percentage || 0,
+              applied_percentage: originalAppliedPercentage,
               calculated_qre: calculatedQRE,
               is_owner: employee.is_owner || false
             });
@@ -367,14 +387,20 @@ export class StateCreditDataService {
 
           if (contractorSubcomponent) {
             const annualCost = contractor.annual_cost || 0;
-            const appliedDollarAmount = Math.round((annualCost * (contractorSubcomponent.applied_percentage || 0)) / 100);
-            const calculatedQRE = appliedDollarAmount;
+            const originalAppliedPercentage = contractorSubcomponent.applied_percentage || 0;
+            // Apply 80% threshold rule for contractor calculation
+            const qreAppliedPercentage = this.applyEightyPercentThreshold(originalAppliedPercentage);
+            const appliedDollarAmount = Math.round((annualCost * qreAppliedPercentage) / 100);
+            // Apply 65% reduction for contractors (consistent with CSV export and other services)
+            const calculatedQRE = Math.round(appliedDollarAmount * 0.65);
 
             console.log(`🔍 [StateCreditDataService] Contractor ${contractor.name}:`, {
               role: contractor.role?.name,
               annual_cost: annualCost,
-              applied_percentage: contractorSubcomponent.applied_percentage,
-              calculated_qre: calculatedQRE
+              original_applied_percentage: originalAppliedPercentage,
+              qre_applied_percentage_with_80_threshold: qreAppliedPercentage,
+              applied_dollar_amount: appliedDollarAmount,
+              calculated_qre_with_65_percent_reduction: calculatedQRE
             });
 
             qreEntries.push({
@@ -388,7 +414,7 @@ export class StateCreditDataService {
               name: contractor.name,
               role: contractor.role?.name,
               annual_cost: annualCost,
-              applied_percentage: contractorSubcomponent.applied_percentage || 0,
+              applied_percentage: originalAppliedPercentage,
               calculated_qre: calculatedQRE,
               is_owner: false
             });
@@ -443,32 +469,63 @@ export class StateCreditDataService {
   // Get aggregated QRE data for state credits
   static async getAggregatedQREData(businessYearId: string): Promise<StateCreditBaseData> {
     try {
-      const qreEntries = await this.getQREDataForStateCredits(businessYearId);
-      
-      // Aggregate by category
-      const wages = qreEntries
-        .filter(entry => entry.category === 'Employee')
-        .reduce((sum, entry) => sum + (entry.calculated_qre || 0), 0);
-      
-      const supplies = qreEntries
-        .filter(entry => entry.category === 'Supply')
-        .reduce((sum, entry) => sum + (entry.calculated_qre || 0), 0);
-      
-      const contractResearch = qreEntries
-        .filter(entry => entry.category === 'Contractor')
-        .reduce((sum, entry) => sum + (entry.calculated_qre || 0), 0);
-
-      // Get business year info for historical data calculation
-      const { data: businessYear, error: businessYearError } = await supabase
+      // CRITICAL: Check for locked QRE values first (Priority 1)
+      const { data: businessYearData, error: lockError } = await supabase
         .from('rd_business_years')
-        .select('business_id, year')
+        .select('business_id, year, qre_locked, employee_qre, contractor_qre, supply_qre, total_qre')
         .eq('id', businessYearId)
         .single();
 
-      if (businessYearError) {
-        console.error('❌ Error fetching business year for historical data:', businessYearError);
-        throw businessYearError;
+      if (lockError) {
+        console.error('❌ Error fetching business year data for state credits:', lockError);
+        throw lockError;
       }
+
+      let wages: number;
+      let supplies: number;
+      let contractResearch: number;
+
+      // PRIORITY 1: Use locked QRE values if available
+      if (businessYearData.qre_locked) {
+        wages = businessYearData.employee_qre || 0;
+        supplies = businessYearData.supply_qre || 0;
+        contractResearch = businessYearData.contractor_qre || 0;
+        
+        console.log(`🔒 [StateCreditDataService] Using LOCKED QRE values for state pro formas (Year ${businessYearData.year}):`, {
+          wages,
+          supplies,
+          contractResearch,
+          total: wages + supplies + contractResearch
+        });
+      } else {
+        // PRIORITY 2: Calculate from internal data (current logic)
+        console.log(`🧮 [StateCreditDataService] Calculating QRE from internal data for state pro formas (Year ${businessYearData.year})`);
+        
+        const qreEntries = await this.getQREDataForStateCredits(businessYearId);
+        
+        // Aggregate by category
+        wages = qreEntries
+          .filter(entry => entry.category === 'Employee')
+          .reduce((sum, entry) => sum + (entry.calculated_qre || 0), 0);
+        
+        supplies = qreEntries
+          .filter(entry => entry.category === 'Supply')
+          .reduce((sum, entry) => sum + (entry.calculated_qre || 0), 0);
+        
+        contractResearch = qreEntries
+          .filter(entry => entry.category === 'Contractor')
+          .reduce((sum, entry) => sum + (entry.calculated_qre || 0), 0);
+        
+        console.log(`🧮 [StateCreditDataService] Calculated QRE breakdown for state pro formas:`, {
+          wages,
+          supplies,
+          contractResearch,
+          total: wages + supplies + contractResearch
+        });
+      }
+
+      // Use business year data already fetched above
+      const businessYear = businessYearData;
 
       // Get business entity type for 280C calculations
       const { data: business, error: businessError } = await supabase
@@ -482,14 +539,14 @@ export class StateCreditDataService {
         // Don't throw, just use undefined for entity type
       }
 
-      // Get historical data for average gross receipts calculation (like federal form)
+      // Get historical data for average gross receipts calculation and individual year data
       const { data: historicalData, error: historicalError } = await supabase
         .from('rd_business_years')
-        .select('year, gross_receipts')
+        .select('year, gross_receipts, total_qre')
         .eq('business_id', businessYear.business_id)
         .lt('year', businessYear.year) // Only prior years
         .order('year', { ascending: false })
-        .limit(3); // Get exactly 3 most recent prior years
+        .limit(4); // Get up to 4 years for Utah and other states
 
       if (historicalError) {
         console.error('❌ Error fetching historical data:', historicalError);
@@ -497,16 +554,36 @@ export class StateCreditDataService {
       }
 
       // Calculate average gross receipts from historical data (like federal form)
-      // Use up to 3 most recent years, or fewer if not available
+      // Use up to 3 most recent years, or fewer if not available  
       const avgGrossReceipts = historicalData && historicalData.length > 0
-        ? Math.round(historicalData.reduce((sum, year) => sum + (year.gross_receipts || 0), 0) / historicalData.length)
+        ? Math.round(historicalData.reduce((sum, year) => sum + (year.gross_receipts || 0), 0) / Math.min(historicalData.length, 3))
         : 0;
+
+      // Extract individual year data for state pro formas (Utah needs 4 years, ASC needs 3 years)
+      const currentYear = businessYear.year;
+      const grossReceipts1Prior = historicalData?.find(y => y.year === currentYear - 1)?.gross_receipts || 0;
+      const grossReceipts2Prior = historicalData?.find(y => y.year === currentYear - 2)?.gross_receipts || 0;
+      const grossReceipts3Prior = historicalData?.find(y => y.year === currentYear - 3)?.gross_receipts || 0;
+      const grossReceipts4Prior = historicalData?.find(y => y.year === currentYear - 4)?.gross_receipts || 0;
+      
+      const qre1Prior = historicalData?.find(y => y.year === currentYear - 1)?.total_qre || 0;
+      const qre2Prior = historicalData?.find(y => y.year === currentYear - 2)?.total_qre || 0;
+      const qre3Prior = historicalData?.find(y => y.year === currentYear - 3)?.total_qre || 0;
 
       console.log('📊 State Credit Historical Data:', {
         businessYear: businessYear.year,
         historicalYears: historicalData?.map(y => y.year) || [],
         avgGrossReceipts,
-        businessEntityType: business?.entity_type
+        businessEntityType: business?.entity_type,
+        individualYearData: {
+          grossReceipts4Prior,
+          grossReceipts3Prior,
+          grossReceipts2Prior,
+          grossReceipts1Prior,
+          qre3Prior,
+          qre2Prior,
+          qre1Prior
+        }
       });
 
       return {
@@ -518,6 +595,17 @@ export class StateCreditDataService {
         basicResearchPayments: 0, // TODO: Calculate from historical data
         avgGrossReceipts: Math.round(avgGrossReceipts), // Round to nearest dollar
         businessEntityType: business?.entity_type, // Include business entity type for 280C
+        
+        // Individual year gross receipts (auto-populated from business setup)
+        grossReceipts1Prior: Math.round(grossReceipts1Prior),
+        grossReceipts2Prior: Math.round(grossReceipts2Prior), 
+        grossReceipts3Prior: Math.round(grossReceipts3Prior),
+        grossReceipts4Prior: Math.round(grossReceipts4Prior),
+        
+        // Individual year QREs (for ASC calculations)
+        qre1Prior: Math.round(qre1Prior),
+        qre2Prior: Math.round(qre2Prior),
+        qre3Prior: Math.round(qre3Prior),
       };
     } catch (error) {
       console.error('Error getting aggregated QRE data:', error);
@@ -529,6 +617,17 @@ export class StateCreditDataService {
         basePeriodAmount: 0,
         basicResearchPayments: 0,
         avgGrossReceipts: 0,
+        
+        // Individual year gross receipts (default to 0 on error)
+        grossReceipts1Prior: 0,
+        grossReceipts2Prior: 0,
+        grossReceipts3Prior: 0,
+        grossReceipts4Prior: 0,
+        
+        // Individual year QREs (default to 0 on error)
+        qre1Prior: 0,
+        qre2Prior: 0,
+        qre3Prior: 0,
       };
     }
   }

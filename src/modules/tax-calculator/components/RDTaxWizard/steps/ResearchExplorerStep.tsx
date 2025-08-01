@@ -3,7 +3,7 @@ import { supabase } from '../../../../../lib/supabase';
 import { Plus, ChevronDown, ChevronRight, Edit, Trash2, MoveUp, MoveDown, UserPlus, Sparkles, RotateCcw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { AIService } from "../../../../../services/aiService";
-// aiService removed - using static content generation
+import StepCompletionBanner from '../../../../../components/common/StepCompletionBanner';
 
 interface ResearchExplorerStepProps {
   selectedActivities: any[];
@@ -1040,10 +1040,17 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
   // Reload roles when business year changes
   useEffect(() => {
     if (selectedBusinessYearId) {
-      console.log('Business year changed, loading roles for:', selectedBusinessYearId);
+      console.log('🔄 [YEAR CHANGE] Business year changed, aggressive clearing and loading for:', selectedBusinessYearId);
+      
+      // AGGRESSIVE STATE CLEARING immediately when year changes to prevent data leakage
+      console.log('🧹 [YEAR CHANGE] Clearing all research data to prevent leakage');
+      setRoles([]);
+      
+      // Load fresh data after clearing
+      console.log('📥 [YEAR CHANGE] Loading fresh data for year:', selectedBusinessYearId);
       loadRoles();
-      // Also load selected activities when business year changes
       loadSelectedActivities();
+      loadResearchData();
     }
   }, [selectedBusinessYearId]);
 
@@ -1245,8 +1252,11 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         return;
       }
 
-      console.log('Loading roles for business year:', selectedBusinessYearId);
-
+      console.log('🧹 [ROLES] AGGRESSIVE CLEARING - Loading roles for business year:', selectedBusinessYearId);
+      
+      // IMMEDIATE STATE CLEARING to prevent data leakage
+      setRoles([]);
+      
       const { data: roles, error } = await supabase
         .from('rd_roles')
         .select('*')
@@ -1263,12 +1273,14 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
       if (roles && roles.length > 0) {
         setRoles(roles);
+        console.log('✅ [ROLES] Set roles data:', roles.length, 'roles');
       } else {
         // No roles found for this business year, ask user if they want to copy all data
         console.log('No roles found for this business year, asking user if they want to copy all data');
         setCopyType('all');
         setShowCopyModal(true);
         setRoles([]);
+        console.log('✅ [ROLES] No roles found - state cleared and copy modal shown');
       }
     } catch (err) {
       console.error('Error loading roles:', err);
@@ -2414,36 +2426,15 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         }
       }
 
-      // STEP 8: Copy Employee Year Data  
-      const { data: sourceEmployeeYearData, error: empYearError } = await supabase
-        .from('rd_employee_year_data')
-        .select('*')
-        .eq('business_year_id', sourceBusinessYearId);
-
-      if (empYearError) {
-        console.error('Error fetching source employee year data:', empYearError);
-      } else if (sourceEmployeeYearData && sourceEmployeeYearData.length > 0) {
-        console.log(`👤 Copying ${sourceEmployeeYearData.length} employee year records...`);
-        
-        for (const empYear of sourceEmployeeYearData) {
-          try {
-            await supabase
-              .from('rd_employee_year_data')
-              .insert({
-                employee_id: empYear.employee_id,
-                business_year_id: selectedBusinessYearId,
-                calculated_qre: empYear.calculated_qre,
-                applied_percent: empYear.applied_percent
-              });
-            console.log(`✅ Copied employee year data for employee ${empYear.employee_id}`);
-          } catch (error) {
-            console.error(`❌ Error copying employee year data:`, error);
-          }
-        }
-      }
+      // STEP 8: Employee Year Data - REMOVED (Inappropriate to copy year-specific employee data)
+      // Employee year data contains annual wages and year-specific calculations that should NOT be copied between years.
+      // Only employee allocations (which activities/subcomponents they work on) should be copied, which we already did in STEP 5.
+      console.log('⚠️  Skipping employee year data copy - this data is year-specific and should not be copied');
+      console.log('✅ Employee allocations were already copied in STEP 5 (which activities/subcomponents employees work on)');
 
       console.log('🎉 COMPREHENSIVE DATA COPY COMPLETED!');
       console.log('📊 Successfully copied all research data, activities, steps, subcomponents, employee allocations, contractors, and supplies');
+      console.log('💡 Note: Employee year data (wages, etc.) was intentionally NOT copied as it should be year-specific');
       
       // Reload all data for the current year
       await Promise.all([
@@ -2966,6 +2957,14 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Step Completion Banner */}
+      <StepCompletionBanner 
+        stepName="researchActivities"
+        stepDisplayName="Research Activities"
+        businessYearId={businessYearId || ''}
+        description="Select the research activities your business performs"
+      />
+      
       {/* Header with Business Setup style */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-6 border-b border-gray-200">
@@ -3879,18 +3878,11 @@ const CopyConfirmationModal: React.FC<CopyConfirmationModalProps> = ({
 }) => {
   const [selectedYearId, setSelectedYearId] = useState<string>('');
 
-  // Add debugging
-  console.log('🔍 CopyConfirmationModal Debug:');
-  console.log('📅 Available years:', availableYears);
-  console.log('🎯 Current year:', currentYear);
-  console.log('🎯 Current year ID:', currentYear?.id);
-  
   const filteredYears = availableYears.filter(year => year.id !== currentYear?.id);
-  console.log('🔍 Filtered years (excluding current):', filteredYears);
 
   const handleConfirm = () => {
     if (selectedYearId) {
-      console.log('✅ User selected year ID for copy:', selectedYearId);
+      // User confirmed year selection for copy
       onConfirm(selectedYearId);
       onClose();
       setSelectedYearId('');
@@ -3990,6 +3982,14 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
   };
 
   const generateAIAnswers = async () => {
+    console.log('🚀 [AI] Generate All with AI button clicked!');
+    console.log('🎯 [AI] Current activity:', {
+      id: activity.id,
+      name: activity.activity_name,
+      selected_roles: activity.selected_roles,
+      allRoles: allRoles?.length || 0
+    });
+    
     setIsGenerating(true);
     try {
       // Get role names for the selected roles
@@ -3997,28 +3997,74 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
         .filter(role => activity.selected_roles.includes(role.id))
         .map(role => role.name);
 
-      // TEMP: Commented out AI functionality due to deleted aiService
-      // const context: AIGenerationContext = {
-      //   businessProfile: { name: activity.activity_name || 'Unknown Activity' },
-      //   selectedActivities: [activity],
-      //   selectedSteps: [],
-      //   selectedSubcomponents: []
-      // };
+      console.log('👥 [AI] Selected roles for generation:', selectedRoleNames);
 
-      // const hypothesis = await aiService.generateContent(`Generate a research hypothesis for: ${activity.activity_name || 'Unknown Activity'}`);
-      // const developmentSteps = await aiService.generateContent(`Generate development steps for: ${activity.activity_name || 'Unknown Activity'}`);
-      // const dataFeedback = await aiService.generateContent(`Generate data feedback approach for: ${activity.activity_name || 'Unknown Activity'}`);
+      const aiService = AIService.getInstance();
+      console.log('🔧 [AI] AI Service instance obtained');
       
-      // TEMP: Using placeholder values
-      const hypothesis = 'AI service temporarily unavailable';
-      const developmentSteps = 'AI service temporarily unavailable';
-      const dataFeedback = 'AI service temporarily unavailable';
+      // Generate AI content for each field
+      const activityName = activity.activity_name || 'Unknown Activity';
+      const roleContext = selectedRoleNames.length > 0 ? ` involving roles: ${selectedRoleNames.join(', ')}` : '';
       
-      const aiAnswers = {
-        hypothesis,
-        developmentSteps,
-        dataFeedback
+      console.log('🤖 [AI] Starting generation for activity:', activityName, 'with roles:', selectedRoleNames);
+      
+      const hypothesis = await aiService.generateContent(
+        `Generate a specific research hypothesis for the R&D activity: "${activityName}"${roleContext}. 
+        Focus on what uncertainty the research aims to resolve and what new knowledge or capability will be developed.
+        Keep it concise but technical and specific to the activity.
+        
+        IMPORTANT: Do not use markdown formatting (no **bold**, *italic*, etc.). Provide plain text only.`
+      );
+      
+      console.log('✅ [AI] Generated hypothesis:', hypothesis?.substring(0, 100) + '...');
+      
+      const developmentSteps = await aiService.generateContent(
+        `Generate development steps for the R&D activity: "${activityName}"${roleContext}.
+        List 3-5 specific, measurable steps that would be taken to execute this research.
+        Focus on the systematic approach and methodology that would be used.
+        
+        IMPORTANT: Do not use markdown formatting (no **bold**, *italic*, etc.). Provide plain text only.`
+      );
+      
+      console.log('✅ [AI] Generated development steps:', developmentSteps?.substring(0, 100) + '...');
+      
+      const dataFeedback = await aiService.generateContent(
+        `Generate a data feedback approach for the R&D activity: "${activityName}"${roleContext}.
+        Describe how progress will be measured, what data will be collected, and how results will be evaluated.
+        Focus on metrics and evaluation criteria specific to this type of research.
+        
+        IMPORTANT: Do not use markdown formatting (no **bold**, *italic*, etc.). Provide plain text only.`
+      );
+      
+      console.log('✅ [AI] Generated data feedback:', dataFeedback?.substring(0, 100) + '...');
+      
+      // Function to strip markdown formatting
+      const stripMarkdown = (text: string): string => {
+        if (!text) return '';
+        return text
+          .replace(/\*\*(.*?)\*\*/g, '$1') // Remove **bold**
+          .replace(/\*(.*?)\*/g, '$1')     // Remove *italic*
+          .replace(/__(.*?)__/g, '$1')     // Remove __bold__
+          .replace(/_(.*?)_/g, '$1')       // Remove _italic_
+          .replace(/`(.*?)`/g, '$1')       // Remove `code`
+          .replace(/#{1,6}\s/g, '')        // Remove headers
+          .replace(/\[(.*?)\]\(.*?\)/g, '$1') // Remove links, keep text
+          .replace(/^\s*[-*+]\s/gm, '')    // Remove bullet points
+          .replace(/^\s*\d+\.\s/gm, '')    // Remove numbered lists
+          .trim();
       };
+
+      const aiAnswers = {
+        hypothesis: stripMarkdown(hypothesis),
+        developmentSteps: stripMarkdown(developmentSteps),
+        dataFeedback: stripMarkdown(dataFeedback)
+      };
+      
+      console.log('📝 [AI] Final processed answers:', {
+        hypothesis: aiAnswers.hypothesis?.substring(0, 50) + '...',
+        developmentSteps: aiAnswers.developmentSteps?.substring(0, 50) + '...',
+        dataFeedback: aiAnswers.dataFeedback?.substring(0, 50) + '...'
+      });
       
       const updatedGuidelines = {
         ...guidelines,
@@ -4029,9 +4075,49 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
       
       setGuidelines(updatedGuidelines);
       onUpdateGuidelines(updatedGuidelines);
+      
+      console.log('✅ [AI] Successfully updated all guidelines for activity:', activityName);
+      
+      // Log success for debugging
+      console.log('📢 [AI] AI generation completed successfully');
     } catch (error) {
-      console.error('Error generating AI answers:', error);
+      console.error('❌ [AI] Error generating AI answers:', error);
+      
+      // Provide user-friendly error message based on the error type
+      let errorMessage = 'Unable to generate AI content at this time.';
+      if (error instanceof Error) {
+        console.error('❌ [AI] Error details:', {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        });
+        
+        if (error.message.includes('API key not configured')) {
+          errorMessage = 'AI service configuration error. Please check API key settings.';
+        } else if (error.message.includes('Rate limit exceeded')) {
+          errorMessage = 'Rate limit exceeded. Please try again in a moment.';
+        } else if (error.message.includes('OpenAI API error')) {
+          errorMessage = 'AI service error. Please try again later.';
+        }
+      }
+      
+      console.log('🔧 [AI] Setting error message in fields:', errorMessage);
+      
+      // Set error message in the fields
+      const updatedGuidelines = {
+        ...guidelines,
+        hypothesis: errorMessage,
+        development_steps: errorMessage,
+        data_feedback: errorMessage
+      };
+      
+      setGuidelines(updatedGuidelines);
+      onUpdateGuidelines(updatedGuidelines);
+      
+      // Log error for debugging  
+      console.log('📢 [AI] AI generation failed, error set in fields');
     } finally {
+      console.log('🏁 [AI] Finished generateAIAnswers process');
       setIsGenerating(false);
     }
   };
@@ -4043,22 +4129,63 @@ const ResearchGuidelinesAccordion: React.FC<ResearchGuidelinesAccordionProps> = 
         .filter(role => activity.selected_roles.includes(role.id))
         .map(role => role.name);
 
-      // TEMP: Commented out AI functionality due to deleted aiService
+      const aiService = AIService.getInstance();
+      const activityName = activity.activity_name || 'Unknown Activity';
+      const roleContext = selectedRoleNames.length > 0 ? ` involving roles: ${selectedRoleNames.join(', ')}` : '';
+      
+      // Function to strip markdown formatting
+      const stripMarkdown = (text: string): string => {
+        if (!text) return '';
+        return text
+          .replace(/\*\*(.*?)\*\*/g, '$1') // Remove **bold**
+          .replace(/\*(.*?)\*/g, '$1')     // Remove *italic*
+          .replace(/__(.*?)__/g, '$1')     // Remove __bold__
+          .replace(/_(.*?)_/g, '$1')       // Remove _italic_
+          .replace(/`(.*?)`/g, '$1')       // Remove `code`
+          .replace(/#{1,6}\s/g, '')        // Remove headers
+          .replace(/\[(.*?)\]\(.*?\)/g, '$1') // Remove links, keep text
+          .replace(/^\s*[-*+]\s/gm, '')    // Remove bullet points
+          .replace(/^\s*\d+\.\s/gm, '')    // Remove numbered lists
+          .trim();
+      };
+
+      console.log(`🤖 [AI] Regenerating field "${field}" for activity:`, activityName);
+      
       let newValue = '';
       switch (field) {
         case 'hypothesis':
-          // newValue = await aiService.generateContent(`Generate a research hypothesis for: ${activity.activity_name || 'Unknown Activity'}`);
-          newValue = 'AI service temporarily unavailable';
+          newValue = await aiService.generateContent(
+            `Generate a specific research hypothesis for the R&D activity: "${activityName}"${roleContext}. 
+            Focus on what uncertainty the research aims to resolve and what new knowledge or capability will be developed.
+            Keep it concise but technical and specific to the activity.
+            
+            IMPORTANT: Do not use markdown formatting (no **bold**, *italic*, etc.). Provide plain text only.`
+          );
           break;
         case 'development_steps':
-          // newValue = await aiService.generateContent(`Generate development steps for: ${activity.activity_name || 'Unknown Activity'}`);
-          newValue = 'AI service temporarily unavailable';
+          newValue = await aiService.generateContent(
+            `Generate development steps for the R&D activity: "${activityName}"${roleContext}.
+            List 3-5 specific, measurable steps that would be taken to execute this research.
+            Focus on the systematic approach and methodology that would be used.
+            
+            IMPORTANT: Do not use markdown formatting (no **bold**, *italic*, etc.). Provide plain text only.`
+          );
           break;
         case 'data_feedback':
-          // newValue = await aiService.generateContent(`Generate data feedback approach for: ${activity.activity_name || 'Unknown Activity'}`);
-          newValue = 'AI service temporarily unavailable';
+          newValue = await aiService.generateContent(
+            `Generate a data feedback approach for the R&D activity: "${activityName}"${roleContext}.
+            Describe how progress will be measured, what data will be collected, and how results will be evaluated.
+            Focus on metrics and evaluation criteria specific to this type of research.
+            
+            IMPORTANT: Do not use markdown formatting (no **bold**, *italic*, etc.). Provide plain text only.`
+          );
           break;
       }
+
+      // Strip any remaining markdown formatting
+      newValue = stripMarkdown(newValue);
+      
+      console.log(`✅ [AI] Successfully regenerated "${field}":`, newValue?.substring(0, 100) + '...');
 
       const updatedGuidelines = { ...guidelines, [field]: newValue };
       setGuidelines(updatedGuidelines);

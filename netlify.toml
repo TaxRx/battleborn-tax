@@ -1,10 +1,12 @@
 [build]
-  command = "npm install && npm run build"
+  command = "npm install && npm run build:prod"
   publish = "dist"
 
 [build.environment]
   NODE_VERSION = "20.5.0"
   NPM_VERSION = "10.0.0"
+  NODE_ENV = "production"
+  VITE_APP_ENV = "production"
 
 # Support client-side routing
 [[redirects]]

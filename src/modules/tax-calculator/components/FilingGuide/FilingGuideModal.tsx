@@ -343,14 +343,16 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
           businessData,
           selectedYear,
           calculations,
-          fileName
+          fileName,
+          selectedMethod
         });
       } else {
         await FilingGuideService.exportToHTML({
           businessData,
           selectedYear,
           calculations,
-          fileName
+          fileName: fileName.replace('.pdf', '.html'),
+          selectedMethod
         });
       }
     } catch (error) {
@@ -510,13 +512,24 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
               {/* Main Content Area */}
               <div className="filing-guide-main-content">
                 <div className="filing-guide-preview">
+                  {/* ALWAYS render the live FilingGuideDocument to ensure data loading */}
                   <FilingGuideDocument
                     businessData={businessData}
                     selectedYear={selectedYear}
                     calculations={calculations}
                     selectedMethod={selectedMethod}
                     debugData={debugData}
+                    readOnly={window.location.pathname.includes('/client')}
                   />
+                  
+                  {/* Show cached content overlay if available (for faster initial display) */}
+                  {cachedReport?.filing_guide && (
+                    <div 
+                      className="filing-guide-cached-overlay"
+                      style={{ display: 'none' }}
+                      dangerouslySetInnerHTML={{ __html: cachedReport.filing_guide }}
+                    />
+                  )}
                 </div>
                 
                 {/* Print Footer - Hidden on screen */}

@@ -4,6 +4,11 @@ import { supabase } from "../../../lib/supabase";
 const roundToDollar = (value: number): number => Math.round(value);
 const roundToPercentage = (value: number): number => Math.round(value * 100) / 100;
 
+// Utility function to apply 80% threshold rule (matches display logic)
+const applyEightyPercentThreshold = (appliedPercentage: number): number => {
+  return appliedPercentage >= 80 ? 100 : appliedPercentage;
+};
+
 export interface QREBreakdown {
   employee_wages: number;
   contractor_costs: number;
@@ -15,6 +20,10 @@ export interface HistoricalData {
   year: number;
   qre: number;
   gross_receipts: number;
+  // Enhanced fields for comprehensive QRE tracking
+  manual_qre?: number;
+  calculated_qre?: number;
+  qre_breakdown?: QREBreakdown;
 }
 
 export interface StandardCreditCalculation {
@@ -68,8 +77,31 @@ export interface CalculationResults {
 export class RDCalculationsService {
   
   // Get QRE breakdown for a business year
+  // CRITICAL: Check locked QRE values first, then fall back to calculated values
   static async getQREBreakdown(businessYearId: string): Promise<QREBreakdown> {
     try {
+      // PRIORITY 1: Check if QRE values are locked for this business year
+      const { data: businessYearData, error: yearError } = await supabase
+        .from('rd_business_years')
+        .select('employee_qre, contractor_qre, supply_qre, qre_locked')
+        .eq('id', businessYearId)
+        .single();
+
+      if (!yearError && businessYearData?.qre_locked) {
+        const lockedQRE = {
+          employee_wages: businessYearData.employee_qre || 0,
+          contractor_costs: businessYearData.contractor_qre || 0,
+          supply_costs: businessYearData.supply_qre || 0,
+          total: (businessYearData.employee_qre || 0) + (businessYearData.contractor_qre || 0) + (businessYearData.supply_qre || 0)
+        };
+        
+        console.log('🔒 [RDCalculationsService] Using LOCKED QRE values:', lockedQRE);
+        return lockedQRE;
+      }
+
+      console.log('📊 [RDCalculationsService] QRE not locked, calculating from internal data');
+      
+      // PRIORITY 2: Calculate from internal data (existing logic)
       // Get employee wages (from rd_employee_year_data joined with rd_employees)
       const { data: employeeData, error: employeeError } = await supabase
         .from('rd_employee_year_data')
@@ -90,31 +122,53 @@ export class RDCalculationsService {
         const calculatedQRE = emp.calculated_qre || 0;
         
         // Use calculated QRE if available, otherwise calculate from wage and percent
-        const employeeQRE = calculatedQRE > 0 ? calculatedQRE : (annualWage * appliedPercent / 100);
+        // Apply Math.round() and 80% threshold rule for consistency with other services
+        const qreAppliedPercent = applyEightyPercentThreshold(appliedPercent);
+        const employeeQRE = calculatedQRE > 0 ? calculatedQRE : Math.round(annualWage * qreAppliedPercent / 100);
+        
+        console.log('🧮 [RDCalculations] Employee QRE:', {
+          annual_wage: annualWage,
+          original_applied_percent: appliedPercent,
+          qre_applied_percent_with_80_threshold: qreAppliedPercent,
+          stored_calculated_qre: calculatedQRE,
+          final_employee_qre: employeeQRE,
+          calculation_used: calculatedQRE > 0 ? 'stored_calculated_qre' : 'Math.round(wage * (applied_percent >= 80 ? 100 : applied_percent) / 100)'
+        });
+        
         return total + employeeQRE;
       }, 0);
 
-      // Get contractor costs (from rd_contractor_year_data joined with rd_contractors)
+      // Get contractor costs (from rd_contractor_year_data table directly)
       const { data: contractorData, error: contractorError } = await supabase
         .from('rd_contractor_year_data')
         .select(`
           applied_percent,
           calculated_qre,
-          contractor:rd_contractors (
-            amount
-          )
+          cost_amount
         `)
         .eq('business_year_id', businessYearId);
 
       if (contractorError) throw contractorError;
 
       const contractorCosts = (contractorData || []).reduce((total, contractor) => {
-        const amount = contractor.contractor?.amount || 0;
+        const amount = contractor.cost_amount || 0;
         const appliedPercent = contractor.applied_percent || 0;
         const calculatedQRE = contractor.calculated_qre || 0;
         
         // Use calculated QRE if available, otherwise calculate from amount and percent
-        const contractorQRE = calculatedQRE > 0 ? calculatedQRE : (amount * appliedPercent / 100);
+        // Apply 65% reduction and 80% threshold rule for contractors (consistent with CSV export and other services)
+        const qreAppliedPercent = applyEightyPercentThreshold(appliedPercent);
+        const contractorQRE = calculatedQRE > 0 ? calculatedQRE : Math.round((amount * qreAppliedPercent / 100) * 0.65);
+        
+        console.log('🧮 [RDCalculations] Contractor QRE:', {
+          amount: amount,
+          original_applied_percent: appliedPercent,
+          qre_applied_percent_with_80_threshold: qreAppliedPercent,
+          stored_calculated_qre: calculatedQRE,
+          final_contractor_qre: contractorQRE,
+          calculation_used: calculatedQRE > 0 ? 'stored_calculated_qre' : 'Math.round((amount * (applied_percent >= 80 ? 100 : applied_percent) / 100) * 0.65)'
+        });
+        
         return total + contractorQRE;
       }, 0);
 
@@ -138,7 +192,8 @@ export class RDCalculationsService {
         const supplyCost = ssc.supply?.annual_cost || 0;
         
         // Use amount_applied if available, otherwise calculate from cost and percentage
-        const supplyQRE = amountApplied > 0 ? amountApplied : (supplyCost * appliedPercentage / 100);
+        // Apply Math.round() for consistency with other services
+        const supplyQRE = amountApplied > 0 ? amountApplied : Math.round(supplyCost * appliedPercentage / 100);
         return total + supplyQRE;
       }, 0);
 
@@ -157,23 +212,98 @@ export class RDCalculationsService {
   // Get historical data for base period calculations
   static async getHistoricalData(businessId: string, currentYear: number): Promise<HistoricalData[]> {
     try {
+      // Loading historical data for business
+      
+      // Get business years with basic data (manually entered QREs and gross receipts)
       const { data: businessYears, error } = await supabase
         .from('rd_business_years')
-        .select('year, total_qre, gross_receipts')
+        .select('id, year, total_qre, gross_receipts')
         .eq('business_id', businessId)
         .lt('year', currentYear)
         .order('year', { ascending: false })
         .limit(10); // Get last 10 years
 
-      if (error) throw error;
+      if (error) {
+        console.error('🚨 [RDCalculationsService] Error loading historical data:', error);
+        throw error;
+      }
 
-      return (businessYears || []).map(year => ({
-        year: year.year,
-        qre: year.total_qre || 0,
-        gross_receipts: year.gross_receipts || 0
-      }));
+      console.log('📊 [RDCalculationsService] Base historical data loaded:', businessYears);
+
+      // For each historical year, calculate QREs from internal data AND combine with manual QREs
+      const enhancedHistoricalData: HistoricalData[] = [];
+
+      for (const yearData of businessYears || []) {
+        console.log(`🔍 [RDCalculationsService] Processing historical year ${yearData.year} (ID: ${yearData.id})`);
+        
+        try {
+          // Calculate QREs from employees, contractors, supplies for this historical year
+          const calculatedQRE = await this.getQREBreakdown(yearData.id);
+          
+          console.log(`📊 [RDCalculationsService] Year ${yearData.year} QRE breakdown:`, {
+            manualQRE: yearData.total_qre || 0,
+            calculatedQRE: calculatedQRE.total,
+            calculatedBreakdown: calculatedQRE
+          });
+
+          // CRITICAL FIX: For historical years, prioritize Manual QRE over calculated
+          // Only use calculated QRE if no manual QRE exists
+          const manualQRE = yearData.total_qre || 0;
+          const finalQRE = manualQRE > 0 ? manualQRE : calculatedQRE.total;
+
+          console.log(`🎯 [RDCalculationsService] Year ${yearData.year} QRE PRIORITY LOGIC:`, {
+            manualQRE,
+            calculatedQRE: calculatedQRE.total,
+            finalQRE,
+            logic: manualQRE > 0 ? 'Using MANUAL QRE (Business Setup priority)' : 'Using CALCULATED QRE (no manual QRE)'
+          });
+
+          enhancedHistoricalData.push({
+            year: yearData.year,
+            qre: finalQRE, // Use priority-based QRE, not combined
+            gross_receipts: yearData.gross_receipts || 0,
+            // Additional breakdown for debugging
+            manual_qre: manualQRE,
+            calculated_qre: calculatedQRE.total,
+            qre_breakdown: calculatedQRE
+          });
+
+          console.log(`✅ [RDCalculationsService] Year ${yearData.year} FINAL QRE:`, {
+            manual: manualQRE,
+            calculated: calculatedQRE.total,
+            finalQRE: finalQRE,
+            priorityUsed: manualQRE > 0 ? 'MANUAL (Business Setup)' : 'CALCULATED (internal data)'
+          });
+
+        } catch (qreError) {
+          // Could not calculate QREs for this year
+          
+          // Fallback to manual QRE only if calculation fails
+          const fallbackQRE = yearData.total_qre || 0;
+          console.log(`🔄 [RDCalculationsService] Year ${yearData.year} FALLBACK to manual QRE:`, fallbackQRE);
+          
+          enhancedHistoricalData.push({
+            year: yearData.year,
+            qre: fallbackQRE,
+            gross_receipts: yearData.gross_receipts || 0,
+            manual_qre: fallbackQRE,
+            calculated_qre: 0,
+            qre_breakdown: { employee_wages: 0, contractor_costs: 0, supply_costs: 0, total: 0 }
+          });
+        }
+      }
+
+      console.log('📊 [RDCalculationsService] COMPREHENSIVE historical data loaded:', {
+        businessId,
+        currentYear,
+        totalYears: enhancedHistoricalData.length,
+        historicalData: enhancedHistoricalData,
+        totalQREByYear: enhancedHistoricalData.map(y => ({ year: y.year, totalQRE: y.qre }))
+      });
+
+      return enhancedHistoricalData;
     } catch (error) {
-      console.error('Error getting historical data:', error);
+      console.error('❌ [RDCalculationsService] Error getting comprehensive historical data:', error);
       throw error;
     }
   }
@@ -351,13 +481,16 @@ export class RDCalculationsService {
     return results;
   }
 
-  // Main calculation method
-  static async calculateCredits(
+    // Main calculation method
+static async calculateCredits(
     businessYearId: string,
     use280C: boolean = false,
-    corporateTaxRate: number = 0.21
+    corporateTaxRate: number = 0.21,
+    selectedMethod?: 'standard' | 'asc'
   ): Promise<CalculationResults> {
     try {
+      console.log('🚀 [RDCalculationsService] Starting main calculateCredits for business year:', businessYearId);
+      
       // Get business year info
       const { data: businessYear, error: yearError } = await supabase
         .from('rd_business_years')
@@ -373,11 +506,28 @@ export class RDCalculationsService {
 
       if (yearError) throw yearError;
 
+      console.log('🔍 [RDCalculationsService] Business year data:', {
+        id: businessYear.id,
+        year: businessYear.year,
+        business_id: businessYear.business_id,
+        gross_receipts: businessYear.gross_receipts,
+        total_qre: businessYear.total_qre
+      });
+
       // Get current year QRE breakdown
       const currentYearQRE = await this.getQREBreakdown(businessYearId);
 
+      console.log('📊 [RDCalculationsService] Current year QRE breakdown:', currentYearQRE);
+
       // Get historical data
       const historicalData = await this.getHistoricalData(businessYear.business_id, businessYear.year);
+
+      console.log('📊 [RDCalculationsService] Historical data retrieved:', {
+        businessId: businessYear.business_id,
+        currentYear: businessYear.year,
+        historicalDataCount: historicalData.length,
+        historicalData: historicalData
+      });
 
       // Calculate federal credits
       const standardCredit = this.calculateStandardCredit(
@@ -394,14 +544,19 @@ export class RDCalculationsService {
         corporateTaxRate
       );
 
-      // Always calculate both methods and let user choose
-      // Default to ASC if Standard is not eligible, otherwise let user decide
-      const selectedMethod = standardCredit.isEligible ? 'standard' : 'asc';
+      // Use user's selected method if provided, otherwise default based on eligibility
+      const finalSelectedMethod = selectedMethod || (standardCredit.isEligible ? 'standard' : 'asc');
+      
+      console.log('🎯 [RDCalculationsService] Method selection:', {
+        userSelectedMethod: selectedMethod,
+        standardIsEligible: standardCredit.isEligible,
+        finalSelectedMethod: finalSelectedMethod
+      });
 
       const federalCredits: FederalCreditResults = {
         standard: standardCredit,
         asc: ascCredit,
-        selectedMethod,
+        selectedMethod: finalSelectedMethod,
         use280C,
         corporateTaxRate
       };
@@ -413,7 +568,7 @@ export class RDCalculationsService {
       );
 
       // Calculate totals based on selected method
-      const totalFederalCredit = selectedMethod === 'standard' 
+      const totalFederalCredit = finalSelectedMethod === 'standard' 
         ? (standardCredit.adjustedCredit || standardCredit.credit)
         : (ascCredit.adjustedCredit || ascCredit.credit);
 
@@ -431,6 +586,17 @@ export class RDCalculationsService {
         totalCredits,
         calculationDate: new Date().toISOString()
       };
+
+      console.log('✅ [RDCalculationsService] Final calculation results:', {
+        businessYearId: results.businessYearId,
+        currentYearQRETotal: results.currentYearQRE.total,
+        historicalDataCount: results.historicalData.length,
+        historicalDataSample: results.historicalData.slice(0, 3),
+        standardCredit: results.federalCredits.standard.credit,
+        ascCredit: results.federalCredits.asc.credit,
+        selectedMethod: finalSelectedMethod,
+        totalFederalCredit: results.totalFederalCredit
+      });
 
       // Save results to database
       await this.saveCalculationResults(results);

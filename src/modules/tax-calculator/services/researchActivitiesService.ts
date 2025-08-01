@@ -404,10 +404,13 @@ export class ResearchActivitiesService {
   // Update research step
   static async updateResearchStep(id: string, updates: Partial<ResearchStep>): Promise<ResearchStep> {
     try {
+      // Filter out UI-only properties that don't exist in the database schema
+      const { expanded, subcomponents, ...dbUpdates } = updates as any;
+      
       const { data, error } = await supabase
         .from('rd_research_steps')
         .update({
-          ...updates,
+          ...dbUpdates,
           updated_at: new Date().toISOString()
         })
         .eq('id', id)
