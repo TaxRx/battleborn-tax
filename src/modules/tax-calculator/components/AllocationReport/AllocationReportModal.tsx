@@ -1211,7 +1211,7 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
               <div class="header-left">
                 <div class="logo-section">
                   <div class="company-logo">
-                    <img src="/images/Direct Research_horizontal advisors logo.png" alt="Direct Research Logo" class="logo-img">
+                    <img src="${import.meta.env.VITE_PUBLIC_SITE_URL}/images/Direct Research_horizontal advisors logo.png" alt="Direct Research Logo" class="logo-img">
                   </div>
                   <div class="company-info">
                     <h2 class="company-name">Direct Research</h2>

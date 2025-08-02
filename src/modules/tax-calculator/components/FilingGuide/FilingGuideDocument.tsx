@@ -258,7 +258,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
         <div className="filing-guide-cover-page">
           <div className="filing-guide-logo">
             <img 
-              src="/images/Direct Research_horizontal advisors logo.png" 
+              src={`${import.meta.env.VITE_PUBLIC_SITE_URL}/images/Direct Research_horizontal advisors logo.png`} 
               alt="Direct Research Logo"
               className="filing-guide-logo-img"
             />

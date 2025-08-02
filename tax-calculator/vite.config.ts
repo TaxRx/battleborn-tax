@@ -23,7 +23,7 @@ export default defineConfig({
       'Access-Control-Allow-Headers': 'X-Requested-With, content-type, Authorization',
       'Content-Security-Policy': [
         `default-src 'self'`,
-        `connect-src 'self' http://localhost:* https://*.supabase.co wss://*.supabase.co https://*.googleapis.com https://maps.googleapis.com https://fonts.gstatic.com`,
+        `connect-src 'self' http://localhost:* https://*.supabase.co wss://*.supabase.co https://*.googleapis.com https://maps.googleapis.com https://fonts.gstatic.com https://*.galileo.tax`,
         `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://*.supabase.co`,
         `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
         `img-src 'self' data: https://*.googleapis.com https://*.gstatic.com https://*.supabase.co blob:`,

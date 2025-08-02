@@ -25,7 +25,7 @@ const CSP_HEADER = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.openai.com",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.openai.com https://*.galileo.tax",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'"
