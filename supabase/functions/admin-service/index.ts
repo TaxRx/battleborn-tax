@@ -98,15 +98,15 @@ serve(async (req) => {
 
     // Admin auth endpoints
     if (pathname === '/admin-service/get-user-by-email') {
-      return await handleAdminGetUserByEmail(req, supabaseServiceClient)
+      return await handleAdminGetUserByEmail(body, supabaseServiceClient)
     } else if (pathname === '/admin-service/generate-magic-link') {
-      return await handleAdminGenerateMagicLink(req, supabaseServiceClient)
+      return await handleAdminGenerateMagicLink(body, supabaseServiceClient)
     } else if (pathname === '/admin-service/check-auth-user') {
-      return await handleAdminCheckAuthUser(req, supabaseServiceClient)
+      return await handleAdminCheckAuthUser(body, supabaseServiceClient)
     } else if (pathname === '/admin-service/create-auth-user') {
-      return await handleAdminCreateAuthUser(req, supabaseServiceClient)
+      return await handleAdminCreateAuthUser(body, supabaseServiceClient)
     } else if (pathname === '/admin-service/create-profile-with-auth') {
-      return await handleAdminCreateProfileWithAuth(req, supabaseServiceClient)
+      return await handleAdminCreateProfileWithAuth(body, supabaseServiceClient)
     }
 
     // Routing logic for admin-specific actions
@@ -333,16 +333,9 @@ serve(async (req) => {
 // --- Additional Admin Handlers --- //
 
 // --- Handler for Admin Get User By Email --- //
-async function handleAdminGetUserByEmail(req, supabaseAdmin) {
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 405 
-    })
-  }
-
+async function handleAdminGetUserByEmail(body, supabaseAdmin) {
   try {
-    const { email } = await req.json()
+    const { email } = body
 
     if (!email?.trim()) {
       return new Response(JSON.stringify({ error: 'Email is required' }), {
@@ -388,16 +381,9 @@ async function handleAdminGetUserByEmail(req, supabaseAdmin) {
 }
 
 // --- Handler for Admin Generate Magic Link --- //
-async function handleAdminGenerateMagicLink(req, supabaseAdmin) {
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 405 
-    })
-  }
-
+async function handleAdminGenerateMagicLink(body, supabaseAdmin) {
   try {
-    const { email, redirectTo } = await req.json()
+    const { email, redirectTo } = body
 
     if (!email?.trim()) {
       return new Response(JSON.stringify({ error: 'Email is required' }), {
@@ -457,16 +443,9 @@ async function handleAdminGenerateMagicLink(req, supabaseAdmin) {
 }
 
 // --- Handler for Admin Check Auth User --- //
-async function handleAdminCheckAuthUser(req, supabaseAdmin) {
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 405 
-    })
-  }
-
+async function handleAdminCheckAuthUser(body, supabaseAdmin) {
   try {
-    const { email } = await req.json()
+    const { email } = body
 
     if (!email?.trim()) {
       return new Response(JSON.stringify({ error: 'Email is required' }), {
@@ -520,16 +499,9 @@ async function handleAdminCheckAuthUser(req, supabaseAdmin) {
 }
 
 // --- Handler for Admin Create Auth User --- //
-async function handleAdminCreateAuthUser(req, supabaseAdmin) {
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 405 
-    })
-  }
-
+async function handleAdminCreateAuthUser(body, supabaseAdmin) {
   try {
-    const { email, password = 'TempPass123!' } = await req.json()
+    const { email, password = 'TempPass123!' } = body
 
     if (!email?.trim()) {
       return new Response(JSON.stringify({ error: 'Email is required' }), {
@@ -591,14 +563,7 @@ async function handleAdminCreateAuthUser(req, supabaseAdmin) {
 }
 
 // --- Handler for Admin Create Profile With Auth --- //
-async function handleAdminCreateProfileWithAuth(req, supabaseAdmin) {
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 405 
-    })
-  }
-
+async function handleAdminCreateProfileWithAuth(body, supabaseAdmin) {
   try {
     const { 
       email, 
@@ -609,7 +574,7 @@ async function handleAdminCreateProfileWithAuth(req, supabaseAdmin) {
       status = 'pending',
       createLogin = false,
       password = 'TempPass123!'
-    } = await req.json()
+    } = body
 
     // Validate required fields
     if (!email?.trim()) {
@@ -631,28 +596,48 @@ async function handleAdminCreateProfileWithAuth(req, supabaseAdmin) {
 
     // Create auth user first if requested
     if (createLogin) {
-      const authResult = await handleAdminCreateAuthUser(
-        new Request(req.url, {
-          method: 'POST',
-          headers: req.headers,
-          body: JSON.stringify({ email, password })
-        }),
-        supabaseAdmin
-      )
+      try {
+        // Create the auth user directly without calling handleAdminCreateAuthUser
+        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+          email: email.trim().toLowerCase(),
+          password: password,
+          email_confirm: true // Auto-confirm the email
+        })
 
-      const authData = await authResult.json()
-      if (!authData.success) {
-        return new Response(JSON.stringify({
-          error: `Failed to create user login: ${authData.error}`,
-          details: authData.details
+        if (authError) {
+          console.error('Error creating auth user:', authError)
+          return new Response(JSON.stringify({ 
+            error: 'Failed to create user login',
+            details: authError.message 
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 400
+          })
+        }
+
+        if (!authData.user) {
+          return new Response(JSON.stringify({ 
+            error: 'Failed to create user - no user returned' 
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 500
+          })
+        }
+
+        authUserId = authData.user.id
+        temporaryPassword = password
+        console.log(`Admin created auth user: ${email} with ID: ${authData.user.id}`)
+
+      } catch (authError) {
+        console.error('Error in auth user creation:', authError)
+        return new Response(JSON.stringify({ 
+          error: 'Failed to create user login',
+          details: authError.message 
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400
+          status: 500
         })
       }
-
-      authUserId = authData.userId
-      temporaryPassword = authData.temporaryPassword
     }
 
     // Create the profile
