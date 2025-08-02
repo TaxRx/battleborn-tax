@@ -146,7 +146,7 @@ export default function ResetPasswordPage() {
         <div>
           <div className="mx-auto h-12 w-12 flex items-center justify-center">
             <div className="h-8 w-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-lg">B</span>
+              <span className="text-white font-bold text-xs">GT</span>
             </div>
           </div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
@@ -246,7 +246,19 @@ export default function ResetPasswordPage() {
 
           {error && (
             <div className="rounded-md bg-red-50 p-4">
-              <div className="text-sm text-red-700">{error}</div>
+              <div className="text-sm text-red-700">
+                {error}
+                {error.includes('Invalid or expired reset link') && (
+                  <div className="mt-2">
+                    <button
+                      onClick={() => navigate('/forgot-password')}
+                      className="font-medium text-red-600 hover:text-red-500 underline"
+                    >
+                      Request a new password reset
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

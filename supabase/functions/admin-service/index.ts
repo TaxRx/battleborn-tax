@@ -107,6 +107,8 @@ serve(async (req) => {
       return await handleAdminCreateAuthUser(body, supabaseServiceClient)
     } else if (pathname === '/admin-service/create-profile-with-auth') {
       return await handleAdminCreateProfileWithAuth(body, supabaseServiceClient)
+    } else if (pathname === '/admin-service/update-user-password') {
+      return await handleAdminUpdateUserPassword(body, supabaseServiceClient)
     }
 
     // Routing logic for admin-specific actions
@@ -709,6 +711,71 @@ async function handleAdminCreateProfileWithAuth(body, supabaseAdmin) {
     console.error('Error in handleAdminCreateProfileWithAuth:', error)
     return new Response(JSON.stringify({ 
       error: 'Failed to create profile',
+      details: error.message 
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500
+    })
+  }
+}
+
+// --- Handler for Admin Update User Password --- //
+async function handleAdminUpdateUserPassword(body, supabaseAdmin) {
+  try {
+    const { userId, newPassword } = body
+
+    if (!userId?.trim()) {
+      return new Response(JSON.stringify({ error: 'User ID is required' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400
+      })
+    }
+
+    if (!newPassword?.trim()) {
+      return new Response(JSON.stringify({ error: 'New password is required' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400
+      })
+    }
+
+    // Basic password strength validation
+    if (newPassword.length < 8) {
+      return new Response(JSON.stringify({ error: 'Password must be at least 8 characters long' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400
+      })
+    }
+
+    // Update user password using admin API
+    const { data, error } = await supabaseAdmin.auth.admin.updateUserById(userId.trim(), {
+      password: newPassword.trim()
+    })
+    
+    if (error) {
+      console.error('Error updating user password:', error)
+      return new Response(JSON.stringify({ 
+        error: 'Failed to update user password',
+        details: error.message 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500
+      })
+    }
+
+    console.log(`Admin updated password for user: ${userId}`)
+    
+    return new Response(JSON.stringify({ 
+      success: true,
+      message: 'Password updated successfully'
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200
+    })
+
+  } catch (error) {
+    console.error('Error in handleAdminUpdateUserPassword:', error)
+    return new Response(JSON.stringify({ 
+      error: 'Failed to update user password',
       details: error.message 
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

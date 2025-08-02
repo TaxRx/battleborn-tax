@@ -17,11 +17,13 @@ import {
   User,
   Shield,
   Phone,
-  Mail
+  Mail,
+  Key
 } from 'lucide-react';
 import AdminAccountService, { Profile, ProfileFilters } from '../services/adminAccountService';
 import ProfileFormModal from './ProfileFormModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
+import PasswordManagementModal from './PasswordManagementModal';
 
 interface ProfileManagementProps {
   accountId: string;
@@ -42,8 +44,10 @@ export const ProfileManagement: React.FC<ProfileManagementProps> = ({
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [profileToEdit, setProfileToEdit] = useState<Profile | null>(null);
   const [profileToDelete, setProfileToDelete] = useState<Profile | null>(null);
+  const [profileToManagePassword, setProfileToManagePassword] = useState<Profile | null>(null);
 
   // Filters
   const [filters, setFilters] = useState<ProfileFilters>({
@@ -99,6 +103,11 @@ export const ProfileManagement: React.FC<ProfileManagementProps> = ({
     setShowDeleteModal(true);
   };
 
+  const handleManagePassword = (profile: Profile) => {
+    setProfileToManagePassword(profile);
+    setShowPasswordModal(true);
+  };
+
   const handleRestoreProfile = async (profile: Profile) => {
     try {
       const result = await adminAccountService.restoreProfile(profile.id);
@@ -144,8 +153,10 @@ export const ProfileManagement: React.FC<ProfileManagementProps> = ({
     setShowCreateModal(false);
     setShowEditModal(false);
     setShowDeleteModal(false);
+    setShowPasswordModal(false);
     setProfileToEdit(null);
     setProfileToDelete(null);
+    setProfileToManagePassword(null);
   };
 
   const getStatusBadge = (status: string) => {
@@ -388,6 +399,13 @@ export const ProfileManagement: React.FC<ProfileManagementProps> = ({
                                 <Edit3 className="h-4 w-4" />
                               </button>
                               <button 
+                                className="text-blue-600 hover:text-blue-900"
+                                onClick={() => handleManagePassword(profile)}
+                                title="Manage Password"
+                              >
+                                <Key className="h-4 w-4" />
+                              </button>
+                              <button 
                                 className="text-red-600 hover:text-red-900"
                                 onClick={() => handleDeleteProfile(profile)}
                                 title="Delete Profile"
@@ -464,6 +482,12 @@ export const ProfileManagement: React.FC<ProfileManagementProps> = ({
         message="Are you sure you want to delete this profile?"
         itemName={profileToDelete?.email}
         confirmText="Delete Profile"
+      />
+
+      <PasswordManagementModal
+        isOpen={showPasswordModal}
+        onClose={handleCloseModals}
+        profile={profileToManagePassword}
       />
     </div>
   );
