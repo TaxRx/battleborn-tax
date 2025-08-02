@@ -1280,7 +1280,7 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
       const cleanedContent = generatePuppeteerHTML();
       
       console.log('📄 Sending content to Puppeteer server...');
-      const response = await fetch('http://localhost:3001/api/generate-pdf', {
+      const response = await fetch(`${import.meta.env.VITE_PDF_SERVER_URL}/api/generate-pdf`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

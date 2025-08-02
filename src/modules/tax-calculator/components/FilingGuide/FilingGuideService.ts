@@ -1600,11 +1600,11 @@ export class FilingGuideService {
       console.log('📊 [PUPPETEER API] Request details:', {
         htmlLength: htmlContent.length,
         fileName: fileName,
-        endpoint: 'http://localhost:3001/api/generate-pdf'
+        endpoint: `${import.meta.env.VITE_PDF_SERVER_URL}/api/generate-pdf`
       });
 
-      // Call our Express PDF server running on port 3001
-      const response = await fetch('http://localhost:3001/api/generate-pdf', {
+      // Call our PDF generation server at reports.galileo.tax
+      const response = await fetch(`${import.meta.env.VITE_PDF_SERVER_URL}/api/generate-pdf`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1655,7 +1655,7 @@ export class FilingGuideService {
       // Check if it's a connection error
       if (error.message.includes('fetch')) {
         console.error('❌ [PUPPETEER API] Network error - PDF server may not be running');
-        alert('PDF server is not running. Please start the PDF server with: npm run pdf-server');
+        alert('PDF generation service is unavailable. Please try again later or contact support.');
         return;
       }
       
