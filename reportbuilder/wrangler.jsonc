@@ -1,0 +1,116 @@
+{
+  // Cloudflare Workers configuration for Galileo Report Builder
+  // PDF generation service using browser rendering
+  "name": "galileo-reportbuilder",
+  "account_id": "10bae1566e72e0e3ed64adcb4adfc9a4",
+  "compatibility_date": "2025-08-01",
+  "compatibility_flags": ["nodejs_compat_v2"],
+  
+  // Main worker script
+  "main": "./src/index.js",
+  
+  // Browser rendering binding
+  "browser": {
+    "binding": "BROWSER"
+  },
+  
+  // Default environment variables (overridden by environment-specific configs)
+  "vars": {
+    "ENVIRONMENT": "production",
+    "NODE_ENV": "production",
+    "SERVICE_NAME": "galileo-reportbuilder",
+    "VERSION": "1.0.0",
+    "LOG_LEVEL": "info"
+  },
+  
+  // Development configuration
+  "dev": {
+    "port": 8789,
+    "local_protocol": "http",
+    "upstream_protocol": "https"
+  },
+  
+  // Environment-specific configurations
+  "env": {
+    "development": {
+      "name": "galileo-reportbuilder-dev",
+      "browser": {
+        "binding": "BROWSER"
+      },
+      "vars": {
+        "ENVIRONMENT": "development",
+        "NODE_ENV": "development",
+        "SERVICE_NAME": "galileo-reportbuilder",
+        "VERSION": "1.0.0-dev",
+        "LOG_LEVEL": "debug"
+      }
+    },
+    "staging": {
+      "name": "galileo-reportbuilder-staging",
+      "browser": {
+        "binding": "BROWSER"
+      },
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "NODE_ENV": "production",
+        "SERVICE_NAME": "galileo-reportbuilder",
+        "VERSION": "1.0.0-staging",
+        "LOG_LEVEL": "info"
+      }
+    },
+    "production": {
+      "name": "galileo-reportbuilder-prod",
+      "browser": {
+        "binding": "BROWSER"
+      },
+      "vars": {
+        "ENVIRONMENT": "production",
+        "NODE_ENV": "production",
+        "SERVICE_NAME": "galileo-reportbuilder",
+        "VERSION": "1.0.0",
+        "LOG_LEVEL": "warn"
+      },
+      // Production-specific routes (custom domains)
+      // reports.galileo.tax domain configuration
+      "routes": [
+        { "pattern": "reports.galileo.tax/*", "zone_name": "galileo.tax" }
+      ],
+      // "analytics_engine_datasets": [
+      //   {
+      //     "binding": "ANALYTICS",
+      //     "dataset": "reportbuilder_analytics"
+      //   }
+      // ]
+    }
+  },
+  
+  // Worker limits and performance
+  // "limits": {
+  //   "cpu_ms": 30000
+  // },
+  
+  // Analytics and monitoring (commented out until configured)
+  // "analytics_engine_datasets": [
+  //   {
+  //     "binding": "ANALYTICS",
+  //     "dataset": "reportbuilder_analytics"
+  //   }
+  // ],
+  
+  // Optional bindings (commented out until needed)
+  // "kv_namespaces": [
+  //   {
+  //     "binding": "CACHE",
+  //     "id": "your_kv_namespace_id",
+  //     "preview_id": "your_preview_kv_namespace_id"
+  //   }
+  // ],
+  
+  // "r2_buckets": [
+  //   {
+  //     "binding": "REPORTS",
+  //     "bucket_name": "galileo-reports-bucket",
+  //     "preview_bucket_name": "galileo-reports-preview"
+  //   }
+  // ]
+}

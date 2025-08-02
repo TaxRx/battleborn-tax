@@ -1,0 +1,61 @@
+{
+  "name": "@galileo/reportbuilder",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker-based PDF report generation service using browser rendering",
+  "main": "src/index.js",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18.17.0",
+    "npm": ">=9.6.7"
+  },
+  "scripts": {
+    "dev": "wrangler dev --config wrangler.dev.jsonc",
+    "dev:remote": "wrangler dev --config wrangler.dev.jsonc --x-remote-bindings",
+    "deploy": "wrangler deploy",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production",
+    "build": "wrangler publish --dry-run",
+    "test": "vitest",
+    "test:watch": "vitest --watch",
+    "lint": "eslint src --ext .js,.ts",
+    "lint:fix": "eslint src --ext .js,.ts --fix",
+    "format": "prettier --write src/**/*.{js,ts,json}",
+    "logs": "wrangler tail",
+    "logs:production": "wrangler tail --env production"
+  },
+  "dependencies": {
+    "itty-router": "^4.2.0",
+    "@cloudflare/puppeteer": "^1.0.4"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241223.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.56.0",
+    "prettier": "^3.1.1",
+    "typescript": "^5.8.3",
+    "vitest": "^1.2.0",
+    "wrangler": "^4.27.0"
+  },
+  "keywords": [
+    "cloudflare",
+    "workers",
+    "pdf",
+    "report",
+    "browser-rendering",
+    "puppeteer",
+    "galileo"
+  ],
+  "author": "Battle Born Capital Advisors",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/battleborn/taxapp.git",
+    "directory": "reportbuilder"
+  },
+  "homepage": "https://reports.galileo.tax",
+  "bugs": {
+    "url": "https://github.com/battleborn/taxapp/issues"
+  }
+}
