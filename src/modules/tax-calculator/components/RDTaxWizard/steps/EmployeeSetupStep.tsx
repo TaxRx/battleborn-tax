@@ -183,6 +183,147 @@ const applyActualizationVariations = (basePercentage: number): number => {
   return Math.max(0, Math.round(variedPercentage * 100) / 100);
 };
 
+// Auto-populate Research Design data for years missing subcomponent configuration
+const autoPopulateResearchDesignData = async (
+  targetBusinessYearId: string, 
+  assignedRoleId: string, 
+  targetYear: number, 
+  businessId: string
+): Promise<any[] | null> => {
+  try {
+    console.log(`🔄 Auto-populating Research Design data for year ${targetYear}...`);
+    
+    // Find the most recent year with Research Design data for this business
+    const { data: availableYears, error: yearsError } = await supabase
+      .from('rd_business_years')
+      .select('id, year')
+      .eq('business_id', businessId)
+      .lt('year', targetYear) // Only years before target year
+      .order('year', { ascending: false });
+    
+    if (yearsError || !availableYears?.length) {
+      console.log('⚠️ No previous years found to copy Research Design data from');
+      return null;
+    }
+    
+    // Try each year starting from most recent
+    for (const year of availableYears) {
+      const { data: templateSubcomponents, error: templateError } = await supabase
+        .from('rd_selected_subcomponents')
+        .select('*')
+        .eq('business_year_id', year.id)
+        .filter('selected_roles', 'cs', `[\"${String(assignedRoleId)}\"]`);
+      
+      if (!templateError && templateSubcomponents?.length > 0) {
+        console.log(`✅ Found template data from year ${year.year} with ${templateSubcomponents.length} subcomponents`);
+        
+        // Copy the template data to the target year
+        const newSubcomponents = templateSubcomponents.map(template => ({
+          business_year_id: targetBusinessYearId,
+          research_activity_id: template.research_activity_id,
+          step_id: template.step_id,
+          subcomponent_id: template.subcomponent_id,
+          frequency_percentage: template.frequency_percentage,
+          year_percentage: template.year_percentage,
+          start_month: template.start_month,
+          start_year: targetYear, // Update to target year
+          selected_roles: template.selected_roles,
+          step_name: template.step_name,
+          time_percentage: template.time_percentage,
+          practice_percent: template.practice_percent,
+          applied_percentage: template.applied_percentage,
+          general_description: template.general_description,
+          goal: template.goal,
+          hypothesis: template.hypothesis,
+          alternatives: template.alternatives,
+          uncertainties: template.uncertainties,
+          developmental_process: template.developmental_process,
+          primary_goal: template.primary_goal,
+          expected_outcome_type: template.expected_outcome_type,
+          cpt_codes: template.cpt_codes,
+          cdt_codes: template.cdt_codes,
+          alternative_paths: template.alternative_paths
+        }));
+        
+        // Also copy selected activities and steps data for consistency
+        const { data: templateActivities, error: activitiesError } = await supabase
+          .from('rd_selected_activities')
+          .select('*')
+          .eq('business_year_id', year.id);
+        
+        if (!activitiesError && templateActivities?.length > 0) {
+          const newActivities = templateActivities.map(activity => ({
+            business_year_id: targetBusinessYearId,
+            activity_id: activity.activity_id,
+            practice_percent: activity.practice_percent,
+            selected_roles: activity.selected_roles,
+            config: activity.config
+          }));
+          
+          // Insert activities (ignore conflicts if they already exist)
+          const { error: activitiesInsertError } = await supabase
+            .from('rd_selected_activities')
+            .upsert(newActivities, { onConflict: 'business_year_id,activity_id' });
+          
+          if (activitiesInsertError) {
+            console.warn('⚠️ Warning inserting auto-populated activities:', activitiesInsertError);
+          }
+        }
+        
+        const { data: templateSteps, error: stepsError } = await supabase
+          .from('rd_selected_steps')
+          .select('*')
+          .eq('business_year_id', year.id);
+        
+        if (!stepsError && templateSteps?.length > 0) {
+          const newSteps = templateSteps.map(step => ({
+            business_year_id: targetBusinessYearId,
+            research_activity_id: step.research_activity_id,
+            step_id: step.step_id,
+            time_percentage: step.time_percentage,
+            applied_percentage: step.applied_percentage,
+            non_rd_percentage: step.non_rd_percentage
+          }));
+          
+          // Insert steps (ignore conflicts if they already exist)
+          const { error: stepsInsertError } = await supabase
+            .from('rd_selected_steps')
+            .upsert(newSteps, { onConflict: 'business_year_id,step_id' });
+          
+          if (stepsInsertError) {
+            console.warn('⚠️ Warning inserting auto-populated steps:', stepsInsertError);
+          }
+        }
+        
+        // Insert the copied subcomponents data
+        const { error: insertError } = await supabase
+          .from('rd_selected_subcomponents')
+          .insert(newSubcomponents);
+        
+        if (insertError) {
+          console.error('❌ Error inserting auto-populated subcomponents:', insertError);
+          continue; // Try next year
+        }
+        
+        console.log(`✅ Successfully auto-populated ${newSubcomponents.length} subcomponents for year ${targetYear}`);
+        
+        // Optional: Show user notification about auto-population
+        // This could be enhanced with a toast notification in the UI
+        console.log(`📢 NOTICE: Research Design data was automatically copied from year ${year.year} to enable employee import for year ${targetYear}`);
+        
+        return newSubcomponents;
+      }
+    }
+    
+    console.log('⚠️ No suitable template year found with Research Design data');
+    return null;
+    
+  } catch (error) {
+    console.error('❌ Error in auto-population:', error);
+    return null;
+  }
+};
+
 const QuickEmployeeEntryForm: React.FC<{
   onAdd: (employee: QuickEmployeeEntry) => void;
   roles: Role[];
@@ -521,6 +662,11 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
   const [expandedActivity, setExpandedActivity] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false); // Track if user is actively editing
   
+  // Employee editing state
+  const [editedFirstName, setEditedFirstName] = useState('');
+  const [editedLastName, setEditedLastName] = useState('');
+  const [editedIsOwner, setEditedIsOwner] = useState(false);
+  
   // Lock store for data protection
   const { isExpenseManagementLocked } = useLockStore();
   
@@ -552,6 +698,11 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
       setExpandedActivity(null);
       setHasUnsavedChanges(false); // Reset unsaved changes flag
       
+      // Initialize employee editing values
+      setEditedFirstName(employee.first_name || '');
+      setEditedLastName(employee.last_name || '');
+      setEditedIsOwner(employee.is_owner || false);
+      
       // Force a delay to ensure state is cleared before loading
       setTimeout(() => {
         console.log('🔄 Starting fresh data load after state clear...');
@@ -566,6 +717,11 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
       setNonRdPercentage(0);  
       setExpandedActivity(null);
       setHasUnsavedChanges(false); // Reset unsaved changes flag
+      
+      // Clear employee editing state
+      setEditedFirstName('');
+      setEditedLastName('');
+      setEditedIsOwner(false);
     }
   }, [isOpen, employee?.id]); // CHANGED: Depend on employee.id specifically
 
@@ -1348,7 +1504,40 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
         });
       }
 
-      console.log('✅ Allocations saved successfully - employee roster should now match allocation modal');
+      // Save employee information updates
+      const employeeNeedsUpdate = (
+        editedFirstName !== employee.first_name ||
+        editedLastName !== employee.last_name ||
+        editedIsOwner !== employee.is_owner
+      );
+      
+      if (employeeNeedsUpdate) {
+        console.log('👤 Saving employee information updates:', {
+          oldName: `${employee.first_name} ${employee.last_name}`,
+          newName: `${editedFirstName} ${editedLastName}`,
+          oldIsOwner: employee.is_owner,
+          newIsOwner: editedIsOwner
+        });
+        
+        const { error: employeeUpdateError } = await supabase
+          .from('rd_employees')
+          .update({
+            first_name: editedFirstName.trim(),
+            last_name: editedLastName.trim(),
+            is_owner: editedIsOwner,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', employee.id);
+        
+        if (employeeUpdateError) {
+          console.error('❌ Error updating employee information:', employeeUpdateError);
+          throw employeeUpdateError;
+        } else {
+          console.log('✅ Employee information updated successfully');
+        }
+      }
+
+      console.log('✅ Allocations and employee information saved successfully - employee roster should now match allocation modal');
       setHasUnsavedChanges(false); // Reset unsaved changes flag after successful save
       onUpdate();
       onClose();
@@ -1463,7 +1652,8 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-medium text-gray-900">
-              Manage Allocations - {employee.first_name} {employee.last_name}
+              Manage Allocations - {editedFirstName || employee.first_name} {editedLastName || employee.last_name}
+              {editedIsOwner && <span className="ml-2 px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">Owner</span>}
             </h3>
             <button
               onClick={onClose}
@@ -1475,6 +1665,56 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
         </div>
         
         <div className="p-6">
+          {/* Employee Information Editing */}
+          <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <h4 className="text-sm font-semibold text-blue-900 mb-3">Employee Information</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-blue-700 mb-1">First Name</label>
+                <input
+                  type="text"
+                  value={editedFirstName}
+                  onChange={(e) => {
+                    setEditedFirstName(e.target.value);
+                    setHasUnsavedChanges(true);
+                  }}
+                  disabled={isExpenseManagementLocked}
+                  className="w-full px-3 py-2 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:opacity-50"
+                  placeholder="First name"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-blue-700 mb-1">Last Name</label>
+                <input
+                  type="text"
+                  value={editedLastName}
+                  onChange={(e) => {
+                    setEditedLastName(e.target.value);
+                    setHasUnsavedChanges(true);
+                  }}
+                  disabled={isExpenseManagementLocked}
+                  className="w-full px-3 py-2 border border-blue-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:opacity-50"
+                  placeholder="Last name"
+                />
+              </div>
+              <div className="flex items-center">
+                <label className="flex items-center space-x-2 text-sm text-blue-700">
+                  <input
+                    type="checkbox"
+                    checked={editedIsOwner}
+                    onChange={(e) => {
+                      setEditedIsOwner(e.target.checked);
+                      setHasUnsavedChanges(true);
+                    }}
+                    disabled={isExpenseManagementLocked}
+                    className="w-4 h-4 text-blue-600 border-blue-300 rounded focus:ring-blue-500 disabled:opacity-50"
+                  />
+                  <span className="font-medium">Is Owner</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          
           {/* Lock Banner */}
           <LockBanner 
             section="expense-management" 
@@ -1757,7 +1997,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
                     disabled={loading || totalAllocated > 100}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {loading ? 'Saving...' : 'Save Allocations'}
+                    {loading ? 'Saving...' : 'Save Changes'}
                   </button>
                 </div>
               </div>
@@ -2095,6 +2335,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       const { data: rolesData, error: rolesError } = await supabase
         .from('rd_roles')
         .select('id, name, baseline_applied_percent')
+        .eq('business_id', businessId)
         .eq('business_year_id', targetYearId);
 
       if (rolesError) {
@@ -3595,6 +3836,10 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
   const handleCSVImport = async (file: File) => {
     setCsvImporting(true);
     setCsvError(null);
+    
+    // ✅ AUTO-POPULATION FEATURE: If importing employees into years without Research Design data,
+    // the system will automatically copy configuration from the most recent completed year.
+    // This resolves the dependency issue where CSV import relied on Research Design being loaded first.
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -3606,8 +3851,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         let rolesAssignedCount = 0;
         let detailedErrors: Array<{employee: string, error: string, row: number}> = [];
         
-        // FIXED: Global actualization cache to ensure same actualized values across all employees/years
-        const globalActualizationCache: { [key: string]: any } = {};
+        // Each employee will get unique actualized values for proper randomization
         
         console.log('🔍 CSV Import - Processing', rows.length, 'rows');
         console.log('📋 CSV Headers detected:', results.meta.fields);
@@ -3685,25 +3929,28 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
             const numericWage = wage.replace(/[^0-9.]/g, '');
             const annualWage = numericWage ? parseFloat(numericWage) : 0;
             
-            // Get or create default role (but don't assign it to the employee)
+            // Get or create default role and use it as fallback
             console.log(`🔧 Getting default role for business: ${businessId}, year: ${targetBusinessYearId}`);
             const defaultRoleId = await getOrCreateDefaultRole(businessId, targetBusinessYearId);
             console.log(`✅ Default role ID: ${defaultRoleId}`);
             
-            // Handle optional role assignment ONLY if role is provided and valid
-            let assignedRoleId = null;
+            // Handle role assignment - use specific role if provided, otherwise use default
+            let assignedRoleId = defaultRoleId; // ✅ FIX: Default to the default role
             if (roleName && roleName.trim() !== '') {
               const foundRole = roles.find(r => r.name && r.name.toLowerCase() === roleName.toLowerCase());
               if (foundRole) {
                 assignedRoleId = foundRole.id;
                 rolesAssignedCount++;
-                console.log(`✅ Assigned role "${roleName}" to ${firstName} ${lastName}`);
+                console.log(`✅ Assigned specific role "${roleName}" to ${firstName} ${lastName}`);
               } else {
-                console.log(`ℹ️ Role "${roleName}" not found for ${firstName} ${lastName} - creating without role`);
+                console.log(`ℹ️ Role "${roleName}" not found for ${firstName} ${lastName} - using default role`);
+                // assignedRoleId already set to defaultRoleId above
               }
+            } else {
+              console.log(`✅ No specific role provided for ${firstName} ${lastName} - using default role`);
             }
             
-            // Create employee record (without role assignment by default)
+            // Create employee record with assigned role
             console.log(`👤 Inserting employee data:`, {
               business_id: businessId,
               first_name: firstName.trim(),
@@ -3767,84 +4014,164 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
               // Don't throw here, as the employee was created successfully
             }
 
-            // Create subcomponent relationships if role was assigned during import
+            // Create subcomponent relationships based on role baseline pattern
             if (assignedRoleId) {
-              console.log(`🔗 Creating subcomponent relationships for ${firstName} ${lastName} with role ${roleName}`);
+              console.log(`🔗 Creating baseline subcomponent relationships for ${firstName} ${lastName} with role ${assignedRoleId}`);
               
-              // Fetch all selected subcomponents for this business year and role
-              const { data: selectedSubcomponents, error: subcomponentsError } = await supabase
+              // ✅ FIX: Use role baseline approach - get ALL subcomponents for business year, then filter by role
+              const { data: allSubcomponents, error: subcomponentsError } = await supabase
                 .from('rd_selected_subcomponents')
                 .select('*')
-                .eq('business_year_id', targetBusinessYearId)
-                .filter('selected_roles', 'cs', `[\"${String(assignedRoleId)}\"]`);
+                .eq('business_year_id', targetBusinessYearId);
 
               if (subcomponentsError) {
-                console.error('❌ Error fetching selected subcomponents for import:', subcomponentsError);
-              } else if (selectedSubcomponents && selectedSubcomponents.length > 0) {
+                console.error('❌ Error fetching subcomponents for import:', subcomponentsError);
+              }
+              
+              // ✅ FIX: Get the role name to filter across years (role IDs differ per year)
+              let assignedRoleName = 'Research Leader'; // Default fallback
+              const assignedRole = roles.find(r => r.id === assignedRoleId);
+              if (assignedRole && assignedRole.name) {
+                assignedRoleName = assignedRole.name;
+              }
+              
+              console.log(`🔍 CSV Import: Looking for subcomponents in year ${yearNumber} for role "${assignedRoleName}" (ID: ${assignedRoleId})`);
+              
+              // Get ALL roles for this business year to map role names to IDs
+              const { data: yearRoles, error: rolesError } = await supabase
+                .from('rd_roles')
+                .select('id, name')
+                .eq('business_id', businessId)
+                .eq('business_year_id', targetBusinessYearId);
+              
+              if (rolesError) {
+                console.error('❌ Error fetching roles for year:', rolesError);
+              }
+              
+              // Find the role ID in the target year that matches our role name
+              const targetYearRoleId = yearRoles?.find(r => r.name === assignedRoleName)?.id;
+              
+              console.log(`🔍 CSV Import: Role "${assignedRoleName}" has ID ${targetYearRoleId} in target year ${yearNumber}`);
+              
+              // Filter subcomponents to only include those that match the target year's role ID
+              let selectedSubcomponents: any[] = [];
+              if (allSubcomponents && allSubcomponents.length > 0 && targetYearRoleId) {
+                selectedSubcomponents = allSubcomponents.filter(subcomponent => {
+                  // Check if this subcomponent includes the role ID from the target year
+                  const hasMatchingRole = subcomponent.selected_roles?.includes(targetYearRoleId);
+                  return hasMatchingRole;
+                });
+                
+                console.log(`✅ Found ${allSubcomponents.length} total subcomponents, ${selectedSubcomponents.length} match role "${assignedRoleName}" (${targetYearRoleId})`);
+              } else {
+                console.log(`⚠️ No subcomponents found for role "${assignedRoleName}" in year ${yearNumber}. Either Research Design not set up or role not assigned to any activities.`);
+              }
+              
+              if (selectedSubcomponents && selectedSubcomponents.length > 0) {
                 console.log(`✅ Found ${selectedSubcomponents.length} subcomponents for role ${roleName}`);
                 
                 // Create employee subcomponent relationships with baseline values
-                const employeeSubcomponentData = selectedSubcomponents.map((subcomponent: any) => {
+                const employeeSubcomponentData = await Promise.all(selectedSubcomponents.map(async (subcomponent: any) => {
                   let timePercentage = subcomponent.time_percentage || 0;
                   let practicePercentage = subcomponent.practice_percent || 0;
                   let yearPercentage = subcomponent.year_percentage || 0;
                   let frequencyPercentage = subcomponent.frequency_percentage || 0;
-                  let appliedPercentage = subcomponent.applied_percentage || 0;
-
-                  // FIXED: Apply actualization variations if enabled - using global cache for consistency
-                  if (csvUseActualization) {
-                    // Create a unique key for this subcomponent across all years and employees
-                    const cacheKey = `${subcomponent.subcomponent_id}_${targetBusinessYearId}`;
+                  
+                  // ✅ FIX: Calculate applied percentage from components instead of copying potentially 0 value
+                  let appliedPercentage = (practicePercentage / 100) * (timePercentage / 100) * (yearPercentage / 100) * (frequencyPercentage / 100) * 100;
+                  
+                  // Apply non-R&D reduction to base calculation (for both actualized and non-actualized)
+                  let nonRdPercent = 0;
+                  try {
+                    const { data: subStep, error: stepError } = await supabase
+                      .from('rd_selected_steps')
+                      .select('non_rd_percentage')
+                      .eq('business_year_id', targetBusinessYearId)
+                      .eq('step_id', subcomponent.step_id)
+                      .single();
                     
-                    if (!globalActualizationCache[cacheKey]) {
-                      // First time seeing this subcomponent+year combination - calculate actualized values once
-                      globalActualizationCache[cacheKey] = {
-                        timePercentage: applyActualizationVariations(timePercentage),
-                        practicePercentage: applyActualizationVariations(practicePercentage),
-                        yearPercentage: applyActualizationVariations(yearPercentage),
-                        frequencyPercentage: applyActualizationVariations(frequencyPercentage),
-                        original: {
-                          time: timePercentage,
-                          practice: practicePercentage,
-                          year: yearPercentage,
-                          frequency: frequencyPercentage,
-                          applied: appliedPercentage
-                        }
-                      };
-                      
-                      // Calculate applied percentage with actualized values
-                      globalActualizationCache[cacheKey].appliedPercentage = (
-                        globalActualizationCache[cacheKey].practicePercentage / 100
-                      ) * (
-                        globalActualizationCache[cacheKey].yearPercentage / 100
-                      ) * (
-                        globalActualizationCache[cacheKey].frequencyPercentage / 100
-                      ) * (
-                        globalActualizationCache[cacheKey].timePercentage / 100
-                      ) * 100;
-                      
-                      console.log('🎲 CSV FIRST-TIME actualization for key:', cacheKey, {
-                        subcomponent: subcomponent.subcomponent_id,
-                        year: targetBusinessYearId,
-                        original: globalActualizationCache[cacheKey].original,
-                        actualized: {
-                          time: globalActualizationCache[cacheKey].timePercentage,
-                          practice: globalActualizationCache[cacheKey].practicePercentage,
-                          year: globalActualizationCache[cacheKey].yearPercentage,
-                          frequency: globalActualizationCache[cacheKey].frequencyPercentage,
-                          applied: globalActualizationCache[cacheKey].appliedPercentage
-                        }
-                      });
+                    if (!stepError && subStep) {
+                      nonRdPercent = subStep.non_rd_percentage || 0;
+                    }
+                  } catch (error) {
+                    console.warn(`⚠️ Could not fetch non-R&D percentage for step ${subcomponent.step_id}:`, error);
+                  }
+                  
+                  // Apply non-R&D reduction to base calculation
+                  const beforeNonRd = appliedPercentage;
+                  if (nonRdPercent > 0) {
+                    appliedPercentage = appliedPercentage * ((100 - nonRdPercent) / 100);
+                  }
+                  
+                  console.log(`📊 CSV base calculation for ${firstName} ${lastName} subcomponent ${subcomponent.subcomponent_id}:`, {
+                    raw: {
+                      practice: practicePercentage,
+                      time: timePercentage,
+                      year: yearPercentage,
+                      frequency: frequencyPercentage
+                    },
+                    beforeNonRd: beforeNonRd,
+                    nonRdPercent: nonRdPercent,
+                    finalApplied: appliedPercentage
+                  });
+
+                  // Apply actualization variations if enabled - unique randomization per employee
+                  if (csvUseActualization) {
+                    // ✅ FIX: Generate fresh actualized values for EACH employee
+                    // Each employee gets their own randomized variation within established ranges
+                    
+                    const actualizedValues = {
+                      timePercentage: applyActualizationVariations(timePercentage),
+                      practicePercentage: applyActualizationVariations(practicePercentage),
+                      yearPercentage: applyActualizationVariations(yearPercentage),
+                      frequencyPercentage: applyActualizationVariations(frequencyPercentage)
+                    };
+                    
+                    // Calculate applied percentage with this employee's unique actualized values
+                    let actualizedAppliedPercentage = (
+                      actualizedValues.practicePercentage / 100
+                    ) * (
+                      actualizedValues.yearPercentage / 100
+                    ) * (
+                      actualizedValues.frequencyPercentage / 100
+                    ) * (
+                      actualizedValues.timePercentage / 100
+                    ) * 100;
+                    
+                    // Apply non-R&D reduction to actualized percentage (using same nonRdPercent from above)
+                    const beforeNonRdReduction = actualizedAppliedPercentage;
+                    if (nonRdPercent > 0) {
+                      actualizedAppliedPercentage = actualizedAppliedPercentage * ((100 - nonRdPercent) / 100);
                     }
                     
-                    // Use cached actualized values for ALL employees with this subcomponent+year
-                    timePercentage = globalActualizationCache[cacheKey].timePercentage;
-                    practicePercentage = globalActualizationCache[cacheKey].practicePercentage;
-                    yearPercentage = globalActualizationCache[cacheKey].yearPercentage;
-                    frequencyPercentage = globalActualizationCache[cacheKey].frequencyPercentage;
-                    appliedPercentage = globalActualizationCache[cacheKey].appliedPercentage;
+                    console.log(`🎲 CSV UNIQUE actualization for employee: ${firstName} ${lastName}`, {
+                      subcomponent: subcomponent.subcomponent_id,
+                      employee: `${firstName} ${lastName}`,
+                      year: targetBusinessYearId,
+                      original: {
+                        time: timePercentage,
+                        practice: practicePercentage,
+                        year: yearPercentage,
+                        frequency: frequencyPercentage,
+                        applied: appliedPercentage
+                      },
+                      actualized: {
+                        time: actualizedValues.timePercentage,
+                        practice: actualizedValues.practicePercentage,
+                        year: actualizedValues.yearPercentage,
+                        frequency: actualizedValues.frequencyPercentage,
+                        appliedBeforeNonRd: beforeNonRdReduction,
+                        nonRdPercent: nonRdPercent,
+                        appliedFinal: actualizedAppliedPercentage
+                      }
+                    });
                     
-                    console.log('🎲 CSV USING CACHED actualization for employee:', firstName, lastName, 'key:', cacheKey);
+                    // Use this employee's unique actualized values
+                    timePercentage = actualizedValues.timePercentage;
+                    practicePercentage = actualizedValues.practicePercentage;
+                    yearPercentage = actualizedValues.yearPercentage;
+                    frequencyPercentage = actualizedValues.frequencyPercentage;
+                    appliedPercentage = actualizedAppliedPercentage;
                   }
 
                   return {
@@ -3854,15 +4181,15 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                     time_percentage: timePercentage,
                     applied_percentage: appliedPercentage,
                     is_included: true,
-                    baseline_applied_percent: subcomponent.applied_percentage || 0,
+                    baseline_applied_percent: beforeNonRd, // Use calculated baseline before non-R&D reduction
                     practice_percentage: practicePercentage,
                     year_percentage: yearPercentage,
                     frequency_percentage: frequencyPercentage,
-                    baseline_practice_percentage: subcomponent.practice_percent || 0,
-                    baseline_time_percentage: subcomponent.time_percentage || 0,
+                    baseline_practice_percentage: practicePercentage, // Use current values as baseline
+                    baseline_time_percentage: timePercentage, // Use current values as baseline
                     user_id: userId
                   };
-                });
+                }));
 
                 const { error: insertError } = await supabase
                   .from('rd_employee_subcomponents')
@@ -3874,8 +4201,9 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                   console.log(`✅ Created ${employeeSubcomponentData.length} subcomponent relationships for ${firstName} ${lastName}`);
                 }
               } else {
-                console.log(`ℹ️ No subcomponents found for role ${roleName} in year ${yearNumber}`);
-                console.log('⚠️ CSV IMPORT - Employee may not appear in allocation modals due to missing subcomponent records');
+                console.log(`ℹ️ No subcomponents found for role ${assignedRoleId} in year ${yearNumber}`);
+                console.log('⚠️ CSV IMPORT - This means Research Design step has no subcomponents set up for this business year, or none are assigned to this role');
+                console.log(`ℹ️ Employee ${firstName} ${lastName} will have QRE = $0 until subcomponents are set up in Research Design step`);
               }
             }
 
@@ -4086,7 +4414,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       
       const { data: subcomponentAllocations, error } = await supabase
         .from('rd_employee_subcomponents')
-        .select('applied_percentage')
+        .select('applied_percentage, subcomponent_id, practice_percentage, time_percentage, year_percentage, frequency_percentage, is_included')
         .eq('employee_id', employeeId)
         .eq('business_year_id', selectedYear || businessYearId)
         .eq('is_included', true);
@@ -4094,6 +4422,12 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       if (error) {
         console.error('❌ Error loading subcomponent allocations:', error);
         return 0;
+      }
+      
+      // ✅ DEBUG: Check what's actually in the database  
+      if (subcomponentAllocations?.length === 0) {
+        console.log(`🔍 DEBUG: Employee ${employeeId} has no subcomponent records - QRE will be $0`);
+        console.log(`📋 This likely means: (1) CSV import didn't create subcomponent relationships, or (2) Research Design step not set up for this business year`);
       }
       
       // ✅ NO RECALCULATION: Just sum the applied_percentage values that modal calculated and saved
