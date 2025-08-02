@@ -51,6 +51,8 @@ serve(async (req) => {
       return await handleAdminDeleteAuthUser(req, supabaseAdmin)
     } else if (pathname === '/user-service/admin/get-user-by-email') {
       return await handleAdminGetUserByEmail(req, supabaseAdmin)
+    } else if (pathname === '/user-service/admin/generate-magic-link') {
+      return await handleAdminGenerateMagicLink(req, supabaseAdmin)
     }
 
     return new Response(JSON.stringify({ error: 'Not Found:' + pathname }), {
@@ -999,6 +1001,84 @@ async function handleAdminGetUserByEmail(req, supabaseAdmin) {
     console.error('Error in handleAdminGetUserByEmail:', error)
     return new Response(JSON.stringify({ 
       error: 'Failed to get user by email',
+      details: error.message 
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500
+    })
+  }
+}
+
+// --- Handler for Admin Generate Magic Link --- //
+async function handleAdminGenerateMagicLink(req, supabaseAdmin) {
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 405 
+    })
+  }
+
+  // Verify admin access
+  const adminCheck = await verifyAdminAccess(req, supabaseAdmin)
+  if (adminCheck.error) {
+    return new Response(JSON.stringify({ error: adminCheck.error }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: adminCheck.status
+    })
+  }
+
+  try {
+    const { email, redirectTo } = await req.json()
+
+    if (!email?.trim()) {
+      return new Response(JSON.stringify({ error: 'Email is required' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400
+      })
+    }
+
+    if (!redirectTo?.trim()) {
+      return new Response(JSON.stringify({ error: 'Redirect URL is required' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400
+      })
+    }
+
+    // Generate magic link using admin API
+    const { data, error } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'magiclink',
+      email: email.trim().toLowerCase(),
+      options: {
+        redirectTo: redirectTo.trim()
+      }
+    })
+    
+    if (error) {
+      console.error('Error generating magic link:', error)
+      return new Response(JSON.stringify({ 
+        error: 'Failed to generate magic link',
+        details: error.message 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500
+      })
+    }
+    
+    console.log(`Admin ${adminCheck.profile.email} generated magic link for: ${email}`)
+    
+    return new Response(JSON.stringify({ 
+      success: true,
+      magicLink: data.properties?.action_link || null,
+      email: email.toLowerCase()
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200
+    })
+
+  } catch (error) {
+    console.error('Error in handleAdminGenerateMagicLink:', error)
+    return new Response(JSON.stringify({ 
+      error: 'Failed to generate magic link',
       details: error.message 
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -1398,7 +1398,7 @@ class AdminAccountService {
     try {
       // Call the secure edge function endpoint instead of direct supabase.auth.admin
       const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL;
-      const response = await fetch(`${functionsUrl}/user-service/admin/check-auth-user`, {
+      const response = await fetch(`${functionsUrl}/admin-service/check-auth-user`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1429,7 +1429,7 @@ class AdminAccountService {
     try {
       // Call the secure edge function endpoint instead of direct supabase.auth.admin
       const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL;
-      const response = await fetch(`${functionsUrl}/user-service/admin/create-auth-user`, {
+      const response = await fetch(`${functionsUrl}/admin-service/create-auth-user`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1491,7 +1491,7 @@ class AdminAccountService {
       if (createLogin) {
         // Call the secure edge function endpoint instead of direct supabase.auth.admin
         const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL;
-        const response = await fetch(`${functionsUrl}/user-service/admin/create-profile-with-auth`, {
+        const response = await fetch(`${functionsUrl}/admin-service/create-profile-with-auth`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

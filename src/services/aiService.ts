@@ -64,45 +64,48 @@ export class AIService {
     this.isProcessing = false;
   }
 
-  private async makeOpenAIRequest(prompt: string): Promise<string> {
-    const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
+  private async makeOpenAIRequest(prompt: string, systemPrompt?: string): Promise<string> {
+    const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL;
     
-    if (!apiKey) {
-      throw new Error('OpenAI API key not configured');
+    if (!functionsUrl) {
+      throw new Error('Supabase functions URL not configured');
     }
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Get current auth session for the request
+    const { supabase } = await import('../lib/supabase');
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError || !session) {
+      throw new Error('Authentication required for AI services');
+    }
+
+    const response = await fetch(`${functionsUrl}/ai-service/generate-content`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'Authorization': `Bearer ${session.access_token}`
       },
       body: JSON.stringify({
-        model: 'gpt-4',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a healthcare industry expert specializing in clinical practice guidelines and R&D tax credit compliance. Provide detailed, professional responses with proper formatting using markdown. Focus on practical implementation steps that integrate specific staff roles and responsibilities. Include detailed workflows, timelines, and measurable outcomes for each step.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        max_tokens: 2500,
-        temperature: 0.7
+        prompt,
+        systemPrompt
       })
     });
 
     if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
       if (response.status === 429) {
         throw new Error('Rate limit exceeded. Please try again in a moment.');
       }
-      throw new Error(`OpenAI API error: ${response.status}`);
+      throw new Error(`AI service error: ${errorData.error || 'Unknown error'}`);
     }
 
     const data = await response.json();
-    return data.choices[0]?.message?.content || 'Unable to generate content at this time.';
+    
+    if (!data.success) {
+      throw new Error(`AI generation failed: ${data.error}`);
+    }
+    
+    return data.content || 'Unable to generate content at this time.';
   }
 
   async generateContent(prompt: string): Promise<string> {
@@ -117,58 +120,47 @@ export class AIService {
     description: string, 
     availableRoles: Array<{id: string, name: string}> = []
   ): Promise<string> {
-    const roleNames = availableRoles && availableRoles.length > 0 
-      ? availableRoles.map(role => role.name).join(', ')
-      : 'Medical Staff, Administrative Staff, Research Coordinators';
-    
-    const prompt = `Generate comprehensive clinical practice guidelines for implementing "${subcomponentName}" in a healthcare setting for R&D tax credit documentation purposes.
-
-Subcomponent Description: ${description}
-
-Available Staff Roles: ${roleNames}
-
-Please provide detailed implementation guidelines that include:
-
-1. **Pre-Implementation Planning** (### Planning Phase)
-   - Risk assessment and mitigation strategies
-   - Resource allocation requirements
-   - Timeline development (specific weeks/months)
-   - Role-specific training requirements
-   - Measurable success criteria
-
-2. **Implementation Steps** (### Step 1, ### Step 2, etc.)
-   - Detailed 5-7 implementation steps with specific actions
-   - For each step, specify:
-     * Primary responsible roles from the available list
-     * Supporting roles and their specific contributions
-     * Time allocation estimates (hours/week per role)
-     * Documentation requirements for R&D compliance
-     * Quality control checkpoints
-     * Risk factors and mitigation steps
-
-3. **Monitoring & Documentation** (### Monitoring Phase)
-   - Key performance indicators (KPIs)
-   - Documentation protocols for R&D substantiation
-   - Regular review schedules
-   - Compliance verification methods
-
-4. **Optimization & Continuous Improvement** (### Optimization Phase)
-   - Performance review criteria
-   - Feedback collection methods
-   - Process refinement protocols
-   - Staff development opportunities
-
-Format requirements:
-- Use markdown headings (### for main sections)
-- Include specific role assignments with time commitments
-- Add implementation timelines
-- Focus on measurable, documentable activities
-- Ensure all roles from the available list are meaningfully integrated
-- Include R&D tax credit compliance considerations`;
-
     try {
-      const content = await this.generateContent(prompt);
-      return this.formatAIContent(content);
+      const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL;
+      
+      if (!functionsUrl) {
+        throw new Error('Supabase functions URL not configured');
+      }
+
+      // Get current auth session for the request
+      const { supabase } = await import('../lib/supabase');
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        throw new Error('Authentication required for AI services');
+      }
+
+      const response = await fetch(`${functionsUrl}/ai-service/generate-subcomponent-best-practices`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          subcomponentName,
+          description,
+          availableRoles
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`AI service error: ${errorData.error || 'Unknown error'}`);
+      }
+
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(`AI generation failed: ${data.error}`);
+      }
+      
+      return data.content || this.getFallbackContent(subcomponentName, availableRoles);
+      
     } catch (error) {
       console.error('AI generation failed:', error);
       return this.getFallbackContent(subcomponentName, availableRoles);
@@ -226,12 +218,12 @@ ${roleNames.slice(0, Math.min(2, roleNames.length)).map(role => `- **${role}**: 
     prompt: string,
     context: AIGenerationContext
   ): Promise<string> {
-    if (!import.meta.env.VITE_OPENAI_API_KEY) {
-      console.warn('OpenAI API key not configured. Using fallback content generation.');
+    try {
+      return await this.generateContent(prompt);
+    } catch (error) {
+      console.warn('AI service unavailable. Using fallback content generation.', error);
       return this.generateFallbackContent(prompt, context);
     }
-
-    return this.generateContent(prompt);
   }
 
   private generateFallbackContent(prompt: string, context: AIGenerationContext): string {
@@ -305,34 +297,47 @@ ${roleNames.slice(0, Math.min(2, roleNames.length)).map(role => `- **${role}**: 
   }
 
   public async generateLine49fDescription(line49fContext: any): Promise<string> {
-    const { research_activity_name, subcomponent_count, subcomponent_groups, industry } = line49fContext;
-    
-    const prompt = `Generate a professional Line 49(f) description for Form 6765 Section G Business Component Information. 
+    try {
+      const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL;
+      
+      if (!functionsUrl) {
+        throw new Error('Supabase functions URL not configured');
+      }
 
-Context:
-- Research Activity: ${research_activity_name}
-- Number of Subcomponents: ${subcomponent_count}
-- Subcomponent Types: ${subcomponent_groups}
-- Industry: ${industry}
+      // Get current auth session for the request
+      const { supabase } = await import('../lib/supabase');
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        throw new Error('Authentication required for AI services');
+      }
 
-Requirements:
-- Professional tone suitable for IRS filing
-- Describe the systematic experimentation and research methodology
-- Explain how the research resolves technical uncertainty
-- Include specific mention of the subcomponents evaluated
-- Keep to 2-3 sentences maximum
-- Focus on the research process and technical development
+      const response = await fetch(`${functionsUrl}/ai-service/generate-line49f-description`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify(line49fContext)
+      });
 
-Generate a concise, professional description that demonstrates qualified research activities under IRC Section 41.`;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`AI service error: ${errorData.error || 'Unknown error'}`);
+      }
 
-    const context: AIGenerationContext = {
-      businessProfile: { industry },
-      selectedActivities: [{ name: research_activity_name }],
-      selectedSteps: [],
-      selectedSubcomponents: []
-    };
-
-    return this.generateResearchContent(prompt, context);
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(`AI generation failed: ${data.error}`);
+      }
+      
+      return data.content || 'Unable to generate Line 49(f) description at this time.';
+      
+    } catch (error) {
+      console.error('Line 49(f) generation failed:', error);
+      return `This research activity demonstrates qualified research under IRC Section 41, involving systematic experimentation to resolve technological uncertainties in the development of new or improved business components.`;
+    }
   }
 
   public async generateComplianceSummary(context: AIGenerationContext): Promise<string> {

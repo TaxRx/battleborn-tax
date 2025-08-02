@@ -1,4 +1,4 @@
-import { supabase, supabaseAdmin } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 
 export interface QCStatus {
   qc_status: string;
@@ -185,12 +185,6 @@ export class QCService {
     try {
       console.log('🔗 [QCService] Starting magic link generation for business:', businessId);
 
-      // Check if admin client is available
-      if (!supabaseAdmin) {
-        console.warn('⚠️ [QCService] Admin client not available - using fallback token method');
-        return this.generateClientAccessToken(businessId);
-      }
-
       // First, get the business and check for portal_email override or client email
       const { data: business, error: businessError } = await supabase
         .from('rd_businesses')
@@ -234,35 +228,49 @@ export class QCService {
       }
       console.log('📧 [QCService] Using email for magic link:', clientEmail);
 
-      // Generate magic link using admin client
-      const { data, error } = await supabaseAdmin.auth.admin.generateLink({
-        type: 'magiclink',
-        email: clientEmail,
-        options: {
-          redirectTo: `${window.location.origin}/client-portal?business_id=${businessId}&auto_login=true`
-        }
+      // Generate magic link using secure edge function
+      const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL;
+      const redirectTo = `${window.location.origin}/client-portal?business_id=${businessId}&auto_login=true`;
+      
+      const response = await fetch(`${functionsUrl}/admin-service/generate-magic-link`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+        },
+        body: JSON.stringify({
+          email: clientEmail,
+          redirectTo: redirectTo
+        })
       });
 
-      if (error) {
-        console.error('❌ [QCService] Supabase admin generateLink error:', error);
-        
-        // If admin method fails, try fallback
-        const errorMessage = error?.message || String(error);
-        if (errorMessage.includes('User not allowed') || errorMessage.includes('403')) {
-          console.warn('⚠️ [QCService] Admin method failed, trying fallback token method');
-          return this.generateClientAccessToken(businessId);
-        }
-        
-        throw new Error(`Failed to generate magic link: ${error?.message || String(error)}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('❌ [QCService] Error generating magic link via edge function:', response.status, response.statusText, errorData);
+        throw new Error(`Failed to generate magic link: ${errorData.error || 'Unknown error'}`);
       }
 
-      if (!data.properties?.action_link) {
-        console.error('❌ [QCService] No action link returned from Supabase');
-        throw new Error('No action link returned from Supabase');
+      const data = await response.json();
+      
+      if (!data.success) {
+        console.error('❌ [QCService] Magic link generation failed:', data.error);
+        throw new Error(`Failed to generate magic link: ${data.error}`);
       }
 
-      console.log('✅ [QCService] Magic link generated successfully');
-      return data.properties.action_link;
+      const magicLink = data.magicLink;
+      
+      if (!magicLink) {
+        console.error('❌ [QCService] No magic link generated in response:', data);
+        console.warn('⚠️ [QCService] Falling back to client access token method');
+        return this.generateClientAccessToken(businessId);
+      }
+
+      console.log('✅ [QCService] Magic link generated successfully via secure edge function:', magicLink);
+      
+      // Store the magic link token for tracking/analytics
+      await this.storeMagicLinkToken(businessId, magicLink);
+      
+      return magicLink;
 
     } catch (error) {
       console.error('❌ [QCService] Error generating magic link:', error);

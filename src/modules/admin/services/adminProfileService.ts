@@ -699,7 +699,7 @@ class AdminProfileService {
 
       // Check auth.users for existing user using secure edge function
       const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL;
-      const response = await fetch(`${functionsUrl}/user-service/admin/get-user-by-email`, {
+      const response = await fetch(`${functionsUrl}/admin-service/get-user-by-email`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

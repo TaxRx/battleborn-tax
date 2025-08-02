@@ -3,7 +3,6 @@ import { supabase } from '../../lib/supabase';
 import { SectionGQREService } from '../../services/sectionGQREService';
 import { AIService } from "../../../../services/aiService";
 
-// Note: OpenAI API key should be configured in environment variables (VITE_OPENAI_API_KEY)
 
 interface SectionGTableProps {
   businessData: any;

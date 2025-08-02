@@ -305,31 +305,6 @@ export class ClientRegistrationService {
     }
   }
 
-  /**
-   * Send verification email
-   */
-  static async sendVerificationEmail(userId: string, email: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      const { error } = await supabase.auth.admin.generateLink({
-        type: 'signup',
-        email: email,
-        password: 'temp-password', // This will be ignored for verification links
-        options: {
-          redirectTo: `${window.location.origin}/verify-email`
-        }
-      });
-
-      if (error) {
-        return { success: false, error: error.message };
-      }
-
-      return { success: true };
-
-    } catch (error) {
-      console.error('Send verification email error:', error);
-      return { success: false, error: 'Failed to send verification email' };
-    }
-  }
 
   /**
    * Format phone number for display

@@ -29,3 +29,10 @@ entrypoint = "./functions/partner-service/index.ts"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/billing-service/index.ts"
+
+[functions.ai-service]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/ai-service/index.ts"
+
+
