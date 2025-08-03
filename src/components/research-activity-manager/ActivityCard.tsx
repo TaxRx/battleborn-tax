@@ -28,7 +28,6 @@ import AddSubcomponentModal from './AddSubcomponentModal';
 const ActivityCard: React.FC<ActivityCardProps> = ({
   activity,
   businessId,
-  dragDisabled = false,
   onToggleExpanded,
   onEdit,
   onDeactivate,
@@ -37,9 +36,7 @@ const ActivityCard: React.FC<ActivityCardProps> = ({
   onAddStep,
   onEditSubcomponent,
   onMoveSubcomponent,
-  onUpdateStepPercentages,
-  onMoveStepUp,
-  onMoveStepDown
+  onUpdateStepPercentages
 }) => {
   const [loadingSteps, setLoadingSteps] = useState(false);
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
@@ -484,7 +481,6 @@ const ActivityCard: React.FC<ActivityCardProps> = ({
                         ...step,
                         expanded: expandedSteps.has(step.id)
                       }}
-                      dragDisabled={dragDisabled}
                       activityId={activity.id}
                       businessId={businessId}
                       activityTimePercentageLocked={timePercentageLocked}
@@ -496,8 +492,6 @@ const ActivityCard: React.FC<ActivityCardProps> = ({
                       onDeleteStep={handleDeleteStep}
                       onAddSubcomponent={handleAddSubcomponent}
                       onTimePercentageChange={handleStepTimePercentageChange}
-                      onMoveStepUp={onMoveStepUp}
-                      onMoveStepDown={onMoveStepDown}
                       onRefresh={onRefresh}
                     />
                   ))}
@@ -577,7 +571,7 @@ const ActivityCard: React.FC<ActivityCardProps> = ({
 };
 
 // Sortable wrapper for step cards
-const SortableStepCard = ({ step, dragDisabled, ...props }: any) => {
+const SortableStepCard = ({ step, ...props }: any) => {
   const {
     attributes,
     listeners,
@@ -587,7 +581,6 @@ const SortableStepCard = ({ step, dragDisabled, ...props }: any) => {
     isDragging,
   } = useSortable({ 
     id: step.id,
-    disabled: dragDisabled, // Disable sorting when dragDisabled is true
     data: {
       type: 'step',
       stepId: step.id,
@@ -605,21 +598,11 @@ const SortableStepCard = ({ step, dragDisabled, ...props }: any) => {
     <div ref={setNodeRef} style={style} className="relative">
       {/* Drag Handle */}
       <div
-        {...(dragDisabled ? {} : attributes)}
-        {...(dragDisabled ? {} : listeners)}
-        className={`absolute left-2 top-4 z-10 transition-colors touch-none ${
-          dragDisabled 
-            ? 'cursor-not-allowed text-gray-300 opacity-50' 
-            : 'cursor-move text-gray-400 hover:text-gray-600'
-        }`}
-        title={dragDisabled ? "Drag temporarily disabled" : "Drag to reorder"}
+        {...attributes}
+        {...listeners}
+        className="absolute left-2 top-4 z-10 cursor-move text-gray-400 hover:text-gray-600 transition-colors touch-none"
+        title="Drag to reorder"
         onMouseDown={(e) => {
-          if (dragDisabled) {
-            e.preventDefault();
-            e.stopPropagation();
-            console.log('🚨 [DRAG HANDLE] Mouse down prevented - drag disabled');
-            return;
-          }
           // Only start drag if clicking directly on the drag handle
           console.log('🔧 [DRAG HANDLE] Mouse down on drag handle');
         }}

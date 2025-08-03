@@ -82,8 +82,6 @@ const StepCard: React.FC<StepCardProps> = ({
   onEditSubcomponent,
   onMoveSubcomponent,
   onTimePercentageChange,
-  onMoveStepUp,
-  onMoveStepDown,
   onRefresh
 }) => {
   const { setNodeRef, isOver } = useDroppable({
@@ -343,51 +341,6 @@ const StepCard: React.FC<StepCardProps> = ({
             </div>
             
             <div className="flex items-center space-x-1.5">
-              {/* Compact Move Controls */}
-              {step.is_active && ( // Only show move buttons for active steps
-                <>
-                  <button
-                    onClick={(e) => { 
-                      e.stopPropagation(); 
-                      e.preventDefault();
-                      console.log('🔧 [STEP CARD] Move Up button clicked:', { stepId: step.id, activityId, stepName: step.name, timestamp: Date.now() });
-                      // Small delay to prevent conflict with drag events
-                      setTimeout(() => {
-                        onMoveStepUp?.(step.id, activityId);
-                      }, 10);
-                    }}
-                    onMouseDown={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                    }}
-                    className="p-1 rounded-full hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed relative z-20"
-                    title="Move Up"
-                    disabled={!onMoveStepUp}
-                  >
-                    <ArrowUp className="w-3.5 h-3.5 text-gray-500" />
-                  </button>
-                  <button
-                    onClick={(e) => { 
-                      e.stopPropagation(); 
-                      e.preventDefault();
-                      console.log('🔧 [STEP CARD] Move Down button clicked:', { stepId: step.id, activityId, stepName: step.name, timestamp: Date.now() });
-                      // Small delay to prevent conflict with drag events
-                      setTimeout(() => {
-                        onMoveStepDown?.(step.id, activityId);
-                      }, 10);
-                    }}
-                    onMouseDown={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                    }}
-                    className="p-1 rounded-full hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed relative z-20"
-                    title="Move Down"
-                    disabled={!onMoveStepDown}
-                  >
-                    <ArrowDown className="w-3.5 h-3.5 text-gray-500" />
-                  </button>
-                </>
-              )}
               
               {/* Enhanced Lock Button */}
               <button

@@ -43,7 +43,6 @@ export interface ResearchActivityManagerProps {
 export interface ActivityCardProps {
   activity: ActivityWithSteps;
   businessId?: string;
-  dragDisabled?: boolean;
   onToggleExpanded: (activityId: string) => void;
   onEdit: (activity: ResearchActivity) => void;
   onDeactivate: (activity: ResearchActivity) => void;
@@ -53,8 +52,6 @@ export interface ActivityCardProps {
   onEditSubcomponent?: (subcomponent: ResearchSubcomponent) => void;
   onMoveSubcomponent?: (subcomponentId: string, fromStepId: string) => void;
   onUpdateStepPercentages?: (activityId: string, stepUpdates: { stepId: string; newPercentage: number }[]) => void;
-  onMoveStepUp?: (stepId: string, activityId: string) => void;
-  onMoveStepDown?: (stepId: string, activityId: string) => void;
 }
 
 export interface StepCardProps {
@@ -72,8 +69,6 @@ export interface StepCardProps {
   onEditSubcomponent: (subcomponent: ResearchSubcomponent) => void;
   onMoveSubcomponent: (subcomponentId: string, fromStepId: string) => void;
   onTimePercentageChange?: (stepId: string, percentage: number) => void;
-  onMoveStepUp?: (stepId: string, activityId: string) => void;
-  onMoveStepDown?: (stepId: string, activityId: string) => void;
   onRefresh: () => void;
 }
 

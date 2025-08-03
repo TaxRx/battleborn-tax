@@ -126,7 +126,6 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   const [showInactive, setShowInactive] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [dragDisabled, setDragDisabled] = useState(false);
 
   // Filter data states
   const [categories, setCategories] = useState<ResearchCategory[]>([]);
@@ -392,12 +391,6 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   }, [businessId, showInactive]);
 
   const handleDragStart = (event: DragStartEvent) => {
-    // Prevent drag if temporarily disabled
-    if (dragDisabled) {
-      console.log('🚨 [DRAG START] Drag prevented - temporarily disabled');
-      return false;
-    }
-    
     const activeId = event.active.id as string;
     console.log('🔧 [DRAG START] Drag initiated:', {
       activeId,
@@ -411,12 +404,6 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   const handleDragEnd = async (event: DndKitDragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
-
-    // Prevent drag end if temporarily disabled
-    if (dragDisabled) {
-      console.log('🚨 [DRAG END] Drag end prevented - temporarily disabled');
-      return;
-    }
 
     if (!over) return;
 
@@ -465,11 +452,17 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
                   const inactiveSteps = act.steps.filter(step => !step.is_active);
                   const reorderedActiveSteps = arrayMove(activeSteps, oldIndex, newIndex);
                   
-                  console.log('🔧 [DRAG END] New step order:', reorderedActiveSteps.map(s => s.name));
+                  // Update step_order in the reordered steps for consistency
+                  const updatedActiveSteps = reorderedActiveSteps.map((step, idx) => ({
+                    ...step,
+                    step_order: idx + 1
+                  }));
+                  
+                  console.log('🔧 [DRAG END] New step order:', updatedActiveSteps.map(s => s.name));
                   
                   return {
                     ...act,
-                    steps: [...reorderedActiveSteps, ...inactiveSteps]
+                    steps: [...updatedActiveSteps, ...inactiveSteps]
                   };
                 }
                 return act;
@@ -726,199 +719,7 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
     });
   };
 
-  // Handle moving step up
-  const handleMoveStepUp = async (stepId: string, activityId: string) => {
-    console.log('🔧 [MOVE STEP UP] Called with:', { stepId, activityId, timestamp: Date.now() });
-    
-    // Prevent operation if currently dragging
-    if (activeId) {
-      console.log('🚨 [MOVE STEP UP] Prevented - drag in progress');
-      return;
-    }
-    
-    // Temporarily disable drag to prevent conflicts
-    setDragDisabled(true);
-    console.log('🔧 [MOVE STEP UP] Drag disabled temporarily');
-    
-    try {
-      // Optimistic update - use current state inside the setter
-      setActivities(prevActivities => {
-        const activity = prevActivities.find(act => act.id === activityId);
-        if (!activity) {
-          console.log('🚨 [MOVE STEP UP] Activity not found:', activityId);
-          return prevActivities;
-        }
 
-        const activeSteps = activity.steps.filter(step => step.is_active);
-        const stepIndex = activeSteps.findIndex(step => step.id === stepId);
-        
-        console.log('🔧 [MOVE STEP UP] Current state:', {
-          activeStepsCount: activeSteps.length,
-          stepIndex,
-          stepNames: activeSteps.map(s => s.name)
-        });
-        
-        // Can't move the first step up
-        if (stepIndex <= 0) {
-          console.log('🚨 [MOVE STEP UP] Cannot move first step up');
-          return prevActivities;
-        }
-
-        // Swap with previous step
-        const newActiveSteps = [...activeSteps];
-        [newActiveSteps[stepIndex - 1], newActiveSteps[stepIndex]] = 
-        [newActiveSteps[stepIndex], newActiveSteps[stepIndex - 1]];
-        
-        const inactiveSteps = activity.steps.filter(step => !step.is_active);
-        
-        console.log('🔧 [MOVE STEP UP] New order:', newActiveSteps.map(s => s.name));
-        
-        return prevActivities.map(act => {
-          if (act.id === activityId) {
-            return {
-              ...act,
-              steps: [...newActiveSteps, ...inactiveSteps]
-            };
-          }
-          return act;
-        });
-      });
-
-      // Update step_order in database
-      const activity = activities.find(act => act.id === activityId);
-      if (activity) {
-        const activeSteps = activity.steps.filter(step => step.is_active);
-        const stepIndex = activeSteps.findIndex(step => step.id === stepId);
-        
-        if (stepIndex > 0) {
-          const stepToMoveUp = activeSteps[stepIndex];
-          const stepToMoveDown = activeSteps[stepIndex - 1];
-          
-          console.log('🔧 [MOVE STEP UP] Updating database:', {
-            stepToMoveUp: stepToMoveUp.name,
-            stepToMoveDown: stepToMoveDown.name
-          });
-          
-          await Promise.all([
-            ResearchActivitiesService.updateResearchStep(stepToMoveUp.id, { 
-              step_order: stepToMoveDown.step_order 
-            }),
-            ResearchActivitiesService.updateResearchStep(stepToMoveDown.id, { 
-              step_order: stepToMoveUp.step_order 
-            })
-          ]);
-        }
-      }
-
-    } catch (error) {
-      console.error('Error moving step up:', error);
-      // Revert on error
-      loadActivities();
-    } finally {
-      // Re-enable drag after a delay
-      setTimeout(() => {
-        setDragDisabled(false);
-        console.log('🔧 [MOVE STEP UP] Drag re-enabled');
-      }, 500);
-    }
-  };
-
-  // Handle moving step down
-  const handleMoveStepDown = async (stepId: string, activityId: string) => {
-    console.log('🔧 [MOVE STEP DOWN] Called with:', { stepId, activityId, timestamp: Date.now() });
-    
-    // Prevent operation if currently dragging
-    if (activeId) {
-      console.log('🚨 [MOVE STEP DOWN] Prevented - drag in progress');
-      return;
-    }
-    
-    // Temporarily disable drag to prevent conflicts
-    setDragDisabled(true);
-    console.log('🔧 [MOVE STEP DOWN] Drag disabled temporarily');
-    
-    try {
-      // Optimistic update - use current state inside the setter
-      setActivities(prevActivities => {
-        const activity = prevActivities.find(act => act.id === activityId);
-        if (!activity) {
-          console.log('🚨 [MOVE STEP DOWN] Activity not found:', activityId);
-          return prevActivities;
-        }
-
-        const activeSteps = activity.steps.filter(step => step.is_active);
-        const stepIndex = activeSteps.findIndex(step => step.id === stepId);
-        
-        console.log('🔧 [MOVE STEP DOWN] Current state:', {
-          activeStepsCount: activeSteps.length,
-          stepIndex,
-          stepNames: activeSteps.map(s => s.name)
-        });
-        
-        // Can't move the last step down
-        if (stepIndex >= activeSteps.length - 1) {
-          console.log('🚨 [MOVE STEP DOWN] Cannot move last step down');
-          return prevActivities;
-        }
-
-        // Swap with next step
-        const newActiveSteps = [...activeSteps];
-        [newActiveSteps[stepIndex], newActiveSteps[stepIndex + 1]] = 
-        [newActiveSteps[stepIndex + 1], newActiveSteps[stepIndex]];
-        
-        const inactiveSteps = activity.steps.filter(step => !step.is_active);
-        
-        console.log('🔧 [MOVE STEP DOWN] New order:', newActiveSteps.map(s => s.name));
-        
-        return prevActivities.map(act => {
-          if (act.id === activityId) {
-            return {
-              ...act,
-              steps: [...newActiveSteps, ...inactiveSteps]
-            };
-          }
-          return act;
-        });
-      });
-
-      // Update step_order in database
-      const activity = activities.find(act => act.id === activityId);
-      if (activity) {
-        const activeSteps = activity.steps.filter(step => step.is_active);
-        const stepIndex = activeSteps.findIndex(step => step.id === stepId);
-        
-        if (stepIndex < activeSteps.length - 1) {
-          const stepToMoveDown = activeSteps[stepIndex];
-          const stepToMoveUp = activeSteps[stepIndex + 1];
-          
-          console.log('🔧 [MOVE STEP DOWN] Updating database:', {
-            stepToMoveDown: stepToMoveDown.name,
-            stepToMoveUp: stepToMoveUp.name
-          });
-          
-          await Promise.all([
-            ResearchActivitiesService.updateResearchStep(stepToMoveDown.id, { 
-              step_order: stepToMoveUp.step_order 
-            }),
-            ResearchActivitiesService.updateResearchStep(stepToMoveUp.id, { 
-              step_order: stepToMoveDown.step_order 
-            })
-          ]);
-        }
-      }
-
-    } catch (error) {
-      console.error('Error moving step down:', error);
-      // Revert on error
-      loadActivities();
-    } finally {
-      // Re-enable drag after a delay
-      setTimeout(() => {
-        setDragDisabled(false);
-        console.log('🔧 [MOVE STEP DOWN] Drag re-enabled');
-      }, 500);
-    }
-  };
 
   // Get all steps for modals
   const allSteps = activities.flatMap(activity => activity.steps);
@@ -1170,7 +971,6 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
                 key={activity.id}
                 activity={activity}
                 businessId={businessId}
-                dragDisabled={dragDisabled}
                 onToggleExpanded={handleToggleActivityExpanded}
                 onEdit={handleEditActivity}
                 onDeactivate={handleDeactivateActivity}
@@ -1180,8 +980,6 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
                 onEditSubcomponent={handleEditSubcomponent}
                 onMoveSubcomponent={handleMoveSubcomponent}
                 onUpdateStepPercentages={handleUpdateStepPercentages}
-                onMoveStepUp={handleMoveStepUp}
-                onMoveStepDown={handleMoveStepDown}
               />
             ))
           ) : (
