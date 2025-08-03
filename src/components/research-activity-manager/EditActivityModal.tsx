@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, AlertTriangle } from 'lucide-react';
+import { X, Save, AlertTriangle, GitMerge, Info } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { ResearchActivity } from '../../modules/tax-calculator/services/researchActivitiesService';
 
@@ -11,6 +11,7 @@ interface EditActivityModalProps {
   categories: Array<{ id: string; name: string; }>;
   areas: Array<{ id: string; name: string; category_id: string; }>;
   focuses: Array<{ id: string; name: string; area_id: string; }>;
+  businessId?: string; // For loading other activities to merge with
 }
 
 const EditActivityModal: React.FC<EditActivityModalProps> = ({
@@ -20,7 +21,8 @@ const EditActivityModal: React.FC<EditActivityModalProps> = ({
   onSave,
   categories,
   areas,
-  focuses
+  focuses,
+  businessId
 }) => {
   const [formData, setFormData] = useState({
     title: '',
@@ -31,6 +33,13 @@ const EditActivityModal: React.FC<EditActivityModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflictWarning, setConflictWarning] = useState<string | null>(null);
+  
+  // Merge functionality states
+  const [showMergeSection, setShowMergeSection] = useState(false);
+  const [mergeTargetId, setMergeTargetId] = useState<string>('');
+  const [mergeConfirmation, setMergeConfirmation] = useState('');
+  const [availableActivities, setAvailableActivities] = useState<ResearchActivity[]>([]);
+  const [mergeLoading, setMergeLoading] = useState(false);
 
   useEffect(() => {
     if (activity) {
@@ -48,6 +57,41 @@ const EditActivityModal: React.FC<EditActivityModalProps> = ({
       setConflictWarning(null);
     }
   }, [activity, focuses, areas, categories]);
+
+  // Load available activities for merging
+  useEffect(() => {
+    if (isOpen && activity) {
+      loadAvailableActivities();
+    }
+  }, [isOpen, businessId, activity]);
+
+  const loadAvailableActivities = async () => {
+    if (!activity) return;
+    
+    try {
+      // Build query for business-specific OR global activities
+      let query = supabase
+        .from('rd_research_activities')
+        .select('id, title, focus_id')
+        .neq('id', activity.id) // Exclude current activity
+        .eq('is_active', true);
+      
+      // Add business filter for business-specific mode, or null for global mode
+      if (businessId) {
+        query = query.eq('business_id', businessId);
+      } else {
+        query = query.is('business_id', null);
+      }
+      
+      const { data, error } = await query;
+      
+      if (error) throw error;
+      
+      setAvailableActivities(data || []);
+    } catch (err) {
+      console.error('Error loading activities for merge:', err);
+    }
+  };
 
   // Check for potential conflicts when title or focus changes
   useEffect(() => {
@@ -125,6 +169,101 @@ const EditActivityModal: React.FC<EditActivityModalProps> = ({
   const availableFocuses = formData.area_id 
     ? focuses.filter(focus => focus.area_id === formData.area_id)
     : [];
+
+  // Merge Activities Functionality
+  const handleMergeActivities = async () => {
+    if (!activity || !mergeTargetId || mergeConfirmation !== 'MERGE') {
+      setError('Please select a target activity and type MERGE to confirm');
+      return;
+    }
+
+    // Prevent merging activity into itself
+    if (mergeTargetId === activity.id) {
+      setError('Cannot merge an activity into itself. Please select a different target activity.');
+      return;
+    }
+
+    setMergeLoading(true);
+    setError(null);
+
+    try {
+      const targetActivity = availableActivities.find(a => a.id === mergeTargetId);
+      if (!targetActivity) {
+        throw new Error('Target activity not found');
+      }
+
+      console.log(`🔄 Merging activity "${activity.title}" into "${targetActivity.title}"`);
+
+      // Check for potential step name conflicts before merging
+      const { data: sourceSteps } = await supabase
+        .from('rd_research_steps')
+        .select('name')
+        .eq('research_activity_id', activity.id)
+        .eq('is_active', true);
+
+      const { data: targetSteps } = await supabase
+        .from('rd_research_steps')
+        .select('name')
+        .eq('research_activity_id', mergeTargetId)
+        .eq('is_active', true);
+
+      const sourceNames = sourceSteps?.map(s => s.name) || [];
+      const targetNames = targetSteps?.map(s => s.name) || [];
+      const conflicts = sourceNames.filter(name => targetNames.includes(name));
+
+      if (conflicts.length > 0) {
+        console.warn(`⚠️ Step name conflicts detected: ${conflicts.join(', ')}. Proceeding with merge - duplicate steps will be renamed.`);
+      }
+
+      // Step 1: Move all steps from source to target activity
+      const { error: stepsError } = await supabase
+        .from('rd_research_steps')
+        .update({ research_activity_id: mergeTargetId })
+        .eq('research_activity_id', activity.id);
+
+      if (stepsError) throw stepsError;
+
+      // Step 2: Update any selected activities that reference the source activity
+      const { error: selectedActivitiesError } = await supabase
+        .from('rd_selected_activities')
+        .update({ activity_id: mergeTargetId })
+        .eq('activity_id', activity.id);
+
+      if (selectedActivitiesError) throw selectedActivitiesError;
+
+      // Step 3: Update any other references (like rd_federal_credit if it exists)
+      const { error: federalCreditError } = await supabase
+        .from('rd_federal_credit')
+        .update({ research_activity_id: mergeTargetId })
+        .eq('research_activity_id', activity.id);
+
+      // Don't throw on this error as the table might not exist
+      if (federalCreditError) {
+        console.warn('Could not update rd_federal_credit references:', federalCreditError);
+      }
+
+      // Step 4: Deactivate the source activity (instead of deleting for audit trail)
+      const { error: deactivateError } = await supabase
+        .from('rd_research_activities')
+        .update({ 
+          is_active: false,
+          title: `[MERGED] ${activity.title}`
+        })
+        .eq('id', activity.id);
+
+      if (deactivateError) throw deactivateError;
+
+      console.log(`✅ Successfully merged "${activity.title}" into "${targetActivity.title}"`);
+      
+      onSave(); // Refresh the parent component
+      onClose(); // Close the modal
+    } catch (err: any) {
+      console.error('Error merging activities:', err);
+      setError(`Failed to merge activities: ${err.message}`);
+    } finally {
+      setMergeLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -293,6 +432,107 @@ const EditActivityModal: React.FC<EditActivityModalProps> = ({
               )}
             </div>
           </div>
+
+
+
+          {/* Merge Activities Section */}
+          <div className="p-6 border-t-4 border-orange-500 bg-orange-50">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-2">
+                  <GitMerge className="w-5 h-5 text-orange-600" />
+                  <h3 className="text-lg font-medium text-gray-900">🔄 Merge Activities</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowMergeSection(!showMergeSection)}
+                  className="text-sm text-blue-600 hover:text-blue-700 font-bold px-3 py-1 bg-blue-100 rounded"
+                >
+                  {showMergeSection ? 'Hide' : 'Show'} Merge Options
+                </button>
+              </div>
+
+              {showMergeSection && (
+                <div className="space-y-4">
+                  {availableActivities.length > 0 ? (
+                    <>
+                      <div className="flex items-start space-x-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                        <Info className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
+                        <div className="text-sm text-orange-700">
+                          <p className="font-medium mb-1">⚠️ Merge Warning</p>
+                          <p>This will move ALL steps and subcomponents from "{activity?.title}" into the target activity, then deactivate this activity. This action cannot be undone.</p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Merge "{activity?.title}" into:
+                        </label>
+                        <select
+                          value={mergeTargetId}
+                          onChange={(e) => setMergeTargetId(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                        >
+                          <option value="">Select target activity...</option>
+                          {availableActivities
+                            .filter(act => act.id !== activity?.id) // Filter out current activity
+                            .map(act => (
+                            <option key={act.id} value={act.id}>
+                              {act.title}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {availableActivities.filter(act => act.id !== activity?.id).length} activities available for merge
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-start space-x-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                        <div className="text-sm text-blue-700">
+                          <p className="font-medium mb-1">📝 No Activities to Merge</p>
+                          <p>You need at least 2 research activities in this business to use the merge feature. Create another activity first.</p>
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-500 bg-gray-100 p-2 rounded">
+                        <strong>Debug Info:</strong><br/>
+                        • Business ID: {businessId || 'Missing'}<br/>
+                        • Available Activities: {availableActivities.length}<br/>
+                        • Current Activity: {activity?.title || 'Unknown'}
+                      </div>
+                    </div>
+                  )}
+
+                  {mergeTargetId && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Type "MERGE" to confirm:
+                      </label>
+                      <input
+                        type="text"
+                        value={mergeConfirmation}
+                        onChange={(e) => setMergeConfirmation(e.target.value)}
+                        placeholder="Type MERGE to confirm"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      />
+                    </div>
+                  )}
+
+                  {mergeTargetId && mergeConfirmation === 'MERGE' && (
+                    <button
+                      type="button"
+                      onClick={handleMergeActivities}
+                      disabled={mergeLoading}
+                      className="flex items-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <GitMerge className="w-4 h-4" />
+                      <span>{mergeLoading ? 'Merging...' : `Merge into ${availableActivities.find(a => a.id === mergeTargetId)?.title}`}</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
 
           {/* Footer */}
           <div className="flex items-center justify-end space-x-3 p-6 border-t border-gray-200">

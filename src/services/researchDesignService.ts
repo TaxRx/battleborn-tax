@@ -85,6 +85,12 @@ export class ResearchDesignService {
 
       // Get steps for this activity (active only)
       const steps = await this.getStepsForActivity(activityId, true);
+      console.log(`🔍 [ResearchDesignService] Steps for activity ${activity.title}:`, steps.map(s => ({
+        id: s.id,
+        name: s.name,
+        default_time_percentage: s.default_time_percentage,
+        step_order: s.step_order
+      })));
       const stepsWithSubcomponents: StepWithSubcomponents[] = [];
 
       // Get subcomponents for each step (active only)
@@ -97,8 +103,8 @@ export class ResearchDesignService {
       }
 
       activities.push({
-        id: activity.id,
-        title: activity.title,
+        activityId: activity.id,
+        activityName: activity.title,
         steps: stepsWithSubcomponents
       });
     }

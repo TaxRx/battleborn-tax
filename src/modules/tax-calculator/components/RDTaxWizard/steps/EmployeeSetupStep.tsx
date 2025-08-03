@@ -3995,7 +3995,17 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
               
               if (roleData && !roleError) {
                 baselinePercent = roleData.baseline_applied_percent || 0;
-                calculatedQRE = Math.round((annualWage * baselinePercent) / 100);
+                // ✅ FIX: Apply 80% threshold rule for consistency with state calculations
+                const qreAppliedPercent = baselinePercent >= 80 ? 100 : baselinePercent;
+                calculatedQRE = Math.round((annualWage * qreAppliedPercent) / 100);
+                
+                console.log(`🎯 CSV Import QRE calculation for ${firstName} ${lastName}:`, {
+                  annualWage,
+                  baselinePercent,
+                  qreAppliedPercent,
+                  calculatedQRE,
+                  note: 'Applied 80% threshold rule for consistency with state calculations'
+                });
               }
             }
             

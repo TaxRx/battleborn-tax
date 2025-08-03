@@ -21,6 +21,16 @@ interface ImportResult {
   success: number;
   failed: number;
   updated: number;
+  activitiesCreated?: Array<{
+    title: string;
+    id: string;
+    focus_id: string;
+  }>;
+  stepsCreated?: Array<{
+    name: string;
+    id: string;
+    order: number;
+  }>;
   errors: Array<{
     row: number;
     error: string;
@@ -329,6 +339,16 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({ isOpen, onClose, onSucc
 
       if (stepError) throw stepError;
       stepId = newStep.id;
+      
+      console.log(`🆕 Auto-created new step: "${row.step.trim()}" [ID: ${stepId}] for Research Activity`);
+      
+      // Track step creation in results
+      if (!result.stepsCreated) result.stepsCreated = [];
+      result.stepsCreated.push({
+        name: row.step.trim(),
+        id: stepId,
+        order: stepData.step_order
+      });
     } else {
       stepId = existingStep.id;
       
@@ -526,6 +546,7 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({ isOpen, onClose, onSucc
             continue;
           }
 
+          console.log(`🔄 CSV Import Row ${row._rowNumber}: Processing "${row.subcomponent}" in activity "${row.research_activity}"`);
           const focusId = await findOrCreateFilterEntries(row);
 
           // Find or create the research activity
@@ -556,6 +577,16 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({ isOpen, onClose, onSucc
 
             if (activityError) throw activityError;
             activityId = newActivity.id;
+            
+            console.log(`🆕 Auto-created new research activity: "${row.research_activity.trim()}" [ID: ${activityId}] for Business ID: ${businessId}`);
+            
+            // Track research activity creation in results
+            if (!result.activitiesCreated) result.activitiesCreated = [];
+            result.activitiesCreated.push({
+              title: row.research_activity.trim(),
+              id: activityId,
+              focus_id: focusId
+            });
           } else {
             activityId = existingActivity.id;
           }
@@ -564,9 +595,22 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({ isOpen, onClose, onSucc
           await handleStepProcessing(row, activityId, result);
         } catch (error: any) {
           result.failed++;
+          
+          // Enhanced error reporting for 406 errors (RLS policy issues)
+          let errorMessage = error.message || 'Unknown error';
+          if (error.code === '42501' || error.code === 'PGRST301' || errorMessage.includes('406')) {
+            errorMessage = `🔒 RLS Policy Error (406): ${errorMessage} - Please check database permissions for research tables`;
+            console.error('🚨 CSV Import 406 Error Details:', {
+              rowNumber: row._rowNumber,
+              error: error,
+              rowData: row,
+              suggestion: 'Run the RLS policy fix migration or immediate SQL fix'
+            });
+          }
+          
           result.errors.push({
             row: row._rowNumber,
-            error: error.message || 'Unknown error',
+            error: errorMessage,
             data: row
           });
         }
@@ -766,6 +810,27 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({ isOpen, onClose, onSucc
                 )}
               </div>
 
+              {/* Auto-Step Creation Info */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start space-x-3">
+                  <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="text-white text-sm font-bold">i</span>
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-medium text-blue-900 mb-2">🚀 Automatic Creation Features</h4>
+                    <div className="text-sm text-blue-700 space-y-1">
+                      <p>✅ <strong>Missing research activities are auto-created</strong> and linked to your business</p>
+                      <p>✅ <strong>Missing steps are auto-created</strong> when subcomponents reference them</p>
+                      <p>✅ Activities, steps, and subcomponents get proper ordering and names</p>
+                      <p>✅ You'll see a summary of everything created after import</p>
+                    </div>
+                    <div className="text-xs text-blue-600 mt-2 italic">
+                      No need to pre-create activities or steps - just reference them in your CSV!
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Import Button */}
               {file && (
                 <div className="text-center">
@@ -802,6 +867,60 @@ const CSVImportModal: React.FC<CSVImportModalProps> = ({ isOpen, onClose, onSucc
                     </div>
                   )}
                 </div>
+                
+                {/* Display auto-created steps */}
+                {result.stepsCreated && result.stepsCreated.length > 0 && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
+                    <div className="flex items-center space-x-2 mb-3">
+                      <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                        <span className="text-white text-xs font-bold">+</span>
+                      </div>
+                      <span className="text-blue-700 font-medium">
+                        Auto-Created {result.stepsCreated.length} New Step{result.stepsCreated.length > 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div className="text-sm text-blue-600 space-y-1">
+                      {result.stepsCreated.map((step, index) => (
+                        <div key={index} className="flex items-center space-x-2">
+                          <span className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">
+                            Step {step.order}
+                          </span>
+                          <span>"{step.name}"</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="text-xs text-blue-500 mt-2">
+                      ℹ️ Steps are automatically created when subcomponents reference non-existing steps
+                    </div>
+                  </div>
+                )}
+
+                {/* Display auto-created research activities */}
+                {result.activitiesCreated && result.activitiesCreated.length > 0 && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 mt-4">
+                    <div className="flex items-center space-x-2 mb-3">
+                      <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                        <span className="text-white text-xs font-bold">+</span>
+                      </div>
+                      <span className="text-green-700 font-medium">
+                        Auto-Created {result.activitiesCreated.length} New Research Activit{result.activitiesCreated.length > 1 ? 'ies' : 'y'}
+                      </span>
+                    </div>
+                    <div className="text-sm text-green-600 space-y-1">
+                      {result.activitiesCreated.map((activity, index) => (
+                        <div key={index} className="flex items-center space-x-2">
+                          <span className="font-mono text-xs bg-green-100 px-2 py-1 rounded">
+                            Activity
+                          </span>
+                          <span>"{activity.title}"</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="text-xs text-green-500 mt-2">
+                      ℹ️ Research activities are automatically linked to your current business/client
+                    </div>
+                  </div>
+                )}
 
                 {/* Verification Button */}
                 <div className="mt-4">
