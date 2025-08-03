@@ -126,6 +126,7 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   const [showInactive, setShowInactive] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [dragDisabled, setDragDisabled] = useState(false);
 
   // Filter data states
   const [categories, setCategories] = useState<ResearchCategory[]>([]);
@@ -171,7 +172,11 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
 
   // Drag and drop sensors
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -280,59 +285,103 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
     try {
       console.log('🔄 Loading research activities...');
       
-      // Load activities with their steps and subcomponents
-      const loadedActivities = businessId 
-        ? await ResearchActivitiesService.getAllResearchActivities(businessId)
-        : await ResearchActivitiesService.getAllResearchActivities();
-
-      // Fetch steps and subcomponents for each activity
-      const activitiesWithSteps: ActivityWithSteps[] = await Promise.all(
-        loadedActivities.map(async (activity) => {
-          try {
-            const steps = await ResearchActivitiesService.getResearchSteps(activity.id, !showInactive);
-            
-            // Fetch subcomponents for each step
-            const stepsWithSubcomponents = await Promise.all(
-              steps.map(async (step) => {
-                try {
-                  const subcomponents = await ResearchActivitiesService.getResearchSubcomponents(step.id, !showInactive);
-                  return {
-                    ...step,
-                    subcomponents: subcomponents || [],
-                    expanded: false
-                  };
-                } catch (error) {
-                  console.error(`Error loading subcomponents for step ${step.id}:`, error);
-                  return {
-                    ...step,
-                    subcomponents: [],
-                    expanded: false
-                  };
-                }
-              })
-            );
-
-            return {
-              ...activity,
-              steps: stepsWithSubcomponents,
-              expanded: false
-            };
-          } catch (error) {
-            console.error(`Error loading steps for activity ${activity.id}:`, error);
-            return {
-              ...activity,
-              steps: [],
-              expanded: false
-            };
-          }
-        })
+      // Add timeout to prevent infinite loading
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Loading timeout after 30 seconds')), 30000)
       );
 
+      const loadPromise = async () => {
+        // Load activities with their steps and subcomponents
+        const loadedActivities = businessId 
+          ? await ResearchActivitiesService.getAllResearchActivities(businessId)
+          : await ResearchActivitiesService.getAllResearchActivities();
+
+        console.log(`📊 Loading ${loadedActivities.length} activities...`);
+
+        if (loadedActivities.length === 0) {
+          return [];
+        }
+
+        // Use Promise.all with smaller batches instead of full sequential processing
+        const batchSize = 3; // Process 3 activities at a time
+        const activitiesWithSteps: ActivityWithSteps[] = [];
+
+        for (let i = 0; i < loadedActivities.length; i += batchSize) {
+          const batch = loadedActivities.slice(i, i + batchSize);
+          const batchNum = Math.floor(i/batchSize) + 1;
+          const totalBatches = Math.ceil(loadedActivities.length/batchSize);
+          console.log(`Processing batch ${batchNum}/${totalBatches}`);
+          
+          const batchResults = await Promise.all(
+            batch.map(async (activity) => {
+              try {
+                const steps = await ResearchActivitiesService.getResearchSteps(activity.id, !showInactive);
+                
+                // Load subcomponents with smaller batches for large step counts
+                const stepBatchSize = 5;
+                const stepsWithSubcomponents = [];
+                
+                for (let j = 0; j < steps.length; j += stepBatchSize) {
+                  const stepBatch = steps.slice(j, j + stepBatchSize);
+                  const stepResults = await Promise.all(
+                    stepBatch.map(async (step) => {
+                      try {
+                        const subcomponents = await ResearchActivitiesService.getResearchSubcomponents(step.id, !showInactive);
+                        return {
+                          ...step,
+                          subcomponents: subcomponents || [],
+                          expanded: false
+                        };
+                      } catch (error) {
+                        console.error(`Error loading subcomponents for step ${step.id}:`, error);
+                        return {
+                          ...step,
+                          subcomponents: [],
+                          expanded: false
+                        };
+                      }
+                    })
+                  );
+                  stepsWithSubcomponents.push(...stepResults);
+                  
+                  // No delay for faster loading - can be re-added if resource errors return
+                }
+
+                return {
+                  ...activity,
+                  steps: stepsWithSubcomponents,
+                  expanded: false
+                };
+              } catch (error) {
+                console.error(`Error loading steps for activity ${activity.id}:`, error);
+                return {
+                  ...activity,
+                  steps: [],
+                  expanded: false
+                };
+              }
+            })
+          );
+          
+          activitiesWithSteps.push(...batchResults);
+          
+          // No delay for faster loading - can be re-added if resource errors return
+        }
+
+        return activitiesWithSteps;
+      };
+
+      // Race between loading and timeout
+      const activitiesWithSteps = await Promise.race([loadPromise(), timeoutPromise]) as ActivityWithSteps[];
+
       setActivities(activitiesWithSteps);
-      console.log('✅ Loaded activities with hierarchical structure:', activitiesWithSteps);
+      console.log('✅ Loaded activities with hierarchical structure:', activitiesWithSteps.length, 'activities');
     } catch (error) {
       console.error('❌ Error loading activities:', error);
+      // Set empty activities on error to prevent infinite loading
+      setActivities([]);
     } finally {
+      console.log('🏁 Setting loading to false...');
       setLoading(false);
     }
   };
@@ -343,12 +392,31 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   }, [businessId, showInactive]);
 
   const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
+    // Prevent drag if temporarily disabled
+    if (dragDisabled) {
+      console.log('🚨 [DRAG START] Drag prevented - temporarily disabled');
+      return false;
+    }
+    
+    const activeId = event.active.id as string;
+    console.log('🔧 [DRAG START] Drag initiated:', {
+      activeId,
+      activeData: event.active.data.current,
+      type: event.active.data.current?.type,
+      timestamp: Date.now()
+    });
+    setActiveId(activeId);
   };
 
   const handleDragEnd = async (event: DndKitDragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
+
+    // Prevent drag end if temporarily disabled
+    if (dragDisabled) {
+      console.log('🚨 [DRAG END] Drag end prevented - temporarily disabled');
+      return;
+    }
 
     if (!over) return;
 
@@ -359,6 +427,13 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
     if (activeData?.type === 'step' && overData?.type === 'step') {
       const activeStepId = active.id as string;
       const overStepId = over.id as string;
+
+      console.log('🔧 [DRAG END] Step reordering detected:', {
+        activeStepId,
+        overStepId,
+        activeData,
+        overData
+      });
 
       if (activeStepId !== overStepId) {
         try {
@@ -372,22 +447,53 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
             const steps = activity.steps.filter(step => step.is_active);
             const oldIndex = steps.findIndex(step => step.id === activeStepId);
             const newIndex = steps.findIndex(step => step.id === overStepId);
-
-            // Create new order array
-            const reorderedSteps = arrayMove(steps, oldIndex, newIndex);
             
-            // Update step_order in database
-            const updatePromises = reorderedSteps.map((step, index) => 
-              ResearchActivitiesService.updateResearchStep(step.id, { 
+            console.log('🔧 [DRAG END] Reordering details:', {
+              activityName: activity.title,
+              stepNames: steps.map(s => s.name),
+              oldIndex,
+              newIndex,
+              activeStepName: steps[oldIndex]?.name,
+              overStepName: steps[newIndex]?.name
+            });
+
+            // Optimistic update - update local state immediately
+            setActivities(prevActivities => {
+              return prevActivities.map(act => {
+                if (act.id === activity.id) {
+                  const activeSteps = act.steps.filter(step => step.is_active);
+                  const inactiveSteps = act.steps.filter(step => !step.is_active);
+                  const reorderedActiveSteps = arrayMove(activeSteps, oldIndex, newIndex);
+                  
+                  console.log('🔧 [DRAG END] New step order:', reorderedActiveSteps.map(s => s.name));
+                  
+                  return {
+                    ...act,
+                    steps: [...reorderedActiveSteps, ...inactiveSteps]
+                  };
+                }
+                return act;
+              });
+            });
+
+            // Update step_order in database in background
+            const reorderedSteps = arrayMove(steps, oldIndex, newIndex);
+            const updatePromises = reorderedSteps.map((step, index) => {
+              console.log(`🔧 [DRAG END] Setting step "${step.name}" to order ${index + 1}`);
+              return ResearchActivitiesService.updateResearchStep(step.id, { 
                 step_order: index + 1 
-              })
-            );
+              });
+            });
 
             await Promise.all(updatePromises);
-            loadActivities(); // Refresh data
+            console.log('🔧 [DRAG END] Database updates completed');
+          } else {
+            console.error('🚨 [DRAG END] Activity not found for steps');
           }
         } catch (error) {
           console.error('Error reordering steps:', error);
+          // Revert optimistic update on error
+          loadActivities();
         }
       }
     }
@@ -400,14 +506,39 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
 
       if (fromStepId !== toStepId) {
         try {
+          // Optimistic update - update local state immediately
+          setActivities(prevActivities => {
+            return prevActivities.map(activity => ({
+              ...activity,
+              steps: activity.steps.map(step => {
+                if (step.id === fromStepId) {
+                  // Remove subcomponent from source step
+                  return {
+                    ...step,
+                    subcomponents: step.subcomponents.filter(sub => sub.id !== subcomponent.id)
+                  };
+                } else if (step.id === toStepId) {
+                  // Add subcomponent to target step
+                  return {
+                    ...step,
+                    subcomponents: [...step.subcomponents, { ...subcomponent, step_id: toStepId }]
+                  };
+                }
+                return step;
+              })
+            }));
+          });
+
+          // Update database in background
           await ResearchActivitiesService.moveSubcomponentToStep(
             subcomponent.id,
             toStepId,
             'Moved via drag and drop'
           );
-          loadActivities(); // Refresh data
         } catch (error) {
           console.error('Error moving subcomponent:', error);
+          // Revert optimistic update on error
+          loadActivities();
         }
       }
     }
@@ -471,15 +602,7 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
     setShowEditStepModal(true);
   };
 
-  const handleDuplicateActivity = async (activity: ResearchActivity) => {
-    if (isResearchActivitiesLocked) return;
-    try {
-      await ResearchActivitiesService.duplicateResearchActivity(activity.id, businessId);
-      loadActivities();
-    } catch (error) {
-      console.error('Error duplicating activity:', error);
-    }
-  };
+
 
   const handleDeactivateActivity = async (activity: ResearchActivity) => {
     if (isResearchActivitiesLocked) return;
@@ -530,15 +653,270 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   const handleMoveSubcomponentToStep = async (targetStepId: string) => {
     if (isResearchActivitiesLocked) return;
     try {
+      // Optimistic update - update local state immediately
+      const subcomponentId = moveSubcomponentId;
+      const fromStepId = moveFromStepId;
+      
+      setActivities(prevActivities => {
+        return prevActivities.map(activity => ({
+          ...activity,
+          steps: activity.steps.map(step => {
+            if (step.id === fromStepId) {
+              // Remove subcomponent from source step
+              const subcomponent = step.subcomponents.find(sub => sub.id === subcomponentId);
+              return {
+                ...step,
+                subcomponents: step.subcomponents.filter(sub => sub.id !== subcomponentId)
+              };
+            } else if (step.id === targetStepId) {
+              // Add subcomponent to target step
+              const sourceActivity = prevActivities.find(act => 
+                act.steps.some(s => s.id === fromStepId)
+              );
+              const sourceStep = sourceActivity?.steps.find(s => s.id === fromStepId);
+              const subcomponent = sourceStep?.subcomponents.find(sub => sub.id === subcomponentId);
+              
+              if (subcomponent) {
+                return {
+                  ...step,
+                  subcomponents: [...step.subcomponents, { ...subcomponent, step_id: targetStepId }]
+                };
+              }
+            }
+            return step;
+          })
+        }));
+      });
+
+      // Update database in background
       await ResearchActivitiesService.moveSubcomponentToStep(
         moveSubcomponentId,
         targetStepId,
         'Moved via move modal'
       );
-      loadActivities();
     } catch (error) {
       console.error('Error moving subcomponent:', error);
+      // Revert optimistic update on error
+      loadActivities();
       throw error;
+    }
+  };
+
+  // Handle optimistic step percentage updates
+  const handleUpdateStepPercentages = (activityId: string, stepUpdates: { stepId: string; newPercentage: number }[]) => {
+    setActivities(prevActivities => {
+      return prevActivities.map(activity => {
+        if (activity.id === activityId) {
+          return {
+            ...activity,
+            steps: activity.steps.map(step => {
+              const update = stepUpdates.find(u => u.stepId === step.id);
+              if (update) {
+                return {
+                  ...step,
+                  default_time_percentage: update.newPercentage
+                };
+              }
+              return step;
+            })
+          };
+        }
+        return activity;
+      });
+    });
+  };
+
+  // Handle moving step up
+  const handleMoveStepUp = async (stepId: string, activityId: string) => {
+    console.log('🔧 [MOVE STEP UP] Called with:', { stepId, activityId, timestamp: Date.now() });
+    
+    // Prevent operation if currently dragging
+    if (activeId) {
+      console.log('🚨 [MOVE STEP UP] Prevented - drag in progress');
+      return;
+    }
+    
+    // Temporarily disable drag to prevent conflicts
+    setDragDisabled(true);
+    console.log('🔧 [MOVE STEP UP] Drag disabled temporarily');
+    
+    try {
+      // Optimistic update - use current state inside the setter
+      setActivities(prevActivities => {
+        const activity = prevActivities.find(act => act.id === activityId);
+        if (!activity) {
+          console.log('🚨 [MOVE STEP UP] Activity not found:', activityId);
+          return prevActivities;
+        }
+
+        const activeSteps = activity.steps.filter(step => step.is_active);
+        const stepIndex = activeSteps.findIndex(step => step.id === stepId);
+        
+        console.log('🔧 [MOVE STEP UP] Current state:', {
+          activeStepsCount: activeSteps.length,
+          stepIndex,
+          stepNames: activeSteps.map(s => s.name)
+        });
+        
+        // Can't move the first step up
+        if (stepIndex <= 0) {
+          console.log('🚨 [MOVE STEP UP] Cannot move first step up');
+          return prevActivities;
+        }
+
+        // Swap with previous step
+        const newActiveSteps = [...activeSteps];
+        [newActiveSteps[stepIndex - 1], newActiveSteps[stepIndex]] = 
+        [newActiveSteps[stepIndex], newActiveSteps[stepIndex - 1]];
+        
+        const inactiveSteps = activity.steps.filter(step => !step.is_active);
+        
+        console.log('🔧 [MOVE STEP UP] New order:', newActiveSteps.map(s => s.name));
+        
+        return prevActivities.map(act => {
+          if (act.id === activityId) {
+            return {
+              ...act,
+              steps: [...newActiveSteps, ...inactiveSteps]
+            };
+          }
+          return act;
+        });
+      });
+
+      // Update step_order in database
+      const activity = activities.find(act => act.id === activityId);
+      if (activity) {
+        const activeSteps = activity.steps.filter(step => step.is_active);
+        const stepIndex = activeSteps.findIndex(step => step.id === stepId);
+        
+        if (stepIndex > 0) {
+          const stepToMoveUp = activeSteps[stepIndex];
+          const stepToMoveDown = activeSteps[stepIndex - 1];
+          
+          console.log('🔧 [MOVE STEP UP] Updating database:', {
+            stepToMoveUp: stepToMoveUp.name,
+            stepToMoveDown: stepToMoveDown.name
+          });
+          
+          await Promise.all([
+            ResearchActivitiesService.updateResearchStep(stepToMoveUp.id, { 
+              step_order: stepToMoveDown.step_order 
+            }),
+            ResearchActivitiesService.updateResearchStep(stepToMoveDown.id, { 
+              step_order: stepToMoveUp.step_order 
+            })
+          ]);
+        }
+      }
+
+    } catch (error) {
+      console.error('Error moving step up:', error);
+      // Revert on error
+      loadActivities();
+    } finally {
+      // Re-enable drag after a delay
+      setTimeout(() => {
+        setDragDisabled(false);
+        console.log('🔧 [MOVE STEP UP] Drag re-enabled');
+      }, 500);
+    }
+  };
+
+  // Handle moving step down
+  const handleMoveStepDown = async (stepId: string, activityId: string) => {
+    console.log('🔧 [MOVE STEP DOWN] Called with:', { stepId, activityId, timestamp: Date.now() });
+    
+    // Prevent operation if currently dragging
+    if (activeId) {
+      console.log('🚨 [MOVE STEP DOWN] Prevented - drag in progress');
+      return;
+    }
+    
+    // Temporarily disable drag to prevent conflicts
+    setDragDisabled(true);
+    console.log('🔧 [MOVE STEP DOWN] Drag disabled temporarily');
+    
+    try {
+      // Optimistic update - use current state inside the setter
+      setActivities(prevActivities => {
+        const activity = prevActivities.find(act => act.id === activityId);
+        if (!activity) {
+          console.log('🚨 [MOVE STEP DOWN] Activity not found:', activityId);
+          return prevActivities;
+        }
+
+        const activeSteps = activity.steps.filter(step => step.is_active);
+        const stepIndex = activeSteps.findIndex(step => step.id === stepId);
+        
+        console.log('🔧 [MOVE STEP DOWN] Current state:', {
+          activeStepsCount: activeSteps.length,
+          stepIndex,
+          stepNames: activeSteps.map(s => s.name)
+        });
+        
+        // Can't move the last step down
+        if (stepIndex >= activeSteps.length - 1) {
+          console.log('🚨 [MOVE STEP DOWN] Cannot move last step down');
+          return prevActivities;
+        }
+
+        // Swap with next step
+        const newActiveSteps = [...activeSteps];
+        [newActiveSteps[stepIndex], newActiveSteps[stepIndex + 1]] = 
+        [newActiveSteps[stepIndex + 1], newActiveSteps[stepIndex]];
+        
+        const inactiveSteps = activity.steps.filter(step => !step.is_active);
+        
+        console.log('🔧 [MOVE STEP DOWN] New order:', newActiveSteps.map(s => s.name));
+        
+        return prevActivities.map(act => {
+          if (act.id === activityId) {
+            return {
+              ...act,
+              steps: [...newActiveSteps, ...inactiveSteps]
+            };
+          }
+          return act;
+        });
+      });
+
+      // Update step_order in database
+      const activity = activities.find(act => act.id === activityId);
+      if (activity) {
+        const activeSteps = activity.steps.filter(step => step.is_active);
+        const stepIndex = activeSteps.findIndex(step => step.id === stepId);
+        
+        if (stepIndex < activeSteps.length - 1) {
+          const stepToMoveDown = activeSteps[stepIndex];
+          const stepToMoveUp = activeSteps[stepIndex + 1];
+          
+          console.log('🔧 [MOVE STEP DOWN] Updating database:', {
+            stepToMoveDown: stepToMoveDown.name,
+            stepToMoveUp: stepToMoveUp.name
+          });
+          
+          await Promise.all([
+            ResearchActivitiesService.updateResearchStep(stepToMoveDown.id, { 
+              step_order: stepToMoveUp.step_order 
+            }),
+            ResearchActivitiesService.updateResearchStep(stepToMoveUp.id, { 
+              step_order: stepToMoveDown.step_order 
+            })
+          ]);
+        }
+      }
+
+    } catch (error) {
+      console.error('Error moving step down:', error);
+      // Revert on error
+      loadActivities();
+    } finally {
+      // Re-enable drag after a delay
+      setTimeout(() => {
+        setDragDisabled(false);
+        console.log('🔧 [MOVE STEP DOWN] Drag re-enabled');
+      }, 500);
     }
   };
 
@@ -792,13 +1170,18 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
                 key={activity.id}
                 activity={activity}
                 businessId={businessId}
+                dragDisabled={dragDisabled}
                 onToggleExpanded={handleToggleActivityExpanded}
                 onEdit={handleEditActivity}
-                onDuplicate={handleDuplicateActivity}
                 onDeactivate={handleDeactivateActivity}
                 onRefresh={loadActivities}
                 onEditStep={handleEditStep}
                 onAddStep={handleAddStep}
+                onEditSubcomponent={handleEditSubcomponent}
+                onMoveSubcomponent={handleMoveSubcomponent}
+                onUpdateStepPercentages={handleUpdateStepPercentages}
+                onMoveStepUp={handleMoveStepUp}
+                onMoveStepDown={handleMoveStepDown}
               />
             ))
           ) : (
@@ -822,6 +1205,7 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
                 onEdit={() => {}}
                 onMove={() => {}}
                 onDeactivate={() => {}}
+                onRefresh={() => {}}
               />
             </div>
           )}
@@ -935,6 +1319,7 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
           categories={categories}
           areas={areas}
           focuses={focuses}
+          businessId={businessId}
         />
 
         {/* Edit Step Modal */}
@@ -982,6 +1367,7 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
           }}
           categories={categories}
           areas={areas}
+          businessId={businessId}
         />
       </div>
     </DndContext>

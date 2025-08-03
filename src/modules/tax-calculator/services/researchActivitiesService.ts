@@ -15,9 +15,11 @@ export interface ResearchActivity {
   business_id?: string; // For business-specific activities
   default_roles: any;
   default_steps: any;
+  time_percentage_locked?: boolean; // For time percentage locking
   created_at: string;
   updated_at: string;
   focus?: string;
+  focus_name?: string; // Name of the associated focus
   category?: string;
   area?: string;
   research_activity?: string;
@@ -36,6 +38,7 @@ export interface ResearchStep {
   step_order: number;
   is_active: boolean;
   business_id?: string; // For business-specific steps (RLS support)
+  default_time_percentage?: number; // For time allocation management
   created_at: string;
   updated_at: string;
   deactivated_at?: string;
@@ -67,6 +70,34 @@ export interface ResearchSubcomponent {
   deactivated_at?: string;
   deactivation_reason?: string;
 }
+
+// Retry helper for handling transient network errors
+const retryWithBackoff = async <T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 2, // Reduced from 3
+  baseDelay: number = 50   // Reduced from 100ms
+): Promise<T> => {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      const isRetryableError = 
+        error?.message?.includes('Failed to fetch') ||
+        error?.message?.includes('ERR_INSUFFICIENT_RESOURCES') ||
+        error?.code === 'NETWORK_ERROR';
+      
+      if (attempt === maxRetries || !isRetryableError) {
+        throw error;
+      }
+      
+      // Reduced exponential backoff: 50ms, 100ms
+      const delay = baseDelay * Math.pow(2, attempt - 1);
+      console.log(`[ResearchActivitiesService] Retry attempt ${attempt}/${maxRetries} after ${delay}ms delay`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  throw new Error('Retry limit exceeded');
+};
 
 export class ResearchActivitiesService {
   // Get research activities with applied percentages for a business year
@@ -211,7 +242,12 @@ export class ResearchActivitiesService {
     try {
       let query = supabase
         .from('rd_research_activities')
-        .select('*')
+        .select(`
+          *,
+          rd_focuses!rd_research_activities_focus_id_fkey (
+            name
+          )
+        `)
         .eq('is_active', true)
         .order('title');
 
@@ -225,7 +261,16 @@ export class ResearchActivitiesService {
       const { data, error } = await query;
       
       if (error) throw error;
-      return data || [];
+      
+      // Transform the data to include focus_name at the top level
+      const transformedData = (data || []).map((activity: any) => ({
+        ...activity,
+        focus_name: activity.rd_focuses?.name || null,
+        // Remove the nested object to clean up the response
+        rd_focuses: undefined
+      }));
+      
+      return transformedData;
     } catch (error) {
       console.error('[ResearchActivitiesService] Error fetching active activities:', error);
       throw error;
@@ -237,7 +282,12 @@ export class ResearchActivitiesService {
     try {
       let query = supabase
         .from('rd_research_activities')
-        .select('*')
+        .select(`
+          *,
+          rd_focuses!rd_research_activities_focus_id_fkey (
+            name
+          )
+        `)
         .order('title');
 
       // Filter by business if specified
@@ -248,7 +298,16 @@ export class ResearchActivitiesService {
       const { data, error } = await query;
       
       if (error) throw error;
-      return data || [];
+      
+      // Transform the data to include focus_name at the top level
+      const transformedData = (data || []).map((activity: any) => ({
+        ...activity,
+        focus_name: activity.rd_focuses?.name || null,
+        // Remove the nested object to clean up the response
+        rd_focuses: undefined
+      }));
+      
+      return transformedData;
     } catch (error) {
       console.error('[ResearchActivitiesService] Error fetching all activities:', error);
       throw error;
@@ -425,6 +484,29 @@ export class ResearchActivitiesService {
     }
   }
 
+  // Update research step time percentage with retry logic
+  static async updateResearchStepTimePercentage(stepId: string, percentage: number): Promise<ResearchStep> {
+    console.log(`[ResearchActivitiesService] Updating time percentage for step ${stepId}: ${percentage}%`);
+    
+    return await retryWithBackoff(async () => {
+      const { data, error } = await supabase
+        .from('rd_research_steps')
+        .update({
+          default_time_percentage: percentage,
+          time_percentage_updated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', stepId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      
+      console.log(`[ResearchActivitiesService] ✅ Successfully updated time percentage for step ${stepId}`);
+      return data;
+    });
+  }
+
   // Deactivate research step
   static async deactivateResearchStep(id: string, reason: string): Promise<ResearchStep> {
     try {
@@ -448,9 +530,40 @@ export class ResearchActivitiesService {
     }
   }
 
-  // Get research subcomponents for step
-  static async getResearchSubcomponents(stepId: string, activeOnly: boolean = true): Promise<ResearchSubcomponent[]> {
+  // Delete research step permanently
+  static async deleteResearchStep(id: string): Promise<void> {
     try {
+      console.log(`[ResearchActivitiesService] Deleting step ${id} and all related subcomponents`);
+      
+      // First delete all subcomponents of this step
+      const { error: subError } = await supabase
+        .from('rd_research_subcomponents')
+        .delete()
+        .eq('step_id', id);
+
+      if (subError) {
+        console.error('[ResearchActivitiesService] Error deleting step subcomponents:', subError);
+        throw subError;
+      }
+
+      // Then delete the step itself
+      const { error } = await supabase
+        .from('rd_research_steps')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      console.log(`[ResearchActivitiesService] ✅ Successfully deleted step ${id}`);
+    } catch (error) {
+      console.error('[ResearchActivitiesService] Error deleting step:', error);
+      throw error;
+    }
+  }
+
+  // Get research subcomponents for step with retry logic
+  static async getResearchSubcomponents(stepId: string, activeOnly: boolean = true): Promise<ResearchSubcomponent[]> {
+    return await retryWithBackoff(async () => {
       let query = supabase
         .from('rd_research_subcomponents')
         .select('*')
@@ -465,10 +578,7 @@ export class ResearchActivitiesService {
       
       if (error) throw error;
       return data || [];
-    } catch (error) {
-      console.error('[ResearchActivitiesService] Error fetching research subcomponents:', error);
-      throw error;
-    }
+    });
   }
 
   // Create research subcomponent
@@ -655,6 +765,31 @@ export class ResearchActivitiesService {
       if (error) throw error;
     } catch (error) {
       console.error('[ResearchActivitiesService] Error saving selected subcomponent with snapshot:', error);
+      throw error;
+    }
+  }
+
+  // Move subcomponent to a different step
+  static async moveSubcomponentToStep(subcomponentId: string, targetStepId: string, reason: string = 'Moved via UI'): Promise<ResearchSubcomponent> {
+    try {
+      console.log(`[ResearchActivitiesService] Moving subcomponent ${subcomponentId} to step ${targetStepId}`);
+      
+      const { data, error } = await supabase
+        .from('rd_research_subcomponents')
+        .update({
+          step_id: targetStepId,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', subcomponentId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      
+      console.log(`[ResearchActivitiesService] ✅ Successfully moved subcomponent ${subcomponentId} to step ${targetStepId}`);
+      return data;
+    } catch (error) {
+      console.error('[ResearchActivitiesService] Error moving subcomponent:', error);
       throw error;
     }
   }

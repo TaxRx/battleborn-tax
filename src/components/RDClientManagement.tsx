@@ -298,6 +298,14 @@ export default function RDClientManagement({
   const [searchParams] = useSearchParams();
   const [selectedBusinessForActivities, setSelectedBusinessForActivities] = useState<string | null>(null);
 
+  // Default to Global mode (no auto-selection of business)
+  useEffect(() => {
+    if (selectedBusinessForActivities === null && clients.length > 0) {
+      console.log('🌍 Defaulting to Global Research Activities mode');
+      // Stay in global mode - don't auto-select a business
+    }
+  }, [clients, selectedBusinessForActivities]);
+
   // Load clients on component mount
   useEffect(() => {
     console.log('🔄 RDClientManagement useEffect triggered');
@@ -727,19 +735,21 @@ export default function RDClientManagement({
                     onChange={(e) => setSelectedBusinessForActivities(e.target.value || null)}
                     className="mt-3 w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500"
                   >
-                    <option value="">Select a business...</option>
-                    {clients.flatMap(client => 
-                      client.businesses?.map(business => (
-                        <option key={business.id} value={business.id}>
-                          {business.business_name} ({client.full_name})
-                        </option>
-                      )) || []
-                    )}
+                    <option value="">🌍 Global Activities (Organization-wide)</option>
+                    <optgroup label="Business-Specific Activities">
+                      {clients.flatMap(client => 
+                        client.businesses?.map(business => (
+                          <option key={business.id} value={business.id}>
+                            {business.business_name} ({client.full_name})
+                          </option>
+                        )) || []
+                      )}
+                    </optgroup>
                   </select>
                 </div>
               </div>
               
-              {selectedBusinessForActivities && (
+              {selectedBusinessForActivities ? (
                 <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
                   <div className="flex items-center space-x-2">
                     <Building className="w-4 h-4 text-purple-600" />
@@ -752,6 +762,18 @@ export default function RDClientManagement({
                   </div>
                   <p className="text-xs text-purple-600 mt-1">
                     Activities created here will only be visible to this specific business for IP protection
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center space-x-2">
+                    <Database className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm font-medium text-blue-800">
+                      🌍 Managing Global Research Activities (Organization-wide)
+                    </span>
+                  </div>
+                  <p className="text-xs text-blue-600 mt-1">
+                    Activities created here will be available to all businesses in your organization. Perfect for standard research processes and templates.
                   </p>
                 </div>
               )}

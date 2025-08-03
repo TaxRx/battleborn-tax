@@ -43,25 +43,37 @@ export interface ResearchActivityManagerProps {
 export interface ActivityCardProps {
   activity: ActivityWithSteps;
   businessId?: string;
+  dragDisabled?: boolean;
   onToggleExpanded: (activityId: string) => void;
   onEdit: (activity: ResearchActivity) => void;
-  onDuplicate: (activity: ResearchActivity) => void;
   onDeactivate: (activity: ResearchActivity) => void;
   onRefresh: () => void;
   onEditStep?: (step: ResearchStep, activityId: string) => void;
   onAddStep?: (activityId: string) => void;
+  onEditSubcomponent?: (subcomponent: ResearchSubcomponent) => void;
+  onMoveSubcomponent?: (subcomponentId: string, fromStepId: string) => void;
+  onUpdateStepPercentages?: (activityId: string, stepUpdates: { stepId: string; newPercentage: number }[]) => void;
+  onMoveStepUp?: (stepId: string, activityId: string) => void;
+  onMoveStepDown?: (stepId: string, activityId: string) => void;
 }
 
 export interface StepCardProps {
   step: StepWithSubcomponents;
   activityId: string;
   businessId?: string;
+  activityTimePercentageLocked?: boolean;
+  activitySteps?: ResearchStep[];
+  stepNumber?: number; // Display number calculated from position
   onToggleExpanded: (stepId: string) => void;
   onEdit: (step: ResearchStep) => void;
   onDeactivate: (step: ResearchStep) => void;
+  onDeleteStep?: (step: ResearchStep) => void;
   onAddSubcomponent: (stepId: string) => void;
   onEditSubcomponent: (subcomponent: ResearchSubcomponent) => void;
   onMoveSubcomponent: (subcomponentId: string, fromStepId: string) => void;
+  onTimePercentageChange?: (stepId: string, percentage: number) => void;
+  onMoveStepUp?: (stepId: string, activityId: string) => void;
+  onMoveStepDown?: (stepId: string, activityId: string) => void;
   onRefresh: () => void;
 }
 

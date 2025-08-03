@@ -286,7 +286,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
 
   // Helper functions to handle both old and new data structures
   const getActivityName = (activity: any) => {
-    return activity.activity_name || activity.name || 'Unknown Activity';
+    return activity.activity_name || activity.activityName || activity.name || 'Unknown Activity';
   };
 
   const getActivityPercentage = (activity: any) => {
@@ -294,7 +294,7 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
   };
 
   const getActivityId = (activity: any) => {
-    return activity.activity_id || activity.id;
+    return activity.activity_id || activity.activityId || activity.id;
   };
 
   // Load selected activities from database
@@ -863,8 +863,11 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       const savedStep = selectedSteps.find(s => s.step_id === step.id);
       const savedPercentage = savedStep?.time_percentage;
       
-      // Use saved percentage if available AND not forcing reset, otherwise use equal distribution
-      const stepPercentage = (savedPercentage !== undefined && !forceReset) ? savedPercentage : equalPercentage;
+      // Use saved percentage if available AND not forcing reset, 
+      // otherwise use preset from Research Activity Management (default_time_percentage),
+      // finally fall back to equal distribution if no preset is available
+      const presetPercentage = step.default_time_percentage || equalPercentage;
+      const stepPercentage = (savedPercentage !== undefined && !forceReset) ? savedPercentage : presetPercentage;
       
       // ENHANCED: Use saved non-R&D percentage if available AND not forcing reset, 
       // otherwise generate random 15-25% for new steps (as requested by user)
@@ -881,10 +884,13 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
       console.log(`🔧 [INITIALIZE STEPS] Step ${step.name}:`, {
         stepId: step.id,
         savedPercentage,
+        presetPercentage: step.default_time_percentage,
+        equalPercentage,
         savedNonRdPercentage: savedStep?.non_rd_percentage,
         usingPercentage: stepPercentage,
         usingNonRdPercentage: finalNonRdPercentage,
-        source: savedPercentage !== undefined ? 'SAVED' : 'DEFAULT',
+        source: savedPercentage !== undefined ? 'SAVED' : 
+                (step.default_time_percentage ? 'PRESET_FROM_ADMIN' : 'EQUAL_DISTRIBUTION'),
         nonRdSource: savedStep?.non_rd_percentage !== undefined ? 'SAVED' : 'RANDOM(15-25%)',
         subcomponentsCount: step.subcomponents?.length || 0,
         subcomponents: step.subcomponents
