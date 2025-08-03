@@ -46,32 +46,32 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 1. Fix rd_research_categories
-RAISE NOTICE 'Fixing RLS policies for rd_research_categories...';
+-- RAISE NOTICE 'Fixing RLS policies for rd_research_categories...';
 SELECT drop_all_policies_for_table('rd_research_categories');
 SELECT create_permissive_policies_for_table('rd_research_categories');
 
 -- 2. Fix rd_areas
-RAISE NOTICE 'Fixing RLS policies for rd_areas...';
+-- RAISE NOTICE 'Fixing RLS policies for rd_areas...';
 SELECT drop_all_policies_for_table('rd_areas');
 SELECT create_permissive_policies_for_table('rd_areas');
 
 -- 3. Fix rd_focuses
-RAISE NOTICE 'Fixing RLS policies for rd_focuses...';
+-- RAISE NOTICE 'Fixing RLS policies for rd_focuses...';
 SELECT drop_all_policies_for_table('rd_focuses');
 SELECT create_permissive_policies_for_table('rd_focuses');
 
 -- 4. Fix rd_research_subcomponents
-RAISE NOTICE 'Fixing RLS policies for rd_research_subcomponents...';
+-- RAISE NOTICE 'Fixing RLS policies for rd_research_subcomponents...';
 SELECT drop_all_policies_for_table('rd_research_subcomponents');
 SELECT create_permissive_policies_for_table('rd_research_subcomponents');
 
 -- 5. Fix rd_research_steps
-RAISE NOTICE 'Fixing RLS policies for rd_research_steps...';
+-- RAISE NOTICE 'Fixing RLS policies for rd_research_steps...';
 SELECT drop_all_policies_for_table('rd_research_steps');
 SELECT create_permissive_policies_for_table('rd_research_steps');
 
 -- 6. Fix rd_research_activities
-RAISE NOTICE 'Fixing RLS policies for rd_research_activities...';
+-- RAISE NOTICE 'Fixing RLS policies for rd_research_activities...';
 SELECT drop_all_policies_for_table('rd_research_activities');
 SELECT create_permissive_policies_for_table('rd_research_activities');
 
