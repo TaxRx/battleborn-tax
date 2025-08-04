@@ -3,12 +3,13 @@ import { TaxInfo, BusinessInfo, BusinessYear, PersonalYear } from '../lib/core/t
 import { CentralizedClientService } from '../services/centralizedClientService';
 import { formatCurrency, parseCurrency, formatEIN, generateDefaultYears, generateDefaultBusinessYears, calculateHouseholdIncome, calculateOrdinaryIncome } from '../utils/formatting';
 import { NumericFormat } from 'react-number-format';
-import { toast } from 'react-hot-toast';
+import { toast } from 'react-toastify';
 import { supabase } from '../lib/supabase';
 import { Card } from './common/Card';
 import { Button } from './common/Button';
 import { FormInput } from './forms/FormInput';
 import { PercentageSlider } from './forms/PercentageSlider';
+import { Users, Plus, Eye, Key, Link, UserPlus, Mail, Trash2, Edit } from 'lucide-react';
 
 interface NewClientModalProps {
   isOpen: boolean;
@@ -61,7 +62,477 @@ const formatZipCode = (value: string) => {
   return cleaned.slice(0, 5);
 };
 
+// Profile Management Types
+interface Profile {
+  id: string;
+  email: string;
+  full_name: string;
+  created_at: string;
+  hasAuth: boolean;
+}
 
+interface ProfileManagementTabProps {
+  clientId: string;
+  clientName: string;
+  clientEmail: string;
+}
+
+// Profile Management Component
+const ProfileManagementTab: React.FC<ProfileManagementTabProps> = ({
+  clientId,
+  clientName,
+  clientEmail
+}) => {
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddProfile, setShowAddProfile] = useState(false);
+  const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
+  const [newProfileEmail, setNewProfileEmail] = useState('');
+  const [newProfileName, setNewProfileName] = useState('');
+  const [createUserLogin, setCreateUserLogin] = useState(true);
+  const [selectedRole, setSelectedRole] = useState<'admin' | 'user'>('user');
+
+  // Load profiles for this client
+  useEffect(() => {
+    loadProfiles();
+  }, [clientId]);
+
+  const loadProfiles = async () => {
+    try {
+      setLoading(true);
+      // Get profiles associated with this client's account
+      const { data, error } = await supabase
+        .from('profiles')
+        .select(`
+          id,
+          email,
+          full_name,
+          created_at,
+          account_id
+        `)
+        .eq('account_id', (await supabase
+          .from('clients')
+          .select('account_id')
+          .eq('id', clientId)
+          .single()).data?.account_id);
+
+      if (error) throw error;
+
+      // Check which profiles have auth.users entries via admin service
+      const profilesWithAuth = await Promise.all(
+        (data || []).map(async (profile) => {
+          try {
+            const { data: authCheckData, error: authError } = await supabase.functions.invoke('admin-service', {
+              body: {
+                pathname: '/admin-service/get-user-by-id',
+                userId: profile.id
+              }
+            });
+
+            if (authError) {
+              console.warn(`Error checking auth for profile ${profile.id}:`, authError);
+              return {
+                ...profile,
+                hasAuth: false
+              };
+            }
+
+            return {
+              ...profile,
+              hasAuth: !!authCheckData?.user
+            };
+          } catch (error) {
+            console.warn(`Error checking auth for profile ${profile.id}:`, error);
+            return {
+              ...profile,
+              hasAuth: false
+            };
+          }
+        })
+      );
+
+      setProfiles(profilesWithAuth);
+    } catch (error) {
+      console.error('Error loading profiles:', error);
+      toast.error('Failed to load profiles');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateMagicLink = async (email: string) => {
+    try {
+      console.log('Generating magic link for:', email);
+      const { data, error } = await supabase.functions.invoke('admin-service', {
+        body: {
+          pathname: '/admin-service/generate-magic-link',
+          email: email,
+          redirectTo: `${window.location.origin}/client`
+        }
+      });
+
+      console.log('Magic link response:', { data, error });
+
+      if (error) throw error;
+
+      // Copy magic link to clipboard
+      const magicLink = data.magicLink || data.action_link || '';
+      console.log('Magic link to copy:', magicLink);
+      
+      if (magicLink) {
+        await navigator.clipboard.writeText(magicLink);
+        toast.success('Magic link copied to clipboard!');
+        console.log('Magic link copied successfully');
+      } else {
+        toast.error('No magic link received from server');
+        console.error('No magic link in response:', data);
+      }
+    } catch (error) {
+      console.error('Error generating magic link:', error);
+      toast.error(`Failed to generate magic link: ${error.message || 'Unknown error'}`);
+    }
+  };
+
+  const createAuthUser = async (profileId: string, email: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-service', {
+        body: {
+          pathname: '/admin-service/create-auth-user',
+          email: email,
+          password: 'TempPass123!' // Temporary password
+        }
+      });
+
+      if (error) throw error;
+
+      toast.success(`Login created successfully! Temporary password: ${data.temporaryPassword}`);
+      await loadProfiles(); // Refresh the list
+    } catch (error) {
+      console.error('Error creating auth user:', error);
+      toast.error('Failed to create login');
+    }
+  };
+
+  const addNewProfile = async () => {
+    try {
+      if (!newProfileEmail || !newProfileName) {
+        toast.error('Please fill in all fields');
+        return;
+      }
+
+      // Get client's account_id
+      const { data: clientData, error: clientError } = await supabase
+        .from('clients')
+        .select('account_id')
+        .eq('id', clientId)
+        .single();
+
+      if (clientError || !clientData) {
+        throw new Error('Could not find client account');
+      }
+
+      // Call admin service to create profile with optional auth user
+      const { data, error } = await supabase.functions.invoke('admin-service', {
+        body: {
+          pathname: '/admin-service/create-profile-with-auth',
+          email: newProfileEmail.trim(),
+          full_name: newProfileName.trim(),
+          role: selectedRole,
+          account_id: clientData.account_id,
+          phone: null,
+          status: 'active',
+          createLogin: createUserLogin,
+          password: 'TempPass123!' // Temporary password
+        }
+      });
+
+      if (error) {
+        console.error('Error creating profile:', error);
+        toast.error(`Error creating profile: ${error.message || 'Unknown error'}`);
+        return;
+      }
+
+      console.log('Profile created successfully:', data);
+
+      if (data.temporaryPassword) {
+        toast.success(
+          `Profile created successfully! ${createUserLogin ? `Temporary password: ${data.temporaryPassword}` : ''}`
+        );
+      } else {
+        toast.success('Profile created successfully!');
+      }
+
+      // Reset form
+      setNewProfileEmail('');
+      setNewProfileName('');
+      setCreateUserLogin(true);
+      setSelectedRole('user');
+      setShowAddProfile(false);
+      await loadProfiles();
+    } catch (error) {
+      console.error('Error creating profile:', error);
+      toast.error('Failed to create profile');
+    }
+  };
+
+  const deleteProfile = async (profileId: string) => {
+    try {
+      if (window.confirm('Are you sure you want to delete this profile? This action cannot be undone.')) {
+        // Use admin service to delete profile (handles both profile and auth user)
+        // Note: We'll use the profile deletion endpoint via fetch since supabase.functions.invoke doesn't support DELETE method properly
+        const session = await supabase.auth.getSession();
+        const response = await fetch(`${import.meta.env.SUPABASE_URL}/functions/v1/admin-service`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.data.session?.access_token}`,
+            'apikey': import.meta.env.SUPABASE_ANON_KEY || ''
+          },
+          body: JSON.stringify({
+            pathname: `/admin-service/profiles/${profileId}`
+          })
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to delete profile');
+        }
+
+        toast.success('Profile deleted successfully');
+        await loadProfiles();
+      }
+    } catch (error) {
+      console.error('Error deleting profile:', error);
+      toast.error('Failed to delete profile');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-6 border border-indigo-200">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-xl font-bold text-gray-800 flex items-center">
+              <Users className="w-5 h-5 mr-2" />
+              Profile Management
+            </h3>
+            <p className="text-sm text-gray-600 mt-1">
+              Manage user profiles for {clientName}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setShowAddProfile(true);
+            }}
+            className="flex items-center px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all duration-200 font-medium"
+          >
+            <UserPlus className="w-4 h-4 mr-2" />
+            Add Profile
+          </button>
+        </div>
+
+        {/* Add Profile Form */}
+        {showAddProfile && (
+          <div className="bg-white rounded-lg p-4 border border-gray-200 mb-4">
+            <h4 className="text-lg font-semibold text-gray-800 mb-3">Add New Profile</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Full Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newProfileName}
+                  onChange={(e) => setNewProfileName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  placeholder="Enter full name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Email <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  value={newProfileEmail}
+                  onChange={(e) => setNewProfileEmail(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  placeholder="Enter email address"
+                />
+              </div>
+            </div>
+            
+            {/* Role and Login Options */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Role
+                </label>
+                <select
+                  value={selectedRole}
+                  onChange={(e) => setSelectedRole(e.target.value as 'admin' | 'user')}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                >
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div className="flex items-center">
+                <div className="flex items-center h-5">
+                  <input
+                    id="create-user-login"
+                    type="checkbox"
+                    checked={createUserLogin}
+                    onChange={(e) => setCreateUserLogin(e.target.checked)}
+                    className="w-4 h-4 text-indigo-600 bg-gray-100 border-gray-300 rounded focus:ring-indigo-500 focus:ring-2"
+                  />
+                </div>
+                <div className="ml-3 text-sm">
+                  <label htmlFor="create-user-login" className="font-medium text-gray-700">
+                    Create User Login
+                  </label>
+                  <p className="text-gray-500">Creates auth.user for immediate login access</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex space-x-3 mt-4">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  addNewProfile();
+                }}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+              >
+                Create Profile
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShowAddProfile(false);
+                  setNewProfileEmail('');
+                  setNewProfileName('');
+                  setCreateUserLogin(true);
+                  setSelectedRole('user');
+                }}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Profiles List */}
+      <div className="bg-white rounded-lg border border-gray-200">
+        <div className="p-4 border-b border-gray-200">
+          <h4 className="text-lg font-semibold text-gray-800">Account Profiles</h4>
+          <p className="text-sm text-gray-600">Users who can access this client's portal</p>
+        </div>
+
+        {loading ? (
+          <div className="p-8 text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+            <p className="text-sm text-gray-600 mt-2">Loading profiles...</p>
+          </div>
+        ) : profiles.length > 0 ? (
+          <div className="divide-y divide-gray-200">
+            {profiles.map((profile) => (
+              <div key={profile.id} className="p-4 hover:bg-gray-50">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3">
+                      <div>
+                        <h5 className="text-sm font-medium text-gray-900">
+                          {profile.full_name || 'Unknown Name'}
+                        </h5>
+                        <p className="text-sm text-gray-600">{profile.email}</p>
+                        <p className="text-xs text-gray-500">
+                          Created: {new Date(profile.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        {profile.hasAuth ? (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <Key className="w-3 h-3 mr-1" />
+                            Has Login
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            <Eye className="w-3 h-3 mr-1" />
+                            No Login
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    {profile.hasAuth ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          generateMagicLink(profile.email);
+                        }}
+                        className="flex items-center px-3 py-1 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-md hover:bg-indigo-100 transition-colors"
+                      >
+                        <Link className="w-3 h-3 mr-1" />
+                        Copy Magic Link
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          createAuthUser(profile.id, profile.email);
+                        }}
+                        className="flex items-center px-3 py-1 text-xs font-medium text-green-600 bg-green-50 rounded-md hover:bg-green-100 transition-colors"
+                      >
+                        <Key className="w-3 h-3 mr-1" />
+                        Create Login
+                      </button>
+                    )}
+                    
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        deleteProfile(profile.id);
+                      }}
+                      className="flex items-center px-3 py-1 text-xs font-medium text-red-600 bg-red-50 rounded-md hover:bg-red-100 transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3 mr-1" />
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-8 text-center">
+            <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No Profiles Yet</h3>
+            <p className="text-gray-600">Create the first profile to allow client portal access.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const NewClientModal: React.FC<NewClientModalProps> = ({
   isOpen,
@@ -71,7 +542,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
   toolSlug,
   initialData
 }) => {
-  const [activeTab, setActiveTab] = useState<'personal' | 'business'>('personal');
+  const [activeTab, setActiveTab] = useState<'personal' | 'business' | 'profiles'>('personal');
   const [editingBusinessIndex, setEditingBusinessIndex] = useState<number | null>(null);
   const [useSameEmail, setUseSameEmail] = useState(false);
   const [useSameAddress, setUseSameAddress] = useState(false);
@@ -112,7 +583,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
       // Get all businesses for this client
       const { data: allBusinesses, error: fetchError } = await supabase
         .from('rd_businesses')
-        .select('id, business_name, ein, created_at')
+        .select('id, name, ein, created_at')
         .eq('client_id', clientId)
         .order('created_at', { ascending: false }); // Newest first
 
@@ -128,7 +599,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
 
       // Group by business name and EIN to find duplicates
       const businessGroups = allBusinesses.reduce((groups, business) => {
-        const key = `${business.business_name}-${business.ein || 'no-ein'}`;
+        const key = `${business.name}-${business.ein || 'no-ein'}`;
         if (!groups[key]) {
           groups[key] = [];
         }
@@ -245,7 +716,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
           }
           
           return {
-            businessName: business.businessName || business.business_name || '',
+            businessName: business.businessName || business.name || '',
             entityType: business.entityType || business.entity_type || 'LLC',
             ein: business.ein || '',
             startYear: business.startYear || business.year_established || new Date().getFullYear(),
@@ -735,7 +1206,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                 
                 const businessData = {
                   client_id: initialData.id,
-                  business_name: business.businessName,
+                  name: business.businessName,
                   entity_type: business.entityType === 'LLC' ? 'llc' :
                                business.entityType === 'S-Corp' ? 's_corp' :
                                business.entityType === 'C-Corp' ? 'corporation' :
@@ -761,7 +1232,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                   .from('rd_businesses')
                   .select('id')
                   .eq('client_id', initialData.id)
-                  .eq('business_name', business.businessName)
+                  .eq('name', business.businessName)
                   .eq('ein', business.ein || '')
                   .maybeSingle();
 
@@ -1266,6 +1737,20 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
               >
                 Business Information
               </button>
+              {initialData && (
+                <button
+                  onClick={() => {
+                    setActiveTab('profiles');
+                  }}
+                  className={`w-full text-left px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
+                    activeTab === 'profiles'
+                      ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg'
+                      : 'bg-white text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  Manage Profiles
+                </button>
+              )}
             </div>
           </div>
 
@@ -1790,6 +2275,14 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                 </div>
               )}
 
+              {activeTab === 'profiles' && initialData && (
+                <ProfileManagementTab 
+                  clientId={initialData.id!} 
+                  clientName={initialData.fullName}
+                  clientEmail={initialData.email}
+                />
+              )}
+
               {/* Footer */}
               <div className="sticky bottom-0 left-0 w-full flex justify-end space-x-4 p-6 border-t border-gray-200 bg-gray-50 z-10">
                 <button
@@ -1797,18 +2290,20 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                   onClick={onClose}
                   className="px-6 py-3 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors duration-200 font-medium"
                 >
-                  Cancel
+                  {activeTab === 'profiles' ? 'Close' : 'Cancel'}
                 </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isSubmitting 
-                    ? (initialData?.id ? 'Saving...' : 'Creating...') 
-                    : (initialData?.id ? 'Save Updates' : 'Create Client')
-                  }
-                </button>
+                {activeTab !== 'profiles' && (
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitting 
+                      ? (initialData?.id ? 'Saving...' : 'Creating...') 
+                      : (initialData?.id ? 'Save Updates' : 'Create Client')
+                    }
+                  </button>
+                )}
               </div>
             </form>
           </div>

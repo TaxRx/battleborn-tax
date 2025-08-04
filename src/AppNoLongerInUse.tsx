@@ -89,10 +89,10 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
-// Role-based redirect component that waits for user to load
-const RoleBasedRedirect: React.FC = () => {
+// Dashboard redirect component that waits for user to load
+const DashboardRedirect: React.FC = () => {
   const { user, loading } = useUser();
-  const { isAuthenticated, demoMode, userType } = useAuthStore();
+  const { isAuthenticated, demoMode } = useAuthStore();
   
   // Show loading while user is being fetched
   if (loading && !demoMode) {
@@ -111,39 +111,8 @@ const RoleBasedRedirect: React.FC = () => {
     return <Navigate to="/login" />;
   }
 
-  // Get account type from user context or auth store
-  const accountType = user?.account?.type || userType;
-  
-  // Debug logging to see what we're getting
-  console.log('RoleBasedRedirect - Debug info:', {
-    userAccountType: user?.account?.type,
-    authStoreUserType: userType,
-    finalAccountType: accountType,
-    user: user,
-    isAuthenticated,
-    demoMode
-  });
-
-  // Perform role-based redirects only after user is loaded
-  if (accountType === 'admin') {
-    return <Navigate to="/admin" />;
-  }
-  if (accountType === 'operator') {
-    return <Navigate to="/operator" />;
-  }
-  if (accountType === 'partner') {
-    return <Navigate to="/partner" />;
-  }
-  if (accountType === 'client') {
-    return <Navigate to="/client" />;
-  }
-
-  // Default fallback
-  return (
-    <ProtectedRoute>
-      <Dashboard />
-    </ProtectedRoute>
-  );
+  // If authenticated, redirect to dashboard
+  return <Navigate to="/dashboard" />;
 };
 
 const AppRoutes = ({ profile }: { profile: any }) => {
@@ -168,10 +137,10 @@ const AppRoutes = ({ profile }: { profile: any }) => {
       {/* Client Routes (Future) */}
       <Route path="/client" element={<ProtectedRoute><ClientDashboard /></ProtectedRoute>} />
 
-      {/* Root URL: Role-based redirect */}
+      {/* Root URL: Dashboard redirect */}
       <Route
         path="/"
-        element={<RoleBasedRedirect />}
+        element={<DashboardRedirect />}
       />
 
       {/* Legacy and other routes */}

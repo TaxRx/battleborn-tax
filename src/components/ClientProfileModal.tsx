@@ -42,7 +42,6 @@ interface BusinessInfo {
   entity_type?: string;
   ein?: string;
   industry?: string;
-  annual_revenue?: number;
   employee_count?: number;
 }
 

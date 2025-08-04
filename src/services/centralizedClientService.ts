@@ -35,7 +35,6 @@ export interface CentralizedBusiness {
   business_email?: string;
   industry?: string;
   year_established?: number;
-  annual_revenue: number;
   employee_count: number;
   is_active: boolean;
   created_at: string;
@@ -124,7 +123,6 @@ export interface CreateClientData {
     business_email?: string;
     industry?: string;
     year_established?: number;
-    annual_revenue: number;
     employee_count: number;
     is_active: boolean;
     business_years?: Array<{
@@ -917,7 +915,6 @@ export class CentralizedClientService {
             industry,
             ein,
             year_established,
-            annual_revenue,
             employee_count,
             is_active,
             created_at,

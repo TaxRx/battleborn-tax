@@ -14,7 +14,7 @@ import AcceptInvitation from './pages/AcceptInvitation';
 import LoginPage from './pages/LoginPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
-import EnhancedClientDashboard from './components/EnhancedClientDashboard';
+import ProtectedClientRoute from './components/ProtectedClientRoute';
 import PartnerDashboard from './modules/partner/pages/PartnerDashboard'; // Import the new component
 import OperatorDashboard from './modules/operator/pages/OperatorDashboard';
 import AffiliateDashboard from './modules/affiliate/pages/NewAffiliateDashboard';
@@ -183,7 +183,7 @@ const AppContent: React.FC = () => {
               {/* Client Routes */}
               <Route 
                 path="/client" 
-                element={<EnhancedClientDashboard />} 
+                element={<ProtectedClientRoute />} 
               />
 
               {/* Default redirects based on user role */}

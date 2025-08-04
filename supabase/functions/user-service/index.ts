@@ -27,8 +27,7 @@ serve(async (req) => {
       (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')
     )
 
-    console.log('path',pathname, url.origin,'url: ' +  (Deno.env.get('SUPABASE_URL') ?? ''),
-    'key: ' + (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''))
+    console.log('path',pathname)
     
     // --- ROUTING --- //
     if (pathname === '/user-service/register') {
@@ -488,11 +487,11 @@ async function handlePasswordReset(req, supabaseAdmin) {
   }
 
   try {
-    console.log('Requesting password reset for:', email.trim())
-    
+    const redirectTo = `${Deno.env.get('SITE_URL') || 'http://localhost:5174'}/reset-password`
+    console.log('Requesting password reset for:', email.trim(), redirectTo)
     // Send password reset email using Supabase auth
     const { data, error } = await supabaseAdmin.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${Deno.env.get('SITE_URL') || 'http://localhost:5174'}/reset-password`,
+      redirectTo,
     })
 
     if (error) {

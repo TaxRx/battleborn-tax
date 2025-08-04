@@ -17,29 +17,39 @@ export default function LoginPage() {
   const { setUser } = useUser();
 
   useEffect(() => {
-    // Force logout when visiting login page
-    const forceLogout = async () => {
+    // Check if user is already authenticated, if so redirect to dashboard
+    const checkAuthAndRedirect = async () => {
       try {
-        // Clear auth store
-        logout();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session && session.user) {
+          console.log('User already authenticated, redirecting to dashboard');
+          navigate('/dashboard');
+          return;
+        }
         
-        // Clear user context
-        setUser(null);
-        
-        // Sign out from Supabase (don't wait for it)
-        supabase.auth.signOut().catch(error => console.error('Supabase signOut error:', error));
-        
-        // Clear any cached data
-        localStorage.clear();
-        sessionStorage.clear();
-        
-        console.log('Forced logout on login page visit');
+        // Only force logout if explicitly on /login route (not root redirect)
+        if (window.location.pathname === '/login') {
+          // Clear auth store
+          logout();
+          
+          // Clear user context
+          setUser(null);
+          
+          // Sign out from Supabase (don't wait for it)
+          supabase.auth.signOut().catch(error => console.error('Supabase signOut error:', error));
+          
+          // Clear any cached data
+          localStorage.clear();
+          sessionStorage.clear();
+          
+          console.log('Forced logout on explicit login page visit');
+        }
       } catch (error) {
-        console.error('Error during forced logout:', error);
+        console.error('Error during auth check:', error);
       }
     };
     
-    forceLogout();
+    checkAuthAndRedirect();
   }, [navigate, logout, setUser]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -71,8 +81,7 @@ export default function LoginPage() {
         email: user.profile.email,
         isAdmin: user.isAdmin,
         isClientUser: user.isClientUser,
-        primaryClientRole: user.primaryClientRole,
-        clientCount: user.clientUsers.length,
+        clientCount: user.clients?.length || 0,
         permissions: user.permissions,
         userType
       });

@@ -533,6 +533,206 @@ export class ProposalService {
     }
   }
 
+  // Get proposals for a specific client
+  async getClientProposals(clientId: string): Promise<ApiResponse<TaxProposal[]>> {
+    try {
+      const { data: proposals, error } = await supabase
+        .from('tax_proposals')
+        .select('*')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      return {
+        success: true,
+        data: proposals || [],
+        message: 'Client proposals fetched successfully'
+      };
+    } catch (error) {
+      console.error('Error fetching client proposals:', error);
+      return {
+        success: false,
+        data: [],
+        message: 'Failed to fetch client proposals'
+      };
+    }
+  }
+
+  // Get proposals for all clients in an account
+  async getAccountProposals(accountId: string): Promise<ApiResponse<TaxProposal[]>> {
+    try {
+      // First get all clients for this account
+      const { data: clients, error: clientsError } = await supabase
+        .from('clients')
+        .select('id')
+        .eq('account_id', accountId);
+
+      if (clientsError) throw clientsError;
+
+      if (!clients || clients.length === 0) {
+        return {
+          success: true,
+          data: [],
+          message: 'No clients found for account'
+        };
+      }
+
+      const clientIds = clients.map(c => c.id);
+
+      // Fetch proposals for all clients in the account
+      const { data: proposals, error } = await supabase
+        .from('tax_proposals')
+        .select('*')
+        .in('client_id', clientIds)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      return {
+        success: true,
+        data: proposals || [],
+        message: 'Account proposals fetched successfully'
+      };
+    } catch (error) {
+      console.error('Error fetching account proposals:', error);
+      return {
+        success: false,
+        data: [],
+        message: 'Failed to fetch account proposals'
+      };
+    }
+  }
+
+  // Get client's R&D tax credit data (for integration with R&D dashboard)
+  async getClientRDData(clientId: string): Promise<ApiResponse<any>> {
+    try {
+      // Fetch client's historical tax data, QRE information, etc.
+      const { data: proposals, error } = await supabase
+        .from('tax_proposals')
+        .select('*')
+        .eq('client_id', clientId)
+        .order('calculation->>year', { ascending: false });
+
+      if (error) throw error;
+
+      // Process proposals to extract R&D data
+      const rdData = {
+        historicalData: {},
+        totalCredits: 0,
+        averageSavings: 0,
+        yearlyBreakdown: []
+      };
+
+      if (proposals && proposals.length > 0) {
+        proposals.forEach((proposal) => {
+          if (proposal.calculation && proposal.calculation.year) {
+            const year = proposal.calculation.year;
+            rdData.historicalData[year] = {
+              qre: proposal.calculation.savings?.rawSavings || 0,
+              federalCredit: proposal.calculation.savings?.annualSavings * 0.75 || 0,
+              stateCredit: proposal.calculation.savings?.annualSavings * 0.25 || 0,
+              paid: proposal.status === 'implemented'
+            };
+          }
+        });
+        
+        rdData.totalCredits = proposals.reduce((sum, p) => 
+          sum + (p.calculation?.savings?.annualSavings || 0), 0);
+        rdData.averageSavings = rdData.totalCredits / proposals.length;
+      }
+
+      return {
+        success: true,
+        data: rdData,
+        message: 'Client R&D data fetched successfully'
+      };
+    } catch (error) {
+      console.error('Error fetching client R&D data:', error);
+      return {
+        success: false,
+        data: { historicalData: {}, totalCredits: 0, averageSavings: 0, yearlyBreakdown: [] },
+        message: 'Failed to fetch client R&D data'
+      };
+    }
+  }
+
+  // Get R&D data for all clients in an account
+  async getAccountRDData(accountId: string): Promise<ApiResponse<any>> {
+    try {
+      const proposalsResponse = await this.getAccountProposals(accountId);
+      if (!proposalsResponse.success) {
+        return proposalsResponse;
+      }
+
+      const proposals = proposalsResponse.data;
+
+      // Process proposals to extract R&D data
+      const rdData = {
+        historicalData: {},
+        totalCredits: 0,
+        averageSavings: 0,
+        yearlyBreakdown: [],
+        clientBreakdown: {}
+      };
+
+      if (proposals && proposals.length > 0) {
+        proposals.forEach((proposal) => {
+          if (proposal.calculation && proposal.calculation.year) {
+            const year = proposal.calculation.year;
+            const clientId = proposal.client_id;
+            
+            // Initialize year data if not exists
+            if (!rdData.historicalData[year]) {
+              rdData.historicalData[year] = {
+                qre: 0,
+                federalCredit: 0,
+                stateCredit: 0,
+                paid: false
+              };
+            }
+
+            // Initialize client data if not exists
+            if (!rdData.clientBreakdown[clientId]) {
+              rdData.clientBreakdown[clientId] = {
+                clientName: proposal.client_name,
+                totalCredits: 0,
+                proposals: []
+              };
+            }
+
+            // Aggregate data
+            const annualSavings = proposal.calculation.savings?.annualSavings || 0;
+            rdData.historicalData[year].qre += proposal.calculation.savings?.rawSavings || 0;
+            rdData.historicalData[year].federalCredit += annualSavings * 0.75;
+            rdData.historicalData[year].stateCredit += annualSavings * 0.25;
+            rdData.historicalData[year].paid = rdData.historicalData[year].paid || (proposal.status === 'implemented');
+
+            rdData.clientBreakdown[clientId].totalCredits += annualSavings;
+            rdData.clientBreakdown[clientId].proposals.push(proposal);
+          }
+        });
+        
+        rdData.totalCredits = proposals.reduce((sum, p) => 
+          sum + (p.calculation?.savings?.annualSavings || 0), 0);
+        rdData.averageSavings = rdData.totalCredits / proposals.length;
+      }
+
+      return {
+        success: true,
+        data: rdData,
+        message: 'Account R&D data fetched successfully'
+      };
+    } catch (error) {
+      console.error('Error fetching account R&D data:', error);
+      return {
+        success: false,
+        data: { historicalData: {}, totalCredits: 0, averageSavings: 0, yearlyBreakdown: [], clientBreakdown: {} },
+        message: 'Failed to fetch account R&D data'
+      };
+    }
+  }
+
   // Delete proposal
   async deleteProposal(proposalId: string): Promise<ApiResponse<boolean>> {
     try {

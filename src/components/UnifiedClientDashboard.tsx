@@ -191,35 +191,20 @@ const ClientCard: React.FC<ClientCardProps> = ({
           </div>
 
           <div className="flex items-center space-x-2">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setMenuOpenId(menuOpenId === client.id ? null : client.id);
-              }}
-              className="p-2 rounded-full hover:bg-gray-100 focus:outline-none transition-colors"
-            >
-              <MoreVertical className="w-4 h-4 text-gray-500" />
-            </button>
-            
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onExpand(client.id);
-              }}
-              className="p-2 rounded-full hover:bg-gray-100 focus:outline-none transition-colors"
-            >
-              {isExpanded ? (
-                <ChevronDown className="w-4 h-4 text-gray-500" />
-              ) : (
-                <ChevronRight className="w-4 h-4 text-gray-500" />
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Dropdown Menu */}
-        {menuOpenId === client.id && (
-          <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-20 border border-gray-200">
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpenId(menuOpenId === client.id ? null : client.id);
+                }}
+                className="p-2 rounded-full hover:bg-gray-100 focus:outline-none transition-colors"
+              >
+                <MoreVertical className="w-4 h-4 text-gray-500" />
+              </button>
+              
+              {/* Dropdown Menu */}
+              {menuOpenId === client.id && (
+                <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-md shadow-lg z-20 border border-gray-200">
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -242,19 +227,36 @@ const ClientCard: React.FC<ClientCardProps> = ({
               <Archive className="w-4 h-4 mr-2" />
               {client.archived ? 'Unarchive' : 'Archive'}
             </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDeleteConfirm(true);
+                      setMenuOpenId(null);
+                    }}
+                    className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
+            
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                setShowDeleteConfirm(true);
-                setMenuOpenId(null);
+                onExpand(client.id);
               }}
-              className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50"
+              className="p-2 rounded-full hover:bg-gray-100 focus:outline-none transition-colors"
             >
-              <Trash2 className="w-4 h-4 mr-2" />
-              Delete
+              {isExpanded ? (
+                <ChevronDown className="w-4 h-4 text-gray-500" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-gray-500" />
+              )}
             </button>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Expanded Content */}

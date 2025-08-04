@@ -55,7 +55,7 @@ interface DashboardMetrics {
 export default function EnhancedClientDashboard() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedClient, setSelectedClient] = useState<ClientUser | null>(null);
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [engagementStatus, setEngagementStatus] = useState<EngagementStatus | null>(null);
   const [dashboardMetrics, setDashboardMetrics] = useState<DashboardMetrics | null>(null);
@@ -121,7 +121,7 @@ export default function EnhancedClientDashboard() {
       const { data: activitiesData, error: activitiesError } = await supabase
         .from('recent_client_activities')
         .select('*')
-        .eq('client_id', selectedClient.client_id)
+        .eq('client_id', selectedClient.id)
         .order('created_at', { ascending: false })
         .limit(10);
 
@@ -132,7 +132,7 @@ export default function EnhancedClientDashboard() {
       const { data: engagementData, error: engagementError } = await supabase
         .from('client_engagement_status')
         .select('*')
-        .eq('client_id', selectedClient.client_id)
+        .eq('client_id', selectedClient.id)
         .single();
 
       if (engagementError && engagementError.code !== 'PGRST116') {
@@ -142,7 +142,7 @@ export default function EnhancedClientDashboard() {
 
       // Load dashboard metrics
       const { data: metricsData, error: metricsError } = await supabase
-        .rpc('calculate_dashboard_metrics', { p_client_id: selectedClient.client_id });
+        .rpc('calculate_dashboard_metrics', { p_client_id: selectedClient.id });
 
       if (metricsError) throw metricsError;
       setDashboardMetrics(metricsData);
@@ -161,7 +161,7 @@ export default function EnhancedClientDashboard() {
     try {
       const { error } = await supabase
         .rpc('log_client_activity', {
-          p_client_id: selectedClient.client_id,
+          p_client_id: selectedClient.id,
           p_user_id: user.profile.id,
           p_activity_type: type,
           p_title: title,
@@ -204,25 +204,7 @@ export default function EnhancedClientDashboard() {
     }
   };
 
-  const getRoleDisplayName = (role: string) => {
-    switch (role) {
-      case 'owner': return 'Owner';
-      case 'member': return 'Member';
-      case 'viewer': return 'Viewer';
-      case 'accountant': return 'Accountant';
-      default: return role;
-    }
-  };
-
-  const getRoleColor = (role: string) => {
-    switch (role) {
-      case 'owner': return 'bg-purple-100 text-purple-800';
-      case 'member': return 'bg-blue-100 text-blue-800';
-      case 'viewer': return 'bg-green-100 text-green-800';
-      case 'accountant': return 'bg-yellow-100 text-yellow-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
+  // Removed role helper functions since we no longer use client_users with roles
 
   const getActivityIcon = (type: string) => {
     switch (type) {
@@ -394,7 +376,7 @@ export default function EnhancedClientDashboard() {
 
                       <div>
                         <label className="text-xs sm:text-sm font-medium text-gray-500">Organizations</label>
-                        <p className="text-xs sm:text-sm text-gray-900">{user.clientUsers.length} organizations</p>
+                        <p className="text-xs sm:text-sm text-gray-900">{user.clients?.length || 0} organizations</p>
                       </div>
                     </div>
                   </div>
@@ -404,18 +386,18 @@ export default function EnhancedClientDashboard() {
                     <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">Your Organizations</h2>
                     
                     <div className="space-y-3">
-                      {user.clientUsers.map((clientUser) => (
+                      {user.clients && user.clients.length > 0 ? user.clients.map((client) => (
                         <motion.div 
-                          key={clientUser.id}
+                          key={client.id}
                           whileHover={{ scale: 1.02 }}
                           whileTap={{ scale: 0.98 }}
                           className={`p-3 sm:p-4 rounded-lg border-2 cursor-pointer transition-all touch-manipulation ${
-                            selectedClient?.id === clientUser.id 
+                            selectedClient?.id === client.id 
                               ? 'border-blue-500 bg-blue-50 shadow-md' 
                               : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
                           }`}
                           onClick={() => {
-                            setSelectedClient(clientUser);
+                            setSelectedClient(client);
                             // Close sidebar on mobile after selection
                             if (isMobile) {
                               setIsSidebarOpen(false);
@@ -426,24 +408,30 @@ export default function EnhancedClientDashboard() {
                             <div className="flex items-center min-w-0 flex-1">
                               <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center flex-shrink-0">
                                 <span className="text-white font-semibold text-xs sm:text-sm">
-                                  {clientUser.client?.full_name?.charAt(0) || 'C'}
+                                  {client.full_name?.charAt(0) || 'C'}
                                 </span>
                               </div>
                               <div className="ml-3 min-w-0 flex-1">
                                 <p className="text-xs sm:text-sm font-medium text-gray-900 truncate">
-                                  {clientUser.client?.full_name || 'Unknown Business'}
+                                  {client.full_name || 'Unknown Business'}
                                 </p>
                                 <p className="text-xs text-gray-500 truncate">
-                                  {clientUser.client?.filing_status || 'Individual'}
+                                  {client.filing_status || 'Individual'}
                                 </p>
                               </div>
                             </div>
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium flex-shrink-0 ml-2 ${getRoleColor(clientUser.role)}`}>
-                              {getRoleDisplayName(clientUser.role)}
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium flex-shrink-0 ml-2 bg-blue-100 text-blue-800">
+                              Account Member
                             </span>
                           </div>
                         </motion.div>
-                      ))}
+                      )) : (
+                        <div className="text-center py-8">
+                          <UserGroupIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                          <h3 className="text-lg font-medium text-gray-900 mb-2">No Clients Found</h3>
+                          <p className="text-gray-600">No clients are associated with your account yet.</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -481,7 +469,8 @@ export default function EnhancedClientDashboard() {
                       <span className="text-sm font-medium text-gray-700">Manage Profile</span>
                     </motion.button>
 
-                    {selectedClient.role === 'owner' && (
+                    {/* All users in account have full access */}
+                    {true && (
                       <motion.button
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
@@ -883,7 +872,7 @@ export default function EnhancedClientDashboard() {
           <ClientProfileModal
             isOpen={showProfileModal}
             onClose={() => setShowProfileModal(false)}
-            clientId={selectedClient.client_id}
+            clientId={selectedClient.id}
             onProfileUpdated={() => {
               logActivity('profile_update', 'Profile updated');
               loadClientData();
@@ -893,7 +882,7 @@ export default function EnhancedClientDashboard() {
           <UserManagementModal
             isOpen={showUserManagementModal}
             onClose={() => setShowUserManagementModal(false)}
-            clientId={selectedClient.client_id}
+            clientId={selectedClient.id}
             onUsersUpdated={() => {
               logActivity('status_update', 'User permissions updated');
               loadClientData();

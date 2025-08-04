@@ -16,40 +16,28 @@ export interface UserProfile {
   };
 }
 
-export interface ClientUser {
+export interface Client {
   id: string;
-  client_id: string;
-  user_id: string;
-  role: 'owner' | 'member' | 'viewer' | 'accountant';
-  invited_by?: string;
-  invited_at?: string;
-  accepted_at?: string;
-  is_active: boolean;
+  account_id: string;
+  full_name: string;
+  email: string;
+  phone?: string;
+  filing_status: string;
+  home_address?: string;
+  state?: string;
+  dependents?: number;
   created_at: string;
   updated_at: string;
-  client?: {
-    id: string;
-    full_name: string;
-    email: string;
-    phone?: string;
-    filing_status: string;
-    home_address?: string;
-    state?: string;
-    dependents?: number;
-    created_at: string;
-    updated_at: string;
-  };
 }
 
 export interface AuthUser {
   profile: UserProfile;
-  clientUsers: ClientUser[];
+  clients: Client[];
   isAdmin: boolean;
   isClientUser: boolean;
   isPlatformUser: boolean;
   isAffiliateUser: boolean;
   isExpertUser: boolean;
-  primaryClientRole?: 'owner' | 'member' | 'viewer' | 'accountant';
   permissions: string[];
 }
 
@@ -98,8 +86,10 @@ class AuthService {
 
       // Transform the user data from service into AuthUser format
       const profile = data.profile;
-      const clientUsers = data.clientUsers || [];
       const accountType = profile.account?.type;
+
+      // Fetch clients for this account (with safety check)
+      const clients = profile.account_id ? await this.getClientsForAccount(profile.account_id) : [];
 
       // Use account type or default to client
       const determinedAccountType = accountType || 'client';
@@ -109,8 +99,7 @@ class AuthService {
       const isPlatformUser = determinedAccountType === 'operator';
       const isAffiliateUser = determinedAccountType === 'affiliate';
       const isExpertUser = determinedAccountType === 'expert';
-      const isClientUser = determinedAccountType === 'client' || clientUsers.length > 0;
-      const primaryClientRole = clientUsers.length > 0 ? clientUsers[0].role : undefined;
+      const isClientUser = determinedAccountType === 'client' || (clients && clients.length > 0);
 
       // Generate permissions
       const permissions = this.generatePermissions({
@@ -120,22 +109,41 @@ class AuthService {
         isExpertUser,
         isClientUser,
         accountType: determinedAccountType
-      }, clientUsers);
+      }, clients || []);
 
       return {
         profile,
-        clientUsers,
+        clients: clients || [],
         isAdmin,
         isClientUser,
         isPlatformUser,
         isAffiliateUser,
         isExpertUser,
-        primaryClientRole,
         permissions
       };
     } catch (error) {
       console.error('Error getting current user:', error);
       return null;
+    }
+  }
+
+  // Method to fetch clients for an account
+  private async getClientsForAccount(accountId: string): Promise<Client[]> {
+    try {
+      const { data: clients, error } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('account_id', accountId);
+
+      if (error) {
+        console.error('Error fetching clients for account:', error);
+        return [];
+      }
+
+      return clients || [];
+    } catch (error) {
+      console.error('Error fetching clients for account:', error);
+      return [];
     }
   }
 
@@ -146,7 +154,7 @@ class AuthService {
     isExpertUser: boolean;
     isClientUser: boolean;
     accountType?: string;
-  }, clientUsers: ClientUser[]): string[] {
+  }, clients: Client[]): string[] {
     const permissions: string[] = [];
 
     // Admin permissions - full platform access
@@ -194,50 +202,23 @@ class AuthService {
       );
     }
 
-    // Client user permissions
-    clientUsers.forEach(clientUser => {
-      const clientId = clientUser.client_id;
+    // Client permissions - since user belongs to account, they have full access to all clients in that account
+    clients.forEach(client => {
+      const clientId = client.id;
       
-      switch (clientUser.role) {
-        case 'owner':
-          permissions.push(
-            `client:${clientId}:full_access`,
-            `client:${clientId}:manage_users`,
-            `client:${clientId}:invite_users`,
-            `client:${clientId}:view_financials`,
-            `client:${clientId}:edit_profile`,
-            `client:${clientId}:view_documents`,
-            `client:${clientId}:upload_documents`,
-            `client:${clientId}:view_proposals`,
-            `client:${clientId}:approve_proposals`
-          );
-          break;
-        case 'member':
-          permissions.push(
-            `client:${clientId}:view_profile`,
-            `client:${clientId}:view_documents`,
-            `client:${clientId}:upload_documents`,
-            `client:${clientId}:view_proposals`
-          );
-          break;
-        case 'viewer':
-          permissions.push(
-            `client:${clientId}:view_profile`,
-            `client:${clientId}:view_documents`,
-            `client:${clientId}:view_proposals`
-          );
-          break;
-        case 'accountant':
-          permissions.push(
-            `client:${clientId}:view_profile`,
-            `client:${clientId}:view_financials`,
-            `client:${clientId}:view_documents`,
-            `client:${clientId}:upload_documents`,
-            `client:${clientId}:view_proposals`,
-            `client:${clientId}:edit_financials`
-          );
-          break;
-      }
+      // Full access to all clients in the same account
+      permissions.push(
+        `client:${clientId}:full_access`,
+        `client:${clientId}:manage_users`,
+        `client:${clientId}:invite_users`,
+        `client:${clientId}:view_financials`,
+        `client:${clientId}:edit_profile`,
+        `client:${clientId}:view_documents`,
+        `client:${clientId}:upload_documents`,
+        `client:${clientId}:view_proposals`,
+        `client:${clientId}:approve_proposals`,
+        `client:${clientId}:edit_financials`
+      );
     });
 
     return permissions;
@@ -264,7 +245,7 @@ class AuthService {
     // Admin can manage all
     if (user.isAdmin) return true;
     
-    // Client owner can manage users
+    // Users have full access to clients in their account
     return user.permissions.includes(`client:${clientId}:manage_users`);
   }
 
@@ -274,28 +255,26 @@ class AuthService {
     // Admin can invite to any client
     if (user.isAdmin) return true;
     
-    // Client owner can invite users
+    // Users can invite to clients in their account
     return user.permissions.includes(`client:${clientId}:invite_users`);
   }
 
-  getClientRole(user: AuthUser | null, clientId: string): 'owner' | 'member' | 'viewer' | 'accountant' | null {
-    if (!user) return null;
-    
-    const clientUser = user.clientUsers.find(cu => cu.client_id === clientId);
-    return clientUser ? clientUser.role : null;
-  }
-
-  getAccessibleClients(user: AuthUser | null): ClientUser[] {
+  getAccessibleClients(user: AuthUser | null): Client[] {
     if (!user) return [];
     
-    // Admin can access all clients (would need separate query)
-    if (user.isAdmin) {
-      // For now, return client users - in full implementation, 
-      // we'd query all clients for admin
-      return user.clientUsers;
-    }
+    // Return all clients in the user's account
+    return user.clients;
+  }
+
+  // Helper method to check if client belongs to user's account
+  canAccessClient(user: AuthUser | null, clientId: string): boolean {
+    if (!user) return false;
     
-    return user.clientUsers;
+    // Admin can access all clients
+    if (user.isAdmin) return true;
+    
+    // Check if client is in user's account
+    return user.clients.some(client => client.id === clientId);
   }
 
   async signIn(email: string, password: string, setUserCallback?: (user: any) => void): Promise<{ user: AuthUser | null; error: string | null }> {
@@ -343,8 +322,10 @@ class AuthService {
       }
       // Transform the user data from service into AuthUser format
       const profile = data.user.profile;
-      const clientUsers = data.user.clientUsers || [];
       const accountType = profile.account?.type;
+
+      // Fetch clients for this account (with safety check)
+      const clients = profile.account_id ? await this.getClientsForAccount(profile.account_id) : [];
 
       // Use account type or default to client
       const determinedAccountType = accountType || 'client';
@@ -354,8 +335,7 @@ class AuthService {
       const isPlatformUser = determinedAccountType === 'operator';
       const isAffiliateUser = determinedAccountType === 'affiliate';
       const isExpertUser = determinedAccountType === 'expert';
-      const isClientUser = determinedAccountType === 'client' || clientUsers.length > 0;
-      const primaryClientRole = clientUsers.length > 0 ? clientUsers[0].role : undefined;
+      const isClientUser = determinedAccountType === 'client' || (clients && clients.length > 0);
 
       // Generate permissions
       const permissions = this.generatePermissions({
@@ -365,17 +345,16 @@ class AuthService {
         isExpertUser,
         isClientUser,
         accountType: determinedAccountType
-      }, clientUsers);
+      }, clients || []);
 
       const authUser: AuthUser = {
         profile,
-        clientUsers,
+        clients: clients || [],
         isAdmin,
         isClientUser,
         isPlatformUser,
         isAffiliateUser,
         isExpertUser,
-        primaryClientRole,
         permissions
       };
 
@@ -418,7 +397,7 @@ class AuthService {
     }
     
     // Client users go to client dashboard
-    if (user.isClientUser && user.clientUsers.length > 0) {
+    if (user.isClientUser && user.clients?.length > 0) {
       return '/client';
     }
     
@@ -443,14 +422,13 @@ class AuthService {
   }
 
   // Helper method to get user's primary client
-  getPrimaryClient(user: AuthUser): ClientUser | null {
-    if (!user.isClientUser || user.clientUsers.length === 0) {
+  getPrimaryClient(user: AuthUser): Client | null {
+    if (!user.isClientUser || !user.clients || user.clients.length === 0) {
       return null;
     }
     
-    // Return the first owner role, or first client if no owner
-    const ownerClient = user.clientUsers.find(cu => cu.role === 'owner');
-    return ownerClient || user.clientUsers[0];
+    // Return the first client (since all clients in account have equal access)
+    return user.clients[0];
   }
 }
 

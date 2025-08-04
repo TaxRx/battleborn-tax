@@ -97,8 +97,8 @@ serve(async (req) => {
     }
 
     // Admin auth endpoints
-    if (pathname === '/admin-service/get-user-by-email') {
-      return await handleAdminGetUserByEmail(body, supabaseServiceClient)
+    if (pathname === '/admin-service/get-user-by-id') {
+      return await handleAdminGetUserById(body, supabaseServiceClient)
     } else if (pathname === '/admin-service/generate-magic-link') {
       return await handleAdminGenerateMagicLink(body, supabaseServiceClient)
     } else if (pathname === '/admin-service/check-auth-user') {
@@ -334,25 +334,25 @@ serve(async (req) => {
 
 // --- Additional Admin Handlers --- //
 
-// --- Handler for Admin Get User By Email --- //
-async function handleAdminGetUserByEmail(body, supabaseAdmin) {
+// --- Handler for Admin Get User By ID --- //
+async function handleAdminGetUserById(body, supabaseAdmin) {
   try {
-    const { email } = body
+    const { userId } = body
 
-    if (!email?.trim()) {
-      return new Response(JSON.stringify({ error: 'Email is required' }), {
+    if (!userId?.trim()) {
+      return new Response(JSON.stringify({ error: 'User ID is required' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400
       })
     }
 
-    // Get user by email using admin API
-    const { data, error } = await supabaseAdmin.auth.admin.getUserByEmail(email.trim().toLowerCase())
+    // Get user by ID using admin API
+    const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId.trim())
     
     if (error) {
-      console.error('Error getting user by email:', error)
+      console.error('Error getting user by ID:', error)
       return new Response(JSON.stringify({ 
-        error: 'Failed to get user by email',
+        error: 'Failed to get user by ID',
         details: error.message 
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -360,20 +360,20 @@ async function handleAdminGetUserByEmail(body, supabaseAdmin) {
       })
     }
     
-    console.log(`Admin retrieved user by email: ${email} - found: ${!!data.user}`)
+    console.log(`Admin retrieved user by ID: ${userId} - found: ${!!data.user}`)
     
     return new Response(JSON.stringify({ 
       user: data.user || null,
-      email: email.toLowerCase()
+      userId: userId.trim()
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200
     })
 
   } catch (error) {
-    console.error('Error in handleAdminGetUserByEmail:', error)
+    console.error('Error in handleAdminGetUserById:', error)
     return new Response(JSON.stringify({ 
-      error: 'Failed to get user by email',
+      error: 'Failed to get user by ID',
       details: error.message 
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -590,6 +590,34 @@ async function handleAdminCreateProfileWithAuth(body, supabaseAdmin) {
       return new Response(JSON.stringify({ error: 'Account ID is required' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400
+      })
+    }
+
+    // Check if email already exists in profiles table
+    const { data: existingProfile, error: checkError } = await supabaseAdmin
+      .from('profiles')
+      .select('email')
+      .eq('email', email.trim().toLowerCase())
+      .single()
+
+    if (checkError && checkError.code !== 'PGRST116') {
+      // PGRST116 is "not found" which is what we want
+      console.error('Error checking existing profile:', checkError)
+      return new Response(JSON.stringify({ 
+        error: 'Failed to check existing profile',
+        details: checkError.message 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500
+      })
+    }
+
+    if (existingProfile) {
+      return new Response(JSON.stringify({ 
+        error: `A profile with email "${email.trim().toLowerCase()}" already exists. Please use a different email address.`
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 409 // Conflict status code
       })
     }
 
