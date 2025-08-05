@@ -52,11 +52,17 @@ router.get('/health', (request, env) => {
     capabilities: {
       browserRendering: !!env?.BROWSER,
       pdfGeneration: !!env?.BROWSER,
+      r2Storage: !!env?.REPORTS,
+      supabaseStorage: !!(env?.SUPABASE_URL && env?.SUPABASE_SERVICE_ROLE_KEY),
       cloudflareWorker: true
     },
     bindings: {
       browser: !!env?.BROWSER,
-      browserType: typeof env?.BROWSER
+      browserType: typeof env?.BROWSER,
+      r2Reports: !!env?.REPORTS,
+      r2Type: typeof env?.REPORTS,
+      supabaseConfigured: !!(env?.SUPABASE_URL && env?.SUPABASE_SERVICE_ROLE_KEY),
+      supabaseBucket: env?.SUPABASE_STORAGE_BUCKET || 'reports'
     }
   }), {
     headers: {
@@ -73,7 +79,7 @@ router.post('/api/generate-pdf', async (request, env) => {
     log('info', 'PDF generation request received');
     
     // Parse request body
-    const { html, filename = 'document.pdf', options = {} } = await request.json();
+    const { html, filename = 'document.pdf', options = {}, storage = null } = await request.json();
     
     if (!html) {
       log('error', 'No HTML content provided');
@@ -88,7 +94,8 @@ router.post('/api/generate-pdf', async (request, env) => {
     log('info', `Generating PDF: ${filename}`, {
       htmlSize: html.length,
       filename,
-      hasOptions: Object.keys(options).length > 0
+      hasOptions: Object.keys(options).length > 0,
+      storage: storage || 'direct'
     });
     
     // Default PDF options matching the original pdf-server.cjs
@@ -119,6 +126,45 @@ router.post('/api/generate-pdf', async (request, env) => {
         status: 503,
         headers: { 'Content-Type': 'application/json' }
       }));
+    }
+    
+    // Validate storage parameter and check for required bindings/env vars
+    if (storage) {
+      if (storage === 'r2') {
+        if (!env.REPORTS) {
+          log('error', 'R2 binding not available for storage=r2 request');
+          return corsResponse(new Response(JSON.stringify({
+            error: 'R2 storage not available',
+            message: 'This endpoint requires R2 storage capabilities when storage="r2".',
+            details: 'R2 binding (env.REPORTS) is not configured or available in this environment.'
+          }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' }
+          }));
+        }
+      } else if (storage === 'supabase') {
+        if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+          log('error', 'Supabase configuration not available for storage=supabase request');
+          return corsResponse(new Response(JSON.stringify({
+            error: 'Supabase storage not available',
+            message: 'This endpoint requires Supabase configuration when storage="supabase".',
+            details: 'SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables must be configured.'
+          }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' }
+          }));
+        }
+      } else {
+        log('error', `Invalid storage parameter: ${storage}`);
+        return corsResponse(new Response(JSON.stringify({
+          error: 'Invalid storage parameter',
+          message: 'Storage parameter must be either "r2" or "supabase".',
+          validOptions: ['r2', 'supabase']
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        }));
+      }
     }
     
     // Use Cloudflare Browser Rendering to generate PDF
@@ -165,16 +211,170 @@ router.post('/api/generate-pdf', async (request, env) => {
         sizeKB: Math.round(pdfBuffer.length / 1024)
       });
       
-      // Return PDF response
-      const response = new Response(pdfBuffer, {
-        headers: {
-          'Content-Type': 'application/pdf',
-          'Content-Disposition': `attachment; filename="${filename}"`,
-          'Content-Length': pdfBuffer.length.toString(),
-        },
-      });
-      
-      return corsResponse(response);
+      // Handle storage options or direct PDF response
+      if (storage === 'r2') {
+        // R2 Storage Implementation
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const randomId = Math.random().toString(36).substring(2, 15);
+        const r2Filename = `reports/${timestamp}-${randomId}-${filename}`;
+        
+        log('info', `Saving PDF to R2 bucket`, {
+          r2Filename,
+          bucketBinding: 'REPORTS'
+        });
+        
+        try {
+          // Upload PDF to R2 bucket
+          await env.REPORTS.put(r2Filename, pdfBuffer, {
+            httpMetadata: {
+              contentType: 'application/pdf',
+              contentDisposition: `attachment; filename="${filename}"`
+            },
+            customMetadata: {
+              originalFilename: filename,
+              generatedAt: new Date().toISOString(),
+              service: 'galileo-reportbuilder'
+            }
+          });
+          
+          // Generate public URL for the uploaded file
+          const publicUrl = `https://reports.galileo.tax/files/${r2Filename}`;
+          
+          log('info', `PDF saved to R2 successfully`, {
+            r2Filename,
+            publicUrl
+          });
+          
+          // Return JSON response with the URL
+          const response = new Response(JSON.stringify({
+            success: true,
+            message: 'PDF generated and saved to R2 storage',
+            storage: 'r2',
+            url: publicUrl,
+            filename: r2Filename,
+            originalFilename: filename,
+            sizeBytes: pdfBuffer.length,
+            generatedAt: new Date().toISOString()
+          }), {
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          return corsResponse(response);
+          
+        } catch (r2Error) {
+          log('error', 'Failed to save PDF to R2', {
+            error: r2Error.message,
+            r2Filename
+          });
+          
+          const response = new Response(JSON.stringify({
+            error: 'R2 storage failed',
+            message: 'PDF was generated but could not be saved to R2 storage',
+            details: r2Error.message
+          }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' }
+          });
+          
+          return corsResponse(response);
+        }
+        
+      } else if (storage === 'supabase') {
+        // Supabase Storage Implementation
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const randomId = Math.random().toString(36).substring(2, 15);
+        const supabaseFilename = `${timestamp}-${randomId}-${filename}`;
+        const bucket = env.SUPABASE_STORAGE_BUCKET || 'reports';
+        
+        log('info', `Saving PDF to Supabase Storage`, {
+          supabaseFilename,
+          bucket,
+          supabaseUrl: env.SUPABASE_URL
+        });
+        
+        try {
+          // Upload PDF to Supabase Storage using the REST API
+          const uploadUrl = `${env.SUPABASE_URL}/storage/v1/object/${bucket}/${supabaseFilename}`;
+          
+          const uploadResponse = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+              'Content-Type': 'application/pdf',
+              'x-upsert': 'true' // Allow overwrite if file exists
+            },
+            body: pdfBuffer
+          });
+          
+          if (!uploadResponse.ok) {
+            const errorText = await uploadResponse.text();
+            throw new Error(`Supabase upload failed: ${uploadResponse.status} ${uploadResponse.statusText} - ${errorText}`);
+          }
+          
+          const uploadResult = await uploadResponse.json();
+          
+          // Generate public URL for the uploaded file
+          const publicUrl = `${env.SUPABASE_URL}/storage/v1/object/public/${bucket}/${supabaseFilename}`;
+          
+          log('info', `PDF saved to Supabase Storage successfully`, {
+            supabaseFilename,
+            bucket,
+            publicUrl,
+            uploadResult
+          });
+          
+          // Return JSON response with the URL
+          const response = new Response(JSON.stringify({
+            success: true,
+            message: 'PDF generated and saved to Supabase Storage',
+            storage: 'supabase',
+            url: publicUrl,
+            filename: supabaseFilename,
+            originalFilename: filename,
+            bucket: bucket,
+            sizeBytes: pdfBuffer.length,
+            generatedAt: new Date().toISOString()
+          }), {
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          return corsResponse(response);
+          
+        } catch (supabaseError) {
+          log('error', 'Failed to save PDF to Supabase Storage', {
+            error: supabaseError.message,
+            supabaseFilename,
+            bucket
+          });
+          
+          const response = new Response(JSON.stringify({
+            error: 'Supabase storage failed',
+            message: 'PDF was generated but could not be saved to Supabase Storage',
+            details: supabaseError.message
+          }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' }
+          });
+          
+          return corsResponse(response);
+        }
+        
+      } else {
+        // Return PDF response directly (original behavior)
+        const response = new Response(pdfBuffer, {
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `attachment; filename="${filename}"`,
+            'Content-Length': pdfBuffer.length.toString(),
+          },
+        });
+        
+        return corsResponse(response);
+      }
       
     } finally {
       // Always close the page
@@ -207,10 +407,27 @@ router.get('/', () => {
   const response = new Response(JSON.stringify({
     service: 'Galileo Report Builder',
     version: globalThis.VERSION || '1.0.0',
-    description: 'PDF generation service using Cloudflare Browser Rendering',
+    description: 'PDF generation service using Cloudflare Browser Rendering with R2 storage support',
     endpoints: {
       health: '/health',
       generatePdf: 'POST /api/generate-pdf'
+    },
+    features: {
+      browserRendering: 'Generate PDFs from HTML using Cloudflare Browser Rendering',
+      r2Storage: 'Optional R2 storage integration for PDF files',
+      supabaseStorage: 'Optional Supabase Storage integration for PDF files',
+      corsSupport: 'Cross-origin resource sharing enabled'
+    },
+    parameters: {
+      html: 'Required. HTML content to convert to PDF',
+      filename: 'Optional. Output filename (default: document.pdf)',
+      options: 'Optional. PDF generation options (margins, format, etc.)',
+      storage: 'Optional. Storage destination: "r2" for Cloudflare R2, "supabase" for Supabase Storage, or omit for direct PDF response'
+    },
+    storageOptions: {
+      direct: 'Returns PDF binary data directly (default behavior)',
+      r2: 'Saves PDF to Cloudflare R2 bucket and returns public URL',
+      supabase: 'Saves PDF to Supabase Storage bucket and returns public URL'
     },
     documentation: 'https://docs.galileo.tax/reportbuilder',
     timestamp: new Date().toISOString()
