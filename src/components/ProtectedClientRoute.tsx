@@ -39,8 +39,8 @@ const ProtectedClientRoute: React.FC = () => {
     url: window.location.href
   });
   
-  // Show loading if user data is still being fetched OR if processing magic link
-  if (loading || hasMagicLink) {
+  // Show loading if user data is still being fetched OR if processing magic link (but not if already authenticated)
+  if (loading || (hasMagicLink && !user && !isAuthenticated)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">

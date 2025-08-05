@@ -115,19 +115,22 @@ const AppContent: React.FC = () => {
     
     const result = !!(hasQueryTokens || hasHashTokens);
     
-    console.log('🔍 hasMagicLinkTokens debug:', {
-      search: location.search,
-      hash: location.hash,
-      queryToken: searchParams.get('token'),
-      queryType: searchParams.get('type'),
-      queryAccessToken: searchParams.get('access_token'),
-      hashToken: hashParams.get('token'),
-      hashType: hashParams.get('type'),
-      hashAccessToken: hashParams.get('access_token'),
-      hasQueryTokens,
-      hasHashTokens,
-      result
-    });
+    // Only log debug info if there are tokens to avoid console spam
+    if (result) {
+      console.log('🔍 hasMagicLinkTokens debug:', {
+        search: location.search,
+        hash: location.hash,
+        queryToken: searchParams.get('token'),
+        queryType: searchParams.get('type'),
+        queryAccessToken: searchParams.get('access_token') ? 'present' : null,
+        hashToken: hashParams.get('token'),
+        hashType: hashParams.get('type'),
+        hashAccessToken: hashParams.get('access_token') ? 'present' : null,
+        hasQueryTokens,
+        hasHashTokens,
+        result
+      });
+    }
     
     return result;
   };
