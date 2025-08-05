@@ -18,8 +18,8 @@ const ProtectedClientRoute: React.FC = () => {
     const searchParams = new URLSearchParams(location.search);
     const hashParams = new URLSearchParams(location.hash.substring(1));
     
-    const hasQueryTokens = (searchParams.get('token') && searchParams.get('type') === 'magiclink') || searchParams.get('access_token');
-    const hasHashTokens = (hashParams.get('token') && hashParams.get('type') === 'magiclink') || hashParams.get('access_token');
+    const hasQueryTokens = !!(searchParams.get('token') && searchParams.get('type') === 'magiclink') || !!searchParams.get('access_token');
+    const hasHashTokens = !!(hashParams.get('token') && hashParams.get('type') === 'magiclink') || !!hashParams.get('access_token');
     
     return hasQueryTokens || hasHashTokens;
   };
