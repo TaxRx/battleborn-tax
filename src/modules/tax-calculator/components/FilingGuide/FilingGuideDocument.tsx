@@ -7,6 +7,8 @@ import './FilingGuide.css';
 import { StateCreditProForma } from '../StateProForma/StateCreditProForma';
 import { getStateConfig, getAvailableStates, StateConfig } from '../StateProForma';
 import { saveStateProFormaData, loadStateProFormaData, StateCreditDataService } from '../../services/stateCreditDataService';
+import { StateEligibilityService } from '../../services/stateEligibilityService';
+import { StateEligibilityNotifications } from '../StateProForma/StateEligibilityNotifications';
 import { FederalCreditProForma } from './FederalCreditProForma';
 import { CalculationSpecifics } from './CalculationSpecifics';
 import { supabase } from '../../lib/supabase';
@@ -115,7 +117,28 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
   const [showDebug, setShowDebug] = React.useState(false);
 
   // Extract business state from business data (same logic as CalculationStep and IntegratedStateCredits)
-  const businessState = businessData?.domicile_state || businessData?.contact_info?.state || businessData?.state || 'CA';
+  // Enhanced logic to handle different data structures
+  const businessState = businessData?.domicile_state || 
+                       businessData?.contact_info?.state || 
+                       businessData?.state ||
+                       businessData?.business?.domicile_state ||
+                       businessData?.business?.contact_info?.state ||
+                       businessData?.business?.state ||
+                       'CA';
+  
+  // Get business entity type for eligibility checking
+  const businessEntityType = businessData?.entity_type || 
+                             businessData?.business?.entity_type || 
+                             businessData?.business?.entityType ||
+                             'Corporation';
+  
+  // Check state eligibility based on entity type
+  const stateEligibilityResults = StateEligibilityService.checkAllStatesEligibility(businessEntityType);
+  const eligibilityNotifications = StateEligibilityService.getNotificationMessages(stateEligibilityResults);
+  
+  // Reduced logging to prevent connection issues
+  console.log('📍 [Filing Guide] Business state:', businessState, 'Entity type:', businessEntityType);
+  console.log('📍 [Filing Guide] NC eligibility:', stateEligibilityResults['NC']);
   
   const [state, setState] = useState(businessState);
   const [method, setMethod] = useState(() => {
@@ -128,100 +151,177 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
   const [stateProFormaData, setStateProFormaData] = useState<Record<string, number>>({});
   const [isLoadingData, setIsLoadingData] = useState(false);
 
-  // Update state when business data changes
+  // Update state when business data changes - enhanced logic
   useEffect(() => {
-    const newBusinessState = businessData?.domicile_state || businessData?.contact_info?.state || businessData?.state || 'CA';
+    const newBusinessState = businessData?.domicile_state || 
+                             businessData?.contact_info?.state || 
+                             businessData?.state ||
+                             businessData?.business?.domicile_state ||
+                             businessData?.business?.contact_info?.state ||
+                             businessData?.business?.state ||
+                             'CA';
     if (newBusinessState !== state) {
       setState(newBusinessState);
-      console.log('[FilingGuideDocument] Updated state to business address state:', newBusinessState);
+      // Reduced logging to prevent connection issues
     }
   }, [businessData, state]);
 
-  // Sync state method with federal selectedMethod
+  const allStates = getAvailableStates();
+  // Filter states based on entity eligibility
+  const availableStates = allStates.filter(stateConfig => {
+    const eligibility = stateEligibilityResults[stateConfig.code];
+    return eligibility?.isEligible !== false; // Show states that are eligible or have no specific restrictions
+  });
+  const currentStateConfig = getStateConfig(state);
+
+  // Sync state method with federal selectedMethod, with fallback for states that don't support alternative
   useEffect(() => {
-    if (selectedMethod) {
-      const stateMethod = selectedMethod === 'asc' ? 'alternative' : 'standard';
+    if (selectedMethod && currentStateConfig) {
+      let stateMethod = selectedMethod === 'asc' ? 'alternative' : 'standard';
+      
+      // Fallback: If state doesn't support alternative method, use standard
+      if (stateMethod === 'alternative' && !currentStateConfig.hasAlternativeMethod) {
+        stateMethod = 'standard';
+        console.log('[FilingGuideDocument] State', state, 'does not support alternative method, falling back to standard');
+      }
+      
       if (stateMethod !== method) {
         setMethod(stateMethod);
         console.log('[FilingGuideDocument] Synced state method with federal method:', selectedMethod, '->', stateMethod);
       }
     }
-  }, [selectedMethod, method]);
-
-  const availableStates = getAvailableStates();
-  const currentStateConfig = getStateConfig(state);
+  }, [selectedMethod, method, currentStateConfig, state]);
   // Get lines from the appropriate form method
   const availableLines = currentStateConfig?.forms?.[method]?.lines || [];
+
+  // Add error boundary logging
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      console.error('🚨 [FilingGuide] JavaScript Error:', event.error);
+    };
+    
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      console.error('🚨 [FilingGuide] Unhandled Promise Rejection:', event.reason);
+    };
+
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
   
-  // Debug logging for state pro forma
-  console.log('[FilingGuideDocument] State Pro Forma Debug:', {
-    state,
-    method,
-    selectedMethod,
-    currentStateConfig: !!currentStateConfig,
-    availableLines: availableLines.length,
-    stateProFormaData,
-    isLoadingData
-  });
+  // Debug logging for NC state specifically
+  if (state === 'NC') {
+    console.log('[FilingGuideDocument] NC State Debug:', { 
+      selectedMethod: selectedMethod,
+      currentMethod: method,
+      hasConfig: !!currentStateConfig,
+      hasAlternativeMethod: currentStateConfig?.hasAlternativeMethod,
+      availableLines: availableLines.length,
+      lines: availableLines.map(line => ({ line: line.line, label: line.label })),
+      formsAvailable: currentStateConfig?.forms ? Object.keys(currentStateConfig.forms) : [],
+      methodConfig: currentStateConfig?.forms?.[method]
+    });
+  }
 
   // Load existing data when state or method changes
   useEffect(() => {
+    let isMounted = true;
+    
     const loadExistingData = async () => {
-      if (!businessData?.client_id || !selectedYear?.id) return;
+      if (!businessData?.client_id || !selectedYear?.id || !isMounted) {
+        return;
+      }
       
       setIsLoadingData(true);
       try {
+        // Try to load existing saved data first
         const existingData = await loadStateProFormaData(
           selectedYear.id,
           state,
           method as 'standard' | 'alternative'
         );
         
-        if (existingData) {
-          setStateProFormaData(existingData);
+        if (existingData && Object.keys(existingData).length > 0) {
+          console.log('📊 [FilingGuide] Using existing saved data:', existingData);
+          if (isMounted) setStateProFormaData(existingData);
         } else {
-          // Load base data using the new StateCreditDataService (same as federal Section G)
-          console.log('📊 [State Credits] Loading base data using StateCreditDataService...');
-          const baseData = await StateCreditDataService.getAggregatedQREData(selectedYear.id);
-          
-          // Convert to the format expected by the pro forma
-          const formattedData = {
-            wages: baseData.wages,
-            supplies: baseData.supplies,
-            contractResearch: baseData.contractResearch,
-            computerLeases: baseData.computerLeases,
-            avgGrossReceipts: baseData.avgGrossReceipts,
-            businessEntityType: baseData.businessEntityType, // Include business entity type for 280C
+          // If no saved data, try to use QRE from calculations first, then StateCreditDataService
+          let formattedData = {
+            wages: 0,
+            supplies: 0,
+            contractResearch: 0,
+            computerLeases: 0,
+            avgGrossReceipts: 0,
+            businessEntityType: 'Corporation',
           };
+
+          // Priority 1: Use calculations data if available
+          if (calculations?.currentYearQRE) {
+            formattedData = {
+              wages: calculations.currentYearQRE.employees || 0,
+              supplies: calculations.currentYearQRE.supplies || 0,
+              contractResearch: calculations.currentYearQRE.contractors || 0,
+              computerLeases: 0,
+              avgGrossReceipts: 0,
+              businessEntityType: businessEntityType || 'Corporation',
+            };
+            console.log('📊 [FilingGuide] Using calculations QRE data:', formattedData);
+          } else {
+            // Priority 2: Fall back to StateCreditDataService
+            try {
+              const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Request timeout')), 8000)
+              );
+              
+              const baseData = await Promise.race([
+                StateCreditDataService.getAggregatedQREData(selectedYear.id),
+                timeoutPromise
+              ]);
+              
+              formattedData = {
+                wages: baseData?.wages || 0,
+                supplies: baseData?.supplies || 0,
+                contractResearch: baseData?.contractResearch || 0,
+                computerLeases: baseData?.computerLeases || 0,
+                avgGrossReceipts: baseData?.avgGrossReceipts || 0,
+                businessEntityType: baseData?.businessEntityType || businessEntityType || 'Corporation',
+              };
+              console.log('📊 [FilingGuide] Using StateCreditDataService data:', formattedData);
+            } catch (serviceError) {
+              console.warn('📊 [FilingGuide] StateCreditDataService failed, using zero values:', serviceError);
+            }
+          }
           
-          console.log('📊 [State Credits] Base data loaded:', formattedData);
-          setStateProFormaData(formattedData);
+          if (isMounted) setStateProFormaData(formattedData);
         }
       } catch (error) {
-        console.error('Error loading state pro forma data:', error);
-        // Fallback to base data
-        try {
-          console.log('📊 [State Credits] Fallback: Loading base data...');
-          const baseData = await StateCreditDataService.getAggregatedQREData(selectedYear.id);
-          const formattedData = {
-            wages: baseData.wages,
-            supplies: baseData.supplies,
-            contractResearch: baseData.contractResearch,
-            computerLeases: baseData.computerLeases,
-            avgGrossReceipts: baseData.avgGrossReceipts,
-            businessEntityType: baseData.businessEntityType, // Include business entity type for 280C
-          };
-          setStateProFormaData(formattedData);
-        } catch (fallbackError) {
-          console.error('Error loading base data:', fallbackError);
-        }
+        console.error('📊 [FilingGuide] Error loading state pro forma data:', error);
+        // Simple fallback - just set empty state instead of making more API calls
+        if (isMounted) setStateProFormaData({
+          wages: 0,
+          supplies: 0,
+          contractResearch: 0,
+          computerLeases: 0,
+          avgGrossReceipts: 0,
+          businessEntityType: businessEntityType || 'Corporation',
+        });
       } finally {
-        setIsLoadingData(false);
+        if (isMounted) setIsLoadingData(false);
       }
     };
 
-    loadExistingData();
-  }, [state, method, businessData?.client_id, selectedYear?.id, calculations?.currentYearQRE]);
+    // Add a small delay to ensure calculations are available
+    const timeoutId = setTimeout(loadExistingData, 100);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [state, method, businessData?.client_id, selectedYear?.id, calculations?.currentYearQRE, businessEntityType]);
 
   const handleSaveStateProForma = async (data: Record<string, number>, businessYearId: string) => {
     await saveStateProFormaData(businessYearId, state, method as 'standard' | 'alternative', data);
@@ -431,6 +531,16 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
             <p className="filing-guide-section-subtitle">State-specific R&D credit calculations</p>
           </div>
         </div>
+        
+        {/* State Eligibility Notifications - Only show if there are actual warnings/notifications */}
+        {(eligibilityNotifications.applicationRequired.length > 0 || 
+          eligibilityNotifications.preapprovalRequired.length > 0 || 
+          eligibilityNotifications.entityRestricted.length > 0) && (
+          <StateEligibilityNotifications
+            businessEntityType={businessEntityType}
+            notifications={eligibilityNotifications}
+          />
+        )}
         
         <div className="state-selector-container">
           <label>

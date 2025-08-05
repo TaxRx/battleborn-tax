@@ -6,6 +6,8 @@ import ResearchReportModal from '../../ResearchReport/ResearchReportModal';
 import AllocationReportModal from '../../AllocationReport/AllocationReportModal';
 import SignatureCapture from '../../SignatureCapture/SignatureCapture';
 import { qcService } from '../../../services/qcService';
+import { RDCalculationsService } from '../../../services/rdCalculationsService';
+import { StateProFormaCalculationService } from '../../../services/stateProFormaCalculationService';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
@@ -358,19 +360,52 @@ I acknowledge that I had the opportunity to review and revise the report prior t
     }
   };
 
-  // Load from Wizard - Manual input based on what user sees in Calculations page
-  const loadCalculatedCreditsFromWizard = () => {
-    console.log('🔍 [Load from Wizard] Manual input - NO calculations in Reports section');
+  // Load from Wizard - Get actual calculated values from wizard state
+  const loadCalculatedCreditsFromWizard = async () => {
+    console.log('🔍 [Load from Wizard] Loading REAL calculated values from wizard...');
     
-    // Just set to default values - user will manually enter the correct values from Calculations page
-    setFederalCredit(15175); // User reported seeing $15,175 in Calculations page (ASC)
-    setStateCredit(31716);   // User reported seeing $31,716 in Calculations page (Standard)
-    
-    console.log('✅ [Load from Wizard] Set default values for manual editing - NO CALCULATIONS:', {
-      federal: 15175,
-      state: 31716,
-      source: 'Manual defaults - user will edit to match Calculations page'
-    });
+    try {
+      const yearId = selectedYearId || wizardState.selectedYear?.id;
+      if (!yearId) {
+        console.error('❌ [Load from Wizard] No year ID available');
+        return;
+      }
+
+      // Get Federal Credit from RDCalculationsService (same as Calculations page)
+      const federalResults = await RDCalculationsService.calculateCredits(yearId);
+      const selectedMethod = wizardState.selectedMethod || 'asc';
+      
+      let calculatedFederalCredit = 0;
+      if (selectedMethod === 'asc' && federalResults.federalCredits?.asc) {
+        calculatedFederalCredit = federalResults.federalCredits.asc.adjustedCredit || federalResults.federalCredits.asc.credit || 0;
+      } else if (selectedMethod === 'standard' && federalResults.federalCredits?.standard) {
+        calculatedFederalCredit = federalResults.federalCredits.standard.adjustedCredit || federalResults.federalCredits.standard.credit || 0;
+      }
+
+      // Get State Credit using same method as Calculations page
+      const businessState = wizardState.business?.domicile_state || wizardState.business?.contact_info?.state || wizardState.business?.state || 'CA';
+      const stateResults = await StateProFormaCalculationService.getAllStateCreditsFromProForma(yearId, businessState);
+      const calculatedStateCredit = stateResults.total || 0;
+
+      // Update the credit values
+      setFederalCredit(calculatedFederalCredit);
+      setStateCredit(calculatedStateCredit);
+      
+      console.log('✅ [Load from Wizard] Loaded REAL calculated values:', {
+        federal: calculatedFederalCredit,
+        state: calculatedStateCredit,
+        federalMethod: selectedMethod,
+        businessState,
+        source: 'Calculated from wizard using same services as Calculations page'
+      });
+
+    } catch (error) {
+      console.error('❌ [Load from Wizard] Error loading calculated values:', error);
+      
+      // Fallback to 0 values if calculation fails
+      setFederalCredit(0);
+      setStateCredit(0);
+    }
   };
 
   const saveCreditValues = async () => {

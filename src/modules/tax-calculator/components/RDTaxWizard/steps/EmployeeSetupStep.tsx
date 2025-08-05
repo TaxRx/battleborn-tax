@@ -4093,6 +4093,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                   // Apply non-R&D reduction to base calculation (for both actualized and non-actualized)
                   let nonRdPercent = 0;
                   try {
+                    // First try to get non-R&D percentage for the target year
                     const { data: subStep, error: stepError } = await supabase
                       .from('rd_selected_steps')
                       .select('non_rd_percentage')
@@ -4102,6 +4103,32 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                     
                     if (!stepError && subStep) {
                       nonRdPercent = subStep.non_rd_percentage || 0;
+                    } else {
+                      // If no data found for target year, try to find non-R&D percentage from any year for this business
+                      console.log(`📊 CSV Import: No non-R&D data for target year, searching other years for step ${subcomponent.step_id}...`);
+                      
+                      const { data: allBusinessYears } = await supabase
+                        .from('rd_business_years')
+                        .select('id')
+                        .eq('business_id', businessId);
+                      
+                      if (allBusinessYears && allBusinessYears.length > 0) {
+                        const yearIds = allBusinessYears.map(y => y.id);
+                        
+                        const { data: fallbackStep } = await supabase
+                          .from('rd_selected_steps')
+                          .select('non_rd_percentage')
+                          .eq('step_id', subcomponent.step_id)
+                          .in('business_year_id', yearIds)
+                          .not('non_rd_percentage', 'is', null)
+                          .order('updated_at', { ascending: false })
+                          .limit(1);
+                        
+                        if (fallbackStep && fallbackStep.length > 0) {
+                          nonRdPercent = fallbackStep[0].non_rd_percentage || 0;
+                          console.log(`📊 CSV Import: Found fallback non-R&D percentage from another year: ${nonRdPercent}%`);
+                        }
+                      }
                     }
                   } catch (error) {
                     console.warn(`⚠️ Could not fetch non-R&D percentage for step ${subcomponent.step_id}:`, error);
@@ -4122,7 +4149,10 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                     },
                     beforeNonRd: beforeNonRd,
                     nonRdPercent: nonRdPercent,
-                    finalApplied: appliedPercentage
+                    finalApplied: appliedPercentage,
+                    targetBusinessYearId: targetBusinessYearId,
+                    stepId: subcomponent.step_id,
+                    nonRdSource: nonRdPercent > 0 ? 'Applied from research design data' : 'No non-R&D percentage found'
                   });
 
                   // Apply actualization variations if enabled - unique randomization per employee
