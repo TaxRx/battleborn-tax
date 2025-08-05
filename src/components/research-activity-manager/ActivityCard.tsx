@@ -11,7 +11,8 @@ import {
   Users,
   GripVertical,
   Lock,
-  Unlock
+  Unlock,
+  RotateCcw
 } from 'lucide-react';
 import { 
   useSortable,
@@ -31,12 +32,17 @@ const ActivityCard: React.FC<ActivityCardProps> = ({
   onToggleExpanded,
   onEdit,
   onDeactivate,
+  onReactivate,
   onRefresh,
   onEditStep,
   onAddStep,
   onEditSubcomponent,
   onMoveSubcomponent,
-  onUpdateStepPercentages
+  onUpdateStepPercentages,
+  onDeactivateStep,
+  onReactivateStep,
+  onDeactivateSubcomponent,
+  onReactivateSubcomponent
 }) => {
   const [loadingSteps, setLoadingSteps] = useState(false);
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
@@ -116,12 +122,27 @@ const ActivityCard: React.FC<ActivityCardProps> = ({
     }
   };
 
-  const handleDeactivateStep = async (step: any) => {
-    try {
-      await ResearchActivitiesService.deactivateResearchStep(step.id, 'Deactivated via UI');
-      onRefresh();
-    } catch (error) {
-      console.error('Error deactivating step:', error);
+  const handleDeactivateStep = (step: any) => {
+    if (onDeactivateStep) {
+      onDeactivateStep(step);
+    }
+  };
+
+  const handleReactivateStep = (step: any) => {
+    if (onReactivateStep) {
+      onReactivateStep(step);
+    }
+  };
+
+  const handleDeactivateSubcomponent = (subcomponent: any) => {
+    if (onDeactivateSubcomponent) {
+      onDeactivateSubcomponent(subcomponent);
+    }
+  };
+
+  const handleReactivateSubcomponent = (subcomponent: any) => {
+    if (onReactivateSubcomponent) {
+      onReactivateSubcomponent(subcomponent);
     }
   };
 
@@ -367,13 +388,21 @@ const ActivityCard: React.FC<ActivityCardProps> = ({
                 <Edit className="w-4 h-4" />
               </button>
 
-              {activity.is_active && (
+              {activity.is_active ? (
                 <button
                   onClick={() => onDeactivate(activity)}
                   className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                  title="Deactivate activity"
+                  title="Archive activity"
                 >
                   <Archive className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => onReactivate(activity)}
+                  className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition-colors"
+                  title="Unarchive activity"
+                >
+                  <RotateCcw className="w-4 h-4" />
                 </button>
               )}
             </div>
@@ -489,10 +518,15 @@ const ActivityCard: React.FC<ActivityCardProps> = ({
                       onToggleExpanded={handleToggleStepExpanded}
                       onEdit={handleEditStep}
                       onDeactivate={handleDeactivateStep}
+                      onReactivate={handleReactivateStep}
                       onDeleteStep={handleDeleteStep}
                       onAddSubcomponent={handleAddSubcomponent}
+                      onEditSubcomponent={onEditSubcomponent}
+                      onMoveSubcomponent={onMoveSubcomponent}
                       onTimePercentageChange={handleStepTimePercentageChange}
                       onRefresh={onRefresh}
+                      onDeactivateSubcomponent={handleDeactivateSubcomponent}
+                      onReactivateSubcomponent={handleReactivateSubcomponent}
                     />
                   ))}
                   </SortableContext>
@@ -516,14 +550,15 @@ const ActivityCard: React.FC<ActivityCardProps> = ({
                           onToggleExpanded={handleToggleStepExpanded}
                           onEdit={handleEditStep}
                           onDeactivate={handleDeactivateStep}
+                          onReactivate={handleReactivateStep}
                           onDeleteStep={handleDeleteStep}
                           onAddSubcomponent={handleAddSubcomponent}
                           onEditSubcomponent={onEditSubcomponent}
                           onMoveSubcomponent={onMoveSubcomponent}
                           onTimePercentageChange={handleStepTimePercentageChange}
-                          onMoveStepUp={onMoveStepUp}
-                          onMoveStepDown={onMoveStepDown}
                           onRefresh={onRefresh}
+                          onDeactivateSubcomponent={handleDeactivateSubcomponent}
+                          onReactivateSubcomponent={handleReactivateSubcomponent}
                         />
                       ))}
                     </div>

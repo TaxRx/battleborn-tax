@@ -38,6 +38,7 @@ export interface DragEndEvent {
 
 export interface ResearchActivityManagerProps {
   businessId?: string;
+  showArchived?: boolean;
 }
 
 export interface ActivityCardProps {
@@ -46,12 +47,17 @@ export interface ActivityCardProps {
   onToggleExpanded: (activityId: string) => void;
   onEdit: (activity: ResearchActivity) => void;
   onDeactivate: (activity: ResearchActivity) => void;
+  onReactivate: (activity: ResearchActivity) => void;
   onRefresh: () => void;
   onEditStep?: (step: ResearchStep, activityId: string) => void;
   onAddStep?: (activityId: string) => void;
   onEditSubcomponent?: (subcomponent: ResearchSubcomponent) => void;
   onMoveSubcomponent?: (subcomponentId: string, fromStepId: string) => void;
   onUpdateStepPercentages?: (activityId: string, stepUpdates: { stepId: string; newPercentage: number }[]) => void;
+  onDeactivateStep?: (step: ResearchStep) => void;
+  onReactivateStep?: (step: ResearchStep) => void;
+  onDeactivateSubcomponent?: (subcomponent: ResearchSubcomponent) => void;
+  onReactivateSubcomponent?: (subcomponent: ResearchSubcomponent) => void;
 }
 
 export interface StepCardProps {
@@ -64,12 +70,15 @@ export interface StepCardProps {
   onToggleExpanded: (stepId: string) => void;
   onEdit: (step: ResearchStep) => void;
   onDeactivate: (step: ResearchStep) => void;
+  onReactivate: (step: ResearchStep) => void;
   onDeleteStep?: (step: ResearchStep) => void;
   onAddSubcomponent: (stepId: string) => void;
   onEditSubcomponent: (subcomponent: ResearchSubcomponent) => void;
   onMoveSubcomponent: (subcomponentId: string, fromStepId: string) => void;
   onTimePercentageChange?: (stepId: string, percentage: number) => void;
   onRefresh: () => void;
+  onDeactivateSubcomponent?: (subcomponent: ResearchSubcomponent) => void;
+  onReactivateSubcomponent?: (subcomponent: ResearchSubcomponent) => void;
 }
 
 export interface SubcomponentCardProps {
@@ -78,6 +87,7 @@ export interface SubcomponentCardProps {
   onEdit: (subcomponent: ResearchSubcomponent) => void;
   onMove: (subcomponentId: string, fromStepId: string) => void;
   onDeactivate: (subcomponent: ResearchSubcomponent) => void;
+  onReactivate: (subcomponent: ResearchSubcomponent) => void;
   onRefresh: () => void;
 }
 

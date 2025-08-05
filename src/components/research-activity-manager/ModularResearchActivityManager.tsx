@@ -119,11 +119,12 @@ const SelectableChip: React.FC<SelectableChipProps> = ({ label, selected, onTogg
 };
 
 const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = ({ 
-  businessId 
+  businessId,
+  showArchived = false
 }) => {
   const [activities, setActivities] = useState<ActivityWithSteps[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showInactive, setShowInactive] = useState(false);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -314,7 +315,7 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
           const batchResults = await Promise.all(
             batch.map(async (activity) => {
               try {
-                const steps = await ResearchActivitiesService.getResearchSteps(activity.id, !showInactive);
+                const steps = await ResearchActivitiesService.getResearchSteps(activity.id, !showArchived);
                 
                 // Load subcomponents with smaller batches for large step counts
                 const stepBatchSize = 5;
@@ -325,7 +326,7 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
                   const stepResults = await Promise.all(
                     stepBatch.map(async (step) => {
                       try {
-                        const subcomponents = await ResearchActivitiesService.getResearchSubcomponents(step.id, !showInactive);
+                        const subcomponents = await ResearchActivitiesService.getResearchSubcomponents(step.id, !showArchived);
                         return {
                           ...step,
                           subcomponents: subcomponents || [],
@@ -388,7 +389,7 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   useEffect(() => {
     loadFilterData();
     loadActivities();
-  }, [businessId, showInactive]);
+  }, [businessId, showArchived]);
 
   const handleDragStart = (event: DragStartEvent) => {
     const activeId = event.active.id as string;
@@ -607,6 +608,56 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
     }
   };
 
+  const handleReactivateActivity = async (activity: ResearchActivity) => {
+    if (isResearchActivitiesLocked) return;
+    try {
+      await ResearchActivitiesService.reactivateResearchActivity(activity.id);
+      loadActivities();
+    } catch (error) {
+      console.error('Error reactivating activity:', error);
+    }
+  };
+
+  const handleDeactivateStep = async (step: ResearchStep) => {
+    if (isResearchActivitiesLocked) return;
+    try {
+      await ResearchActivitiesService.deactivateResearchStep(step.id, 'Deactivated via UI');
+      loadActivities();
+    } catch (error) {
+      console.error('Error deactivating step:', error);
+    }
+  };
+
+  const handleReactivateStep = async (step: ResearchStep) => {
+    if (isResearchActivitiesLocked) return;
+    try {
+      await ResearchActivitiesService.reactivateResearchStep(step.id);
+      loadActivities();
+    } catch (error) {
+      console.error('Error reactivating step:', error);
+    }
+  };
+
+  const handleDeactivateSubcomponent = async (subcomponent: ResearchSubcomponent) => {
+    if (isResearchActivitiesLocked) return;
+    try {
+      await ResearchActivitiesService.deactivateResearchSubcomponent(subcomponent.id, 'Deactivated via UI');
+      loadActivities();
+    } catch (error) {
+      console.error('Error deactivating subcomponent:', error);
+    }
+  };
+
+  const handleReactivateSubcomponent = async (subcomponent: ResearchSubcomponent) => {
+    if (isResearchActivitiesLocked) return;
+    try {
+      await ResearchActivitiesService.reactivateResearchSubcomponent(subcomponent.id);
+      loadActivities();
+    } catch (error) {
+      console.error('Error reactivating subcomponent:', error);
+    }
+  };
+
   const handleAddSubcomponent = (stepId: string) => {
     if (isResearchActivitiesLocked) return;
     setEditingSubcomponent(null);
@@ -646,50 +697,25 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   const handleMoveSubcomponentToStep = async (targetStepId: string) => {
     if (isResearchActivitiesLocked) return;
     try {
-      // Optimistic update - update local state immediately
       const subcomponentId = moveSubcomponentId;
       const fromStepId = moveFromStepId;
       
-      setActivities(prevActivities => {
-        return prevActivities.map(activity => ({
-          ...activity,
-          steps: activity.steps.map(step => {
-            if (step.id === fromStepId) {
-              // Remove subcomponent from source step
-              const subcomponent = step.subcomponents.find(sub => sub.id === subcomponentId);
-              return {
-                ...step,
-                subcomponents: step.subcomponents.filter(sub => sub.id !== subcomponentId)
-              };
-            } else if (step.id === targetStepId) {
-              // Add subcomponent to target step
-              const sourceActivity = prevActivities.find(act => 
-                act.steps.some(s => s.id === fromStepId)
-              );
-              const sourceStep = sourceActivity?.steps.find(s => s.id === fromStepId);
-              const subcomponent = sourceStep?.subcomponents.find(sub => sub.id === subcomponentId);
-              
-              if (subcomponent) {
-                return {
-                  ...step,
-                  subcomponents: [...step.subcomponents, { ...subcomponent, step_id: targetStepId }]
-                };
-              }
-            }
-            return step;
-          })
-        }));
-      });
-
-      // Update database in background
+      console.log(`🔄 Moving subcomponent ${subcomponentId} from step ${fromStepId} to step ${targetStepId}`);
+      
+      // First, update the database
       await ResearchActivitiesService.moveSubcomponentToStep(
         moveSubcomponentId,
         targetStepId,
         'Moved via move modal'
       );
+      
+      // Then reload activities to ensure UI is in sync with database
+      await loadActivities();
+      
+      console.log('✅ Subcomponent move completed successfully');
     } catch (error) {
-      console.error('Error moving subcomponent:', error);
-      // Revert optimistic update on error
+      console.error('❌ Error moving subcomponent:', error);
+      // Reload activities to ensure UI is consistent with database state
       loadActivities();
       throw error;
     }
@@ -724,8 +750,13 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
   // Get all steps for modals
   const allSteps = activities.flatMap(activity => activity.steps);
 
-  // Filter activities based on search and filter selections
+  // Filter activities based on search, filter selections, and archive status
   const filteredActivities = activities.filter(activity => {
+    // Archive filter - if showArchived is false, only show active activities
+    if (!showArchived && !activity.is_active) {
+      return false;
+    }
+
     // Search filter
     if (searchTerm) {
       const searchLower = searchTerm.toLowerCase();
@@ -806,17 +837,7 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
               </p>
             </div>
             <div className="flex items-center space-x-3">
-              <button
-                onClick={() => setShowInactive(!showInactive)}
-                className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors ${
-                  showInactive 
-                    ? 'bg-blue-100 text-blue-700' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                {showInactive ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                <span>{showInactive ? 'Hide' : 'Show'} Inactive</span>
-              </button>
+
               <button
                 onClick={loadActivities}
                 className="flex items-center space-x-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -974,12 +995,17 @@ const ModularResearchActivityManager: React.FC<ResearchActivityManagerProps> = (
                 onToggleExpanded={handleToggleActivityExpanded}
                 onEdit={handleEditActivity}
                 onDeactivate={handleDeactivateActivity}
+                onReactivate={handleReactivateActivity}
                 onRefresh={loadActivities}
                 onEditStep={handleEditStep}
                 onAddStep={handleAddStep}
                 onEditSubcomponent={handleEditSubcomponent}
                 onMoveSubcomponent={handleMoveSubcomponent}
                 onUpdateStepPercentages={handleUpdateStepPercentages}
+                onDeactivateStep={handleDeactivateStep}
+                onReactivateStep={handleReactivateStep}
+                onDeactivateSubcomponent={handleDeactivateSubcomponent}
+                onReactivateSubcomponent={handleReactivateSubcomponent}
               />
             ))
           ) : (

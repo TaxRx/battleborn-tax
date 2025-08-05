@@ -21,6 +21,7 @@ import {
   Calculator,
   Calendar,
   Eye,
+  EyeOff,
   AlertTriangle,
   CheckCircle,
   XCircle,
@@ -439,6 +440,7 @@ export default function RDClientManagement({
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [selectedBusinessForActivities, setSelectedBusinessForActivities] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   // Load clients on component mount
   useEffect(() => {
@@ -857,6 +859,19 @@ export default function RDClientManagement({
                     Choose whether to manage global activities or business-specific activities for IP protection
                   </p>
                 </div>
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={() => setShowArchived(!showArchived)}
+                    className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      showArchived 
+                        ? 'bg-red-100 text-red-800 border border-red-200' 
+                        : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200'
+                    }`}
+                  >
+                    {showArchived ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                    <span>{showArchived ? 'Hide' : 'Show'} Archived</span>
+                  </button>
+                </div>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -928,7 +943,10 @@ export default function RDClientManagement({
             </div>
 
             {/* Research Activity Manager */}
-            <ModularResearchActivityManager businessId={selectedBusinessForActivities} />
+                            <ModularResearchActivityManager 
+                  businessId={selectedBusinessForActivities} 
+                  showArchived={showArchived}
+                />
           </div>
         );
 

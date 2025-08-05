@@ -378,6 +378,101 @@ export class ResearchActivitiesService {
     }
   }
 
+  // Reactivate (unarchive) research activity
+  static async reactivateResearchActivity(id: string): Promise<ResearchActivity> {
+    try {
+      const { data, error } = await supabase
+        .from('rd_research_activities')
+        .update({
+          is_active: true,
+          deactivated_at: null,
+          deactivation_reason: null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('[ResearchActivitiesService] Error reactivating activity:', error);
+      throw error;
+    }
+  }
+
+  // Archive activity and all its steps and subcomponents (cascade archive)
+  static async archiveActivityWithCascade(id: string, reason: string): Promise<ResearchActivity> {
+    try {
+      console.log(`[ResearchActivitiesService] Archiving activity ${id} and all related steps/subcomponents`);
+      
+      // First get all steps for this activity
+      const { data: steps, error: stepsError } = await supabase
+        .from('rd_research_steps')
+        .select('id')
+        .eq('research_activity_id', id)
+        .eq('is_active', true);
+
+      if (stepsError) throw stepsError;
+
+      // Archive all subcomponents for each step
+      if (steps && steps.length > 0) {
+        for (const step of steps) {
+          const { error: subError } = await supabase
+            .from('rd_research_subcomponents')
+            .update({
+              is_active: false,
+              deactivated_at: new Date().toISOString(),
+              deactivation_reason: 'Activity archived - cascaded from parent activity',
+              updated_at: new Date().toISOString()
+            })
+            .eq('step_id', step.id)
+            .eq('is_active', true);
+
+          if (subError) {
+            console.error('[ResearchActivitiesService] Error archiving subcomponents:', subError);
+            throw subError;
+          }
+        }
+
+        // Archive all steps
+        const { error: stepArchiveError } = await supabase
+          .from('rd_research_steps')
+          .update({
+            is_active: false,
+            deactivated_at: new Date().toISOString(),
+            deactivation_reason: 'Activity archived - cascaded from parent activity',
+            updated_at: new Date().toISOString()
+          })
+          .eq('research_activity_id', id)
+          .eq('is_active', true);
+
+        if (stepArchiveError) throw stepArchiveError;
+      }
+
+      // Finally archive the activity itself
+      const { data, error } = await supabase
+        .from('rd_research_activities')
+        .update({
+          is_active: false,
+          deactivated_at: new Date().toISOString(),
+          deactivation_reason: reason,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      
+      console.log(`[ResearchActivitiesService] ✅ Successfully archived activity ${id} with cascade`);
+      return data;
+    } catch (error) {
+      console.error('[ResearchActivitiesService] Error archiving activity with cascade:', error);
+      throw error;
+    }
+  }
+
   // Duplicate research activity (for versioning)
   static async duplicateResearchActivity(id: string, newTitle: string, businessId?: string): Promise<ResearchActivity> {
     try {
@@ -530,10 +625,75 @@ export class ResearchActivitiesService {
     }
   }
 
-  // Delete research step permanently
+  // Reactivate (unarchive) research step
+  static async reactivateResearchStep(id: string): Promise<ResearchStep> {
+    try {
+      const { data, error } = await supabase
+        .from('rd_research_steps')
+        .update({
+          is_active: true,
+          deactivated_at: null,
+          deactivation_reason: null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('[ResearchActivitiesService] Error reactivating step:', error);
+      throw error;
+    }
+  }
+
+  // Archive research step and all its subcomponents (safer than permanent deletion)
   static async deleteResearchStep(id: string): Promise<void> {
     try {
-      console.log(`[ResearchActivitiesService] Deleting step ${id} and all related subcomponents`);
+      console.log(`[ResearchActivitiesService] Archiving step ${id} and all related subcomponents`);
+      
+      // First archive all subcomponents of this step
+      const { error: subError } = await supabase
+        .from('rd_research_subcomponents')
+        .update({
+          is_active: false,
+          deactivated_at: new Date().toISOString(),
+          deactivation_reason: 'Step deleted - archived with parent step',
+          updated_at: new Date().toISOString()
+        })
+        .eq('step_id', id)
+        .eq('is_active', true); // Only update active subcomponents
+
+      if (subError) {
+        console.error('[ResearchActivitiesService] Error archiving step subcomponents:', subError);
+        throw subError;
+      }
+
+      // Then archive the step itself
+      const { error } = await supabase
+        .from('rd_research_steps')
+        .update({
+          is_active: false,
+          deactivated_at: new Date().toISOString(),
+          deactivation_reason: 'Step deleted via UI',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      console.log(`[ResearchActivitiesService] ✅ Successfully archived step ${id} and its subcomponents`);
+    } catch (error) {
+      console.error('[ResearchActivitiesService] Error archiving step:', error);
+      throw error;
+    }
+  }
+
+  // Permanent deletion method (for admin use only)
+  static async permanentlyDeleteResearchStep(id: string): Promise<void> {
+    try {
+      console.log(`[ResearchActivitiesService] PERMANENTLY deleting step ${id} and all related subcomponents`);
       
       // First delete all subcomponents of this step
       const { error: subError } = await supabase
@@ -554,9 +714,9 @@ export class ResearchActivitiesService {
 
       if (error) throw error;
       
-      console.log(`[ResearchActivitiesService] ✅ Successfully deleted step ${id}`);
+      console.log(`[ResearchActivitiesService] ✅ Successfully permanently deleted step ${id}`);
     } catch (error) {
-      console.error('[ResearchActivitiesService] Error deleting step:', error);
+      console.error('[ResearchActivitiesService] Error permanently deleting step:', error);
       throw error;
     }
   }
@@ -641,6 +801,29 @@ export class ResearchActivitiesService {
       return data;
     } catch (error) {
       console.error('[ResearchActivitiesService] Error deactivating subcomponent:', error);
+      throw error;
+    }
+  }
+
+  // Reactivate (unarchive) research subcomponent
+  static async reactivateResearchSubcomponent(id: string): Promise<ResearchSubcomponent> {
+    try {
+      const { data, error } = await supabase
+        .from('rd_research_subcomponents')
+        .update({
+          is_active: true,
+          deactivated_at: null,
+          deactivation_reason: null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('[ResearchActivitiesService] Error reactivating subcomponent:', error);
       throw error;
     }
   }
