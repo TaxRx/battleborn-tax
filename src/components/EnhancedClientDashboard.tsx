@@ -307,7 +307,7 @@ export default function EnhancedClientDashboard() {
               </button>
               
               <div className="h-8 w-8 sm:h-10 sm:w-10 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                <span className="text-white font-bold text-sm sm:text-lg">B</span>
+                <span className="text-white font-bold text-sm sm:text-lg">GT</span>
               </div>
               <div className="ml-3 sm:ml-4">
                 <h1 className="text-lg sm:text-2xl font-bold text-gray-900">Client Dashboard</h1>
