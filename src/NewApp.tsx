@@ -19,6 +19,7 @@ import PartnerDashboard from './modules/partner/pages/PartnerDashboard'; // Impo
 import OperatorDashboard from './modules/operator/pages/OperatorDashboard';
 import AffiliateDashboard from './modules/affiliate/pages/NewAffiliateDashboard';
 import ExpertDashboard from './modules/expert/pages/ExpertDashboard';
+import MagicLinkHandler from './components/MagicLinkHandler';
 
 // Component to handle role-based redirects
 const RoleBasedRedirect: React.FC = () => {
@@ -104,15 +105,34 @@ const AppContent: React.FC = () => {
   const { isAuthenticated } = useAuthStore();
   const { user, loading } = useUser();
 
+  // Check if current URL has magic link tokens
+  const hasMagicLinkTokens = () => {
+    const searchParams = new URLSearchParams(location.search);
+    const hashParams = new URLSearchParams(location.hash.substring(1));
+    
+    const hasQueryTokens = (searchParams.get('token') && searchParams.get('type') === 'magiclink') || searchParams.get('access_token');
+    const hasHashTokens = (hashParams.get('token') && hashParams.get('type') === 'magiclink') || hashParams.get('access_token');
+    
+    return hasQueryTokens || hasHashTokens;
+  };
+
   // Public routes
   const isPublicRoute = ['/', '/login', '/signup', '/register', '/verify-email', '/accept-invitation', '/forgot-password', '/reset-password'].includes(location.pathname);
   
-  console.log('AppContent - Auth state:', {
+  // Allow /client route if it has magic link tokens (even if not authenticated yet)
+  const allowMagicLinkRoute = location.pathname === '/client' && hasMagicLinkTokens();
+  
+  console.log('🚀 AppContent - Auth state:', {
     isAuthenticated,
     hasUser: !!user,
     loading,
     isPublicRoute,
-    location: location.pathname
+    allowMagicLinkRoute,
+    hasMagicLinkTokens: hasMagicLinkTokens(),
+    location: location.pathname,
+    search: location.search,
+    hash: location.hash,
+    fullUrl: window.location.href
   });
 
   // Show loading while determining authentication state
@@ -127,14 +147,16 @@ const AppContent: React.FC = () => {
     );
   }
   
-  // Redirect to login if not authenticated and not on public route
-  if (!user && !isAuthenticated && !isPublicRoute) {
+  // Redirect to login if not authenticated and not on public route (unless processing magic link)
+  if (!user && !isAuthenticated && !isPublicRoute && !allowMagicLinkRoute) {
+    console.log('🚀 AppContent - Redirecting to login: no user, not authenticated, not public route');
     return <Navigate to="/login" replace />;
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Routes>
+      <MagicLinkHandler>
+        <Routes>
         {/* Public Routes */}
         <Route path="/" element={<LoginPage />} />
         <Route 
@@ -148,7 +170,7 @@ const AppContent: React.FC = () => {
         <Route path="/reset-password" element={<ResetPasswordPage />} />
 
         {/* Protected Routes */}
-        {(user || isAuthenticated) && (
+        {(user || isAuthenticated || allowMagicLinkRoute) && (
           <>
               {/* Admin Routes */}
               <Route 
@@ -198,7 +220,7 @@ const AppContent: React.FC = () => {
           <Route 
             path="*" 
             element={
-              (user || isAuthenticated) ? (
+              (user || isAuthenticated || allowMagicLinkRoute) ? (
                 <RoleBasedRedirect />
               ) : (
                 <Navigate to="/login" replace />
@@ -206,6 +228,7 @@ const AppContent: React.FC = () => {
             } 
           />
         </Routes>
+      </MagicLinkHandler>
 
         {/* Global Toast Notifications */}
         <ToastContainer

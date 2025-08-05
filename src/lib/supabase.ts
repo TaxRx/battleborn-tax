@@ -21,7 +21,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true,
+    detectSessionInUrl: false,  // Disable automatic URL processing - we'll handle it manually
     storage: window.localStorage,
     flowType: 'pkce',
   },
@@ -61,15 +61,16 @@ export const testConnection = async () => {
 if (supabase) {
   try {
     supabase.auth.onAuthStateChange((event, session) => {
-      console.log('Auth state changed:', event, {
+      console.log('🔐 Supabase - Auth state changed:', event, {
         email: session?.user?.email,
         id: session?.user?.id,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        url: window.location.href
       });
     });
-    console.log('✅ Auth state listener initialized');
+    console.log('✅ Supabase auth state listener initialized');
   } catch (error) {
-    console.error('❌ Failed to initialize auth state listener:', error);
+    console.error('❌ Failed to initialize Supabase auth state listener:', error);
   }
 } else {
   console.error('❌ Supabase client not initialized - auth listener not set up');
