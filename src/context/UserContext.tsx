@@ -137,25 +137,41 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     console.log('Setting up auth listener')
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed (UserProvider):', event, session);
+      console.log('👤 UserProvider - Auth state changed:', event, {
+        hasSession: !!session,
+        email: session?.user?.email,
+        userId: session?.user?.id,
+        url: window.location.href
+      });
       
       if (session?.user) {
-        console.log('fetching user details')
+        console.log('👤 UserProvider - Fetching user details for:', session.user.email)
         fetchUserDetails(session.user).then(extendedUser => {
-          console.log('fetched user details', extendedUser)
+          console.log('👤 UserProvider - Fetched user details:', {
+            email: extendedUser.email,
+            accountType: extendedUser.account?.type,
+            hasProfile: !!extendedUser.profile
+          })
           setUser(extendedUser);
           // Sync with auth store
           if (!isAuthenticated) {
             const userType = extendedUser.account?.type || 'client';
+            console.log('👤 UserProvider - Logging in with user type:', userType);
             login(userType);
           }
         });
       } else if(event !== 'INITIAL_SESSION'){
+        console.log('👤 UserProvider - No session, clearing user');
         setUser(null);
         // Clear auth store when logged out
         authLogout();
       }
-      setLoading(false);
+      
+      // Always set loading to false after processing auth change
+      // except for INITIAL_SESSION events which are handled in initializeAuth
+      if (event !== 'INITIAL_SESSION') {
+        setLoading(false);
+      }
     });
 
     return () => {
