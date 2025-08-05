@@ -582,8 +582,8 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
       
       // Get all businesses for this client
       const { data: allBusinesses, error: fetchError } = await supabase
-        .from('rd_businesses')
-        .select('id, name, ein, created_at')
+        .from('businesses')
+        .select('id, business_name, ein, created_at')
         .eq('client_id', clientId)
         .order('created_at', { ascending: false }); // Newest first
 
@@ -599,7 +599,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
 
       // Group by business name and EIN to find duplicates
       const businessGroups = allBusinesses.reduce((groups, business) => {
-        const key = `${business.name}-${business.ein || 'no-ein'}`;
+        const key = `${business.business_name}-${business.ein || 'no-ein'}`;
         if (!groups[key]) {
           groups[key] = [];
         }
@@ -619,7 +619,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
           console.log(`[cleanupDuplicateBusinesses] Keeping business ID: ${keepBusiness.id}, deleting IDs: ${idsToDelete.join(', ')}`);
           
           const { error: deleteError } = await supabase
-            .from('rd_businesses')
+            .from('businesses')
             .delete()
             .in('id', idsToDelete);
             
@@ -716,7 +716,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
           }
           
           return {
-            businessName: business.businessName || business.name || '',
+            businessName: business.businessName || business.business_name || '',
             entityType: business.entityType || business.entity_type || 'LLC',
             ein: business.ein || '',
             startYear: business.startYear || business.year_established || new Date().getFullYear(),
@@ -1196,6 +1196,24 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
               }
             }
 
+            // Validate business data before saving
+            if (completeTaxInfo.businesses && completeTaxInfo.businesses.length > 0) {
+              for (const business of completeTaxInfo.businesses) {
+                if (!business.businessName || business.businessName.trim() === '') {
+                  setError('Business name is required for all businesses');
+                  toast.error('Please enter a business name for all businesses');
+                  setIsSubmitting(false);
+                  return;
+                }
+                if (!business.businessState || business.businessState.trim() === '') {
+                  setError('Business state is required for all businesses');
+                  toast.error('Please select a state for all businesses');
+                  setIsSubmitting(false);
+                  return;
+                }
+              }
+            }
+
             // Update business data - Use upsert logic to prevent duplicates
             if (completeTaxInfo.businesses && completeTaxInfo.businesses.length > 0) {
               console.log(`[handleSubmit] Processing ${completeTaxInfo.businesses.length} businesses`);
@@ -1206,33 +1224,28 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                 
                 const businessData = {
                   client_id: initialData.id,
-                  name: business.businessName,
-                  entity_type: business.entityType === 'LLC' ? 'llc' :
-                               business.entityType === 'S-Corp' ? 's_corp' :
-                               business.entityType === 'C-Corp' ? 'corporation' :
-                               business.entityType === 'Partnership' ? 'partnership' :
-                               business.entityType === 'Sole Proprietorship' ? 'sole_proprietorship' :
-                               'llc', // default to llc for 'Other'
-                  ein: business.ein,
-                  year_established: business.startYear,
-                  business_address: business.businessAddress,
-                  business_city: business.businessCity,
+                  business_name: business.businessName,
+                  entity_type: business.entityType,
+                  ein: business.ein || null,
+                  business_address: business.businessAddress || null,
+                  business_city: business.businessCity || null,
                   business_state: business.businessState,
-                  business_zip: business.businessZip,
+                  business_zip: business.businessZip || null,
                   business_phone: business.businessPhone || null,
                   business_email: business.businessEmail || null,
                   industry: business.industry || null,
+                  year_established: business.startYear || null,
                   annual_revenue: business.annualRevenue || 0,
                   employee_count: business.employeeCount || 0,
-                  is_active: business.isActive
+                  is_active: business.isActive ?? true
                 };
 
                 // Check if business already exists for this client
                 const { data: existingBusiness, error: checkError } = await supabase
-                  .from('rd_businesses')
+                  .from('businesses')
                   .select('id')
                   .eq('client_id', initialData.id)
-                  .eq('name', business.businessName)
+                  .eq('business_name', business.businessName)
                   .eq('ein', business.ein || '')
                   .maybeSingle();
 
@@ -1246,7 +1259,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                   // Update existing business
                   console.log(`[handleSubmit] Updating existing business ID: ${existingBusiness.id}`);
                   const { data: updateResult, error: updateError } = await supabase
-                    .from('rd_businesses')
+                    .from('businesses')
                     .update(businessData)
                     .eq('id', existingBusiness.id)
                     .select()
@@ -1262,7 +1275,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                   // Create new business
                   console.log(`[handleSubmit] Creating new business: ${business.businessName}`);
                   const { data: insertResult, error: insertError } = await supabase
-                    .from('rd_businesses')
+                    .from('businesses')
                     .insert(businessData)
                     .select()
                     .single();
@@ -1275,8 +1288,8 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                   console.log(`[handleSubmit] Business created successfully with ID: ${businessResult.id}`);
                 }
 
-                // Save business years data using upsert logic
-                if (business.years && business.years.length > 0) {
+                // Save business years data using upsert logic - only if explicitly defined
+                if (business.years && business.years.length > 0 && business.years.some(year => year.year && (year.ordinaryK1Income > 0 || year.guaranteedK1Income > 0 || year.annualRevenue > 0))) {
                   console.log(`[handleSubmit] Processing ${business.years.length} business years for business ${business.businessName}`);
                   
                   for (const year of business.years) {
@@ -1292,7 +1305,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
 
                     // Use upsert to prevent duplicate business year records
                     const { error: upsertError } = await supabase
-                      .from('rd_business_years')
+                      .from('business_years')
                       .upsert(yearData, {
                         onConflict: 'business_id,year'
                       });
@@ -1399,7 +1412,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Business Name <span className="text-red-500">*</span>
+              Business Name <span className="text-red-500">*</span> <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
@@ -1533,7 +1546,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Business State
+              Business State <span className="text-red-500">*</span>
             </label>
             <select
               value={localBusiness.businessState}

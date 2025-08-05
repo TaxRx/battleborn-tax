@@ -235,15 +235,15 @@ export class CentralizedClientService {
               ein: business.ein || null,
               business_address: business.business_address || null,
               business_city: business.business_city || null,
-              business_state: business.business_state || null,
+              business_state: business.business_state,
               business_zip: business.business_zip || null,
               business_phone: business.business_phone || null,
               business_email: business.business_email || null,
               industry: business.industry || null,
               year_established: business.year_established || null,
-              annual_revenue: business.annual_revenue,
-              employee_count: business.employee_count,
-              is_active: business.is_active
+              annual_revenue: business.annual_revenue || 0,
+              employee_count: business.employee_count || 0,
+              is_active: business.is_active ?? true
             })
             .select('id')
             .single();
@@ -255,16 +255,16 @@ export class CentralizedClientService {
 
           const businessId = businessDataResult.id;
 
-          // Create business years if provided
-          if (business.business_years && business.business_years.length > 0) {
+          // Create business years if provided - only if explicitly defined with meaningful data
+          if (business.business_years && business.business_years.length > 0 && business.business_years.some(year => year.year && (year.ordinary_k1_income > 0 || year.guaranteed_k1_income > 0 || year.annual_revenue > 0))) {
             const businessYearsData = business.business_years.map(year => ({
               business_id: businessId,
               year: year.year,
-              is_active: year.is_active,
-              ordinary_k1_income: year.ordinary_k1_income,
-              guaranteed_k1_income: year.guaranteed_k1_income,
-              annual_revenue: year.annual_revenue,
-              employee_count: year.employee_count
+              is_active: year.is_active ?? true,
+              ordinary_k1_income: year.ordinary_k1_income || 0,
+              guaranteed_k1_income: year.guaranteed_k1_income || 0,
+              annual_revenue: year.annual_revenue || 0,
+              employee_count: year.employee_count || 0
             }));
 
             const { error: businessYearsError } = await supabase
@@ -1157,20 +1157,20 @@ export class CentralizedClientService {
         
         return {
           id: businessData.id || '',
-          businessName: businessData.business_name || '',
+          businessName: businessData.name || businessData.business_name || '',
           entityType: businessData.entity_type || '',
           ein: businessData.ein || '',
-          businessAddress: businessData.business_address || '',
-          businessCity: businessData.business_city || '',
-          businessState: businessData.business_state || '',
-          businessZip: businessData.business_zip || '',
-          businessPhone: businessData.business_phone || '',
-          businessEmail: businessData.business_email || '',
+          businessAddress: businessData.contact_info?.address || businessData.business_address || '',
+          businessCity: businessData.contact_info?.city || businessData.business_city || '',
+          businessState: businessData.domicile_state || businessData.contact_info?.state || businessData.business_state || '',
+          businessZip: businessData.contact_info?.zip || businessData.business_zip || '',
+          businessPhone: businessData.contact_info?.phone || businessData.business_phone || '',
+          businessEmail: businessData.contact_info?.email || businessData.business_email || '',
           industry: businessData.industry || '',
-          startYear: businessData.year_established || 0,
-          annualRevenue: businessData.annual_revenue || 0,
-          employeeCount: businessData.employee_count || 0,
-          isActive: businessData.is_active || false,
+          startYear: businessData.start_year || businessData.year_established || 0,
+          annualRevenue: businessData.historical_data?.[0]?.gross_receipts || businessData.annual_revenue || 0,
+          employeeCount: businessData.historical_data?.[0]?.employee_count || businessData.employee_count || 0,
+          isActive: businessData.is_active !== undefined ? businessData.is_active : true,
           ordinaryK1Income: latestYear?.ordinary_k1_income || 0,
           guaranteedK1Income: latestYear?.guaranteed_k1_income || 0,
           years: businessYears.map((year: any) => ({
