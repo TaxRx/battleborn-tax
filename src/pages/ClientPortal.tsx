@@ -74,7 +74,12 @@ interface JuratSignature {
 }
 
 const ClientPortal: React.FC = () => {
-  const { userId } = useParams<{ userId: string }>();
+  const { userId, clientId, businessId, token } = useParams<{ 
+    userId?: string; 
+    clientId?: string; 
+    businessId?: string; 
+    token?: string; 
+  }>();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -109,17 +114,24 @@ const ClientPortal: React.FC = () => {
   const [showAllocationModal, setShowAllocationModal] = useState(false);
   const [AllocationReportModalComponent, setAllocationReportModalComponent] = useState<React.ComponentType<any> | null>(null);
 
-  // Check for admin preview mode
+  // Check for admin preview mode and extract URL parameters
   const searchParams = new URLSearchParams(window.location.search);
   const isAdminPreview = searchParams.get('admin_preview') === 'true';
   const previewBusinessId = searchParams.get('business_id');
   const previewToken = searchParams.get('preview_token');
+  const urlClientId = searchParams.get('client_id');
 
+  // Determine the effective user ID (use clientId for magic link routes)
+  const effectiveUserId = userId || clientId;
+  
   console.log('🔍 [ClientPortal] Component loaded:', { 
     userId, 
+    clientId,
+    effectiveUserId,
     isAdminPreview, 
     previewBusinessId, 
-    previewToken 
+    previewToken,
+    urlClientId
   });
 
   // Get the appropriate supabase client based on mode
@@ -134,7 +146,7 @@ const ClientPortal: React.FC = () => {
 
   const validateSessionAndLoadData = async () => {
     // For admin preview mode, we don't need a valid userId - check for admin preview params instead
-    if (!userId && !(isAdminPreview && previewBusinessId && previewToken)) {
+    if (!effectiveUserId && !(isAdminPreview && previewBusinessId && previewToken)) {
       setError('Invalid portal link');
       setLoading(false);
       return;
@@ -174,7 +186,7 @@ const ClientPortal: React.FC = () => {
       }
 
       // Normal client authentication flow
-      console.log('🔐 Checking authentication for userId:', userId);
+      console.log('🔐 Checking authentication for effectiveUserId:', effectiveUserId);
       
       // Check if user is authenticated
       const { data: { session }, error: sessionError } = await portalSupabase.auth.getSession();
@@ -189,8 +201,8 @@ const ClientPortal: React.FC = () => {
         return;
       }
 
-      // Verify the authenticated user matches the requested userId
-      if (session.user.id !== userId) {
+      // Verify the authenticated user matches the requested effectiveUserId
+      if (session.user.id !== effectiveUserId) {
         throw new Error('Authenticated user does not match portal user. Please use your specific magic link.');
       }
 
@@ -218,7 +230,7 @@ const ClientPortal: React.FC = () => {
             updated_at
           )
         `)
-        .eq('client_id', session.user.id);
+        .eq('client_id', urlClientId || session.user.id);
 
       if (businessError) {
         console.error('Error fetching client business data:', businessError);
@@ -529,7 +541,7 @@ const ClientPortal: React.FC = () => {
 
   useEffect(() => {
     validateSessionAndLoadData();
-  }, [userId]);
+  }, [effectiveUserId]);
 
   useEffect(() => {
     console.log('🔄 [ClientPortal] selectedYear useEffect triggered');

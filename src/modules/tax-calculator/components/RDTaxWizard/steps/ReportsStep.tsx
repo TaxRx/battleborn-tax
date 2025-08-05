@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Download, Eye, Settings, Share2, CheckCircle, Clock, AlertCircle, User, Calendar, DollarSign, Lock, Unlock, Upload, Save, Edit, Check, X, ExternalLink, PenTool, Building2, MapPin, Mail } from 'lucide-react';
+import { FileText, Download, Eye, Settings, Share2, CheckCircle, Clock, AlertCircle, User, Calendar, DollarSign, Lock, Unlock, Upload, Save, Edit, Check, X, ExternalLink, PenTool, Building2, MapPin, Mail, Shield } from 'lucide-react';
 import { supabase } from '../../../../../lib/supabase';
 import { FilingGuideModal } from '../../FilingGuide/FilingGuideModal';
 import ResearchReportModal from '../../ResearchReport/ResearchReportModal';
@@ -107,6 +107,11 @@ const ReportsStep: React.FC<ReportsStepProps> = ({ wizardState, onComplete, onPr
   const [loadingPortalEmail, setLoadingPortalEmail] = useState<boolean>(false);
   const [loadingCredits, setLoadingCredits] = useState<boolean>(false);
 
+  // Profiles management state
+  const [profiles, setProfiles] = useState<any[]>([]);
+  const [loadingProfiles, setLoadingProfiles] = useState<boolean>(false);
+  const [profilesError, setProfilesError] = useState<string | null>(null);
+
   // EXACT same method selection as CalculationStep
   const [selectedMethod, setSelectedMethod] = useState<'standard' | 'asc'>('asc');
   const [selectedStateMethod, setSelectedStateMethod] = useState<string>('Standard');
@@ -186,6 +191,13 @@ I acknowledge that I had the opportunity to review and revise the report prior t
 
     checkAdminAndLoadData();
   }, [wizardState.selectedYear?.id]);
+
+  // Load profiles for this client's account
+  useEffect(() => {
+    if (wizardState.business?.client_id) {
+      loadProfiles();
+    }
+  }, [wizardState.business?.client_id]);
 
   // Initialize QC controls if they don't exist
   const initializeQCControls = async (yearId: string) => {
@@ -1241,6 +1253,111 @@ I acknowledge that I had the opportunity to review and revise the report prior t
     }
   };
 
+  // Profiles Management Functions
+  const loadProfiles = async () => {
+    if (!wizardState.business?.client_id) return;
+
+    try {
+      setLoadingProfiles(true);
+      setProfilesError(null);
+
+      // Get the client's account_id
+      const { data: client, error: clientError } = await supabase
+        .from('clients')
+        .select('account_id')
+        .eq('id', wizardState.business.client_id)
+        .single();
+
+      if (clientError) {
+        throw new Error(`Failed to get client account: ${clientError.message}`);
+      }
+
+      if (!client?.account_id) {
+        throw new Error('Client has no associated account');
+      }
+
+      // Get all profiles for this account
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, role')
+        .eq('account_id', client.account_id);
+
+      if (profilesError) {
+        throw new Error(`Failed to load profiles: ${profilesError.message}`);
+      }
+
+      // Check which profiles have auth users by calling admin service
+      const profilesWithAuth = await Promise.all(
+        (profilesData || []).map(async (profile) => {
+          try {
+            const { data: authCheckData, error: authError } = await supabase.functions.invoke('admin-service', {
+              body: {
+                pathname: '/admin-service/get-user-by-id',
+                userId: profile.id
+              }
+            });
+
+            return {
+              ...profile,
+              hasAuth: !authError && !!authCheckData?.user
+            };
+          } catch (error) {
+            console.warn(`Error checking auth for profile ${profile.id}:`, error);
+            return {
+              ...profile,
+              hasAuth: false
+            };
+          }
+        })
+      );
+
+      setProfiles(profilesWithAuth);
+    } catch (error) {
+      console.error('Error loading profiles:', error);
+      setProfilesError(error instanceof Error ? error.message : 'Failed to load profiles');
+    } finally {
+      setLoadingProfiles(false);
+    }
+  };
+
+  const generateProfileMagicLink = async (profileId: string) => {
+    if (!wizardState.business?.client_id) return;
+
+    try {
+      // Find the profile to get the email
+      const profile = profiles.find(p => p.id === profileId);
+      if (!profile?.email) {
+        throw new Error('Profile email not found');
+      }
+
+      // Generate magic link for the profile that redirects to client portal with business_id, client_id, and preview_token
+      // Use the profileId in URL since that's who gets authenticated by the magic link
+      const previewToken = Date.now().toString(); // Simple timestamp token for preview verification
+      const { data: magicLinkData, error: magicLinkError } = await supabase.functions.invoke('admin-service', {
+        body: {
+          pathname: '/admin-service/generate-magic-link',
+          email: profile.email,
+          redirectTo: `${window.location.origin}/client-portal/${profileId}?business_id=${wizardState.business.id}&client_id=${wizardState.business.client_id}&preview_token=${previewToken}`
+        }
+      });
+
+      if (magicLinkError) {
+        throw new Error(`Failed to generate magic link: ${magicLinkError.message}`);
+      }
+
+      // Copy to clipboard
+      await navigator.clipboard.writeText(magicLinkData.magicLink);
+      
+      // Show success message (you might want to add a toast here)
+      console.log('Magic link copied to clipboard:', magicLinkData.magicLink);
+      alert('Magic link copied to clipboard!');
+      
+    } catch (error) {
+      console.error('Error generating profile magic link:', error);
+      alert('Failed to generate magic link');
+    }
+  };
+
   // Portal Email Management Functions
   const loadPortalEmail = async () => {
     if (!wizardState.business?.id) return;
@@ -2114,6 +2231,127 @@ I acknowledge that I had the opportunity to review and revise the report prior t
                 </div>
                 <p className="text-xs text-gray-500">
                   If set, magic links will be sent to this email instead of the client's primary email address.
+                </p>
+              </div>
+            </div>
+
+            {/* Account Profiles Section */}
+            <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center">
+                  <User className="text-purple-600 mr-2" size={16} />
+                  <span className="text-sm font-medium text-gray-700">Account Profiles</span>
+                </div>
+                <span className="text-xs text-gray-500">
+                  Users who can access the client portal
+                </span>
+              </div>
+              
+              {loadingProfiles ? (
+                <div className="flex items-center justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600"></div>
+                  <span className="ml-2 text-sm text-gray-600">Loading profiles...</span>
+                </div>
+              ) : profilesError ? (
+                <div className="text-red-600 text-sm p-2 bg-red-50 rounded">
+                  {profilesError}
+                </div>
+              ) : profiles.length === 0 ? (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-start space-x-3">
+                    <div className="flex-shrink-0">
+                      <User className="w-5 h-5 text-blue-600 mt-0.5" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-medium text-blue-900 mb-1">No Profiles Found</h4>
+                      <p className="text-sm text-blue-700 mb-3">
+                        No user profiles are associated with this client account yet. Create profiles to enable client portal access.
+                      </p>
+                      <button
+                        onClick={() => {
+                          // Navigate to Client Management section
+                          window.location.href = '/admin/clients';
+                        }}
+                        className="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
+                      >
+                        <User className="w-3 h-3 mr-1" />
+                        Manage Client Profiles
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : profiles.filter(p => p.hasAuth).length === 0 ? (
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                  <div className="flex items-start space-x-3">
+                    <div className="flex-shrink-0">
+                      <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-medium text-amber-900 mb-1">No Login Accounts Available</h4>
+                      <p className="text-sm text-amber-700 mb-3">
+                        While profiles exist for this client, none have login accounts enabled. Create login accounts to enable magic link generation.
+                      </p>
+                      <button
+                        onClick={() => {
+                          // Navigate to Client Management section
+                          window.location.href = '/admin/clients';
+                        }}
+                        className="inline-flex items-center px-3 py-1.5 bg-amber-600 text-white text-xs font-medium rounded hover:bg-amber-700 transition-colors"
+                      >
+                        <Shield className="w-3 h-3 mr-1" />
+                        Enable Login Accounts
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {profiles.map((profile) => (
+                    <div key={profile.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-3">
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900 text-sm">
+                              {profile.full_name || 'Unknown Name'}
+                            </div>
+                            <div className="text-gray-600 text-xs">
+                              {profile.email}
+                            </div>
+                            <div className="flex items-center space-x-2 mt-1">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {profile.role || 'User'}
+                              </span>
+                              {profile.hasAuth ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                  Has Login
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                  No Login
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {profile.hasAuth && (
+                        <button
+                          onClick={() => generateProfileMagicLink(profile.id)}
+                          className="ml-3 px-3 py-1.5 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 transition-colors"
+                          title="Copy magic link for this user to access client portal"
+                        >
+                          Copy Magic Link
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              <div className="mt-3 pt-3 border-t border-gray-200">
+                <p className="text-xs text-gray-500">
+                  Magic links allow users to access the client portal without entering credentials. Only profiles with login accounts can receive magic links.
                 </p>
               </div>
             </div>
