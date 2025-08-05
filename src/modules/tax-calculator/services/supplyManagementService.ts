@@ -54,29 +54,27 @@ export class SupplyManagementService {
 
       if (error) throw error;
 
-      // For each supply, aggregate allocations for this business year
+      // Get supply year data for this business year
       const supplyIds = (supplies || []).map(s => s.id);
-      let allocations: any[] = [];
+      let supplyYearData: any[] = [];
       if (supplyIds.length > 0) {
-        const { data: allocs, error: allocError } = await supabase
-          .from('rd_supply_subcomponents')
-          .select('supply_id, applied_percentage, amount_applied, is_included')
+        const { data: yearData, error: yearDataError } = await supabase
+          .from('rd_supply_year_data')
+          .select('supply_id, applied_percent, calculated_qre, cost_amount, name')
           .eq('business_year_id', businessYearId)
           .in('supply_id', supplyIds);
-        if (allocError) throw allocError;
-        allocations = allocs || [];
+        if (yearDataError) throw yearDataError;
+        supplyYearData = yearData || [];
       }
 
-      // Aggregate QRE and applied % for each supply
+      // Map supplies with their year-specific data
       const suppliesWithQRE = (supplies || []).map(supply => {
-        const supplyAllocs = allocations.filter(a => a.supply_id === supply.id && a.is_included);
-        const totalQRE = supplyAllocs.reduce((sum, a) => sum + (a.amount_applied || 0), 0);
-        const totalAppliedPct = supplyAllocs.reduce((sum, a) => sum + (a.applied_percentage || 0), 0);
+        const yearData = supplyYearData.find(y => y.supply_id === supply.id);
         return {
           ...supply,
-          calculated_qre: totalQRE,
-          applied_percentage: totalAppliedPct,
-          cost_amount: supply.annual_cost
+          calculated_qre: yearData?.calculated_qre || 0,
+          applied_percentage: yearData?.applied_percent || 0,
+          cost_amount: yearData?.cost_amount || supply.annual_cost
         };
       });
       
@@ -110,26 +108,47 @@ export class SupplyManagementService {
       
       console.log('✅ Created supply:', newSupply.id);
 
-      // CRITICAL FIX: Create a subcomponent record for the specific year so it shows up in EmployeeSetupStep
+      // CRITICAL FIX: Create default allocation records so supply shows up in EmployeeSetupStep
       if (businessYearId && newSupply) {
-        console.log('🔗 Creating year-specific subcomponent record for supply:', newSupply.id, 'in year:', businessYearId);
+        console.log('🔗 Creating default allocation records for supply:', newSupply.id, 'in year:', businessYearId);
         
-        const { error: subcomponentError } = await supabase
-          .from('rd_supply_subcomponents')
-          .insert({
-            supply_id: newSupply.id,
-            business_year_id: businessYearId,
-            applied_percentage: 0,
-            amount_applied: 0,
-            is_included: true,
-            subcomponent_id: null // Will be set when user allocates to research activities
-          });
+        // First, get available research subcomponents for this business year
+        // Follow the relationship: business_year -> selected_subcomponents -> research_subcomponents
+        const { data: selectedSubcomponents, error: subcompError } = await supabase
+          .from('rd_selected_subcomponents')
+          .select(`
+            subcomponent_id,
+            subcomponent:rd_research_subcomponents(id, name)
+          `)
+          .eq('business_year_id', businessYearId)
+          .limit(1); // Just take the first available subcomponent as default
+        
+        if (subcompError) {
+          console.error('❌ Error fetching subcomponents:', subcompError);
+        } else if (selectedSubcomponents && selectedSubcomponents.length > 0) {
+          // Create a default allocation record linking the supply to the first subcomponent
+          const selectedSubcomp = selectedSubcomponents[0];
+          const defaultSubcomponent = selectedSubcomp.subcomponent;
+          const supplyAmount = parseFloat(supplyData.amount.replace(/[^0-9.]/g, ''));
+          
+          const { error: allocationError } = await supabase
+            .from('rd_supply_subcomponents')
+            .upsert({
+              supply_id: newSupply.id,
+              subcomponent_id: defaultSubcomponent.id,
+              business_year_id: businessYearId,
+              applied_percentage: 100, // Default to 100% applied
+              amount_applied: supplyAmount,
+              is_included: true
+            });
 
-        if (subcomponentError) {
-          console.error('❌ Error creating subcomponent record:', subcomponentError);
-          // Don't throw here - supply was created successfully, subcomponent can be added later
+          if (allocationError) {
+            console.error('❌ Error creating supply allocation record:', allocationError);
+          } else {
+            console.log('✅ Created default allocation record for supply to subcomponent:', defaultSubcomponent.name);
+          }
         } else {
-          console.log('✅ Created year-specific subcomponent record for supply');
+          console.log('⚠️ No research subcomponents found - supply will need manual allocation');
         }
       } else {
         console.log('⚠️ No businessYearId provided - supply will only appear when explicitly allocated');

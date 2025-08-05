@@ -30,22 +30,17 @@ export const paConfig = {
   validationRules: [
     {
       type: "application_required",
-      value: "myPATH system",
+      value: "myPATH system required",
       message: "Must apply through PA Department of Revenue's myPATH online system"
     },
     {
       type: "application_window",
       value: "August 1 - December 1",
-      message: "Applications must be submitted between August 1 and December 1 annually"
-    },
-    {
-      type: "entity_type_eligibility",
-      value: "Businesses and individuals",
-      message: "Available to businesses and individuals subject to PA Corporate Net Income Tax or Personal Income Tax"
+      message: "Applications accepted August 1 - December 1 annually"
     },
     {
       type: "minimum_history",
-      value: "2 years",
+      value: "2 years required",
       message: "Must have at least 2 years of R&D expenditure history"
     },
     {
@@ -54,37 +49,25 @@ export const paConfig = {
       message: "Research must be conducted within Pennsylvania"
     },
     {
-      type: "project_description",
-      value: "4-part test required",
-      message: "Must provide detailed project descriptions meeting 4-part qualification test"
-    },
-    {
-      type: "tax_clearance",
-      value: "Compliance required",
-      message: "Must be compliant with all PA tax reporting and payment requirements"
-    },
-    {
-      type: "transferable",
-      value: "Credits can be sold",
-      message: "R&D tax credits may be sold to other taxpayers (subject to approval)"
+      type: "entity_type_eligibility",
+      value: "All entities",
+      message: "Available to businesses and individuals subject to PA taxes"
     }
   ],
+  // Entity type requirements - application-based
+  entityRequirements: {
+    allowedEntityTypes: ["Corporation", "S-Corp", "Partnership", "LLC", "Individual"],
+    restrictedEntityTypes: [],
+    requiresApplication: true,
+    requiresPreapproval: false,
+    defaultEnabled: false,
+    applicationWindow: "August 1 - December 1"
+  },
   notes: [
-    "Pennsylvania R&D Credit is APPLICATION-BASED, not automatically calculated:",
-    "• Application window: August 1 - December 1 annually",
-    "• Apply through PA Department of Revenue's myPATH online system",
-    "• Must have at least 2 years of R&D expenditure history",
-    "• Requires detailed project descriptions meeting 4-part test:",
-    "  - Elimination of uncertainty",
-    "  - Process of experimentation", 
-    "  - Technological in nature",
-    "  - Qualified purpose information",
-    "• Must provide Federal Form 6765 information (if filed)",
-    "• Research must be conducted within Pennsylvania",
-    "• Tax clearance required - must be compliant with all PA tax obligations",
-    "• Credits are awarded at variable amounts (not fixed percentage)",
-    "• Awarded credits can be sold/transferred (subject to approval)",
-    "• Credits claimed on PA Schedule OC (Other Credits), Line 2",
-    "• Created by Act 7 of 1997 under Article XVII-B of Tax Reform Code"
+    "APPLICATION-BASED credit (not automatically calculated) - apply through myPATH online system",
+    "Application window: August 1 - December 1 annually",
+    "Requires 2+ years R&D history and detailed project descriptions meeting 4-part qualification test",
+    "Research must be conducted in Pennsylvania; tax clearance required",
+    "Credits awarded at variable amounts and can be sold/transferred (subject to approval)"
   ]
 }; 

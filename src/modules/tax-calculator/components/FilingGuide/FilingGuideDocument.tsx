@@ -115,113 +115,163 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
   const [showDebug, setShowDebug] = React.useState(false);
 
   // Extract business state from business data (same logic as CalculationStep and IntegratedStateCredits)
-  const businessState = businessData?.domicile_state || businessData?.contact_info?.state || businessData?.state || 'CA';
+  // Enhanced logic to handle different data structures
+  const businessState = businessData?.domicile_state || 
+                       businessData?.contact_info?.state || 
+                       businessData?.state ||
+                       businessData?.business?.domicile_state ||
+                       businessData?.business?.contact_info?.state ||
+                       businessData?.business?.state ||
+                       'CA';
+  
+  // Reduced logging to prevent connection issues
+  console.log('📍 [Filing Guide] Business state:', businessState);
   
   const [state, setState] = useState(businessState);
-  const [method, setMethod] = useState(() => {
-    // Determine initial method based on selectedMethod or federal calculation defaults
-    if (selectedMethod === 'asc') return 'alternative';
-    if (selectedMethod === 'standard') return 'standard';
-    // Default to 'standard' if selectedMethod is undefined
-    return 'standard';
-  });
+  const [method, setMethod] = useState('standard'); // Always start with standard
   const [stateProFormaData, setStateProFormaData] = useState<Record<string, number>>({});
   const [isLoadingData, setIsLoadingData] = useState(false);
 
-  // Update state when business data changes
+  // Update state when business data changes - enhanced logic
   useEffect(() => {
-    const newBusinessState = businessData?.domicile_state || businessData?.contact_info?.state || businessData?.state || 'CA';
+    const newBusinessState = businessData?.domicile_state || 
+                             businessData?.contact_info?.state || 
+                             businessData?.state ||
+                             businessData?.business?.domicile_state ||
+                             businessData?.business?.contact_info?.state ||
+                             businessData?.business?.state ||
+                             'CA';
     if (newBusinessState !== state) {
       setState(newBusinessState);
-      console.log('[FilingGuideDocument] Updated state to business address state:', newBusinessState);
+      // Reduced logging to prevent connection issues
     }
   }, [businessData, state]);
 
-  // Sync state method with federal selectedMethod
+  const availableStates = getAvailableStates();
+  const currentStateConfig = getStateConfig(state);
+  
+  // Sync state method with federal selectedMethod, with proper fallback
   useEffect(() => {
-    if (selectedMethod) {
-      const stateMethod = selectedMethod === 'asc' ? 'alternative' : 'standard';
+    if (selectedMethod && currentStateConfig) {
+      let stateMethod = selectedMethod === 'asc' ? 'alternative' : 'standard';
+      
+      // CRITICAL: If state doesn't support alternative method, use standard
+      if (stateMethod === 'alternative' && !currentStateConfig.hasAlternativeMethod) {
+        stateMethod = 'standard';
+        console.log('[FilingGuideDocument] State', state, 'does not support alternative method, using standard');
+      }
+      
       if (stateMethod !== method) {
         setMethod(stateMethod);
         console.log('[FilingGuideDocument] Synced state method with federal method:', selectedMethod, '->', stateMethod);
       }
     }
-  }, [selectedMethod, method]);
-
-  const availableStates = getAvailableStates();
-  const currentStateConfig = getStateConfig(state);
+  }, [selectedMethod, currentStateConfig, state]);
+  
+  // Update data when method changes
+  useEffect(() => {
+    // This will trigger the data loading useEffect when method changes
+    console.log('[FilingGuideDocument] Method changed to:', method);
+  }, [method]);
+  
   // Get lines from the appropriate form method
   const availableLines = currentStateConfig?.forms?.[method]?.lines || [];
   
-  // Debug logging for state pro forma
+  // Enhanced debug logging
   console.log('[FilingGuideDocument] State Pro Forma Debug:', {
     state,
     method,
     selectedMethod,
     currentStateConfig: !!currentStateConfig,
+    hasAlternativeMethod: currentStateConfig?.hasAlternativeMethod,
     availableLines: availableLines.length,
-    stateProFormaData,
+    stateProFormaData: Object.keys(stateProFormaData).length,
     isLoadingData
   });
 
   // Load existing data when state or method changes
   useEffect(() => {
+    let isMounted = true;
+    
     const loadExistingData = async () => {
-      if (!businessData?.client_id || !selectedYear?.id) return;
+      if (!businessData?.client_id || !selectedYear?.id || !isMounted) {
+        return;
+      }
       
       setIsLoadingData(true);
       try {
+        // Try to load existing saved data first
         const existingData = await loadStateProFormaData(
           selectedYear.id,
           state,
           method as 'standard' | 'alternative'
         );
         
-        if (existingData) {
-          setStateProFormaData(existingData);
+        if (existingData && Object.keys(existingData).length > 0) {
+          if (isMounted) setStateProFormaData(existingData);
         } else {
-          // Load base data using the new StateCreditDataService (same as federal Section G)
-          console.log('📊 [State Credits] Loading base data using StateCreditDataService...');
-          const baseData = await StateCreditDataService.getAggregatedQREData(selectedYear.id);
+          // Check if we have available lines to display
+          if (!availableLines.length) {
+            console.log('⚠️ Filing Guide - No available lines for state:', state, 'method:', method);
+            if (isMounted) setStateProFormaData({});
+            return;
+          }
           
-          // Convert to the format expected by the pro forma
+          // Load base data using StateCreditDataService with timeout
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Request timeout')), 10000)
+          );
+          
+          const baseData = await Promise.race([
+            StateCreditDataService.getAggregatedQREData(selectedYear.id),
+            timeoutPromise
+          ]);
+          
+          if (!baseData || (baseData.wages === 0 && baseData.supplies === 0)) {
+            if (isMounted) setStateProFormaData({});
+            return;
+          }
+          
+          // Convert to the format expected by the pro forma WITH pre-calculated fields (like IntegratedStateCredits)
           const formattedData = {
-            wages: baseData.wages,
-            supplies: baseData.supplies,
-            contractResearch: baseData.contractResearch,
-            computerLeases: baseData.computerLeases,
-            avgGrossReceipts: baseData.avgGrossReceipts,
-            businessEntityType: baseData.businessEntityType, // Include business entity type for 280C
+            wages: baseData.wages || 0,
+            supplies: baseData.supplies || 0,
+            contractResearch: baseData.contractResearch || 0,
+            computerLeases: baseData.computerLeases || 0,
+            avgGrossReceipts: baseData.avgGrossReceipts || 0,
+            businessEntityType: baseData.businessEntityType || 'Corporation',
           };
           
-          console.log('📊 [State Credits] Base data loaded:', formattedData);
-          setStateProFormaData(formattedData);
+          // CRITICAL: Pre-calculate derived fields for editable lines (same as IntegratedStateCredits)
+          console.log(`🔧 Filing Guide - Processing ${availableLines.length} lines for field calculations`);
+          availableLines.forEach(line => {
+            if (line.editable && line.calc) {
+              const calculatedValue = line.calc(formattedData);
+              formattedData[line.field] = calculatedValue;
+              console.log(`🔧 Filing Guide - Pre-calculated ${line.field}: ${calculatedValue} (from line: ${line.line}, label: ${line.label})`);
+            } else if (line.editable) {
+              console.log(`🔧 Filing Guide - Editable field ${line.field} has no calc function (line: ${line.line})`);
+            }
+          });
+          
+          console.log('✅ Filing Guide - Form populated with base QRE data and calculated fields:', formattedData);
+          if (isMounted) setStateProFormaData(formattedData);
         }
       } catch (error) {
-        console.error('Error loading state pro forma data:', error);
-        // Fallback to base data
-        try {
-          console.log('📊 [State Credits] Fallback: Loading base data...');
-          const baseData = await StateCreditDataService.getAggregatedQREData(selectedYear.id);
-          const formattedData = {
-            wages: baseData.wages,
-            supplies: baseData.supplies,
-            contractResearch: baseData.contractResearch,
-            computerLeases: baseData.computerLeases,
-            avgGrossReceipts: baseData.avgGrossReceipts,
-            businessEntityType: baseData.businessEntityType, // Include business entity type for 280C
-          };
-          setStateProFormaData(formattedData);
-        } catch (fallbackError) {
-          console.error('Error loading base data:', fallbackError);
-        }
+        console.error('📊 [State Credits] Error loading state pro forma data:', error);
+        // Simple fallback - just set empty state instead of making more API calls
+        if (isMounted) setStateProFormaData({});
       } finally {
-        setIsLoadingData(false);
+        if (isMounted) setIsLoadingData(false);
       }
     };
 
     loadExistingData();
-  }, [state, method, businessData?.client_id, selectedYear?.id, calculations?.currentYearQRE]);
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [state, method, businessData?.client_id, selectedYear?.id, calculations?.currentYearQRE, availableLines]);
 
   const handleSaveStateProForma = async (data: Record<string, number>, businessYearId: string) => {
     await saveStateProFormaData(businessYearId, state, method as 'standard' | 'alternative', data);

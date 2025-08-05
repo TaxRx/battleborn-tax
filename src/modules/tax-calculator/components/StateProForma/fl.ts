@@ -65,55 +65,46 @@ export const flConfig = {
   formReference: "FL Section 220.196, F.S. & Rule 12C-1.0196, F.A.C.",
   validationRules: [
     {
-      type: "max_credit",
-      value: 50,
-      message: "Credit limited to 50% of Florida corporate income tax liability (after other credits)"
-    },
-    {
-      type: "carryforward_limit",
-      value: 5,
-      message: "Unused credits may be carried forward for up to 5 years"
-    },
-    {
       type: "entity_type_restriction",
-      value: "Corporations only",
-      message: "Available only to C corporations - partnerships and LLCs not eligible"
+      value: "C corporations only",
+      message: "Available only to C corporations in qualified target industries"
     },
     {
-      type: "industry_restriction",
-      value: "Qualified target industries only",
-      message: "Only available to businesses in Manufacturing, Life Sciences, IT, Aviation/Aerospace, Homeland Security/Defense, Cloud IT, Marine Sciences, Materials Science, Nanotechnology"
+      type: "certification_required",
+      value: "Department of Commerce certification required",
+      message: "Must obtain certification as qualified target industry business before applying"
+    },
+    {
+      type: "application_window",
+      value: "March 20-26 annually",
+      message: "Application window is only 7 days per year (March 20-26)"
     },
     {
       type: "annual_cap",
       value: 9000000,
-      message: "Statewide annual cap of $9 million - credits allocated on prorated basis if demand exceeds cap"
+      message: "Statewide cap of $9 million - credits often prorated due to high demand"
     },
     {
-      type: "application_window",
-      value: "March 20-26",
-      message: "Must apply online during 7-day window (March 20-26) for prior year expenses"
-    },
-    {
-      type: "certification_required",
-      value: "Department of Commerce certification",
-      message: "Must have valid certification letter from FL Department of Commerce as qualified target industry business"
-    },
-    {
-      type: "federal_requirement",
-      value: "Federal credit required",
-      message: "Must claim and be allowed federal R&D credit under IRC Section 41 for same expenses"
+      type: "max_credit",
+      value: 50,
+      message: "Limited to 50% of Florida corporate income tax liability"
     }
   ],
+  // Entity type requirements - highly restrictive
+  entityRequirements: {
+    allowedEntityTypes: ["Corporation"],
+    restrictedEntityTypes: ["Partnership", "LLC", "S-Corp", "Individual"],
+    requiresApplication: true,
+    requiresPreapproval: true,
+    defaultEnabled: false,
+    applicationWindow: "March 20-26",
+    certificationRequired: "FL Department of Commerce"
+  },
   notes: [
-    "Florida's R&D credit is highly restrictive and competitive:",
-    "• Only available to qualified target industry businesses in specific sectors",
-    "• Must obtain certification from FL Department of Commerce before applying",
-    "• Application window is only 7 days per year (March 20-26)",
-    "• $9 million statewide cap means credits are often prorated",
-    "• Must first qualify for federal R&D credit under IRC Section 41",
-    "• Research must be conducted within Florida",
-    "• Credit equals 10% of Florida QRE above 4-year base amount",
-    "• Limited to 50% of corporate income tax liability after other credits"
+    "Highly restrictive: C corporations only in qualified target industries (Manufacturing, Life Sciences, IT, etc.)",
+    "Must obtain FL Department of Commerce certification BEFORE applying",
+    "Application window: March 20-26 annually (7 days only)",
+    "Statewide cap of $9 million - credits often prorated due to high demand",
+    "Credit equals 10% of Florida QRE above 4-year base amount, limited to 50% of tax liability"
   ]
 }; 

@@ -400,68 +400,39 @@ export const utConfig = {
       message: "Incremental and basic research credits may be carried forward for up to 14 years"
     },
     {
-      type: "other",
-      value: "No carryforward for total credit",
-      message: "The 7.5% total credit cannot be carried forward to future years"
-    },
-    {
-      type: "entity_type_restriction",
-      value: "C-Corps, S-Corps, LLCs, Partnerships",
-      message: "Available to corporations, LLCs, and partnerships with Utah source income"
+      type: "entity_type_restriction", 
+      value: "All entities",
+      message: "Available to all entities with Utah source income"
     },
     {
       type: "location_requirement",
-      value: "Utah",
-      message: "Research activities must be conducted in Utah to qualify for the credits"
+      value: "Utah research required",
+      message: "Research activities must be conducted in Utah"
     },
     {
       type: "federal_compliance",
       value: "IRC Section 41",
-      message: "Qualified research expenses must meet the same criteria as the federal credit under IRC Section 41"
-    },
-    {
-      type: "fixed_base_percentage",
-      value: "3%",
-      message: "Fixed-base percentage is automatically set to 3% for most taxpayers"
-    },
-    {
-      type: "gross_receipts_calculation",
-      value: "4-year average",
-      message: "Base amount calculated using average Utah gross receipts for 4 preceding taxable years"
+      message: "Must meet federal R&D credit requirements under IRC Section 41"
     },
     {
       type: "method_election",
-      value: "Regular or ASC",
-      message: "Taxpayers may elect either the Regular Credit method or Alternative Simplified Credit (ASC) method"
-    },
-    {
-      type: "filing_requirement",
-      value: "Form TC-20 and TC-40A",
-      message: "Credit claimed on Form TC-20 and reported on Form TC-40A, Part 4, using code 12"
-    },
-    {
-      type: "deadline",
-      value: "April 15",
-      message: "Must be filed by April 15th (or 15th day of 4th month after fiscal year end)"
+      value: "Regular or ASC", 
+      message: "Choose Regular Credit or Alternative Simplified Credit (ASC) method"
     }
   ],
+  // Entity type requirements
+  entityRequirements: {
+    allowedEntityTypes: ["Corporation", "S-Corp", "Partnership", "LLC", "Individual"],
+    restrictedEntityTypes: [],
+    requiresApplication: false,
+    requiresPreapproval: false,
+    defaultEnabled: true
+  },
   notes: [
-    "Utah offers THREE separate R&D credits that can be claimed simultaneously using either the Regular or ASC method:",
-    "REGULAR METHOD:",
-    "• Incremental Credit: 5% of QRE above base amount (3% × 4-year avg gross receipts) - 14-year carryforward",
-    "• Basic Research Credit: 5% of payments to qualified organizations above base - 14-year carryforward", 
-    "• Total Credit: 7.5% of ALL qualified research expenses - NO carryforward",
-    "ALTERNATIVE SIMPLIFIED CREDIT (ASC) METHOD:",
-    "• ASC Incremental Credit: 14% of QRE above 3-year average - 14-year carryforward",
-    "• Basic Research Credit: 5% of payments above base - 14-year carryforward",
-    "• Total Credit: 7.5% of ALL qualified research expenses - NO carryforward",
-    "KEY REQUIREMENTS:",
-    "• Research must be conducted in Utah to qualify",
-    "• Fixed-base percentage is automatically set to 3% for most taxpayers",
-    "• Base amount uses 4-year average of Utah gross receipts (Regular method)",
-    "• ASC method uses 3-year average of Utah QRE instead of base amount calculation",
-    "• Credits are non-refundable and offset Utah income tax liability only",
-    "• No separate form required - keep all supporting documents with records",
-    "• Must file Form TC-20 and report on Form TC-40A using code 12"
+    "Utah offers THREE R&D credits that can be claimed simultaneously: Incremental (5%), Basic Research (5%), and Total Credit (7.5%)",
+    "Choose either Regular method (base amount calculation) or ASC method (simpler 3-year average)",
+    "Incremental and Basic Research credits have 14-year carryforward; Total Credit has NO carryforward",
+    "Research must be conducted in Utah; credits offset Utah income tax liability only",
+    "File Form TC-20 and report on Form TC-40A using code 12"
   ]
 }; 
