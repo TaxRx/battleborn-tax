@@ -1,67 +1,40 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { 
-  BellIcon, 
-  ChartBarIcon, 
   DocumentTextIcon, 
   UserGroupIcon, 
   CogIcon,
   ExclamationTriangleIcon,
   CheckCircleIcon,
   ClockIcon,
-  ArrowTrendingUpIcon,
-  CalendarDaysIcon,
   EyeIcon,
-  PlusIcon,
   Bars3Icon,
-  XMarkIcon
+  XMarkIcon,
+  ArrowDownTrayIcon,
+  BuildingOfficeIcon
 } from '@heroicons/react/24/outline';
 import { authService, AuthUser, ClientUser } from '../services/authService';
 import { supabase } from '../lib/supabase';
 import { toast } from 'react-hot-toast';
 import ClientProfileModal from './ClientProfileModal';
 import UserManagementModal from './UserManagementModal';
+import { CentralizedClientService, CentralizedBusiness } from '../services/centralizedClientService';
+import { RDReportService, RDReport } from '../modules/tax-calculator/services/rdReportService';
 
-interface Activity {
-  id: string;
-  activity_type: string;
-  title: string;
-  description: string;
-  priority: 'low' | 'medium' | 'high' | 'urgent';
-  is_read: boolean;
-  created_at: string;
-  user_name?: string;
-}
 
-interface EngagementStatus {
-  status: 'active' | 'inactive' | 'pending' | 'completed' | 'on_hold' | 'cancelled';
-  last_activity_at: string;
-  last_login_at: string;
-  total_activities: number;
-  pending_actions: number;
-  completion_percentage: number;
-  next_action_due: string;
-}
-
-interface DashboardMetrics {
-  total_proposals: number;
-  active_proposals: number;
-  total_savings: number;
-  recent_activities: number;
-  completion_rate: number;
-  calculated_at: string;
+interface BusinessWithReports extends CentralizedBusiness {
+  rd_reports: RDReport[];
+  has_rd_data: boolean;
 }
 
 export default function EnhancedClientDashboard() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  const [activities, setActivities] = useState<Activity[]>([]);
-  const [engagementStatus, setEngagementStatus] = useState<EngagementStatus | null>(null);
-  const [dashboardMetrics, setDashboardMetrics] = useState<DashboardMetrics | null>(null);
+  const [businesses, setBusinesses] = useState<BusinessWithReports[]>([]);
+  const [businessesLoading, setBusinessesLoading] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showUserManagementModal, setShowUserManagementModal] = useState(false);
-  const [metricsLoading, setMetricsLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -107,51 +80,147 @@ export default function EnhancedClientDashboard() {
 
   useEffect(() => {
     if (selectedClient) {
-      loadClientData();
+      loadBusinessesWithReports();
     }
   }, [selectedClient]);
 
-  const loadClientData = async () => {
+  const loadBusinessesWithReports = async () => {
     if (!selectedClient) return;
 
     try {
-      setMetricsLoading(true);
+      setBusinessesLoading(true);
       
-      // Load recent activities
-      const { data: activitiesData, error: activitiesError } = await supabase
-        .from('recent_client_activities')
-        .select('*')
-        .eq('client_id', selectedClient.id)
-        .order('created_at', { ascending: false })
-        .limit(10);
+      // Load businesses for the client
+      const clientBusinesses = await CentralizedClientService.getClientBusinesses(selectedClient.id);
+      
+      // For each business, load R&D reports
+      const businessesWithReports: BusinessWithReports[] = await Promise.all(
+        clientBusinesses.map(async (business) => {
+          try {
+            // Check if business has R&D data by looking for rd_businesses entry
+            const { data: rdBusiness, error: rdError } = await supabase
+              .from('rd_businesses')
+              .select('id, business_years(id)')
+              .eq('client_id', selectedClient.id)
+              .eq('name', business.business_name)
+              .single();
 
-      if (activitiesError) throw activitiesError;
-      setActivities(activitiesData || []);
+            let rd_reports: RDReport[] = [];
+            let has_rd_data = false;
 
-      // Load engagement status
-      const { data: engagementData, error: engagementError } = await supabase
-        .from('client_engagement_status')
-        .select('*')
-        .eq('client_id', selectedClient.id)
-        .single();
+            if (rdBusiness && !rdError) {
+              has_rd_data = true;
+              
+              // Get business years and their reports
+              if (rdBusiness.business_years && rdBusiness.business_years.length > 0) {
+                for (const businessYear of rdBusiness.business_years) {
+                  try {
+                    const report = await RDReportService.getReport(businessYear.id, 'RESEARCH_SUMMARY');
+                    if (report) {
+                      rd_reports.push(report);
+                    }
+                  } catch (reportError) {
+                    console.log('No report found for business year:', businessYear.id);
+                  }
+                }
+              }
+            }
 
-      if (engagementError && engagementError.code !== 'PGRST116') {
-        throw engagementError;
-      }
-      setEngagementStatus(engagementData);
+            return {
+              ...business,
+              rd_reports,
+              has_rd_data
+            };
+          } catch (error) {
+            console.error('Error loading R&D data for business:', business.business_name, error);
+            return {
+              ...business,
+              rd_reports: [],
+              has_rd_data: false
+            };
+          }
+        })
+      );
 
-      // Load dashboard metrics
-      const { data: metricsData, error: metricsError } = await supabase
-        .rpc('calculate_dashboard_metrics', { p_client_id: selectedClient.id });
-
-      if (metricsError) throw metricsError;
-      setDashboardMetrics(metricsData);
+      setBusinesses(businessesWithReports);
 
     } catch (error) {
-      console.error('Error loading client data:', error);
-      toast.error('Failed to load dashboard data');
+      console.error('Error loading businesses with reports:', error);
+      toast.error('Failed to load R&D reports');
     } finally {
-      setMetricsLoading(false);
+      setBusinessesLoading(false);
+    }
+  };
+
+  const handleViewReport = (report: RDReport, businessName: string) => {
+    // Open report in a new window/tab
+    const reportContent = report.generated_html || report.generated_text;
+    if (reportContent) {
+      const newWindow = window.open('', '_blank');
+      if (newWindow) {
+        newWindow.document.write(`
+          <html>
+            <head>
+              <title>${businessName} - R&D Tax Credit Report</title>
+              <style>
+                body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+                h1 { color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+                .header { background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+              </style>
+            </head>
+            <body>
+              <div class="header">
+                <h1>${businessName} - R&D Tax Credit Report</h1>
+                <p><strong>Generated:</strong> ${new Date(report.created_at).toLocaleDateString()}</p>
+                <p><strong>Report Type:</strong> ${report.type}</p>
+              </div>
+              ${reportContent}
+            </body>
+          </html>
+        `);
+        newWindow.document.close();
+      }
+    } else {
+      toast.error('Report content not available');
+    }
+  };
+
+  const handleDownloadReport = (report: RDReport, businessName: string) => {
+    const reportContent = report.generated_html || report.generated_text;
+    if (reportContent) {
+      const htmlContent = `
+        <html>
+          <head>
+            <title>${businessName} - R&D Tax Credit Report</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+              h1 { color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+              .header { background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>${businessName} - R&D Tax Credit Report</h1>
+              <p><strong>Generated:</strong> ${new Date(report.created_at).toLocaleDateString()}</p>
+              <p><strong>Report Type:</strong> ${report.type}</p>
+            </div>
+            ${reportContent}
+          </body>
+        </html>
+      `;
+      
+      const blob = new Blob([htmlContent], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${businessName.replace(/[^a-z0-9]/gi, '_')}_RD_Report.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Report downloaded successfully');
+    } else {
+      toast.error('Report content not available for download');
     }
   };
 
@@ -177,24 +246,6 @@ export default function EnhancedClientDashboard() {
     }
   };
 
-  const markActivityAsRead = async (activityId: string) => {
-    try {
-      const { error } = await supabase
-        .from('client_activities')
-        .update({ is_read: true })
-        .eq('id', activityId);
-
-      if (error) throw error;
-      
-      // Update local state
-      setActivities(activities.map(activity => 
-        activity.id === activityId ? { ...activity, is_read: true } : activity
-      ));
-    } catch (error) {
-      console.error('Error marking activity as read:', error);
-    }
-  };
-
   const handleSignOut = async () => {
     try {
       await authService.signOut();
@@ -202,59 +253,6 @@ export default function EnhancedClientDashboard() {
     } catch (error) {
       console.error('Error signing out:', error);
     }
-  };
-
-  // Removed role helper functions since we no longer use client_users with roles
-
-  const getActivityIcon = (type: string) => {
-    switch (type) {
-      case 'login': return <UserGroupIcon className="w-5 h-5" />;
-      case 'document_upload': return <DocumentTextIcon className="w-5 h-5" />;
-      case 'proposal_view': return <EyeIcon className="w-5 h-5" />;
-      case 'profile_update': return <CogIcon className="w-5 h-5" />;
-      case 'calculation_run': return <ChartBarIcon className="w-5 h-5" />;
-      default: return <BellIcon className="w-5 h-5" />;
-    }
-  };
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'urgent': return 'bg-red-100 text-red-800 border-red-200';
-      case 'high': return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'low': return 'bg-green-100 text-green-800 border-green-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  const getEngagementStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return 'bg-green-100 text-green-800';
-      case 'inactive': return 'bg-gray-100 text-gray-800';
-      case 'pending': return 'bg-yellow-100 text-yellow-800';
-      case 'completed': return 'bg-blue-100 text-blue-800';
-      case 'on_hold': return 'bg-orange-100 text-orange-800';
-      case 'cancelled': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
   };
 
   if (loading) {
@@ -494,360 +492,135 @@ export default function EnhancedClientDashboard() {
                   </div>
                 </div>
 
-                {/* Enhanced Dashboard Metrics - Mobile Optimized */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-                  {/* Total Proposals Card */}
-                  <motion.div 
-                    whileHover={{ scale: 1.02, y: -2 }}
-                    whileTap={{ scale: 0.98 }}
-                    className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl shadow-sm p-4 sm:p-6 border border-blue-200 hover:shadow-lg transition-all duration-300 touch-manipulation"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center min-w-0 flex-1">
-                        <div className="p-2 sm:p-3 bg-blue-500 rounded-lg shadow-lg flex-shrink-0">
-                          <DocumentTextIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
-                        </div>
-                        <div className="ml-3 sm:ml-4 min-w-0 flex-1">
-                          <p className="text-xs sm:text-sm font-medium text-blue-700">Total Proposals</p>
-                          <div className="flex items-center space-x-1 sm:space-x-2">
-                            <p className="text-xl sm:text-2xl font-bold text-blue-900">
-                              {metricsLoading ? '...' : dashboardMetrics?.total_proposals || 0}
-                            </p>
-                            <div className="flex items-center text-xs text-green-600 bg-green-100 px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full">
-                              <ArrowTrendingUpIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />
-                              +12%
-                            </div>
-                          </div>
-                          <p className="text-xs text-blue-600 mt-1">vs last month</p>
-                        </div>
+                {/* R&D Reports Section */}
+                <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg">
+                        <DocumentTextIcon className="w-6 h-6 text-white" />
+                      </div>
+                      <div>
+                        <h2 className="text-lg sm:text-xl font-semibold text-gray-900">R&D Tax Credit Reports</h2>
+                        <p className="text-sm text-gray-600">View and download your research and development tax credit reports</p>
                       </div>
                     </div>
-                    
-                    {/* Mini trend chart */}
-                    <div className="mt-3 sm:mt-4">
-                      <div className="flex items-end space-x-1 h-6 sm:h-8">
-                        {[65, 70, 68, 75, 82, 78, 85].map((height, index) => (
-                          <div
-                            key={index}
-                            className="bg-blue-400 rounded-sm opacity-70"
-                            style={{ height: `${height}%`, width: isMobile ? '8px' : '12px' }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </motion.div>
-
-                  {/* Active Proposals Card */}
-                  <motion.div 
-                    whileHover={{ scale: 1.02, y: -2 }}
-                    whileTap={{ scale: 0.98 }}
-                    className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-sm p-4 sm:p-6 border border-green-200 hover:shadow-lg transition-all duration-300 touch-manipulation"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center min-w-0 flex-1">
-                        <div className="p-2 sm:p-3 bg-green-500 rounded-lg shadow-lg flex-shrink-0">
-                          <CheckCircleIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
-                        </div>
-                        <div className="ml-3 sm:ml-4 min-w-0 flex-1">
-                          <p className="text-xs sm:text-sm font-medium text-green-700">Active Proposals</p>
-                          <div className="flex items-center space-x-1 sm:space-x-2">
-                            <p className="text-xl sm:text-2xl font-bold text-green-900">
-                              {metricsLoading ? '...' : dashboardMetrics?.active_proposals || 0}
-                            </p>
-                            <div className="flex items-center text-xs text-green-600 bg-green-100 px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full">
-                              <ArrowTrendingUpIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />
-                              +8%
-                            </div>
-                          </div>
-                          <p className="text-xs text-green-600 mt-1">vs last month</p>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Progress indicator */}
-                    <div className="mt-3 sm:mt-4">
-                      <div className="flex justify-between text-xs text-green-600 mb-1">
-                        <span>Progress</span>
-                        <span>{Math.round(((dashboardMetrics?.active_proposals || 0) / Math.max(dashboardMetrics?.total_proposals || 1, 1)) * 100)}%</span>
-                      </div>
-                      <div className="w-full bg-green-200 rounded-full h-2">
-                        <div 
-                          className="bg-green-500 h-2 rounded-full transition-all duration-500"
-                          style={{ width: `${Math.round(((dashboardMetrics?.active_proposals || 0) / Math.max(dashboardMetrics?.total_proposals || 1, 1)) * 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                  </motion.div>
-
-                  {/* Total Savings Card */}
-                  <motion.div 
-                    whileHover={{ scale: 1.02, y: -2 }}
-                    whileTap={{ scale: 0.98 }}
-                    className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-xl shadow-sm p-4 sm:p-6 border border-yellow-200 hover:shadow-lg transition-all duration-300 touch-manipulation"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center min-w-0 flex-1">
-                        <div className="p-2 sm:p-3 bg-yellow-500 rounded-lg shadow-lg flex-shrink-0">
-                          <ArrowTrendingUpIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
-                        </div>
-                        <div className="ml-3 sm:ml-4 min-w-0 flex-1">
-                          <p className="text-xs sm:text-sm font-medium text-yellow-700">Total Savings</p>
-                          <div className="flex items-center space-x-1 sm:space-x-2">
-                            <p className="text-lg sm:text-2xl font-bold text-yellow-900 truncate">
-                              {metricsLoading ? '...' : formatCurrency(dashboardMetrics?.total_savings || 0)}
-                            </p>
-                            <div className="flex items-center text-xs text-green-600 bg-green-100 px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full flex-shrink-0">
-                              <ArrowTrendingUpIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />
-                              +24%
-                            </div>
-                          </div>
-                          <p className="text-xs text-yellow-600 mt-1">vs last month</p>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Savings breakdown */}
-                    <div className="mt-3 sm:mt-4">
-                      <div className="flex justify-between text-xs text-yellow-600 mb-2">
-                        <span>Tax Credits</span>
-                        <span>Federal</span>
-                        <span>State</span>
-                      </div>
-                      <div className="flex space-x-1">
-                        <div className="flex-1 bg-yellow-500 h-2 rounded-l-full" />
-                        <div className="flex-1 bg-yellow-400 h-2" />
-                        <div className="flex-1 bg-yellow-300 h-2 rounded-r-full" />
-                      </div>
-                    </div>
-                  </motion.div>
-
-                  {/* Completion Rate Card */}
-                  <motion.div 
-                    whileHover={{ scale: 1.02, y: -2 }}
-                    whileTap={{ scale: 0.98 }}
-                    className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl shadow-sm p-4 sm:p-6 border border-purple-200 hover:shadow-lg transition-all duration-300 touch-manipulation"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center min-w-0 flex-1">
-                        <div className="p-2 sm:p-3 bg-purple-500 rounded-lg shadow-lg flex-shrink-0">
-                          <ChartBarIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
-                        </div>
-                        <div className="ml-3 sm:ml-4 min-w-0 flex-1">
-                          <p className="text-xs sm:text-sm font-medium text-purple-700">Completion Rate</p>
-                          <div className="flex items-center space-x-1 sm:space-x-2">
-                            <p className="text-xl sm:text-2xl font-bold text-purple-900">
-                              {metricsLoading ? '...' : `${Math.round(dashboardMetrics?.completion_rate || 0)}%`}
-                            </p>
-                            <div className="flex items-center text-xs text-green-600 bg-green-100 px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full">
-                              <ArrowTrendingUpIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3 mr-0.5 sm:mr-1" />
-                              +5%
-                            </div>
-                          </div>
-                          <p className="text-xs text-purple-600 mt-1">vs last month</p>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Circular progress */}
-                    <div className="mt-3 sm:mt-4 flex items-center justify-center">
-                      <div className="relative w-12 h-12 sm:w-16 sm:h-16">
-                        <svg className="w-12 h-12 sm:w-16 sm:h-16 transform -rotate-90" viewBox="0 0 64 64">
-                          <circle
-                            cx="32"
-                            cy="32"
-                            r="28"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                            fill="none"
-                            className="text-purple-200"
-                          />
-                          <circle
-                            cx="32"
-                            cy="32"
-                            r="28"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                            fill="none"
-                            strokeDasharray={`${2 * Math.PI * 28}`}
-                            strokeDashoffset={`${2 * Math.PI * 28 * (1 - (dashboardMetrics?.completion_rate || 0) / 100)}`}
-                            className="text-purple-500 transition-all duration-500"
-                            strokeLinecap="round"
-                          />
-                        </svg>
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-xs font-bold text-purple-900">
-                            {Math.round(dashboardMetrics?.completion_rate || 0)}%
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                </div>
-
-                {/* Enhanced Engagement Status */}
-                {engagementStatus && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-gradient-to-r from-indigo-50 to-cyan-50 rounded-xl shadow-sm p-6 border border-indigo-100"
-                  >
-                    <div className="flex items-center justify-between mb-6">
-                      <div className="flex items-center space-x-3">
-                        <div className="p-2 bg-indigo-500 rounded-lg">
-                          <ChartBarIcon className="w-5 h-5 text-white" />
-                        </div>
-                        <h2 className="text-lg font-semibold text-gray-900">Engagement Overview</h2>
-                      </div>
-                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getEngagementStatusColor(engagementStatus.status)}`}>
-                        {engagementStatus.status.charAt(0).toUpperCase() + engagementStatus.status.slice(1)}
-                      </span>
-                    </div>
-                    
-                    {/* Main engagement metrics */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-                      <div className="bg-white rounded-lg p-4 shadow-sm">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Last Activity</label>
-                            <p className="text-sm font-semibold text-gray-900 mt-1">
-                              {engagementStatus.last_activity_at 
-                                ? formatDate(engagementStatus.last_activity_at)
-                                : 'No recent activity'
-                              }
-                            </p>
-                          </div>
-                          <div className="p-2 bg-blue-100 rounded-lg">
-                            <ClockIcon className="w-4 h-4 text-blue-600" />
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="bg-white rounded-lg p-4 shadow-sm">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Pending Actions</label>
-                            <div className="flex items-center space-x-2 mt-1">
-                              <p className="text-sm font-semibold text-gray-900">{engagementStatus.pending_actions}</p>
-                              <span className="text-xs text-gray-500">items</span>
-                            </div>
-                          </div>
-                          <div className="p-2 bg-orange-100 rounded-lg">
-                            <ExclamationTriangleIcon className="w-4 h-4 text-orange-600" />
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="bg-white rounded-lg p-4 shadow-sm">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Activities</label>
-                            <p className="text-sm font-semibold text-gray-900 mt-1">{engagementStatus.total_activities}</p>
-                          </div>
-                          <div className="p-2 bg-green-100 rounded-lg">
-                            <ChartBarIcon className="w-4 h-4 text-green-600" />
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="bg-white rounded-lg p-4 shadow-sm">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Next Action Due</label>
-                            <p className="text-sm font-semibold text-gray-900 mt-1">
-                              {engagementStatus.next_action_due 
-                                ? formatDate(engagementStatus.next_action_due)
-                                : 'No scheduled actions'
-                              }
-                            </p>
-                          </div>
-                          <div className="p-2 bg-purple-100 rounded-lg">
-                            <CalendarDaysIcon className="w-4 h-4 text-purple-600" />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Completion Progress Bar */}
-                    <div className="bg-white rounded-lg p-4 shadow-sm">
-                      <div className="flex items-center justify-between mb-3">
-                        <label className="text-sm font-medium text-gray-700">Overall Progress</label>
-                        <span className="text-sm font-semibold text-gray-900">
-                          {Math.round(engagementStatus.completion_percentage || 0)}%
-                        </span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${engagementStatus.completion_percentage || 0}%` }}
-                          transition={{ duration: 1, ease: "easeOut" }}
-                          className="bg-gradient-to-r from-indigo-500 to-cyan-500 h-full rounded-full"
-                        />
-                      </div>
-                      <div className="flex justify-between text-xs text-gray-500 mt-2">
-                        <span>Started</span>
-                        <span>In Progress</span>
-                        <span>Complete</span>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-
-                {/* Recent Activities */}
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold text-gray-900">Recent Activities</h2>
-                    <button
-                      onClick={() => loadClientData()}
-                      className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                    >
-                      Refresh
-                    </button>
                   </div>
-                  
-                  <div className="space-y-3">
-                    <AnimatePresence>
-                      {activities.map((activity) => (
+
+                  {businessesLoading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="text-center">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+                        <p className="mt-4 text-gray-600">Loading R&D reports...</p>
+                      </div>
+                    </div>
+                  ) : businesses.length === 0 ? (
+                    <div className="text-center py-12">
+                      <BuildingOfficeIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">No Businesses Found</h3>
+                      <p className="text-gray-600">No businesses are associated with your account yet.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {businesses.map((business) => (
                         <motion.div
-                          key={activity.id}
+                          key={business.id}
                           initial={{ opacity: 0, y: 20 }}
                           animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -20 }}
-                          className={`p-4 rounded-lg border-l-4 cursor-pointer transition-all ${
-                            activity.is_read 
-                              ? 'bg-gray-50 border-gray-300' 
-                              : 'bg-blue-50 border-blue-500 hover:bg-blue-100'
-                          }`}
-                          onClick={() => !activity.is_read && markActivityAsRead(activity.id)}
+                          className="border border-gray-200 rounded-lg p-4 hover:border-blue-300 hover:shadow-md transition-all duration-200"
                         >
-                          <div className="flex items-start">
-                            <div className={`p-2 rounded-lg mr-3 ${getPriorityColor(activity.priority)}`}>
-                              {getActivityIcon(activity.activity_type)}
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center justify-between">
-                                <p className="text-sm font-medium text-gray-900">{activity.title}</p>
-                                <span className="text-xs text-gray-500">{formatDate(activity.created_at)}</span>
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-start space-x-4 flex-1">
+                              <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <BuildingOfficeIcon className="w-6 h-6 text-white" />
                               </div>
-                              {activity.description && (
-                                <p className="text-sm text-gray-600 mt-1">{activity.description}</p>
-                              )}
-                              {activity.user_name && (
-                                <p className="text-xs text-gray-500 mt-1">by {activity.user_name}</p>
-                              )}
+                              <div className="flex-1 min-w-0">
+                                <h4 className="text-lg font-semibold text-gray-900 mb-1">{business.business_name}</h4>
+                                <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-3">
+                                  <span className="flex items-center">
+                                    <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
+                                    {business.entity_type}
+                                  </span>
+                                  {business.ein && (
+                                    <span>EIN: {business.ein}</span>
+                                  )}
+                                  {business.business_state && (
+                                    <span>{business.business_state}</span>
+                                  )}
+                                </div>
+                                
+                                {business.has_rd_data ? (
+                                  <div>
+                                    <div className="flex items-center mb-3">
+                                      <CheckCircleIcon className="w-5 h-5 text-green-500 mr-2" />
+                                      <span className="text-sm font-medium text-green-700">
+                                        R&D Data Available ({business.rd_reports.length} report{business.rd_reports.length !== 1 ? 's' : ''} generated)
+                                      </span>
+                                    </div>
+                                    
+                                    {business.rd_reports.length > 0 ? (
+                                      <div className="space-y-2">
+                                        {business.rd_reports.map((report) => (
+                                          <div key={report.id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                                            <div className="flex-1">
+                                              <div className="flex items-center space-x-2">
+                                                <DocumentTextIcon className="w-4 h-4 text-gray-500" />
+                                                <span className="text-sm font-medium text-gray-900">
+                                                  {report.type.replace('_', ' ')} Report
+                                                </span>
+                                              </div>
+                                              <p className="text-xs text-gray-600 mt-1">
+                                                Generated: {new Date(report.created_at).toLocaleDateString()}
+                                              </p>
+                                            </div>
+                                            <div className="flex items-center space-x-2">
+                                              <button
+                                                onClick={() => handleViewReport(report, business.business_name)}
+                                                className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                                              >
+                                                <EyeIcon className="w-4 h-4 mr-1" />
+                                                View
+                                              </button>
+                                              <button
+                                                onClick={() => handleDownloadReport(report, business.business_name)}
+                                                className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                                              >
+                                                <ArrowDownTrayIcon className="w-4 h-4 mr-1" />
+                                                Download
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                                        <div className="flex items-center">
+                                          <ExclamationTriangleIcon className="w-5 h-5 text-yellow-500 mr-2" />
+                                          <span className="text-sm text-yellow-700">
+                                            R&D data is available but no reports have been generated yet.
+                                          </span>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                    <div className="flex items-center">
+                                      <ClockIcon className="w-5 h-5 text-gray-400 mr-2" />
+                                      <span className="text-sm text-gray-600">
+                                        No R&D tax credit data available for this business.
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </motion.div>
                       ))}
-                    </AnimatePresence>
-                    
-                    {activities.length === 0 && (
-                      <div className="text-center py-8">
-                        <ClockIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                        <p className="text-gray-600">No recent activities</p>
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
+
 
 
               </div>
@@ -875,7 +648,7 @@ export default function EnhancedClientDashboard() {
             clientId={selectedClient.id}
             onProfileUpdated={() => {
               logActivity('profile_update', 'Profile updated');
-              loadClientData();
+              loadBusinessesWithReports();
             }}
           />
 
