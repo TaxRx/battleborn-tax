@@ -132,7 +132,8 @@ const AppContent: React.FC = () => {
     location: location.pathname,
     search: location.search,
     hash: location.hash,
-    fullUrl: window.location.href
+    fullUrl: window.location.href,
+    willRedirect: !user && !isAuthenticated && !isPublicRoute && !allowMagicLinkRoute
   });
 
   // Show loading while determining authentication state

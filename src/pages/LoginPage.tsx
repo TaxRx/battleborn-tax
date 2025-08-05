@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { authService, AuthUser } from '../services/authService';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import useAuthStore from '../store/authStore';
@@ -12,11 +12,18 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { login, logout } = useAuthStore();
   const { setUser } = useUser();
 
   useEffect(() => {
+    // Check for magic link error in URL
+    const magicLinkError = searchParams.get('error');
+    if (magicLinkError === 'magic_link_failed') {
+      setError('Magic link authentication failed. The link may have expired or is invalid. Please try logging in manually or request a new magic link.');
+    }
+
     // Check if user is already authenticated, if so redirect to dashboard
     const checkAuthAndRedirect = async () => {
       try {
@@ -27,8 +34,14 @@ export default function LoginPage() {
           return;
         }
         
-        // Only force logout if explicitly on /login route (not root redirect)
-        if (window.location.pathname === '/login') {
+        // Check if we came from a magic link redirect (referrer contains hash fragments)
+        const cameFromMagicLink = document.referrer && (
+          document.referrer.includes('access_token=') || 
+          document.referrer.includes('type=magiclink')
+        );
+        
+        // Only force logout if explicitly on /login route and NOT from magic link redirect
+        if (window.location.pathname === '/login' && !cameFromMagicLink) {
           // Clear auth store
           logout();
           
@@ -43,6 +56,8 @@ export default function LoginPage() {
           sessionStorage.clear();
           
           console.log('Forced logout on explicit login page visit');
+        } else if (cameFromMagicLink) {
+          console.log('Login page accessed from magic link redirect, skipping forced logout');
         }
       } catch (error) {
         console.error('Error during auth check:', error);
@@ -50,7 +65,7 @@ export default function LoginPage() {
     };
     
     checkAuthAndRedirect();
-  }, [navigate, logout, setUser]);
+  }, [navigate, logout, setUser, searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
