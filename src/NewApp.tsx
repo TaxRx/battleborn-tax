@@ -20,6 +20,7 @@ import OperatorDashboard from './modules/operator/pages/OperatorDashboard';
 import AffiliateDashboard from './modules/affiliate/pages/NewAffiliateDashboard';
 import ExpertDashboard from './modules/expert/pages/ExpertDashboard';
 import MagicLinkHandler from './components/MagicLinkHandler';
+import ClientPortal from './pages/ClientPortal';
 
 // Component to handle role-based redirects
 const RoleBasedRedirect: React.FC = () => {
@@ -226,6 +227,18 @@ const AppContent: React.FC = () => {
               <Route 
                 path="/client" 
                 element={<ProtectedClientRoute />} 
+              />
+              
+              {/* Client Portal Routes with original pattern */}
+              <Route 
+                path="/client-portal/:businessId/:token" 
+                element={<ClientPortal />} 
+              />
+              
+              {/* Legacy client portal route for admin preview */}
+              <Route 
+                path="/client-portal/:clientId" 
+                element={<ClientPortal />} 
               />
 
               {/* Default redirects based on user role */}

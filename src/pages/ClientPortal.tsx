@@ -133,7 +133,8 @@ const ClientPortal: React.FC = () => {
   };
 
   const validateSessionAndLoadData = async () => {
-    if (!userId) {
+    // For admin preview mode, we don't need a valid userId - check for admin preview params instead
+    if (!userId && !(isAdminPreview && previewBusinessId && previewToken)) {
       setError('Invalid portal link');
       setLoading(false);
       return;

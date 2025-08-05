@@ -161,15 +161,17 @@ I acknowledge that I had the opportunity to review and revise the report prior t
     const checkAdminAndLoadData = async () => {
       try {
         // Check user type
+        console.log('🔍 [ReportsStep] Checking admin status...');
         const { data: { user } } = await supabase.auth.getUser();
+        console.log('🔍 [ReportsStep] User:', user);
         if (user) {
           const { data: profile } = await supabase
             .from('profiles')
-            .select('is_admin')
+            .select('role')
             .eq('id', user.id)
             .single();
-          
-          setIsAdmin(profile?.is_admin || false);
+          console.log('🔍 [ReportsStep] Profile:', profile);
+          setIsAdmin(profile?.role === 'admin' || false);
         }
 
             // Load QC controls and business year data
@@ -1306,7 +1308,16 @@ I acknowledge that I had the opportunity to review and revise the report prior t
       });
       
       const portalUrl = `${window.location.origin}/client-portal/${wizardState.business.client_id}?${adminPreviewParams.toString()}`;
-      console.log('🔍 [ReportsStep] Opening admin preview:', portalUrl);
+      
+      // Prominent console logging for debugging
+      console.log('🚀🚀🚀 [ADMIN PREVIEW] Portal URL Generated:', portalUrl);
+      console.log('🚀🚀🚀 [ADMIN PREVIEW] URL Components:', {
+        origin: window.location.origin,
+        clientId: wizardState.business.client_id,
+        businessId: wizardState.business.id,
+        adminPreview: true,
+        fullUrl: portalUrl
+      });
       
       window.open(portalUrl, '_blank', 'noopener,noreferrer');
     } catch (error) {

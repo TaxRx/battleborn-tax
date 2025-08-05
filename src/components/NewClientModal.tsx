@@ -21,6 +21,7 @@ interface NewClientModalProps {
 }
 
 interface BusinessFormData {
+  id?: string; // Optional ID for existing businesses from database
   businessName: string;
   entityType: 'LLC' | 'S-Corp' | 'C-Corp' | 'Partnership' | 'Sole-Proprietor' | 'Other';
   ein: string;
@@ -574,6 +575,8 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
   });
 
   const [businesses, setBusinesses] = useState<BusinessFormData[]>([]);
+  const [businessesToDelete, setBusinessesToDelete] = useState<string[]>([]);
+  const [confirmDeleteIndex, setConfirmDeleteIndex] = useState<number | null>(null);
 
   // Helper function to clean up duplicate businesses for a client
   const cleanupDuplicateBusinesses = async (clientId: string) => {
@@ -715,7 +718,12 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
             }];
           }
           
+          // Calculate business-level K-1 values from current year's data
+          const currentYear = new Date().getFullYear();
+          const currentYearData = businessYears.find(y => y.year === currentYear) || businessYears[businessYears.length - 1];
+          
           return {
+            id: business.id, // Preserve the database ID for existing businesses
             businessName: business.businessName || business.business_name || '',
             entityType: business.entityType || business.entity_type || 'LLC',
             ein: business.ein || '',
@@ -729,8 +737,9 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
             industry: business.industry || '',
             annualRevenue: business.annualRevenue || business.annual_revenue || 0,
             employeeCount: business.employeeCount || business.employee_count || 0,
-            ordinaryK1Income: business.ordinaryK1Income || business.ordinary_k1_income || 0,
-            guaranteedK1Income: business.guaranteedK1Income || business.guaranteed_k1_income || 0,
+            // Sync business-level K-1 values with current year's data
+            ordinaryK1Income: currentYearData?.ordinaryK1Income || business.ordinaryK1Income || business.ordinary_k1_income || 0,
+            guaranteedK1Income: currentYearData?.guaranteedK1Income || business.guaranteedK1Income || business.guaranteed_k1_income || 0,
             isActive: business.isActive ?? business.is_active ?? true,
             years: businessYears
           };
@@ -822,9 +831,27 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
   };
 
   const removeBusiness = (index: number) => {
+    setConfirmDeleteIndex(index);
+  };
+
+  const confirmRemoveBusiness = (index: number) => {
+    const businessToRemove = businesses[index];
+    
+    // If this business has an ID (exists in database), add it to deletion list
+    if (businessToRemove && businessToRemove.id) {
+      setBusinessesToDelete(prev => [...prev, businessToRemove.id!]);
+    }
+    
+    // Remove from local state
     setBusinesses(prev => prev.filter((_, i) => i !== index));
+    setConfirmDeleteIndex(null);
+    
     // Remove automatic update to prevent circular loop
     // setTimeout(() => updatePersonalIncomeFromBusinesses(), 0);
+  };
+
+  const cancelRemoveBusiness = () => {
+    setConfirmDeleteIndex(null);
   };
 
   const addBusinessYear = (businessIndex: number) => {
@@ -851,16 +878,32 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
     console.log(`[handleYearChange] Called with: businessIndex=${businessIndex}, yearIndex=${yearIndex}, field=${field}, value=${value}`);
     console.log(`[handleYearChange] Previous businesses state:`, businesses);
     
-    setBusinesses(prev => prev.map((business, i) => 
-      i === businessIndex 
-        ? {
-            ...business,
-            years: business.years.map((year, j) => 
-              j === yearIndex ? { ...year, [field]: value } : year
-            )
-          }
-        : business
-    ));
+    setBusinesses(prev => prev.map((business, i) => {
+      if (i !== businessIndex) return business;
+      
+      const updatedYears = business.years.map((year, j) => 
+        j === yearIndex ? { ...year, [field]: value } : year
+      );
+      
+      // Sync business-level K-1 values with current year's data when updating K-1 fields
+      let updatedBusiness = {
+        ...business,
+        years: updatedYears
+      };
+      
+      if (field === 'ordinaryK1Income' || field === 'guaranteedK1Income') {
+        const currentYear = new Date().getFullYear();
+        const currentYearData = updatedYears.find(y => y.year === currentYear) || updatedYears[updatedYears.length - 1];
+        
+        updatedBusiness = {
+          ...updatedBusiness,
+          ordinaryK1Income: currentYearData?.ordinaryK1Income || 0,
+          guaranteedK1Income: currentYearData?.guaranteedK1Income || 0
+        };
+      }
+      
+      return updatedBusiness;
+    }));
     
     console.log(`[handleYearChange] Updated businesses state:`, businesses);
     
@@ -1097,30 +1140,37 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
 
     try {
       // Transform businesses to match TaxInfo structure
-      const transformedBusinesses: BusinessInfo[] = businesses.map(business => ({
-        businessName: business.businessName,
-        entityType: business.entityType === 'LLC' ? 'LLC' :
-                   business.entityType === 'S-Corp' ? 'S-Corp' :
-                   business.entityType === 'C-Corp' ? 'C-Corp' :
-                   business.entityType === 'Partnership' ? 'Partnership' :
-                   business.entityType === 'Sole-Proprietor' ? 'Sole Proprietorship' :
-                   'Other', // default to Other for 'Other'
-        ein: business.ein,
-        startYear: business.startYear,
-        businessAddress: business.businessAddress,
-        businessCity: business.businessCity,
-        businessState: business.businessState,
-        businessZip: business.businessZip,
-        businessPhone: business.businessPhone,
-        businessEmail: business.businessEmail,
-        industry: business.industry,
-        annualRevenue: business.annualRevenue,
-        employeeCount: business.employeeCount,
-        ordinaryK1Income: business.ordinaryK1Income,
-        guaranteedK1Income: business.guaranteedK1Income,
-        isActive: business.isActive,
-        years: business.years
-      }));
+      const transformedBusinesses: BusinessInfo[] = businesses.map(business => {
+        // Calculate business-level K-1 income from the current year's data (most recent active year)
+        const currentYear = new Date().getFullYear();
+        const currentYearData = business.years.find(y => y.year === currentYear) || business.years[business.years.length - 1];
+        
+        return {
+          businessName: business.businessName,
+          entityType: business.entityType === 'LLC' ? 'LLC' :
+                     business.entityType === 'S-Corp' ? 'S-Corp' :
+                     business.entityType === 'C-Corp' ? 'C-Corp' :
+                     business.entityType === 'Partnership' ? 'Partnership' :
+                     business.entityType === 'Sole-Proprietor' ? 'Sole Proprietorship' :
+                     'Other', // default to Other for 'Other'
+          ein: business.ein,
+          startYear: business.startYear,
+          businessAddress: business.businessAddress,
+          businessCity: business.businessCity,
+          businessState: business.businessState,
+          businessZip: business.businessZip,
+          businessPhone: business.businessPhone,
+          businessEmail: business.businessEmail,
+          industry: business.industry,
+          annualRevenue: business.annualRevenue,
+          employeeCount: business.employeeCount,
+          // Use the current year's K-1 income values, not the business-level ones
+          ordinaryK1Income: currentYearData?.ordinaryK1Income || 0,
+          guaranteedK1Income: currentYearData?.guaranteedK1Income || 0,
+          isActive: business.isActive,
+          years: business.years
+        };
+      });
 
       console.log(`[handleSubmit] Transformed businesses:`, transformedBusinesses);
 
@@ -1214,6 +1264,46 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
               }
             }
 
+            // Process business deletions first
+            if (businessesToDelete.length > 0) {
+              console.log(`[handleSubmit] Deleting ${businessesToDelete.length} businesses from database`);
+              
+              for (const businessId of businessesToDelete) {
+                try {
+                  // First delete associated business years
+                  const { error: yearDeleteError } = await supabase
+                    .from('business_years')
+                    .delete()
+                    .eq('business_id', businessId);
+                  
+                  if (yearDeleteError) {
+                    console.error(`[handleSubmit] Error deleting business years for business ${businessId}:`, yearDeleteError);
+                  } else {
+                    console.log(`[handleSubmit] Successfully deleted business years for business ${businessId}`);
+                  }
+                  
+                  // Then delete the business itself
+                  const { error: businessDeleteError } = await supabase
+                    .from('businesses')
+                    .delete()
+                    .eq('id', businessId);
+                  
+                  if (businessDeleteError) {
+                    console.error(`[handleSubmit] Error deleting business ${businessId}:`, businessDeleteError);
+                    toast.error(`Failed to delete business: ${businessDeleteError.message}`);
+                  } else {
+                    console.log(`[handleSubmit] Successfully deleted business ${businessId}`);
+                  }
+                } catch (error) {
+                  console.error(`[handleSubmit] Unexpected error deleting business ${businessId}:`, error);
+                  toast.error('An unexpected error occurred while deleting business');
+                }
+              }
+              
+              // Clear the deletion list after processing
+              setBusinessesToDelete([]);
+            }
+
             // Update business data - Use upsert logic to prevent duplicates
             if (completeTaxInfo.businesses && completeTaxInfo.businesses.length > 0) {
               console.log(`[handleSubmit] Processing ${completeTaxInfo.businesses.length} businesses`);
@@ -1240,28 +1330,20 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                   is_active: business.isActive ?? true
                 };
 
-                // Check if business already exists for this client
-                const { data: existingBusiness, error: checkError } = await supabase
-                  .from('businesses')
-                  .select('id')
-                  .eq('client_id', initialData.id)
-                  .eq('business_name', business.businessName)
-                  .eq('ein', business.ein || '')
-                  .maybeSingle();
-
-                if (checkError) {
-                  console.error(`[handleSubmit] Error checking for existing business:`, checkError);
-                  continue;
-                }
+                // Get the business from our mapped businesses to access the ID
+                const mappedBusiness = businesses.find(b => 
+                  b.businessName === business.businessName && 
+                  b.ein === business.ein
+                );
 
                 let businessResult;
-                if (existingBusiness) {
-                  // Update existing business
-                  console.log(`[handleSubmit] Updating existing business ID: ${existingBusiness.id}`);
+                if (mappedBusiness && mappedBusiness.id) {
+                  // Update existing business using the ID we preserved
+                  console.log(`[handleSubmit] Updating existing business: ${business.businessName} (ID: ${mappedBusiness.id})`);
                   const { data: updateResult, error: updateError } = await supabase
                     .from('businesses')
                     .update(businessData)
-                    .eq('id', existingBusiness.id)
+                    .eq('id', mappedBusiness.id)
                     .select()
                     .single();
 
@@ -1272,7 +1354,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                   businessResult = updateResult;
                   console.log(`[handleSubmit] Business updated successfully with ID: ${businessResult.id}`);
                 } else {
-                  // Create new business
+                  // Create new business (no ID means it's a new business)
                   console.log(`[handleSubmit] Creating new business: ${business.businessName}`);
                   const { data: insertResult, error: insertError } = await supabase
                     .from('businesses')
@@ -2322,6 +2404,49 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Confirmation Dialog for Business Removal */}
+      {confirmDeleteIndex !== null && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center mb-4">
+                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                  <Trash2 className="w-5 h-5 text-red-600" />
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-lg font-medium text-gray-900">Remove Business</h3>
+                  <p className="text-sm text-gray-500">This action cannot be undone</p>
+                </div>
+              </div>
+              
+              <p className="text-gray-700 mb-6">
+                Are you sure you want to remove <strong>{businesses[confirmDeleteIndex]?.businessName}</strong>? 
+                {businesses[confirmDeleteIndex]?.id && 
+                  " This will permanently delete the business from the database when you save your changes."
+                }
+              </p>
+              
+              <div className="flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={cancelRemoveBusiness}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => confirmRemoveBusiness(confirmDeleteIndex)}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  Remove Business
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -24,7 +24,14 @@ const ProtectedClientRoute: React.FC = () => {
     return hasQueryTokens || hasHashTokens;
   };
   
+  // Check if current URL has admin preview parameters
+  const hasAdminPreview = () => {
+    const searchParams = new URLSearchParams(location.search);
+    return searchParams.get('admin_preview') === 'true';
+  };
+  
   const hasMagicLink = hasMagicLinkTokens();
+  const isAdminPreview = hasAdminPreview();
   
   console.log('ProtectedClientRoute - DEBUG:', { 
     user: user ? {
@@ -36,6 +43,7 @@ const ProtectedClientRoute: React.FC = () => {
     isAuthenticated,
     userType,
     hasMagicLink,
+    isAdminPreview,
     url: window.location.href
   });
   
@@ -66,7 +74,14 @@ const ProtectedClientRoute: React.FC = () => {
   const accountType = user?.account?.type || userType;
   
   // If user is not a client type, redirect to their appropriate dashboard
+  // UNLESS it's an admin preview request, in which case allow admin access
   if (accountType && accountType !== 'client') {
+    // Allow admin users to preview client portal when admin_preview=true
+    if (accountType === 'admin' && isAdminPreview) {
+      console.log('ProtectedClientRoute: Admin user accessing client portal in preview mode - allowing access');
+      return <EnhancedClientDashboard />;
+    }
+    
     console.log('ProtectedClientRoute: Non-client user accessing /client, redirecting to appropriate dashboard');
     
     switch (accountType) {

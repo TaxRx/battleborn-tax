@@ -334,9 +334,11 @@ export default function RDClientManagement({
       setLoading(true);
       console.log('🔄 Starting to load clients...');
       
-      // Get all clients from unified system
-      const allClients = await CentralizedClientService.getUnifiedClientList({});
-      console.log('📊 All clients loaded:', allClients.length);
+      // Get only clients enrolled in R&D tools
+      const allClients = await CentralizedClientService.getUnifiedClientList({
+        toolFilter: 'rd'
+      });
+      console.log('📊 R&D clients loaded:', allClients.length);
       
       // Enhance clients with R&D business years data
       const enhancedClients = await Promise.all(
@@ -450,30 +452,9 @@ export default function RDClientManagement({
         }
       }
       
-      // Filter to only show clients with R&D enrollments
-      const rdClients = enhancedClients.filter(client => {
-        const hasRdEnrollment = client.businesses?.some((business: any) => 
-          business.tool_enrollments?.some((tool: any) => tool.tool_slug === 'rd')
-        );
-        console.log(`👤 Client ${client.full_name} has R&D enrollment:`, hasRdEnrollment);
-        if (hasRdEnrollment) {
-          console.log('🎯 R&D enrollments for client:', client.businesses?.flatMap((b: any) => 
-            b.tool_enrollments?.filter((t: any) => t.tool_slug === 'rd') || []
-          ));
-        }
-        return hasRdEnrollment;
-      });
-      
-      console.log('🎯 R&D clients filtered:', rdClients.length);
-      
-      // TEMPORARY: Show all clients for debugging
-      if (rdClients.length === 0) {
-        console.log('⚠️ No R&D clients found, showing all enhanced clients for debugging');
-        setClients(enhancedClients);
-      } else {
-        console.log('✅ Setting R&D clients:', rdClients.length);
-        setClients(rdClients);
-      }
+      // Set the R&D clients (already filtered by the service)
+      console.log('✅ Setting R&D clients:', enhancedClients.length);
+      setClients(enhancedClients);
     } catch (error) {
       console.error('❌ Error loading R&D clients:', error);
       toast.error('Failed to load R&D clients');
