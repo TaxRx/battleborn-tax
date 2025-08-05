@@ -597,6 +597,16 @@ export default function UnifiedClientDashboard({
     }
   };
 
+  const handleUpdateClient = async (taxInfo: TaxInfo) => {
+    try {
+      // Client has already been updated in the modal, just refresh the list
+      await loadClients();
+    } catch (error) {
+      console.error('Error refreshing client list after update:', error);
+      // Don't show an error toast since the update itself was successful
+    }
+  };
+
   const handleDeleteClient = async (clientId: string) => {
     try {
       await CentralizedClientService.deleteClient(clientId);
@@ -979,6 +989,7 @@ export default function UnifiedClientDashboard({
             setEditClientId(null);
           }}
           onClientCreated={handleCreateClient}
+          onClientUpdated={handleUpdateClient}
           loading={addingClient}
           initialData={editingClientData}
         />

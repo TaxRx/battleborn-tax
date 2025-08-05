@@ -389,11 +389,13 @@ const ClientCard: React.FC<ClientCardProps> = ({
                 </h4>
                 {client.businesses && client.businesses.length > 0 ? (
                   <div className="space-y-3">
-                    {client.businesses.map((business: any) => {
-                      const businessRdEnrollments = business.tool_enrollments?.filter((tool: any) => tool.tool_slug === 'rd') || [];
-                      
-                      // Show all businesses, not just those with R&D enrollments
-                      return (
+                    {client.businesses
+                      .filter((business: any) => {
+                        // Only show businesses with R&D enrollments
+                        const businessRdEnrollments = business.tool_enrollments?.filter((tool: any) => tool.tool_slug === 'rd') || [];
+                        return businessRdEnrollments.length > 0;
+                      })
+                      .map((business: any) => (
                         <BusinessAccordion
                           key={business.id}
                           business={business}
@@ -402,8 +404,7 @@ const ClientCard: React.FC<ClientCardProps> = ({
                           isExpanded={expandedBusinessId === business.id}
                           onToggle={() => handleBusinessToggle(business.id)}
                         />
-                      );
-                    })}
+                      ))}
                   </div>
                 ) : (
                   <div className="text-center py-6 text-gray-500 bg-white rounded-lg border border-gray-200">
@@ -880,11 +881,17 @@ export default function RDClientManagement({
                   >
                     <option value="">Select a business...</option>
                     {clients.flatMap(client => 
-                      client.businesses?.map(business => (
-                        <option key={business.id} value={business.id}>
-                          {business.business_name} ({client.full_name})
-                        </option>
-                      )) || []
+                      client.businesses
+                        ?.filter(business => {
+                          // Only show businesses with R&D enrollments
+                          const businessRdEnrollments = business.tool_enrollments?.filter((tool: any) => tool.tool_slug === 'rd') || [];
+                          return businessRdEnrollments.length > 0;
+                        })
+                        .map(business => (
+                          <option key={business.id} value={business.id}>
+                            {business.business_name} ({client.full_name})
+                          </option>
+                        )) || []
                     )}
                   </select>
                 </div>

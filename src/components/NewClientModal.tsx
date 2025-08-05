@@ -15,6 +15,7 @@ interface NewClientModalProps {
   isOpen: boolean;
   onClose: () => void;
   onClientCreated: (clientData: TaxInfo) => void;
+  onClientUpdated?: (clientData: TaxInfo) => void;
   loading?: boolean;
   toolSlug?: string;
   initialData?: TaxInfo;
@@ -539,6 +540,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
   isOpen,
   onClose,
   onClientCreated,
+  onClientUpdated,
   loading = false,
   toolSlug,
   initialData
@@ -1388,8 +1390,8 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                   console.log(`[handleSubmit] Business created successfully with ID: ${businessResult.id}`);
                 }
 
-                // Save business years data using upsert logic - only if explicitly defined
-                if (business.years && business.years.length > 0 && business.years.some(year => year.year && (year.ordinaryK1Income > 0 || year.guaranteedK1Income > 0 || year.annualRevenue > 0))) {
+                // Save business years data using upsert logic - create records for all years
+                if (business.years && business.years.length > 0) {
                   console.log(`[handleSubmit] Processing ${business.years.length} business years for business ${business.businessName}`);
                   
                   for (const year of business.years) {
@@ -1422,13 +1424,19 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
 
             console.log(`[handleSubmit] All data saved successfully`);
             toast.success('Client updated successfully!');
-            onClientCreated(completeTaxInfo);
+            // Call the update callback if provided to refresh parent data
+            if (onClientUpdated) {
+              onClientUpdated(completeTaxInfo);
+            }
             onClose();
           } catch (error) {
             console.error(`[handleSubmit] Error in data update process:`, error);
             // Still show success for the main client update
             toast.success('Client updated successfully! (Some data may not have been saved)');
-            onClientCreated(completeTaxInfo);
+            // Call the update callback if provided to refresh parent data
+            if (onClientUpdated) {
+              onClientUpdated(completeTaxInfo);
+            }
             onClose();
           }
         }
