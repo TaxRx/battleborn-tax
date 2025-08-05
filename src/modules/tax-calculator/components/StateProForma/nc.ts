@@ -52,14 +52,6 @@ export const ncConfig = {
       message: "Application must be filed by April 15th of the year following the taxable year"
     }
   ],
-  // Entity type requirements
-  entityRequirements: {
-    allowedEntityTypes: ["Corporation", "S-Corp", "Partnership", "LLC"],
-    restrictedEntityTypes: ["Individual"],
-    requiresApplication: false,
-    requiresPreapproval: false,
-    defaultEnabled: true
-  },
   notes: [
     "Credit is non-refundable and may only be used to offset North Carolina income tax liability",
     "Research must be conducted in North Carolina to qualify for the credit",

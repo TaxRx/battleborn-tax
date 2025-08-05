@@ -1185,8 +1185,8 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
       console.log(`[handleSubmit] formData.fullName:`, formData.fullName);
       console.log(`[handleSubmit] completeTaxInfo.fullName:`, completeTaxInfo.fullName);
 
-      if (initialData?.id) {
-        console.log(`[handleSubmit] Updating existing client with ID: ${initialData.id}`);
+      if (initialData?.id || completeTaxInfo.id) {
+        console.log(`[handleSubmit] Updating existing client with ID: ${initialData?.id || completeTaxInfo.id}`);
         // Update existing client
         const updateData = {
           full_name: completeTaxInfo.fullName,
@@ -1204,23 +1204,24 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
 
         console.log(`[handleSubmit] Client update data:`, updateData);
 
-        const success = await CentralizedClientService.updateClient(initialData.id, updateData);
+        const success = await CentralizedClientService.updateClient(initialData?.id || completeTaxInfo.id, updateData);
         
         if (success) {
           console.log(`[handleSubmit] Client update successful, now updating personal years and business data`);
           // Update personal years data
           try {
             // First, delete existing personal years for this client
-            console.log(`[handleSubmit] Deleting existing personal years for client ${initialData.id}`);
+            const clientId = initialData?.id || completeTaxInfo.id;
+            console.log(`[handleSubmit] Deleting existing personal years for client ${clientId}`);
             await supabase
               .from('personal_years')
               .delete()
-              .eq('client_id', initialData.id);
+              .eq('client_id', clientId);
 
             // Then insert the new personal years data
             if (completeTaxInfo.years && completeTaxInfo.years.length > 0) {
               const personalYearsData = completeTaxInfo.years.map(year => ({
-                client_id: initialData.id,
+                client_id: clientId,
                 year: year.year,
                 wages_income: year.wagesIncome || 0,
                 passive_income: year.passiveIncome || 0,
@@ -1313,7 +1314,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                 console.log(`[handleSubmit] Business years:`, business.years);
                 
                 const businessData = {
-                  client_id: initialData.id,
+                  client_id: clientId,
                   business_name: business.businessName,
                   entity_type: business.entityType,
                   ein: business.ein || null,
@@ -1330,11 +1331,28 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                   is_active: business.isActive ?? true
                 };
 
+
+                
                 // Get the business from our mapped businesses to access the ID
                 const mappedBusiness = businesses.find(b => 
                   b.businessName === business.businessName && 
                   b.ein === business.ein
                 );
+/***** May need to bring back 
+                // Check if business already exists for this client
+                const { data: existingBusiness, error: checkError } = await supabase
+                  .from('businesses')
+                  .select('id')
+                  .eq('client_id', clientId)
+                  .eq('business_name', business.businessName)
+                  .eq('ein', business.ein || '')
+                  .maybeSingle();
+
+                if (checkError) {
+                  console.error(`[handleSubmit] Error checking for existing business:`, checkError);
+                  continue;
+                }
+**/
 
                 let businessResult;
                 if (mappedBusiness && mappedBusiness.id) {

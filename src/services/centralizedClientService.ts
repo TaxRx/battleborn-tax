@@ -1012,15 +1012,15 @@ export class CentralizedClientService {
 
         return {
           client_file_id: client.id,
-          business_id: client.businesses?.[0]?.id || null,
+          business_id: client.businesses?.[0]?.id || null, // Primary business for backward compatibility
           admin_id: client.created_by,
           affiliate_id: null, // Not implemented yet
           archived: client.archived || false,
           created_at: client.created_at,
           full_name: client.full_name,
           email: client.email,
-          business_name: client.businesses?.[0]?.business_name || '',
-          entity_type: client.businesses?.[0]?.entity_type || '',
+          business_name: client.businesses?.[0]?.business_name || '', // Primary business name
+          entity_type: client.businesses?.[0]?.entity_type || '', // Primary business entity type
           tool_slug: clientToolEnrollments[0]?.tool_slug || '',
           tool_status: clientToolEnrollments[0]?.status || 'inactive',
           total_income: totalIncome,
