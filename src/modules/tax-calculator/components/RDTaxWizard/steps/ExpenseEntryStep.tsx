@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import { supabase } from '../../../../lib/supabase';
+import { ExpenseManagementService } from '../../../../services/expenseManagementService';
+import { SupplyManagementService } from '../../../services/supplyManagementService';
 
 interface Supply {
   id: string;
@@ -25,6 +28,8 @@ interface ExpenseEntryStepProps {
   onUpdate: (updates: any) => void;
   onNext: () => void;
   onPrevious: () => void;
+  businessId?: string;
+  businessYearId?: string;
 }
 
 const ExpenseEntryStep: React.FC<ExpenseEntryStepProps> = ({
@@ -32,7 +37,9 @@ const ExpenseEntryStep: React.FC<ExpenseEntryStepProps> = ({
   contractors,
   onUpdate,
   onNext,
-  onPrevious
+  onPrevious,
+  businessId,
+  businessYearId
 }) => {
   const [activeTab, setActiveTab] = useState<'supplies' | 'contractors'>('supplies');
   const [showAddForm, setShowAddForm] = useState(false);
@@ -71,7 +78,7 @@ const ExpenseEntryStep: React.FC<ExpenseEntryStepProps> = ({
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validateForm()) return;
 
     if (activeTab === 'supplies') {
@@ -83,6 +90,25 @@ const ExpenseEntryStep: React.FC<ExpenseEntryStepProps> = ({
         date: formData.date,
         activityId: formData.activityId || undefined
       };
+
+      // Save supply to database if we have the required IDs
+      if (businessId && businessYearId && !editingItem) {
+        try {
+          console.log('💾 ExpenseEntryStep - Saving supply to database:', supplyData);
+          
+          // Use SupplyManagementService to save the supply
+          await SupplyManagementService.addSupply({
+            name: supplyData.name,
+            description: supplyData.description,
+            amount: supplyData.cost.toString()
+          }, businessId, businessYearId);
+
+          console.log('✅ Supply saved to database');
+        } catch (error) {
+          console.error('❌ Error saving supply to database:', error);
+          // Continue with local state update even if database save fails
+        }
+      }
 
       let updatedSupplies: Supply[];
       if (editingItem) {
@@ -104,6 +130,54 @@ const ExpenseEntryStep: React.FC<ExpenseEntryStepProps> = ({
         activityId: formData.activityId || undefined,
         contractType: formData.contractType
       };
+
+      // Save contractor to database if we have the required IDs
+      if (businessId && businessYearId && !editingItem) {
+        try {
+          console.log('💾 ExpenseEntryStep - Saving contractor to database:', contractorData);
+          
+          // Step 1: Create contractor in rd_contractors table
+          const { data: newContractor, error: contractorError } = await supabase
+            .from('rd_contractors')
+            .insert({
+              business_id: businessId,
+              name: contractorData.name,
+              first_name: contractorData.name.split(' ')[0] || '',
+              last_name: contractorData.name.split(' ').slice(1).join(' ') || '',
+              amount: contractorData.cost,
+              annual_cost: contractorData.cost,
+              is_owner: false,
+              role_id: null // Will need to be set later or use default role
+            })
+            .select()
+            .single();
+
+          if (contractorError) {
+            console.error('❌ Error creating contractor:', contractorError);
+            throw contractorError;
+          }
+
+          console.log('✅ Contractor created in rd_contractors:', newContractor);
+
+          // Step 2: Create contractor year data record for display in lists
+          await ExpenseManagementService.saveContractorYearData(
+            businessYearId,
+            contractorData.name,
+            contractorData.cost,
+            100, // Default to 100% applied percent
+            [], // Empty activity link for now
+            businessId // Fix: Use business ID, not contractor record ID
+          );
+
+          console.log('✅ Contractor saved to rd_contractor_year_data');
+
+          // Update the contractor ID to the database ID
+          contractorData.id = newContractor.id;
+        } catch (error) {
+          console.error('❌ Error saving contractor to database:', error);
+          // Continue with local state update even if database save fails
+        }
+      }
 
       let updatedContractors: Contractor[];
       if (editingItem) {

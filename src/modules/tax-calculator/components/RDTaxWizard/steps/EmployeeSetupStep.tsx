@@ -2638,43 +2638,31 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           const suppliesMap = new Map();
           (supplySubcomponents || []).forEach(ssc => {
             const supply = ssc.supply;
-            if (!supply) return;
+            if (!supply) {
+              console.warn('🔍 Subcomponent missing supply data:', ssc);
+              return;
+            }
             
             if (!suppliesMap.has(supply.id)) {
+              console.log(`🔧 Processing supply: ${supply.name}, annual_cost: ${supply.annual_cost}, mapping to cost_amount`);
               suppliesMap.set(supply.id, {
                 ...supply,
-                subcomponents: [],
-                total_qre: 0
+                calculated_qre: 0,
+                applied_percentage: 0,
+                cost_amount: supply.annual_cost || 0, // Fix: Map annual_cost to cost_amount for UI
+                subcomponents: []
               });
             }
             
-            const supplyEntry = suppliesMap.get(supply.id);
-            supplyEntry.subcomponents.push(ssc);
-            
-            // Calculate QRE for this subcomponent
-            const amountApplied = ssc.amount_applied || 0;
-            const appliedPercentage = ssc.applied_percentage || 0;
-            const supplyCost = supply.annual_cost || 0;
-            const supplyQRE = amountApplied > 0 ? amountApplied : (supplyCost * appliedPercentage / 100);
-            
-            supplyEntry.total_qre += Math.round(supplyQRE);
+            const supplySummary = suppliesMap.get(supply.id);
+            if (ssc.is_included) {
+              supplySummary.calculated_qre += (ssc.amount_applied || 0);
+              supplySummary.applied_percentage += (ssc.applied_percentage || 0);
+            }
+            supplySummary.subcomponents.push(ssc);
           });
-          
-            const suppliesWithQRE = Array.from(suppliesMap.values()).map(supply => {
-              // Calculate total applied percentage from all subcomponents
-              const totalAppliedPercentage = supply.subcomponents.reduce((sum: number, ssc: any) => {
-                return sum + (ssc.applied_percentage || 0);
-              }, 0);
-              
-              console.log(`🔍 Supply ${supply.name}: annual_cost=${supply.annual_cost}, appliedPercentage=${totalAppliedPercentage}%, QRE=${supply.total_qre}`);
-              
-              return {
-            ...supply,
-                calculated_qre: supply.total_qre,
-                applied_percentage: totalAppliedPercentage, // For display in "Applied %" column
-                cost_amount: supply.annual_cost // For display in "Total Amount" column
-              };
-            });
+
+          const suppliesWithQRE = Array.from(suppliesMap.values());
           
           console.log('🛠️ SUPPLIES LOADED for year', targetYearId, ':', suppliesWithQRE.length, 'supplies');
           console.log('🛠️ Supply data:', suppliesWithQRE);
@@ -2798,19 +2786,24 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
 
       console.log('✅ EmployeeSetupStep - Contractor subcomponent data initialized');
 
-      // Step 3: Create contractor year data with baseline QRE
-      await supabase
+      // Step 3: Create contractor year data with baseline QRE (using upsert to handle conflicts)
+      const { error: contractorYearError } = await supabase
         .from('rd_contractor_year_data')
-        .insert({
+        .upsert({
           business_year_id: selectedYear || businessYearId,
           name: `${contractorData.first_name} ${contractorData.last_name}`.trim(),
           cost_amount: amount,
           applied_percent: baselinePercent,
           calculated_qre: calculatedQRE,
           activity_roles: JSON.stringify([contractorData.role_id]),
-          contractor_id: newContractor.id,
+          contractor_id: businessId, // Fix: Use business ID, not contractor record ID
           activity_link: {} // Required non-null field
         });
+      
+      if (contractorYearError) {
+        console.error('❌ Error upserting contractor year data:', contractorYearError);
+        throw contractorYearError;
+      }
 
       // Step 4: Reload data to show new contractor
       await loadData();

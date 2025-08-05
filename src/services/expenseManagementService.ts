@@ -218,7 +218,7 @@ export class ExpenseManagementService {
     costAmount: number,
     appliedPercent: number,
     activityLink: any[] = [],
-    contractorId?: string,
+    contractorId?: string, // Note: Despite the name, this should be businessId per schema FK constraint
     userId?: string
   ): Promise<string> {
     try {
@@ -240,7 +240,7 @@ export class ExpenseManagementService {
 
       const { data, error } = await supabase
         .from('rd_contractor_year_data')
-        .insert(contractorData)
+        .upsert(contractorData)
         .select('id')
         .single();
 
