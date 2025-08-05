@@ -308,6 +308,48 @@ const ClientEditModal: React.FC<ClientEditModalProps> = ({
 
       if (error) throw error;
 
+      // CRITICAL FIX: Update/create actual business table records
+      console.log('💼 ClientEditModal - Processing business table updates...');
+      for (const business of businesses) {
+        const businessData = {
+          client_id: clientId,
+          business_name: business.businessName,
+          entity_type: business.entityType, // Keep original format (LLC, S-Corp, etc.)
+          ein: business.ein,
+          business_address: business.businessAddress,
+          business_city: business.businessCity,
+          business_state: business.businessState,
+          business_zip: business.businessZip,
+          business_phone: business.businessPhone,
+          business_email: business.businessEmail,
+          industry: business.industry,
+          year_established: business.startYear,
+          annual_revenue: business.businessAnnualRevenue || 0,
+          employee_count: business.employeeCount || 0,
+          is_active: business.isActive !== false
+        };
+
+        if (business.id && business.id !== 'temp') {
+          // Update existing business
+          console.log(`💼 Updating existing business: ${business.businessName} (ID: ${business.id})`);
+          const success = await CentralizedClientService.updateBusiness(business.id, businessData);
+          if (!success) {
+            console.error(`❌ Failed to update business: ${business.businessName}`);
+          } else {
+            console.log(`✅ Updated business: ${business.businessName}`);
+          }
+        } else {
+          // Create new business
+          console.log(`💼 Creating new business: ${business.businessName}`);
+          const result = await CentralizedClientService.createBusiness(businessData);
+          if (result.success) {
+            console.log(`✅ Created new business: ${business.businessName} (ID: ${result.businessId})`);
+          } else {
+            console.error(`❌ Failed to create business: ${business.businessName}`, result.error);
+          }
+        }
+      }
+
       toast.success('Client updated successfully');
       onClientUpdated();
       onClose();

@@ -32,7 +32,8 @@ import {
   Loader,
   Database,
   RefreshCw,
-  Zap
+  Zap,
+  Circle
 } from 'lucide-react';
 import { ClientDetailModal } from './ClientDetailModal';
 import { UnifiedClientDashboard } from './UnifiedClientDashboard';
@@ -45,7 +46,6 @@ import { formatCurrency } from '../utils/formatting';
 import { useNavigationSidebar } from '../hooks/useNavigationSidebar';
 import ModularResearchActivityManager from './research-activity-manager/ModularResearchActivityManager';
 import RDTaxWizard from '../modules/tax-calculator/components/RDTaxWizard/RDTaxWizard';
-import ClientProgressIndicator from './common/ClientProgressIndicator';
 
 interface RDClientManagementProps {
   onClientSelect?: (client: UnifiedClientRecord) => void;
@@ -70,70 +70,212 @@ const BusinessAccordion: React.FC<BusinessAccordionProps> = ({
   isExpanded,
   onToggle
 }) => {
+  console.log('🏢 [BusinessAccordion] Rendering business:', business.business_name, 'Years:', business.business_years);
+  
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
       {/* Business Header */}
-      <div className="p-4 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-            <Building className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h4 className="text-sm font-medium text-gray-900">
-              {business.business_name || 'Unknown Business'}
-            </h4>
-            <div className="flex items-center space-x-2 mt-1">
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                {business.entity_type || 'LLC'}
-              </span>
-              {business.ein && (
-                <span className="text-xs text-gray-500">
-                  EIN: {business.ein}
-                </span>
-              )}
-              {business.business_years?.length > 0 && (
-                <span className="text-xs text-gray-500">
-                  {business.business_years.length} year{business.business_years.length !== 1 ? 's' : ''}
-                </span>
-              )}
+      <div 
+        className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+        onClick={onToggle}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+              <Building className="w-5 h-5 text-white" />
             </div>
-          </div>
-        </div>
-        
-        <div className="flex items-center space-x-4">
-          <div className="text-right">
-            <div className="text-sm font-medium text-gray-900">
-              ${business.annual_revenue?.toLocaleString() || '0'}
-            </div>
-            <div className="text-xs text-gray-500">
-              {business.employee_count || 0} employees
+            <div>
+              <h4 className="text-sm font-medium text-gray-900">
+                {business.business_name || 'Unknown Business'}
+              </h4>
+              <div className="flex items-center space-x-2 mt-1">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                  {business.entity_type || 'LLC'}
+                </span>
+                {business.ein && (
+                  <span className="text-xs text-gray-500">
+                    EIN: {business.ein}
+                  </span>
+                )}
+                {business.business_years?.length > 0 && (
+                  <span className="text-xs text-gray-500">
+                    {business.business_years.length} year{business.business_years.length !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           
-          {/* Single Open Button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              console.log('🔘 Launch R&D Wizard for business:', business.id, 'client:', clientId);
-              onLaunchWizard(clientId, business.id);
-            }}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
-          >
-            <ExternalLink className="w-4 h-4 mr-2" />
-            Open R&D Wizard
-          </button>
+          <div className="flex items-center space-x-4">
+            <div className="text-right">
+              <div className="text-sm font-medium text-gray-900">
+                ${business.annual_revenue?.toLocaleString() || '0'}
+              </div>
+              <div className="text-xs text-gray-500">
+                {business.employee_count || 0} employees
+              </div>
+            </div>
+            
+            {/* Single Open Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                console.log('🔘 Launch R&D Wizard for business:', business.id, 'client:', clientId);
+                onLaunchWizard(clientId, business.id);
+              }}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+            >
+              <ExternalLink className="w-4 h-4 mr-2" />
+              Open R&D Wizard
+            </button>
+            
+            {/* Expand/Collapse Icon */}
+            <div className="flex items-center">
+              {isExpanded ? (
+                <ChevronDown className="w-5 h-5 text-gray-500" />
+              ) : (
+                <ChevronRight className="w-5 h-5 text-gray-500" />
+              )}
+            </div>
+          </div>
         </div>
       </div>
-      
-      {/* Progress Cards - Full Width Row Below */}
-      <div className="px-4 pb-4">
-        <ClientProgressIndicator 
-          businessId={business.id}
-          className="w-full"
-          showYearLabels={true}
-          maxYears={4}
-        />
-      </div>
+
+      {/* Expanded Business Years Content */}
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            className="border-t border-gray-100 bg-gray-50"
+          >
+            <div className="p-6">
+              {business.business_years && business.business_years.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {business.business_years
+                    .sort((a: any, b: any) => b.year - a.year) // Sort by year descending
+                    .slice(0, 5) // Show only current year + 4 previous years (like Image 1)
+                    .map((year: any) => {
+                      // Calculate completion percentage based on completed steps
+                      const researchDesignCompleted = year.research_design_completed || false;
+                      const qresCompleted = year.qre_locked || false; 
+                      const calculationsCompleted = year.calculations_completed || false;
+                      
+                      const completedSteps = [researchDesignCompleted, qresCompleted, calculationsCompleted].filter(Boolean).length;
+                      const totalSteps = 3;
+                      const completionPercentage = Math.round((completedSteps / totalSteps) * 100);
+                      
+                      return (
+                        <div key={year.id || year.year} className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+                          {/* Year Header */}
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center space-x-2">
+                              <span className="text-2xl font-bold text-gray-900">{year.year}</span>
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                completionPercentage === 100 ? 'bg-green-100 text-green-800' :
+                                completionPercentage > 0 ? 'bg-blue-100 text-blue-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {completionPercentage}%
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Progress Steps */}
+                          <div className="flex justify-between items-center mb-4">
+                            {/* Research Design */}
+                            <div className="flex flex-col items-center space-y-1">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                researchDesignCompleted 
+                                  ? 'bg-green-500 text-white' 
+                                  : 'bg-gray-200 text-gray-600'
+                              }`}>
+                                {researchDesignCompleted ? (
+                                  <CheckCircle className="w-4 h-4" />
+                                ) : (
+                                  <Circle className="w-4 h-4" />
+                                )}
+                              </div>
+                              <span className="text-xs text-gray-600 text-center">Research<br/>Design</span>
+                            </div>
+
+                            {/* Connector Line */}
+                            <div className="flex-1 h-px bg-gray-200 mx-2"></div>
+
+                            {/* QREs */}
+                            <div className="flex flex-col items-center space-y-1">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                qresCompleted 
+                                  ? 'bg-green-500 text-white' 
+                                  : 'bg-gray-200 text-gray-600'
+                              }`}>
+                                {qresCompleted ? (
+                                  <CheckCircle className="w-4 h-4" />
+                                ) : (
+                                  <Circle className="w-4 h-4" />
+                                )}
+                              </div>
+                              <span className="text-xs text-gray-600">QREs</span>
+                            </div>
+
+                            {/* Connector Line */}
+                            <div className="flex-1 h-px bg-gray-200 mx-2"></div>
+
+                            {/* Calculations */}
+                            <div className="flex flex-col items-center space-y-1">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                calculationsCompleted 
+                                  ? 'bg-green-500 text-white' 
+                                  : 'bg-gray-200 text-gray-600'
+                              }`}>
+                                {calculationsCompleted ? (
+                                  <CheckCircle className="w-4 h-4" />
+                                ) : (
+                                  <Circle className="w-4 h-4" />
+                                )}
+                              </div>
+                              <span className="text-xs text-gray-600">Calculations</span>
+                            </div>
+                          </div>
+
+                          {/* Status Message */}
+                          <div className="text-center mb-4">
+                            <p className="text-sm text-gray-500">
+                              {completionPercentage === 100 
+                                ? 'All steps completed'
+                                : 'Complete steps to see financial metrics'
+                              }
+                            </p>
+                          </div>
+
+                          {/* Launch Button */}
+                          <button
+                            onClick={() => {
+                              console.log('🚀 Launch R&D Wizard for year:', year.year, 'business:', business.id);
+                              onLaunchWizard(clientId, business.id);
+                            }}
+                            className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                          >
+                            <ExternalLink className="w-4 h-4 mr-2" />
+                            Open R&D Wizard
+                          </button>
+                        </div>
+                      );
+                    })}
+                </div>
+              ) : (
+                <div className="text-center py-6 text-gray-500">
+                  <Calendar className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                  <p className="text-sm">No business years found</p>
+                  <p className="text-xs text-gray-400 mt-1">Add business years to see detailed information</p>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -298,14 +440,6 @@ export default function RDClientManagement({
   const [searchParams] = useSearchParams();
   const [selectedBusinessForActivities, setSelectedBusinessForActivities] = useState<string | null>(null);
 
-  // Default to Global mode (no auto-selection of business)
-  useEffect(() => {
-    if (selectedBusinessForActivities === null && clients.length > 0) {
-      console.log('🌍 Defaulting to Global Research Activities mode');
-      // Stay in global mode - don't auto-select a business
-    }
-  }, [clients, selectedBusinessForActivities]);
-
   // Load clients on component mount
   useEffect(() => {
     console.log('🔄 RDClientManagement useEffect triggered');
@@ -363,6 +497,10 @@ export default function RDClientManagement({
                       year,
                       total_qre,
                       gross_receipts,
+                      research_design_completed,
+                      qre_locked,
+                      calculations_completed,
+                      overall_completion_percentage,
                       created_at,
                       updated_at
                     )
@@ -395,10 +533,34 @@ export default function RDClientManagement({
                 const rdBusinessYears = rdBusiness.rd_business_years || [];
                 const existingYears = business.business_years || [];
 
+                // Transform rd_business_years to match expected structure for BusinessAccordion
+                const transformedRdYears = rdBusinessYears.map((rdYear: any) => ({
+                  id: rdYear.id,
+                  year: rdYear.year,
+                  ordinary_k1_income: 0, // R&D doesn't track K1 income separately
+                  guaranteed_k1_income: rdYear.total_qre || 0, // Use total QRE as guaranteed income
+                  annual_revenue: rdYear.gross_receipts || 0, // Map gross receipts to annual revenue
+                  employee_count: 0, // R&D doesn't track employee count at year level
+                  is_active: true,
+                  // Add completion fields for step progress
+                  research_design_completed: rdYear.research_design_completed || false,
+                  qre_locked: rdYear.qre_locked || false,
+                  calculations_completed: rdYear.calculations_completed || false,
+                  overall_completion_percentage: rdYear.overall_completion_percentage || 0,
+                  created_at: rdYear.created_at,
+                  updated_at: rdYear.updated_at
+                }));
+
+                console.log(`🔧 [RDClientManagement] Transforming business years for ${business.business_name}:`, {
+                  originalRdYears: rdBusinessYears.length,
+                  existingYears: existingYears.length,
+                  transformedData: transformedRdYears
+                });
+
                 // Combine and deduplicate by year
-                const allYears = [...rdBusinessYears];
+                const allYears = [...transformedRdYears];
                 existingYears.forEach((existingYear: any) => {
-                  if (!rdBusinessYears.find(rdYear => rdYear.year === existingYear.year)) {
+                  if (!transformedRdYears.find(rdYear => rdYear.year === existingYear.year)) {
                     allYears.push(existingYear);
                   }
                 });
@@ -735,21 +897,19 @@ export default function RDClientManagement({
                     onChange={(e) => setSelectedBusinessForActivities(e.target.value || null)}
                     className="mt-3 w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500"
                   >
-                    <option value="">🌍 Global Activities (Organization-wide)</option>
-                    <optgroup label="Business-Specific Activities">
-                      {clients.flatMap(client => 
-                        client.businesses?.map(business => (
-                          <option key={business.id} value={business.id}>
-                            {business.business_name} ({client.full_name})
-                          </option>
-                        )) || []
-                      )}
-                    </optgroup>
+                    <option value="">Select a business...</option>
+                    {clients.flatMap(client => 
+                      client.businesses?.map(business => (
+                        <option key={business.id} value={business.id}>
+                          {business.business_name} ({client.full_name})
+                        </option>
+                      )) || []
+                    )}
                   </select>
                 </div>
               </div>
               
-              {selectedBusinessForActivities ? (
+              {selectedBusinessForActivities && (
                 <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
                   <div className="flex items-center space-x-2">
                     <Building className="w-4 h-4 text-purple-600" />
@@ -762,18 +922,6 @@ export default function RDClientManagement({
                   </div>
                   <p className="text-xs text-purple-600 mt-1">
                     Activities created here will only be visible to this specific business for IP protection
-                  </p>
-                </div>
-              ) : (
-                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="flex items-center space-x-2">
-                    <Database className="w-4 h-4 text-blue-600" />
-                    <span className="text-sm font-medium text-blue-800">
-                      🌍 Managing Global Research Activities (Organization-wide)
-                    </span>
-                  </div>
-                  <p className="text-xs text-blue-600 mt-1">
-                    Activities created here will be available to all businesses in your organization. Perfect for standard research processes and templates.
                   </p>
                 </div>
               )}

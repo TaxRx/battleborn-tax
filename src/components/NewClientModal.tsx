@@ -111,7 +111,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
       
       // Get all businesses for this client
       const { data: allBusinesses, error: fetchError } = await supabase
-        .from('rd_businesses')
+        .from('businesses')
         .select('id, business_name, ein, created_at')
         .eq('client_id', clientId)
         .order('created_at', { ascending: false }); // Newest first
@@ -148,7 +148,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
           console.log(`[cleanupDuplicateBusinesses] Keeping business ID: ${keepBusiness.id}, deleting IDs: ${idsToDelete.join(', ')}`);
           
           const { error: deleteError } = await supabase
-            .from('rd_businesses')
+            .from('businesses')
             .delete()
             .in('id', idsToDelete);
             
@@ -664,8 +664,8 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
       console.log(`[handleSubmit] formData.fullName:`, formData.fullName);
       console.log(`[handleSubmit] completeTaxInfo.fullName:`, completeTaxInfo.fullName);
 
-      if (initialData?.id) {
-        console.log(`[handleSubmit] Updating existing client with ID: ${initialData.id}`);
+      if (initialData?.id || completeTaxInfo.id) {
+        console.log(`[handleSubmit] Updating existing client with ID: ${initialData?.id || completeTaxInfo.id}`);
         // Update existing client
         const updateData = {
           full_name: completeTaxInfo.fullName,
@@ -683,23 +683,24 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
 
         console.log(`[handleSubmit] Client update data:`, updateData);
 
-        const success = await CentralizedClientService.updateClient(initialData.id, updateData);
+        const success = await CentralizedClientService.updateClient(initialData?.id || completeTaxInfo.id, updateData);
         
         if (success) {
           console.log(`[handleSubmit] Client update successful, now updating personal years and business data`);
           // Update personal years data
           try {
             // First, delete existing personal years for this client
-            console.log(`[handleSubmit] Deleting existing personal years for client ${initialData.id}`);
+            const clientId = initialData?.id || completeTaxInfo.id;
+            console.log(`[handleSubmit] Deleting existing personal years for client ${clientId}`);
             await supabase
               .from('personal_years')
               .delete()
-              .eq('client_id', initialData.id);
+              .eq('client_id', clientId);
 
             // Then insert the new personal years data
             if (completeTaxInfo.years && completeTaxInfo.years.length > 0) {
               const personalYearsData = completeTaxInfo.years.map(year => ({
-                client_id: initialData.id,
+                client_id: clientId,
                 year: year.year,
                 wages_income: year.wagesIncome || 0,
                 passive_income: year.passiveIncome || 0,
@@ -734,7 +735,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                 console.log(`[handleSubmit] Business years:`, business.years);
                 
                 const businessData = {
-                  client_id: initialData.id,
+                  client_id: clientId,
                   business_name: business.businessName,
                   entity_type: business.entityType === 'LLC' ? 'llc' :
                                business.entityType === 'S-Corp' ? 's_corp' :
@@ -758,9 +759,9 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
 
                 // Check if business already exists for this client
                 const { data: existingBusiness, error: checkError } = await supabase
-                  .from('rd_businesses')
+                  .from('businesses')
                   .select('id')
-                  .eq('client_id', initialData.id)
+                  .eq('client_id', clientId)
                   .eq('business_name', business.businessName)
                   .eq('ein', business.ein || '')
                   .maybeSingle();
@@ -775,7 +776,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                   // Update existing business
                   console.log(`[handleSubmit] Updating existing business ID: ${existingBusiness.id}`);
                   const { data: updateResult, error: updateError } = await supabase
-                    .from('rd_businesses')
+                    .from('businesses')
                     .update(businessData)
                     .eq('id', existingBusiness.id)
                     .select()
@@ -791,7 +792,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
                   // Create new business
                   console.log(`[handleSubmit] Creating new business: ${business.businessName}`);
                   const { data: insertResult, error: insertError } = await supabase
-                    .from('rd_businesses')
+                    .from('businesses')
                     .insert(businessData)
                     .select()
                     .single();
@@ -821,7 +822,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
 
                     // Use upsert to prevent duplicate business year records
                     const { error: upsertError } = await supabase
-                      .from('rd_business_years')
+                      .from('business_years')
                       .upsert(yearData, {
                         onConflict: 'business_id,year'
                       });

@@ -1518,9 +1518,9 @@ export class FilingGuideService {
       day: 'numeric'
     });
 
-    // Clone and reorganize the document content with proper page breaks
+    // Clone and clean the document content for Puppeteer
     const contentClone = documentElement.cloneNode(true) as HTMLElement;
-    const structuredContent = this.restructureContentWithPageBreaks(contentClone, data);
+    this.cleanContentForPuppeteer(contentClone);
 
     // Capture live CSS from the current page
     const liveCSS = this.captureLiveCSS();
@@ -1543,14 +1543,51 @@ export class FilingGuideService {
           ${liveCSS}
         </style>
         
-        <!-- Enhanced PDF-specific styles with page breaks -->
+        <!-- Enhanced PDF-specific styles -->
         <style id="pdf-styles">
-          ${this.getEnhancedPDFStylesWithPageBreaks()}
+          ${this.getEnhancedPDFStyles()}
         </style>
       </head>
       <body>
         <div class="pdf-wrapper">
-          ${structuredContent}
+          <!-- Simple Header -->
+          <div class="pdf-header">
+            <div class="header-content">
+              <div class="header-left">
+                <div class="logo-section">
+                  <div class="company-logo">
+                    <img src="/images/Direct Research_horizontal advisors logo.png" alt="Direct Research Logo" class="logo-img">
+                  </div>
+                  <div class="company-info">
+                    <h2 class="company-name">Direct Research</h2>
+                  </div>
+                </div>
+              </div>
+              <div class="header-right">
+                <h1 class="document-title">Federal R&D Credit Filing Guide</h1>
+              </div>
+            </div>
+          </div>
+
+          <!-- Document Content -->
+          <div class="pdf-content">
+            ${contentClone.outerHTML}
+          </div>
+
+          <!-- Professional Footer -->
+          <div class="pdf-footer">
+            <div class="footer-content">
+              <div class="footer-left">
+                <span>Prepared by Direct Research</span>
+              </div>
+              <div class="footer-center">
+                <span>Confidential & Proprietary</span>
+              </div>
+              <div class="footer-right">
+                <span>Tax Year ${selectedYear?.year || 'N/A'}</span>
+              </div>
+            </div>
+          </div>
         </div>
       </body>
       </html>
@@ -1628,243 +1665,6 @@ export class FilingGuideService {
       
       throw new Error(`PDF generation service unavailable. HTML version downloaded instead. Original error: ${error.message}`);
     }
-  }
-
-  private static restructureContentWithPageBreaks(element: HTMLElement, data: FilingGuideExportData): string {
-    const { businessData, selectedYear } = data;
-    const currentDate = new Date().toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-
-    console.log('🔄 [PDF] Restructuring content with page breaks for:', businessData?.name, selectedYear?.year);
-
-    // Clean the element first
-    this.cleanContentForPuppeteer(element);
-
-    // Extract sections from the existing content using multiple selector patterns
-    const sections = {
-      cover: this.extractSection(element, '#filing-guide-section-cover, .filing-guide-cover-page, [id*="cover"]'),
-      about: this.extractSection(element, '#filing-guide-section-about, .about-direct-research, [id*="about"]'),
-      overview: this.extractSection(element, '#filing-guide-section-overview, .filing-process-overview, [id*="overview"]'),
-      processSteps: this.extractSection(element, '.filing-process-steps, .process-steps'), // Will be removed
-      summaryTables: this.extractSection(element, '#filing-guide-section-summary, .qre-summary-tables, .qre-table, [id*="summary"]'),
-      calculationSummary: this.extractSection(element, '.calculation-method-summary'), // Will be removed
-      form6765: this.extractSection(element, '#filing-guide-section-form6765, .form-6765, [id*="form6765"], [id*="form-6765"]'),
-      stateCredits: this.extractSection(element, '#filing-guide-section-state, .state-credits, .state-pro-forma, [id*="state"]'),
-      stateGuidelines: this.extractSection(element, '.state-guidelines, .state-filing-guidelines, [class*="guidelines"]'),
-      calculations: this.extractSection(element, '#filing-guide-section-calculations, .calculation-specifics, [id*="calculation"]'),
-      researchBaseline: this.extractSection(element, '.research-activity-baseline, .research-baseline, [class*="baseline"], [class*="research-activity"]')
-    };
-
-    // Check if it's pre-2024 Form 6765
-    const isPre2024 = selectedYear && selectedYear.year < 2024;
-
-    // Log what sections were found
-    console.log('📋 [PDF] Extracted sections:', {
-      cover: !!sections.cover,
-      about: !!sections.about,
-      overview: !!sections.overview,
-      summaryTables: !!sections.summaryTables,
-      form6765: !!sections.form6765,
-      stateCredits: !!sections.stateCredits,
-      stateGuidelines: !!sections.stateGuidelines,
-      calculations: !!sections.calculations,
-      researchBaseline: !!sections.researchBaseline,
-      isPre2024
-    });
-
-    return `
-      <!-- Page 1: Title Page -->
-      <div class="pdf-page title-page">
-        ${this.createTitlePage(businessData, selectedYear, currentDate)}
-      </div>
-
-      <!-- Page 2: About Direct Research -->
-      <div class="pdf-page about-page">
-        ${sections.about || this.createAboutSection()}
-      </div>
-
-      <!-- Page 3: Filing Process Overview -->
-      <div class="pdf-page overview-page">
-        ${sections.overview || this.createFilingProcessOverview()}
-      </div>
-
-      <!-- Page 4: Summary Tables and Visuals -->
-      <div class="pdf-page summary-page">
-        <div class="filing-guide-section">
-          <div class="filing-guide-section-header">
-            <div class="filing-guide-section-title">Summary Tables and Visuals</div>
-            <div class="filing-guide-section-subtitle">QRE calculations and visual breakdowns</div>
-          </div>
-          ${sections.summaryTables || '<p>Summary tables will be displayed here.</p>'}
-        </div>
-      </div>
-
-      <!-- Page 5-6: Form 6765 -->
-      <div class="pdf-page form-page ${isPre2024 ? 'pre-2024-form' : 'form-2024-plus'}">
-        <div class="filing-guide-section">
-          <div class="filing-guide-section-header">
-            <div class="filing-guide-section-title">Form 6765 ${isPre2024 ? '(Pre-2024)' : '(2024+)'}</div>
-            <div class="filing-guide-section-subtitle">Credit for Increasing Research Activities</div>
-          </div>
-          ${sections.form6765 || '<p>Form 6765 will be displayed here.</p>'}
-        </div>
-      </div>
-
-      <!-- Page 7: State Pro Forma (Single Page) -->
-      ${sections.stateCredits ? `
-      <div class="pdf-page state-proforma-page">
-        <div class="filing-guide-section state-proforma-compact">
-          <div class="filing-guide-section-header">
-            <div class="filing-guide-section-title">State Credits Pro Forma</div>
-            <div class="filing-guide-section-subtitle">State-specific R&D credit calculations</div>
-          </div>
-          ${sections.stateCredits}
-        </div>
-      </div>
-      ` : ''}
-
-      <!-- Page 8: State Guidelines (Single Page) -->
-      ${sections.stateGuidelines ? `
-      <div class="pdf-page state-guidelines-page">
-        <div class="filing-guide-section">
-          <div class="filing-guide-section-header">
-            <div class="filing-guide-section-title">State Guidelines</div>
-            <div class="filing-guide-section-subtitle">State-specific filing requirements and notes</div>
-          </div>
-          ${sections.stateGuidelines}
-        </div>
-      </div>
-      ` : ''}
-
-      <!-- Page 9: Research Activity Baseline (New Page) -->
-      ${sections.researchBaseline ? `
-      <div class="pdf-page research-baseline-page">
-        <div class="filing-guide-section">
-          <div class="filing-guide-section-header">
-            <div class="filing-guide-section-title">Research Activity Baseline</div>
-            <div class="filing-guide-section-subtitle">Research activities and baseline calculations</div>
-          </div>
-          ${sections.researchBaseline}
-        </div>
-      </div>
-      ` : ''}
-
-      <!-- Additional Calculation Specifics -->
-      ${sections.calculations ? `
-      <div class="pdf-page calculations-page">
-        <div class="filing-guide-section">
-          <div class="filing-guide-section-header">
-            <div class="filing-guide-section-title">Calculation Specifics</div>
-            <div class="filing-guide-section-subtitle">Detailed calculation methodology and notes</div>
-          </div>
-          ${sections.calculations}
-        </div>
-      </div>
-      ` : ''}
-    `;
-  }
-
-  private static extractSection(element: HTMLElement, selectors: string): string {
-    // Try multiple selectors separated by commas
-    const selectorList = selectors.split(',').map(s => s.trim());
-    
-    for (const selector of selectorList) {
-      try {
-        const section = element.querySelector(selector);
-        if (section) {
-          console.log(`✅ [PDF] Found section with selector: ${selector}`);
-          // Clone the section to avoid modifying the original
-          const sectionClone = section.cloneNode(true) as HTMLElement;
-          this.cleanContentForPuppeteer(sectionClone);
-          return sectionClone.outerHTML;
-        }
-      } catch (error) {
-        console.warn(`⚠️ [PDF] Invalid selector: ${selector}`, error);
-      }
-    }
-    
-    console.log(`❌ [PDF] No section found for selectors: ${selectors}`);
-    return '';
-  }
-
-  private static createTitlePage(businessData: any, selectedYear: any, currentDate: string): string {
-    return `
-      <div class="title-page-content">
-        <div class="title-logo">
-          <img src="/images/Direct Research_horizontal advisors logo.png" alt="Direct Research Logo" class="title-logo-img">
-        </div>
-        
-        <h1 class="title-main">Federal R&D Credit Filing Guide</h1>
-        <h2 class="title-subtitle">Prepared by Direct Research</h2>
-        
-        <div class="title-details">
-          <div class="detail-row">
-            <span class="detail-label">Client Name:</span>
-            <span class="detail-value">${businessData?.name || 'N/A'}</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">Tax Year:</span>
-            <span class="detail-value">${selectedYear?.year || 'N/A'}</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">Date Generated:</span>
-            <span class="detail-value">${currentDate}</span>
-          </div>
-        </div>
-        
-        <div class="title-footer">
-          <p>This document contains confidential and proprietary information prepared specifically for the above-named client.</p>
-        </div>
-      </div>
-    `;
-  }
-
-  private static createAboutSection(): string {
-    return `
-      <div class="about-content">
-        <h2>About Direct Research</h2>
-        <p>Direct Research is a leading provider of R&D tax credit services, specializing in helping businesses maximize their federal and state research and development tax incentives.</p>
-        
-        <h3>Our Services</h3>
-        <ul>
-          <li>R&D Tax Credit Studies and Documentation</li>
-          <li>Federal and State Credit Calculations</li>
-          <li>IRS Audit Defense and Support</li>
-          <li>Research Activity Documentation</li>
-          <li>Multi-State Credit Optimization</li>
-        </ul>
-        
-        <h3>Our Expertise</h3>
-        <p>With years of experience in R&D tax credit consulting, our team understands the complexities of federal and state regulations, ensuring your business captures every eligible credit while maintaining full compliance.</p>
-      </div>
-    `;
-  }
-
-  private static createFilingProcessOverview(): string {
-    return `
-      <div class="overview-content">
-        <h2>Filing Process Overview</h2>
-        <p>This section provides a comprehensive overview of the R&D tax credit filing process and key considerations for your tax return.</p>
-        
-        <h3>Key Filing Requirements</h3>
-        <ul>
-          <li>Complete Form 6765 for federal R&D credit claim</li>
-          <li>Attach supporting documentation and calculations</li>
-          <li>File applicable state forms for additional credits</li>
-          <li>Maintain detailed records of research activities</li>
-        </ul>
-        
-        <h3>Important Deadlines</h3>
-        <ul>
-          <li>Federal filing: Original tax return due date (with extensions)</li>
-          <li>State filings: Vary by state (see state-specific guidelines)</li>
-          <li>Documentation retention: Minimum 3 years, recommended 6+ years</li>
-        </ul>
-      </div>
-    `;
   }
 
   private static cleanContentForPuppeteer(element: HTMLElement): void {
@@ -2003,436 +1803,6 @@ export class FilingGuideService {
       console.warn('Could not capture live CSS:', error);
       return '';
     }
-  }
-
-  private static getEnhancedPDFStylesWithPageBreaks(): string {
-    return `
-      /* CSS Reset and Foundation */
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-
-      /* Typography Foundation with Plus Jakarta Sans */
-      html {
-        font-size: 14px;
-        line-height: 1.6;
-      }
-
-      body {
-        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', system-ui, sans-serif;
-        font-weight: 400;
-        font-size: 11px;
-        color: #1f2937;
-        background: white;
-        margin: 0;
-        padding: 0;
-        -webkit-font-smoothing: antialiased;
-        -moz-osx-font-smoothing: grayscale;
-        line-height: 1.5;
-      }
-
-      /* PDF Page Layout - Each page is a separate container */
-      .pdf-page {
-        width: 8.5in;
-        min-height: 11in;
-        padding: 0.75in 0.5in;
-        margin: 0;
-        background: white;
-        page-break-after: always;
-        page-break-inside: avoid;
-        display: block;
-        position: relative;
-      }
-
-      .pdf-page:last-child {
-        page-break-after: avoid;
-      }
-
-      /* Specific Page Styling */
-      
-      /* Page 1: Title Page */
-      .title-page {
-        text-align: center;
-        padding: 2in 1in;
-        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-      }
-
-      .title-logo {
-        margin-bottom: 1.5in;
-      }
-
-      .title-logo-img {
-        max-width: 4in;
-        height: auto;
-      }
-
-      .title-main {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-size: 28pt;
-        font-weight: 800;
-        color: #1e40af;
-        margin-bottom: 0.5in;
-        letter-spacing: -0.025em;
-      }
-
-      .title-subtitle {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-size: 18pt;
-        font-weight: 600;
-        color: #3730a3;
-        margin-bottom: 1.5in;
-      }
-
-      .title-details {
-        max-width: 5in;
-        margin: 0 auto 1in auto;
-        text-align: left;
-        background: white;
-        padding: 30px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-      }
-
-      .title-details .detail-row {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 15px;
-        padding: 10px 0;
-        border-bottom: 1px solid #e5e7eb;
-      }
-
-      .title-details .detail-label {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-weight: 600;
-        color: #374151;
-        font-size: 12pt;
-      }
-
-      .title-details .detail-value {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-weight: 500;
-        color: #1f2937;
-        font-size: 12pt;
-      }
-
-      .title-footer {
-        position: absolute;
-        bottom: 1in;
-        left: 1in;
-        right: 1in;
-        text-align: center;
-        font-size: 10pt;
-        color: #6b7280;
-        font-style: italic;
-      }
-
-      /* Page 2: About Page */
-      .about-page {
-        padding: 1in 0.75in;
-      }
-
-      .about-content h2 {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-size: 22pt;
-        font-weight: 700;
-        color: #1e40af;
-        margin-bottom: 20px;
-        border-bottom: 3px solid #3b82f6;
-        padding-bottom: 10px;
-      }
-
-      .about-content h3 {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-size: 16pt;
-        font-weight: 600;
-        color: #1f2937;
-        margin: 25px 0 15px 0;
-      }
-
-      .about-content p {
-        font-size: 11pt;
-        line-height: 1.6;
-        margin-bottom: 15px;
-        color: #374151;
-      }
-
-      .about-content ul {
-        margin: 15px 0 15px 25px;
-      }
-
-      .about-content li {
-        font-size: 11pt;
-        line-height: 1.6;
-        margin-bottom: 8px;
-        color: #374151;
-      }
-
-      /* Page 3: Overview Page */
-      .overview-page {
-        padding: 1in 0.75in;
-      }
-
-      .overview-content h2 {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-size: 22pt;
-        font-weight: 700;
-        color: #1e40af;
-        margin-bottom: 20px;
-        border-bottom: 3px solid #3b82f6;
-        padding-bottom: 10px;
-      }
-
-      .overview-content h3 {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-size: 16pt;
-        font-weight: 600;
-        color: #1f2937;
-        margin: 25px 0 15px 0;
-      }
-
-      .overview-content p {
-        font-size: 11pt;
-        line-height: 1.6;
-        margin-bottom: 15px;
-        color: #374151;
-      }
-
-      .overview-content ul {
-        margin: 15px 0 15px 25px;
-      }
-
-      .overview-content li {
-        font-size: 11pt;
-        line-height: 1.6;
-        margin-bottom: 8px;
-        color: #374151;
-      }
-
-      /* Page 4: Summary Page */
-      .summary-page {
-        padding: 0.75in 0.5in;
-      }
-
-      /* Page 5-6: Form Pages */
-      .form-page {
-        padding: 0.5in 0.25in;
-      }
-
-      .form-2024-plus {
-        /* Allow more space for Section G 49F visibility */
-        min-height: 22in; /* Span 2 pages if needed */
-      }
-
-      .pre-2024-form {
-        /* Constrain to single page */
-        max-height: 10in;
-        overflow: hidden;
-      }
-
-      /* Page 7: State Pro Forma - Compact Single Page */
-      .state-proforma-page {
-        padding: 0.5in 0.25in;
-      }
-
-      .state-proforma-compact {
-        font-size: 9pt;
-      }
-
-      .state-proforma-compact table {
-        font-size: 9pt;
-      }
-
-      .state-proforma-compact th,
-      .state-proforma-compact td {
-        padding: 4px 6px;
-        font-size: 9pt;
-      }
-
-      /* Page 8: State Guidelines - Single Page */
-      .state-guidelines-page {
-        padding: 0.75in 0.5in;
-        font-size: 10pt;
-      }
-
-      /* Page 9+: Research Baseline - New Page */
-      .research-baseline-page {
-        padding: 0.75in 0.5in;
-      }
-
-      /* General Section Styling */
-      .filing-guide-section {
-        background: white;
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
-        padding: 20px;
-        margin-bottom: 20px;
-        position: relative;
-      }
-
-      .filing-guide-section-header {
-        margin-bottom: 20px;
-        padding-bottom: 10px;
-        border-bottom: 2px solid #f3f4f6;
-      }
-
-      .filing-guide-section-title {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-size: 18pt;
-        font-weight: 700;
-        color: #1f2937;
-        margin: 0 0 5px 0;
-        letter-spacing: -0.025em;
-      }
-
-      .filing-guide-section-subtitle {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-size: 12pt;
-        font-weight: 500;
-        color: #6b7280;
-        margin: 0;
-      }
-
-      /* Table Styling */
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 15px 0;
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        background: white;
-        border: 1px solid #e5e7eb;
-      }
-
-      th {
-        background: #f8fafc;
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-weight: 600;
-        font-size: 10pt;
-        text-align: left;
-        padding: 8px 10px;
-        color: #1f2937;
-        border: 1px solid #e5e7eb;
-      }
-
-      td {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-size: 10pt;
-        font-weight: 400;
-        padding: 6px 10px;
-        border: 1px solid #e5e7eb;
-        color: #374151;
-        vertical-align: top;
-      }
-
-      /* Form Input Styling for PDF */
-      .pdf-static-value {
-        background: white;
-        border: 1px solid #e5e7eb;
-        padding: 3px 6px;
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-weight: 500;
-        font-size: 10pt;
-        color: #1f2937;
-        display: inline-block;
-        min-width: 40px;
-        text-align: center;
-      }
-
-      /* Amount and Number Formatting */
-      .amount, .currency, .number, 
-      .pdf-amount, .pdf-number, .pdf-currency,
-      .pdf-static-value {
-        font-family: 'Plus Jakarta Sans', sans-serif !important;
-        font-weight: 500 !important;
-        font-size: 10pt !important;
-        color: #1f2937 !important;
-        text-align: right;
-      }
-
-      .percentage, .pdf-percentage {
-        font-family: 'Plus Jakarta Sans', sans-serif !important;
-        font-weight: 600 !important;
-        font-size: 10pt !important;
-        text-align: center;
-        color: #059669;
-      }
-
-      /* Hide elements that shouldn't appear in PDF */
-      button,
-      input[type="button"],
-      input[type="submit"],
-      .state-selector-container,
-      .modal-overlay,
-      .tooltip,
-      .dropdown-menu,
-      .no-print {
-        display: none !important;
-        visibility: hidden !important;
-      }
-
-      /* Ensure key content is visible */
-      .filing-guide-section,
-      .qre-table,
-      .form-6765-table,
-      .calculation-specifics {
-        display: block !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-      }
-
-      /* Page Break Controls */
-      @page {
-        size: Letter;
-        margin: 0;
-      }
-
-      @media print {
-        .pdf-page {
-          page-break-after: always;
-          page-break-inside: avoid;
-        }
-
-        .pdf-page:last-child {
-          page-break-after: avoid;
-        }
-
-        .form-2024-plus {
-          page-break-inside: auto; /* Allow spanning multiple pages for Form 6765 2024+ */
-        }
-
-        .pre-2024-form,
-        .state-proforma-page,
-        .state-guidelines-page {
-          page-break-inside: avoid; /* Keep these on single pages */
-        }
-
-        /* Ensure Section G 49F is visible in Form 6765 2024+ */
-        .form-6765-section-g,
-        .section-g,
-        [class*="section-g"],
-        [id*="section-g"] {
-          page-break-inside: avoid;
-        }
-
-        .form-6765-line-49f,
-        .line-49f,
-        [class*="line-49f"],
-        [id*="line-49f"],
-        [class*="49f"],
-        tr:has(.line-49f),
-        tr:has([class*="49f"]) {
-          page-break-before: avoid;
-          page-break-after: avoid;
-          page-break-inside: avoid;
-        }
-
-        /* Additional specific targeting for Form 6765 visibility */
-        .form-6765-table tr:nth-last-child(-n+5) {
-          page-break-before: avoid; /* Keep last 5 rows together */
-        }
-      }
-    `;
   }
 
   private static getEnhancedPDFStyles(): string {

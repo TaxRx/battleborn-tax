@@ -470,12 +470,18 @@ export default function UnifiedClientDashboard({
     setSelectedClient(client);
     setShowTools(true);
     
+    // Note: Tool loading is now handled by BusinessAccordion for each business individually
+    // This ensures all businesses can be enrolled, not just the first one
     try {
-      const tools = await CentralizedClientService.getClientTools(
-        client.id,
-        client.business_id
-      );
-      setClientTools(tools);
+      // Get tools for all businesses combined (for display purposes)
+      const allBusinessTools: any[] = [];
+      if (client.businesses && client.businesses.length > 0) {
+        for (const business of client.businesses) {
+          const businessTools = await CentralizedClientService.getClientTools(client.id, business.id);
+          allBusinessTools.push(...businessTools);
+        }
+      }
+      setClientTools(allBusinessTools);
     } catch (error) {
       console.error('Error loading client tools:', error);
       toast.error('Failed to load client tools');
@@ -484,8 +490,8 @@ export default function UnifiedClientDashboard({
     onClientSelect?.(client);
   };
 
-  const handleToolLaunch = (toolSlug: ToolEnrollment['tool_slug']) => {
-    console.log('🚀 handleToolLaunch called with toolSlug:', toolSlug);
+  const handleToolLaunch = (toolSlug: ToolEnrollment['tool_slug'], businessId?: string) => {
+    console.log('🚀 handleToolLaunch called with toolSlug:', toolSlug, 'businessId:', businessId);
     console.log('🚀 selectedClient:', selectedClient);
     
     if (!selectedClient) {
@@ -493,10 +499,18 @@ export default function UnifiedClientDashboard({
       return;
     }
 
+    // Use provided businessId or fall back to first business (for backward compatibility)
+    const targetBusinessId = businessId || selectedClient.business_id;
+    
+    if (!targetBusinessId) {
+      toast.error('No business selected for tool launch');
+      return;
+    }
+
     const launchUrl = CentralizedClientService.getToolLaunchUrl(
       toolSlug,
       selectedClient.id,
-      selectedClient.business_id
+      targetBusinessId
     );
 
     console.log('🚀 Launch URL:', launchUrl);
@@ -524,24 +538,36 @@ export default function UnifiedClientDashboard({
     }
   };
 
-  const handleEnrollInTool = async (toolSlug: ToolEnrollment['tool_slug']) => {
+  const handleEnrollInTool = async (toolSlug: ToolEnrollment['tool_slug'], businessId?: string) => {
     if (!selectedClient) return;
 
+    // Use provided businessId or fall back to first business (for backward compatibility)
+    const targetBusinessId = businessId || selectedClient.business_id;
+    
+    if (!targetBusinessId) {
+      toast.error('No business selected for enrollment');
+      return;
+    }
+
     try {
-      console.log('[UnifiedClientDashboard] Enrolling client in tool:', toolSlug, selectedClient.id, selectedClient.business_id);
+      console.log('[UnifiedClientDashboard] Enrolling client in tool:', toolSlug, selectedClient.id, targetBusinessId);
       await CentralizedClientService.enrollClientInTool(
         selectedClient.id,
-        selectedClient.business_id,
+        targetBusinessId,
         toolSlug
       );
       console.log('[UnifiedClientDashboard] enrollClientInTool returned for tool:', toolSlug);
       toast.success(`Enrolled in ${CentralizedClientService.getToolDisplayName(toolSlug)}`);
-      // Reload client tools
-      const tools = await CentralizedClientService.getClientTools(
-        selectedClient.id,
-        selectedClient.business_id
-      );
-      setClientTools(tools);
+      
+      // Reload all client tools (for all businesses)
+      const allBusinessTools: any[] = [];
+      if (selectedClient.businesses && selectedClient.businesses.length > 0) {
+        for (const business of selectedClient.businesses) {
+          const businessTools = await CentralizedClientService.getClientTools(selectedClient.id, business.id);
+          allBusinessTools.push(...businessTools);
+        }
+      }
+      setClientTools(allBusinessTools);
     } catch (error) {
       console.error('Error enrolling in tool:', error);
       toast.error('Failed to enroll in tool');
@@ -551,7 +577,13 @@ export default function UnifiedClientDashboard({
   const handleCreateClient = async (taxInfo: TaxInfo) => {
     try {
       setAddingClient(true);
-      await CentralizedClientService.createClient(taxInfo);
+      const createClientData = CentralizedClientService.transformTaxInfoToCreateData(taxInfo);
+      const result = await CentralizedClientService.createClient(createClientData);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to create client');
+      }
+      
       await loadClients();
       setShowAddClientModal(false);
       toast.success('Client created successfully');
