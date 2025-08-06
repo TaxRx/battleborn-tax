@@ -24,8 +24,11 @@ interface Account {
 }
 
 // Database connection configuration
-const supabaseUrl = 'http://127.0.0.1:54321'; // Local Supabase instance
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
+// const supabaseUrl = 'http://127.0.0.1:54321'; // Local Supabase instance
+// const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
+
+const supabaseUrl = 'https://kiogxpdjhopdlxhttprg.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtpb2d4cGRqaG9wZGx4aHR0cHJnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQyMTUzNTEsImV4cCI6MjA1OTc5MTM1MX0.DEIHWFAHfXZrwAwORUjWd-G6fdlyufbgwUfGwW_hZng';
 
 // Note: Using anon key since RLS is currently disabled for these tables
 

@@ -11,6 +11,10 @@ const environments = {
   remote: {
     url: 'https://ufxwqddayrydbgwaysfw.supabase.co/functions/v1/user-service/register',
     token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVmeHdxZGRheXJ5ZGJnd2F5c2Z3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTAxODE3ODksImV4cCI6MjA2NTc1Nzc4OX0.FRSq5CgQLsaLe4QNBOgvUQFEsXZypZ2Nrg3Mr5Kswpw'
+  },
+  ben: {
+    url: 'https://kiogxpdjhopdlxhttprg.supabase.co/functions/v1/user-service/register',
+    token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtpb2d4cGRqaG9wZGx4aHR0cHJnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQyMTUzNTEsImV4cCI6MjA1OTc5MTM1MX0.DEIHWFAHfXZrwAwORUjWd-G6fdlyufbgwUfGwW_hZng'
   }
 };
 
