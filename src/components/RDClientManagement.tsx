@@ -34,7 +34,8 @@ import {
   Database,
   RefreshCw,
   Zap,
-  Circle
+  Circle,
+  BarChart3
 } from 'lucide-react';
 import { ClientDetailModal } from './ClientDetailModal';
 import { UnifiedClientDashboard } from './UnifiedClientDashboard';
@@ -47,13 +48,14 @@ import { formatCurrency } from '../utils/formatting';
 import { useNavigationSidebar } from '../hooks/useNavigationSidebar';
 import ModularResearchActivityManager from './research-activity-manager/ModularResearchActivityManager';
 import RDTaxWizard from '../modules/tax-calculator/components/RDTaxWizard/RDTaxWizard';
+import ProgressSnapshot from './ProgressSnapshot';
 
 interface RDClientManagementProps {
   onClientSelect?: (client: UnifiedClientRecord) => void;
 }
 
 // Tab types
-type TabType = 'clients' | 'activities';
+type TabType = 'clients' | 'activities' | 'progress';
 
 // Business Accordion Component
 interface BusinessAccordionProps {
@@ -72,6 +74,28 @@ const BusinessAccordion: React.FC<BusinessAccordionProps> = ({
   onToggle
 }) => {
   console.log('🏢 [BusinessAccordion] Rendering business:', business.business_name, 'Years:', business.business_years);
+  
+  const [isEnrolling, setIsEnrolling] = useState(false);
+  
+  // Check if business is enrolled in R&D
+  const rdEnrollments = business.tool_enrollments?.filter((tool: any) => tool.tool_slug === 'rd') || [];
+  const isEnrolledInRD = rdEnrollments.length > 0;
+  
+  const handleEnrollInRD = async () => {
+    setIsEnrolling(true);
+    try {
+      console.log('🎯 [BusinessAccordion] Enrolling business in R&D:', business.id, 'client:', clientId);
+      await CentralizedClientService.enrollClientInTool(clientId, business.id, 'rd');
+      toast.success(`Enrolled ${business.business_name} in R&D Tax Credit Wizard`);
+      // Refresh the page to show updated enrollment status
+      window.location.reload();
+    } catch (error) {
+      console.error('❌ [BusinessAccordion] Enrollment error:', error);
+      toast.error(`Failed to enroll in R&D: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsEnrolling(false);
+    }
+  };
   
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
@@ -117,18 +141,32 @@ const BusinessAccordion: React.FC<BusinessAccordionProps> = ({
               </div>
             </div>
             
-            {/* Single Open Button */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                console.log('🔘 Launch R&D Wizard for business:', business.id, 'client:', clientId);
-                onLaunchWizard(clientId, business.id);
-              }}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
-            >
-              <ExternalLink className="w-4 h-4 mr-2" />
-              Open R&D Wizard
-            </button>
+            {/* Enrollment/Launch Button */}
+            {isEnrolledInRD ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  console.log('🔘 Launch R&D Wizard for business:', business.id, 'client:', clientId);
+                  onLaunchWizard(clientId, business.id);
+                }}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+              >
+                <ExternalLink className="w-4 h-4 mr-2" />
+                Open R&D Wizard
+              </button>
+            ) : (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleEnrollInRD();
+                }}
+                disabled={isEnrolling}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors disabled:opacity-50"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                {isEnrolling ? 'Enrolling...' : 'Enroll in R&D'}
+              </button>
+            )}
             
             {/* Expand/Collapse Icon */}
             <div className="flex items-center">
@@ -153,7 +191,25 @@ const BusinessAccordion: React.FC<BusinessAccordionProps> = ({
             className="border-t border-gray-100 bg-gray-50"
           >
             <div className="p-6">
-              {business.business_years && business.business_years.length > 0 ? (
+              {!isEnrolledInRD ? (
+                <div className="text-center py-8 text-gray-500">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Zap className="w-8 h-8 text-gray-400" />
+                  </div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">Not Enrolled in R&D</h4>
+                  <p className="text-sm text-gray-500 mb-4">
+                    This business needs to be enrolled in the R&D Tax Credit Wizard to view year status and manage R&D activities.
+                  </p>
+                  <button
+                    onClick={handleEnrollInRD}
+                    disabled={isEnrolling}
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors disabled:opacity-50"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    {isEnrolling ? 'Enrolling...' : 'Enroll in R&D Tax Credit Wizard'}
+                  </button>
+                </div>
+              ) : business.business_years && business.business_years.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {business.business_years
                     .sort((a: any, b: any) => b.year - a.year) // Sort by year descending
@@ -390,22 +446,16 @@ const ClientCard: React.FC<ClientCardProps> = ({
                 </h4>
                 {client.businesses && client.businesses.length > 0 ? (
                   <div className="space-y-3">
-                    {client.businesses
-                      .filter((business: any) => {
-                        // Only show businesses with R&D enrollments
-                        const businessRdEnrollments = business.tool_enrollments?.filter((tool: any) => tool.tool_slug === 'rd') || [];
-                        return businessRdEnrollments.length > 0;
-                      })
-                      .map((business: any) => (
-                        <BusinessAccordion
-                          key={business.id}
-                          business={business}
-                          clientId={client.id}
-                          onLaunchWizard={onLaunchWizard}
-                          isExpanded={expandedBusinessId === business.id}
-                          onToggle={() => handleBusinessToggle(business.id)}
-                        />
-                      ))}
+                    {client.businesses.map((business: any) => (
+                      <BusinessAccordion
+                        key={business.id}
+                        business={business}
+                        clientId={client.id}
+                        onLaunchWizard={onLaunchWizard}
+                        isExpanded={expandedBusinessId === business.id}
+                        onToggle={() => handleBusinessToggle(business.id)}
+                      />
+                    ))}
                   </div>
                 ) : (
                   <div className="text-center py-6 text-gray-500 bg-white rounded-lg border border-gray-200">
@@ -938,6 +988,9 @@ export default function RDClientManagement({
           </div>
         );
 
+      case 'progress':
+        return <ProgressSnapshot />;
+
       default:
         return null;
     }
@@ -961,35 +1014,7 @@ export default function RDClientManagement({
               </p>
             </div>
             <div className="flex items-center space-x-3">
-              {activeTab === 'clients' && clients.length > 0 && clients[0]?.tool_enrollments?.length === 0 && (
-                <button
-                  onClick={async () => {
-                    const client = clients[0];
-                    const business = client.businesses?.[0];
-                    if (client && business) {
-                      try {
-                        console.log('[RDClientManagement] Test enrolling client in R&D:', client.id, business.id);
-                        await CentralizedClientService.enrollClientInTool(
-                          client.id,
-                          business.id,
-                          'rd',
-                          'Test enrollment'
-                        );
-                        console.log('[RDClientManagement] enrollClientInTool returned for R&D');
-                        toast.success('Client enrolled in R&D Tax Credit Wizard');
-                        loadClients();
-                      } catch (error) {
-                        console.error('Error enrolling client:', error);
-                        toast.error('Failed to enroll client');
-                      }
-                    }
-                  }}
-                  className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  <Zap className="w-4 h-4 mr-2" />
-                  Test Enroll First Client
-                </button>
-              )}
+
             </div>
           </div>
 
@@ -1017,6 +1042,17 @@ export default function RDClientManagement({
               >
                 <Database className="w-4 h-4" />
                 <span>Research Activities</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('progress')}
+                className={`${
+                  activeTab === 'progress'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2`}
+              >
+                <BarChart3 className="w-4 h-4" />
+                <span>Progress Snapshot</span>
               </button>
             </nav>
           </div>

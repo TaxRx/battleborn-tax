@@ -229,15 +229,7 @@ class AuthService {
     return user.permissions.includes(permission);
   }
 
-  canAccessClient(user: AuthUser | null, clientId: string): boolean {
-    if (!user) return false;
-    
-    // Admin can access all clients
-    if (user.isAdmin) return true;
-    
-    // Check if user has any permission for this client
-    return user.permissions.some(p => p.startsWith(`client:${clientId}:`));
-  }
+
 
   canManageClientUsers(user: AuthUser | null, clientId: string): boolean {
     if (!user) return false;

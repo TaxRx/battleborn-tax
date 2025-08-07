@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase'; // Import main authenticated client
 import { ExpenseDistributionChart } from '../modules/tax-calculator/components/common/ExpenseDistributionChart';
 import SignaturePad from '../components/SignaturePad';
+import ProgressTrackingService from '../modules/tax-calculator/services/progressTrackingService';
 // Dynamic import for AllocationReportModal to avoid module resolution issues
 // Force cache refresh with comment change
 
@@ -763,6 +764,11 @@ const ClientPortal: React.FC = () => {
           console.error(`❌ [ClientPortal] Error ${index + 1}:`, error.error);
         });
         throw new Error(`Failed to sign jurat for ${errors.length} business year(s). Check console for details.`);
+      }
+
+      // 🔗 AUTO-SYNC: Update jurat milestone for all signed business years
+      for (const businessYear of selectedYear.business_years) {
+        await ProgressTrackingService.syncJuratMilestone(businessYear.id, true);
       }
 
       // Reload data

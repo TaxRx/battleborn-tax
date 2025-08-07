@@ -13,6 +13,8 @@ import ContractorAllocationsModal from './ContractorAllocationsModal';
 import AllocationReportModal from '../../AllocationReport/AllocationReportModal';
 import LockBanner from '../../../../../components/common/LockBanner';
 import useLockStore from '../../../../../store/lockStore';
+import ProgressTrackingService from '../../../services/progressTrackingService';
+import { useUser } from '../../../../../context/UserContext';
 
 // Extend RDSupply to include calculated_qre for local use
 interface RDSupply extends RDSupplyBase {
@@ -2018,6 +2020,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
   businessId = '',
   yearRefreshTrigger
 }) => {
+  const { user } = useUser();
   const [loading, setLoading] = useState(true);
   const [employeesWithData, setEmployeesWithData] = useState<EmployeeWithExpenses[]>([]);
   const [contractorsWithData, setContractorsWithData] = useState<ContractorWithExpenses[]>([]);
@@ -2255,6 +2258,9 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
               console.log('🔄 Triggering federal credit recalculation due to QRE LOCK');
               onUpdate({ qreValuesChanged: true });
             }
+
+            // 🔗 AUTO-SYNC: Update data_entry milestone
+            await ProgressTrackingService.syncDataEntryMilestone(selectedYear, true, user?.id);
           }
         } catch (error) {
           console.error('❌ Unexpected error saving QRE lock:', error);
@@ -2292,6 +2298,9 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
               console.log('🔄 Triggering federal credit recalculation due to QRE UNLOCK');
               onUpdate({ qreValuesChanged: true });
             }
+
+            // 🔗 AUTO-SYNC: Update data_entry milestone to incomplete
+            await ProgressTrackingService.syncDataEntryMilestone(selectedYear, false);
           }
         } catch (error) {
           console.error('❌ Unexpected error saving QRE unlock:', error);

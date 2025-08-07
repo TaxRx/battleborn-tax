@@ -828,46 +828,7 @@ export class ResearchActivitiesService {
     }
   }
 
-  // Move subcomponent to different step (creates new version)
-  static async moveSubcomponentToStep(subcomponentId: string, newStepId: string, reason: string): Promise<ResearchSubcomponent> {
-    try {
-      // Get original subcomponent
-      const { data: original, error: fetchError } = await supabase
-        .from('rd_research_subcomponents')
-        .select('*')
-        .eq('id', subcomponentId)
-        .single();
 
-      if (fetchError) throw fetchError;
-
-      // Deactivate original
-      await this.deactivateResearchSubcomponent(subcomponentId, reason);
-
-      // Create new version with new step_id
-      const newSubcomponent = {
-        ...original,
-        id: undefined,
-        step_id: newStepId,
-        is_active: true,
-        created_at: undefined,
-        updated_at: undefined,
-        deactivated_at: null,
-        deactivation_reason: null
-      };
-
-      const { data, error } = await supabase
-        .from('rd_research_subcomponents')
-        .insert(newSubcomponent)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
-    } catch (error) {
-      console.error('[ResearchActivitiesService] Error moving subcomponent:', error);
-      throw error;
-    }
-  }
 
   // Save selection with snapshot data
   static async saveSelectedActivityWithSnapshot(
