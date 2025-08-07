@@ -3866,6 +3866,15 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           
           // Validate required fields: First Name, Last Name, Wage, Year
           if (!firstName || !lastName || !wage || !year) {
+            const missingFields = [];
+            if (!firstName) missingFields.push('First Name');
+            if (!lastName) missingFields.push('Last Name');
+            if (!wage) missingFields.push('Wage');
+            if (!year) missingFields.push('Year');
+            
+            const errorMessage = `Missing required fields: ${missingFields.join(', ')}`;
+            const employeeName = `${firstName || 'Unknown'} ${lastName || 'Unknown'}`;
+            
             console.warn('⚠️ Skipping row with missing required fields:', {
               firstName: !!firstName,
               lastName: !!lastName, 
@@ -3873,6 +3882,13 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
               year: !!year,
               row
             });
+            
+            detailedErrors.push({
+              employee: employeeName,
+              error: errorMessage,
+              row: i + 2 // +2 because: +1 for 0-based index, +1 for header row
+            });
+            
             errorCount++;
             continue;
           }
@@ -3880,7 +3896,17 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           // Parse and validate the year from CSV
           const yearNumber = parseInt(year.trim());
           if (isNaN(yearNumber) || yearNumber < 1900 || yearNumber > 2100) {
+            const errorMessage = `Invalid year "${year}". Year must be a number between 1900 and 2100.`;
+            const employeeName = `${firstName} ${lastName}`;
+            
             console.warn(`⚠️ Invalid year "${year}" for employee ${firstName} ${lastName}. Skipping this employee.`);
+            
+            detailedErrors.push({
+              employee: employeeName,
+              error: errorMessage,
+              row: i + 2 // +2 because: +1 for 0-based index, +1 for header row
+            });
+            
             invalidYearCount++;
             errorCount++;
             continue;
@@ -3900,14 +3926,34 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
             try {
               targetBusinessYearId = await createBusinessYearWithConfirmation(yearNumber, businessId);
               if (!targetBusinessYearId) {
+                const errorMessage = `Failed to create or find business year ${yearNumber}`;
+                const employeeName = `${firstName} ${lastName}`;
+                
                 console.warn(`⚠️ Failed to get business year ID for ${yearNumber}. Skipping employee ${firstName} ${lastName}.`);
+                
+                detailedErrors.push({
+                  employee: employeeName,
+                  error: errorMessage,
+                  row: i + 2 // +2 because: +1 for 0-based index, +1 for header row
+                });
+                
                 invalidYearCount++;
                 errorCount++;
                 continue;
               }
             } catch (error) {
+              const errorMessage = `Failed to create business year ${yearNumber}: ${(error as Error).message || 'Unknown error'}`;
+              const employeeName = `${firstName} ${lastName}`;
+              
               console.error('❌ Error in business year creation:', error);
               console.warn(`⚠️ Failed to create year ${yearNumber} for employee ${firstName} ${lastName}. ${(error as Error).message || 'Unknown error'}`);
+              
+              detailedErrors.push({
+                employee: employeeName,
+                error: errorMessage,
+                row: i + 2 // +2 because: +1 for 0-based index, +1 for header row
+              });
+              
               invalidYearCount++;
               errorCount++;
               continue;
@@ -4309,12 +4355,22 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         toast?.success?.(summaryMessage) || console.log(summaryMessage);
         
         if (errorCount > 0) {
-          const errorDetails = detailedErrors.map(err => `Row ${err.row}: ${err.employee} - ${err.error}`).join('\n');
-          const errorMessage = `⚠️ ${errorCount} employees failed to import:\n\n${errorDetails}\n\nCheck console for full details.`;
-          toast?.error?.(errorMessage) || console.error(errorMessage);
-          
-          // Also log detailed errors for debugging
-          console.error('📋 Detailed CSV Import Errors:', detailedErrors);
+          if (detailedErrors.length > 0) {
+            const errorDetails = detailedErrors.map(err => `Row ${err.row}: ${err.employee} - ${err.error}`).join('\n');
+            const errorMessage = `⚠️ ${errorCount} employees failed to import:\n\n${errorDetails}\n\nCheck console for full details.`;
+            toast?.error?.(errorMessage) || console.error(errorMessage);
+            
+            // Log detailed errors for debugging
+            console.error('📋 Detailed CSV Import Errors:');
+            detailedErrors.forEach((err, index) => {
+              console.error(`  ${index + 1}. Row ${err.row}: ${err.employee} - ${err.error}`);
+            });
+          } else {
+            // Fallback for errors that weren't captured in detailedErrors
+            const errorMessage = `⚠️ ${errorCount} employees failed to import. Check console warnings for details.`;
+            toast?.error?.(errorMessage) || console.error(errorMessage);
+            console.error('📋 CSV Import had errors but detailed error tracking failed. Check console warnings above.');
+          }
         }
       },
       error: (err: any) => {
