@@ -806,6 +806,9 @@ class AdminAccountService {
         query = query.neq('status', 'deleted');
       }
 
+      // Filter out admin and client account types (managed elsewhere)
+      query = query.not('type', 'in', '(admin,client)');
+
       // Apply filters
       if (filters.search) {
         query = query.or(`name.ilike.%${filters.search}%`);
@@ -1559,6 +1562,269 @@ class AdminAccountService {
       return {
         success: false,
         message: 'An unexpected error occurred while creating the profile'
+      };
+    }
+  }
+
+  // ========= CLIENT LINK OPERATIONS =========
+
+  async getAccountClientLinks(accountId: string): Promise<{
+    success: boolean;
+    links: any[];
+    message?: string;
+  }> {
+    try {
+      const { data, error } = await supabase
+        .from('account_client_access')
+        .select(`
+          id,
+          client_id,
+          access_level,
+          granted_at,
+          granted_by,
+          clients!inner(
+            id,
+            full_name,
+            email,
+            account:accounts!inner(name)
+          )
+        `)
+        .eq('account_id', accountId);
+
+      if (error) {
+        console.error('Error fetching client links:', error);
+        return {
+          success: false,
+          links: [],
+          message: 'Failed to fetch client links'
+        };
+      }
+
+      const links = data?.map(link => ({
+        id: link.id,
+        client_id: link.client_id,
+        client_name: link.clients.full_name,
+        client_email: link.clients.email,
+        client_account_name: link.clients.account?.name || 'Unknown',
+        access_level: link.access_level,
+        granted_at: link.granted_at,
+        granted_by: link.granted_by
+      })) || [];
+
+      return {
+        success: true,
+        links
+      };
+    } catch (error) {
+      console.error('Error in getAccountClientLinks:', error);
+      return {
+        success: false,
+        links: [],
+        message: 'An unexpected error occurred'
+      };
+    }
+  }
+
+  async getUnlinkedClients(accountId: string): Promise<{
+    success: boolean;
+    clients: any[];
+    message?: string;
+  }> {
+    try {
+      // First, get all client IDs that are already linked to this account
+      const { data: linkedClientIds, error: linkedError } = await supabase
+        .from('account_client_access')
+        .select('client_id')
+        .eq('account_id', accountId);
+
+      if (linkedError) {
+        console.error('Error fetching linked client IDs:', linkedError);
+        return {
+          success: false,
+          clients: [],
+          message: 'Failed to fetch linked clients'
+        };
+      }
+
+      const linkedIds = linkedClientIds?.map(link => link.client_id) || [];
+
+      // Then get all clients that are NOT in the linked IDs list
+      let query = supabase
+        .from('clients')
+        .select(`
+          id,
+          full_name,
+          email,
+          account:accounts!inner(name)
+        `);
+
+      // If there are linked clients, exclude them
+      if (linkedIds.length > 0) {
+        query = query.not('id', 'in', `(${linkedIds.join(',')})`);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error fetching unlinked clients:', error);
+        return {
+          success: false,
+          clients: [],
+          message: 'Failed to fetch unlinked clients'
+        };
+      }
+
+      const clients = data?.map(client => ({
+        id: client.id,
+        full_name: client.full_name,
+        email: client.email,
+        account_name: client.account?.name || 'Unknown'
+      })) || [];
+
+      return {
+        success: true,
+        clients
+      };
+    } catch (error) {
+      console.error('Error in getUnlinkedClients:', error);
+      return {
+        success: false,
+        clients: [],
+        message: 'An unexpected error occurred'
+      };
+    }
+  }
+
+  async updateAutoLinkSetting(accountId: string, autoLink: boolean): Promise<{
+    success: boolean;
+    message?: string;
+  }> {
+    try {
+      const { error } = await supabase
+        .from('accounts')
+        .update({ auto_link_new_clients: autoLink })
+        .eq('id', accountId);
+
+      if (error) {
+        console.error('Error updating auto-link setting:', error);
+        return {
+          success: false,
+          message: 'Failed to update auto-link setting'
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Auto-link setting updated successfully'
+      };
+    } catch (error) {
+      console.error('Error in updateAutoLinkSetting:', error);
+      return {
+        success: false,
+        message: 'An unexpected error occurred'
+      };
+    }
+  }
+
+  async createClientLinks(accountId: string, clientIds: string[], accessLevel: string): Promise<{
+    success: boolean;
+    message?: string;
+  }> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const grantedBy = user?.id || null;
+
+      const linkRecords = clientIds.map(clientId => ({
+        account_id: accountId,
+        client_id: clientId,
+        access_level: accessLevel,
+        granted_by: grantedBy,
+        granted_at: new Date().toISOString()
+      }));
+
+      const { error } = await supabase
+        .from('account_client_access')
+        .insert(linkRecords);
+
+      if (error) {
+        console.error('Error creating client links:', error);
+        return {
+          success: false,
+          message: 'Failed to create client links'
+        };
+      }
+
+      return {
+        success: true,
+        message: `Successfully linked ${clientIds.length} client${clientIds.length !== 1 ? 's' : ''}`
+      };
+    } catch (error) {
+      console.error('Error in createClientLinks:', error);
+      return {
+        success: false,
+        message: 'An unexpected error occurred'
+      };
+    }
+  }
+
+  async updateClientLinkAccess(linkId: string, accessLevel: string): Promise<{
+    success: boolean;
+    message?: string;
+  }> {
+    try {
+      const { error } = await supabase
+        .from('account_client_access')
+        .update({ access_level: accessLevel })
+        .eq('id', linkId);
+
+      if (error) {
+        console.error('Error updating client link access:', error);
+        return {
+          success: false,
+          message: 'Failed to update access level'
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Access level updated successfully'
+      };
+    } catch (error) {
+      console.error('Error in updateClientLinkAccess:', error);
+      return {
+        success: false,
+        message: 'An unexpected error occurred'
+      };
+    }
+  }
+
+  async deleteClientLink(linkId: string): Promise<{
+    success: boolean;
+    message?: string;
+  }> {
+    try {
+      const { error } = await supabase
+        .from('account_client_access')
+        .delete()
+        .eq('id', linkId);
+
+      if (error) {
+        console.error('Error deleting client link:', error);
+        return {
+          success: false,
+          message: 'Failed to delete client link'
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Client link deleted successfully'
+      };
+    } catch (error) {
+      console.error('Error in deleteClientLink:', error);
+      return {
+        success: false,
+        message: 'An unexpected error occurred'
       };
     }
   }
