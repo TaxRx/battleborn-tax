@@ -473,6 +473,33 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
               internalQRETotal = 0;
             }
 
+            // Fallback: derive internal QRE from year-level employee/contractor/supply datasets
+            if (!internalQRETotal || internalQRETotal <= 0) {
+              const supplyQRE = (supplySubcomponents || []).reduce((sum, ssc) => {
+                const amountApplied = ssc.amount_applied || 0;
+                const appliedPercentage = ssc.applied_percentage || 0;
+                const supplyCost = ssc.supply?.cost_amount || 0;
+                const q = amountApplied > 0 ? amountApplied : (supplyCost * appliedPercentage / 100);
+                return sum + roundToDollar(q);
+              }, 0);
+              const employeeQRE = (year.employees || []).reduce((sum: number, e: any) => {
+                const annualWage = e.employee?.annual_wage || e.annual_wage || e.wage || 0;
+                const appliedPercent = e.applied_percent || 0;
+                const calculatedQRE = e.calculated_qre || e.qre || 0;
+                const q = calculatedQRE > 0 ? calculatedQRE : (annualWage * appliedPercent / 100);
+                return sum + roundToDollar(q);
+              }, 0);
+              const contractorBase = (year.contractors || year.contractors_with_qre || []) as any[];
+              const contractorQRE = contractorBase.reduce((sum: number, c: any) => {
+                const amount = c.amount || c.cost_amount || 0;
+                const appliedPercent = c.applied_percent || 0;
+                const calculatedQRE = c.calculated_qre || c.qre || 0;
+                const q = calculatedQRE > 0 ? calculatedQRE : (amount * appliedPercent / 100);
+                return sum + roundToDollar(q);
+              }, 0);
+              internalQRETotal = roundToDollar(supplyQRE + employeeQRE + contractorQRE);
+            }
+
             return {
               ...year,
               supply_subcomponents: supplySubcomponents || [],
@@ -1793,9 +1820,9 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       
       {/* Header with Year Selector and Filing Guide Button */}
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow-lg p-6 text-white">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
           {/* Left: Title, Year Selector, Filing Guide */}
-          <div className="flex items-center mb-4 md:mb-0">
+          <div className="flex items-center mb-4 lg:mb-0 flex-1 min-w-[40%]">
             <TrendingUp className="w-8 h-8 mr-3" />
             <div>
               <h2 className="text-3xl font-bold">R&D Tax Credits</h2>
@@ -1812,9 +1839,41 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
               </div>
           </div>
         </div>
-          {/* Right: Credit Summary + KPI charts stacked */}
-          <div className="flex flex-col items-end w-full md:w-auto">
-            <div className="bg-white/90 rounded-xl shadow-lg px-6 py-4 w-full md:min-w-[320px] flex flex-col items-end space-y-2">
+          {/* Right: Charts to the left, Summary card to the right */}
+          <div className="w-full lg:w-auto">
+            <div className="flex flex-row items-start justify-end gap-4">
+              {/* Charts block (left of summary) */}
+              <div className="mt-1">
+                <div className="flex flex-row flex-wrap gap-3 justify-end">
+                  <KPIChart 
+                    title="QREs Over Years" 
+                    data={(chartData?.qreData || [])
+                      .sort((a, b) => a.year - b.year)
+                      .map(item => ({ label: item.year.toString(), value: item.qre }))} 
+                    type="line" 
+                    color="bg-blue-500" 
+                  />
+                  <KPIChart 
+                    title="Total Federal Credits Over Years" 
+                    data={(chartData?.creditData || [])
+                      .sort((a, b) => a.year - b.year)
+                      .map(item => ({ label: item.year.toString(), value: item.federalCredit }))} 
+                    type="line" 
+                    color="bg-green-500" 
+                  />
+                  <KPIChart 
+                    title="Total State Credits Over Years" 
+                    data={(chartData?.creditData || [])
+                      .sort((a, b) => a.year - b.year)
+                      .map(item => ({ label: item.year.toString(), value: item.stateCredit }))} 
+                    type="line" 
+                    color="bg-purple-500" 
+                  />
+                </div>
+              </div>
+
+              {/* Summary card (right) */}
+              <div className="bg-white/90 rounded-xl shadow-lg px-6 py-4 w-full md:min-w-[320px] flex flex-col items-end space-y-2">
               <div className="flex items-center justify-between w-full">
                 <span className="flex items-center text-sm font-medium text-blue-900">
                   <Building2 className="w-4 h-4 mr-1 text-blue-500" />
@@ -1847,36 +1906,8 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                   {formatCurrency((selectedMethod === 'asc' ? federalCredits.asc.credit : federalCredits.standard.credit) + (enableStateCredits ? totalStateCredits : 0))}
                 </span>
             </div>
-        </div>
-          {/* Move 3 KPI charts into header to the right, in a vertical stack inside summary card area */}
-          <div className="mt-4 w-full md:min-w-[320px]">
-            <div className="flex md:flex-col lg:flex-col xl:flex-col gap-3">
-              <KPIChart 
-                title="QREs Over Years" 
-                data={(chartData?.qreData || [])
-                  .sort((a, b) => a.year - b.year)
-                  .map(item => ({ label: item.year.toString(), value: item.qre }))} 
-                type="line" 
-                color="bg-blue-500" 
-              />
-              <KPIChart 
-                title="Total Federal Credits Over Years" 
-                data={(chartData?.creditData || [])
-                  .sort((a, b) => a.year - b.year)
-                  .map(item => ({ label: item.year.toString(), value: item.federalCredit }))} 
-                type="line" 
-                color="bg-green-500" 
-              />
-              <KPIChart 
-                title="Total State Credits Over Years" 
-                data={(chartData?.creditData || [])
-                  .sort((a, b) => a.year - b.year)
-                  .map(item => ({ label: item.year.toString(), value: item.stateCredit }))} 
-                type="line" 
-                color="bg-purple-500" 
-              />
+              </div>
             </div>
-          </div>
           </div>
         </div>
       </div>
