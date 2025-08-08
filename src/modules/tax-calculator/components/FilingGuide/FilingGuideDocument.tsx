@@ -327,6 +327,38 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
         </div>
       </div>
 
+      {/* Welcome Letter (Thank You & Commitment) */}
+      <div id="filing-guide-section-welcome" className="filing-guide-section">
+        <div className="filing-guide-section-header">
+          <div className="filing-guide-section-icon">✉️</div>
+          <div>
+            <h2 className="filing-guide-section-title">Welcome Letter</h2>
+            <p className="filing-guide-section-subtitle">A note of thanks and our commitment to assist</p>
+          </div>
+        </div>
+        <div style={{ background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24 }}>
+          <p style={{ marginBottom: 16 }}>Dear {businessData?.contact_name || businessData?.owner_name || businessData?.name || 'Client'},</p>
+          <p style={{ marginBottom: 12 }}>
+            We wanted to take a moment to express our gratitude for the opportunity to work with you and develop your
+            research and development credit–supporting documentation. It has been a pleasure to collaborate with your
+            team, and we are excited to assist you in your pursuit of this valuable tax credit.
+          </p>
+          <p style={{ marginBottom: 12 }}>
+            In the attached guide, you will find detailed instructions for filing your research and development credit,
+            along with all necessary supporting documentation. We have included clear guidance on how to claim this
+            credit, and we are available to answer any questions you or your accounting team may have as you navigate
+            the filing process.
+          </p>
+          <p style={{ marginBottom: 12 }}>
+            Thank you again for entrusting us with this important project. Please do not hesitate to reach out if you have
+            any questions or concerns. You can contact us directly at (801) 318-5097.
+          </p>
+          <p style={{ marginTop: 20 }}>Sincerely,</p>
+          <p>Direct Research</p>
+          <p style={{ color: '#6b7280' }}>{businessData?.name || 'Your Business'} &middot; Tax Year {selectedYear?.year || ''}</p>
+        </div>
+      </div>
+
       {/* About Direct Research Section */}
       <div id="filing-guide-section-about" className="filing-guide-section">
         <div className="filing-guide-section-header">

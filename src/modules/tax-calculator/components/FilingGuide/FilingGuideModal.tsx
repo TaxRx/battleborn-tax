@@ -67,6 +67,11 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
       icon: '📄'
     },
     {
+      id: 'welcome',
+      title: 'Welcome Letter',
+      icon: '✉️'
+    },
+    {
       id: 'about',
       title: 'About Direct Research',
       icon: '🏢'
