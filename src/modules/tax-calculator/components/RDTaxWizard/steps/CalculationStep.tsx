@@ -85,8 +85,11 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
     const chartHeight = 100;
     // Wider chart for better readability after shrinking summary card
     const chartWidth = 220;
-    // Reduce top padding so plot aligns with the chart title
-    const padding = 10;
+    // Use asymmetric paddings to minimize the left margin of the plot area
+    const paddingTop = 10;
+    const paddingBottom = 10;
+    const paddingLeft = 8;   // make left margin narrow
+    const paddingRight = 8;  // keep right margin similar to left
     
     // Color mapping for SVG
     const colorMap: { [key: string]: string } = {
@@ -106,10 +109,13 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
       // Evenly space points across width so each marker sits over its year label
       const count = Math.max(data.length, 1);
       const step = (chartWidth - 2 * padding) / count;
-      const x = padding + step / 2 + index * step;
+      const count = Math.max(data.length, 1);
+      // Remove half-step offset so first point hugs the left padding
+      const step = count > 1 ? (chartWidth - paddingLeft - paddingRight) / (count - 1) : 0;
+      const x = count === 1 ? (chartWidth / 2) : (paddingLeft + index * step);
       const y = maxValue === minValue
         ? chartHeight / 2
-        : chartHeight - padding - ((item.value - minValue) / (maxValue - minValue)) * (chartHeight - 2 * padding);
+        : chartHeight - paddingBottom - ((item.value - minValue) / (maxValue - minValue)) * (chartHeight - paddingTop - paddingBottom);
       return { x, y };
     };
 
@@ -1857,7 +1863,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
               <div className="mt-1">
                 <div className="flex flex-row gap-3 justify-end items-start">
                   <KPIChart 
-                    title="QREs Over Years" 
+                    title="QREs" 
                     data={(chartData?.qreData || [])
                       .sort((a, b) => a.year - b.year)
                       .map(item => ({ label: item.year.toString(), value: item.qre }))} 
@@ -1865,7 +1871,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                     color="bg-blue-500" 
                   />
                   <KPIChart 
-                    title="Total Federal Credits Over Years" 
+                    title="Federal Credits" 
                     data={(chartData?.creditData || [])
                       .sort((a, b) => a.year - b.year)
                       .map(item => ({ label: item.year.toString(), value: item.federalCredit }))} 
@@ -1873,7 +1879,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                     color="bg-green-500" 
                   />
                   <KPIChart 
-                    title="Total State Credits Over Years" 
+                    title="State Credits" 
                     data={(chartData?.creditData || [])
                       .sort((a, b) => a.year - b.year)
                       .map(item => ({ label: item.year.toString(), value: item.stateCredit }))} 
