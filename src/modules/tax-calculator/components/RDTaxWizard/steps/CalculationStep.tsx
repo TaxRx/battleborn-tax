@@ -6,6 +6,7 @@ import { StateProFormaCalculationService } from '../../../services/stateProForma
 import { ContractorManagementService } from '../../../../../services/contractorManagementService';
 import { toast } from 'react-hot-toast';
 import { supabase } from '../../../lib/supabase';
+import { formatCurrency } from '../../../../../utils/formatting';
 import { SectionGQREService } from '../../../services/sectionGQREService';
 import { FilingGuideModal } from '../../FilingGuide/FilingGuideModal';
 import AllocationReportModal from '../../AllocationReport/AllocationReportModal';
@@ -1937,8 +1938,8 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
 
       {/* KPI Charts moved into header */}
 
-      {/* Two Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Stack Federal then State Pro Forma */}
+      <div className="space-y-6">
         {/* Federal Credits - INTEGRATED */}
         <IntegratedFederalCredits
           businessData={wizardState.business}
@@ -1952,7 +1953,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           onTaxRateChange={setCorporateTaxRate}
         />
 
-        {/* State Credits - INTEGRATED */}
+        {/* State Credits - INTEGRATED (stacked under Federal) */}
         {(() => {
           console.log('🔍 CalculationStep - About to render IntegratedStateCredits with props:', {
             businessData: wizardState.business,

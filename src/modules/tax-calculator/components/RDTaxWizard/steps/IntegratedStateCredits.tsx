@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getStateConfig, getAvailableStates } from '../../StateProForma';
-import { StateCreditDataService } from '../../../services/stateCreditDataService'; // Same as Filing Guide
+import { StateCreditDataService, saveStateProFormaData, loadStateProFormaData } from '../../../services/stateCreditDataService'; // Same as Filing Guide
 import { StateProFormaCalculationService } from '../../../services/stateProFormaCalculationService'; // Enhanced service
 import { StateCreditProForma } from '../../StateProForma/StateCreditProForma';
 
@@ -39,6 +39,16 @@ export const IntegratedStateCredits: React.FC<IntegratedStateCreditsProps> = ({
   const [proFormaData, setProFormaData] = useState({});
   const [loading, setLoading] = useState(false);
   const [totalCredit, setTotalCredit] = useState(0);
+  const [showProForma, setShowProForma] = useState(false);
+
+  const formatCurrency = (value: number): string => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(value || 0);
+  };
 
   // Get available state codes from the StateConfig objects
   const availableStates = getAvailableStates().map(config => config.code);
@@ -104,16 +114,24 @@ export const IntegratedStateCredits: React.FC<IntegratedStateCreditsProps> = ({
         
         console.log(`🔍 IntegratedStateCredits - REAL Final credit for ${state}: $${calculatedCredit}`);
         
-        // 🔧 Step 3: Set both the form data AND the calculated credit
-        if (baseQREData && baseQREData.wages > 0) {
+        // 🔧 Step 3: Merge saved data if present, otherwise use base data + calculated fields
+        let initialData = baseQREData || {};
+        // Load any previously saved state pro forma data for this year/state/method
+        const saved = await loadStateProFormaData(selectedYear.id, state, method as 'standard' | 'alternative');
+        if (saved) {
+          initialData = { ...initialData, ...saved };
+          console.log('✅ IntegratedStateCredits - Loaded saved state pro forma data and merged with base');
+        }
+
+        if (initialData && (initialData.wages || initialData.contractResearch || initialData.supplies)) {
           // Pre-calculate derived fields for editable lines based on their calc functions
-          const formDataWithCalculatedFields = { ...baseQREData };
+          const formDataWithCalculatedFields = { ...initialData };
           
           // Calculate values for editable fields that have calc functions
           console.log(`🔧 IntegratedStateCredits - Processing ${availableLines.length} lines for field calculations`);
           availableLines.forEach(line => {
             if (line.editable && line.calc) {
-              const calculatedValue = line.calc(baseQREData);
+              const calculatedValue = line.calc(initialData as any);
               formDataWithCalculatedFields[line.field] = calculatedValue;
               console.log(`🔧 IntegratedStateCredits - Pre-calculated ${line.field}: ${calculatedValue} (from line: ${line.line}, label: ${line.label})`);
             } else if (line.editable) {
@@ -150,12 +168,12 @@ export const IntegratedStateCredits: React.FC<IntegratedStateCreditsProps> = ({
     }
   }, [businessState]);
 
-  // Simplified save handler - just update local state (no database saving for now)
+  // Save handler - persist to rd_state_proforma_data so Filing Guide can consume
   const handleSaveStateProForma = async (data: Record<string, number>, businessYearId: string) => {
     try {
       setProFormaData(data);
-      console.log('✅ [IntegratedStateCredits] State pro forma data updated locally:', data);
-      // Note: Not saving to database to avoid the rd_state_proforma_data table errors
+      await saveStateProFormaData(businessYearId, state, method as 'standard' | 'alternative', data);
+      console.log('✅ [IntegratedStateCredits] State pro forma data saved to database');
     } catch (error) {
       console.error('❌ [IntegratedStateCredits] Error updating state pro forma data:', error);
     }
@@ -189,11 +207,13 @@ export const IntegratedStateCredits: React.FC<IntegratedStateCreditsProps> = ({
           <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
             <span className="text-blue-600 font-semibold text-sm">📊</span>
           </div>
-          <div>
+          <div className="flex-1">
             <h3 className="text-lg font-semibold text-gray-900">State Credits Pro Forma</h3>
-            <p className="text-sm text-gray-600">
-              Integrated state credit calculations using real R&D data (same as Filing Guide)
-            </p>
+            <p className="text-sm text-gray-600">Integrated state credit calculations using real R&D data (same as Filing Guide)</p>
+          </div>
+          <div className="text-right ml-auto">
+            <div className="text-sm text-gray-600">Total State</div>
+            <div className="text-xl font-bold text-green-600">{formatCurrency(totalCredit)}</div>
           </div>
         </div>
 
@@ -233,6 +253,16 @@ export const IntegratedStateCredits: React.FC<IntegratedStateCreditsProps> = ({
           </div>
         </div>
 
+        {/* Toggle State Pro Forma visibility */}
+        <div className="mb-4">
+          <button
+            onClick={() => setShowProForma(!showProForma)}
+            className="w-full px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium"
+          >
+            {showProForma ? 'Hide' : 'Show'} State Credit Pro Forma
+          </button>
+        </div>
+
         {/* Loading State */}
         {loading ? (
           <div className="state-proforma-loading p-8 text-center">
@@ -241,22 +271,26 @@ export const IntegratedStateCredits: React.FC<IntegratedStateCreditsProps> = ({
           </div>
         ) : currentStateConfig ? (
           /* Pro Forma Component - Same as Filing Guide */
-          <StateCreditProForma
-            lines={availableLines}
-            initialData={proFormaData}
-            onSave={handleSaveStateProForma}
-            title={`${currentStateConfig.name} (${currentStateConfig.code}) State Credit – ${currentStateConfig.forms?.[method]?.name || currentStateConfig.formName} Pro Forma (${method.charAt(0).toUpperCase() + method.slice(1)})`}
-            businessYearId={selectedYear?.id}
-            // Pass validation rules and metadata
-            validationRules={currentStateConfig.validationRules}
-            alternativeValidationRules={currentStateConfig.alternativeValidationRules}
-            hasAlternativeMethod={currentStateConfig.hasAlternativeMethod}
-            creditRate={currentStateConfig.creditRate}
-            creditType={currentStateConfig.creditType}
-            formReference={currentStateConfig.formReference}
-            notes={currentStateConfig.notes}
-            totalCredit={totalCredit} // Pass the calculated total credit
-          />
+          <>
+            {showProForma && (
+              <StateCreditProForma
+                lines={availableLines}
+                initialData={proFormaData}
+                onSave={handleSaveStateProForma}
+                title={`${currentStateConfig.name} (${currentStateConfig.code}) State Credit – ${currentStateConfig.forms?.[method]?.name || currentStateConfig.formName} Pro Forma (${method.charAt(0).toUpperCase() + method.slice(1)})`}
+                businessYearId={selectedYear?.id}
+                // Pass validation rules and metadata
+                validationRules={currentStateConfig.validationRules}
+                alternativeValidationRules={currentStateConfig.alternativeValidationRules}
+                hasAlternativeMethod={currentStateConfig.hasAlternativeMethod}
+                creditRate={currentStateConfig.creditRate}
+                creditType={currentStateConfig.creditType}
+                formReference={currentStateConfig.formReference}
+                notes={currentStateConfig.notes}
+                totalCredit={totalCredit} // Pass the calculated total credit
+              />
+            )}
+          </>
         ) : (
           <div className="state-proforma-error p-8 text-center">
             <div className="text-red-600 text-lg">❌</div>
