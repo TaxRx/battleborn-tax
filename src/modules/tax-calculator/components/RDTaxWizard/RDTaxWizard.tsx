@@ -863,8 +863,8 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
                 </div>
               )}
               
-              {/* Navigation buttons */}
-              {wizardState.currentStep > 0 && (
+              {/* Navigation buttons - hidden on Reports step (step 5) since it has its own footer */}
+              {wizardState.currentStep !== 5 && wizardState.currentStep > 0 && (
                 <button
                   onClick={handlePrevious}
                   className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors border border-white/20"
@@ -872,7 +872,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
                   Previous
                 </button>
               )}
-              {wizardState.currentStep < steps.length - 1 && (
+              {wizardState.currentStep !== 5 && wizardState.currentStep < steps.length - 1 && (
                 <button
                   onClick={handleNext}
                   className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors shadow-md"
@@ -880,7 +880,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
                   Next
                 </button>
               )}
-              {wizardState.currentStep === steps.length - 1 && (
+              {wizardState.currentStep !== 5 && wizardState.currentStep === steps.length - 1 && (
                 <button
                   onClick={onClose}
                   className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors shadow-md"
