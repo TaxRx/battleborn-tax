@@ -60,7 +60,7 @@ const AccordionSection: React.FC<{ title: string; details: string[] | null }> = 
   );
 };
 
-// KPI Chart Component
+// KPI Chart Component (refined with smooth curves and shaded area)
 const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'pie'; color: string }> = ({ title, data, type, color }) => {
   if (!data || data.length === 0) {
     return (
@@ -77,7 +77,7 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
   const maxValue = Math.max(...data.map(item => item.value));
   const minValue = Math.min(...data.map(item => item.value));
 
-  // Line Chart Rendering
+  // Line Chart Rendering (smooth path + area fill)
   if (type === 'line') {
     const chartHeight = 120;
     const chartWidth = 200;
@@ -97,14 +97,47 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
     
     const strokeColor = colorMap[color] || '#3b82f6'; // Default to blue
     
-    // Calculate points for SVG path
-    const points = data.map((item, index) => {
-      const x = padding + (index * (chartWidth - 2 * padding)) / (data.length - 1);
-      const y = maxValue === minValue 
-        ? chartHeight / 2 
+    const toXY = (item: any, index: number) => {
+      const x = padding + (index * (chartWidth - 2 * padding)) / Math.max(data.length - 1, 1);
+      const y = maxValue === minValue
+        ? chartHeight / 2
         : chartHeight - padding - ((item.value - minValue) / (maxValue - minValue)) * (chartHeight - 2 * padding);
-      return `${x},${y}`;
-    }).join(' ');
+      return { x, y };
+    };
+
+    const pts = data.map(toXY);
+
+    // Create a smooth path using cubic Bezier curves
+    const getControlPoints = (p0: any, p1: any, p2: any, t = 0.2) => {
+      const d01 = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+      const d12 = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      const fa = t * d01 / (d01 + d12 || 1);
+      const fb = t * d12 / (d01 + d12 || 1);
+      const p1x = p1.x - fa * (p2.x - p0.x);
+      const p1y = p1.y - fa * (p2.y - p0.y);
+      const p2x = p1.x + fb * (p2.x - p0.x);
+      const p2y = p1.y + fb * (p2.y - p0.y);
+      return [{ x: p1x, y: p1y }, { x: p2x, y: p2y }];
+    };
+
+    let pathD = '';
+    if (pts.length > 0) {
+      pathD = `M ${pts[0].x},${pts[0].y}`;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p0 = i === 0 ? pts[0] : pts[i - 1];
+        const p1 = pts[i];
+        const p2 = pts[i + 1];
+        const p3 = i + 2 < pts.length ? pts[i + 2] : p2;
+        const [cp1, cp2] = getControlPoints(p0, p1, p2);
+        const [cp3, cp4] = getControlPoints(p1, p2, p3);
+        pathD += ` C ${cp2.x},${cp2.y} ${cp3.x},${cp3.y} ${p2.x},${p2.y}`;
+      }
+    }
+
+    // Area path
+    const areaD = pathD + (pts.length
+      ? ` L ${pts[pts.length - 1].x},${chartHeight - padding} L ${pts[0].x},${chartHeight - padding} Z`
+      : '');
 
     return (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
@@ -119,28 +152,26 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
             </defs>
             <rect width="100%" height="100%" fill={`url(#grid-${title.replace(/\s+/g, '')})`} />
             
-            {/* Line path */}
-            <polyline
+            {/* Shaded area under curve */}
+            <path d={areaD} fill={strokeColor} opacity="0.12" />
+            {/* Smooth curve */}
+            <path
+              d={pathD}
               fill="none"
               stroke={strokeColor}
               strokeWidth="3"
               strokeLinecap="round"
               strokeLinejoin="round"
-              points={points}
               className="drop-shadow-sm"
             />
             
             {/* Data points */}
-            {data.map((item, index) => {
-              const x = padding + (index * (chartWidth - 2 * padding)) / (data.length - 1);
-              const y = maxValue === minValue 
-                ? chartHeight / 2 
-                : chartHeight - padding - ((item.value - minValue) / (maxValue - minValue)) * (chartHeight - 2 * padding);
+            {pts.map((pt, index) => {
               return (
                 <circle
                   key={index}
-                  cx={x}
-                  cy={y}
+                  cx={pt.x}
+                  cy={pt.y}
                   r="4"
                   fill={strokeColor}
                   stroke="white"
@@ -1566,10 +1597,12 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           totalCredit: roundToDollar(saved.totalCredits || (saved.totalFederalCredit || 0) + (saved.totalStateCredits || 0))
         };
       }
+      // Fallback: for current year use in-memory results, prefer ASC when no saved
       if (year.year === currentYear && results?.federalCredits) {
-        const federalCredit = selectedMethod === 'asc' 
-          ? (results.federalCredits.asc?.adjustedCredit || results.federalCredits.asc?.credit || 0)
-          : (results.federalCredits.standard?.adjustedCredit || results.federalCredits.standard?.credit || 0);
+        // ASC fallback per requirement
+        const ascFallback = (results.federalCredits.asc?.adjustedCredit || results.federalCredits.asc?.credit || 0);
+        const stdValue = (results.federalCredits.standard?.adjustedCredit || results.federalCredits.standard?.credit || 0);
+        const federalCredit = ascFallback || stdValue;
         return {
           year: year.year,
           federalCredit: roundToDollar(federalCredit),
