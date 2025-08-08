@@ -454,7 +454,7 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
         <div className="filing-guide-modal-content">
           {showPreview ? (
             <div className="filing-guide-layout">
-              {/* Table of Contents Sidebar */}
+              {/* Table of Contents Sidebar (inside modal layout) */}
               <div className="filing-guide-toc-sidebar">
                 <h3 className="filing-guide-toc-title">Table of Contents</h3>
                 
