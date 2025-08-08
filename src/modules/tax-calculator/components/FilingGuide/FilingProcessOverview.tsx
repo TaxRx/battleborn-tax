@@ -32,7 +32,7 @@ export const FilingProcessOverview: React.FC<FilingProcessOverviewProps> = ({
     totalCredit = calculations?.totalFederalCredit ?? 0;
   }
 
-  // 🔧 FIX: Get REAL state credits from State Pro Forma calculations, not calculations page
+  // 🔧 FIX: Get REAL state credits from State Pro Forma calculations for the business's state
   const [realStateCredits, setRealStateCredits] = React.useState<number>(0);
   const [loadingStateCredits, setLoadingStateCredits] = React.useState(true);
 
@@ -47,9 +47,15 @@ export const FilingProcessOverview: React.FC<FilingProcessOverviewProps> = ({
 
       setLoadingStateCredits(true);
       try {
-        const stateCreditsResult = await StateProFormaCalculationService.getAllStateCreditsFromProForma(selectedYear.id);
-        const realTotal = stateCreditsResult.total;
-        setRealStateCredits(realTotal);
+        // Resolve state code from business data (domicile -> contact_info.state -> state)
+        const stateCode = businessData?.domicile_state || businessData?.contact_info?.state || businessData?.state;
+        if (!stateCode) {
+          setRealStateCredits(0);
+          setLoadingStateCredits(false);
+          return;
+        }
+        const stateCreditsResult = await StateProFormaCalculationService.getStateCreditsFromProForma(selectedYear.id, stateCode, 'standard');
+        setRealStateCredits(stateCreditsResult.total || 0);
       } catch (error) {
         console.error('Error loading state credits:', error);
         setRealStateCredits(0);
@@ -59,7 +65,7 @@ export const FilingProcessOverview: React.FC<FilingProcessOverviewProps> = ({
     };
 
     loadRealStateCredits();
-  }, [selectedYear?.id, businessData?.client_id]);
+  }, [selectedYear?.id, businessData?.domicile_state, businessData?.contact_info?.state, businessData?.state]);
 
   // Use real state credits instead of calculations page data
   const stateCreditsTotal = realStateCredits;
