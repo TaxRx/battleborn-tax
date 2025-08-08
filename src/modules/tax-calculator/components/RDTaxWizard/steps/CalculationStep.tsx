@@ -64,6 +64,7 @@ const AccordionSection: React.FC<{ title: string; details: string[] | null }> = 
 
 // KPI Chart Component (refined with smooth curves and shaded area)
 const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'pie'; color: string }> = ({ title, data, type, color }) => {
+  const [hover, setHover] = React.useState<{ x: number; y: number; label: string; value: number } | null>(null);
   if (!data || data.length === 0) {
     return (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
@@ -82,8 +83,8 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
   // Line Chart Rendering (smooth path + area fill)
   if (type === 'line') {
     const chartHeight = 90;
-    const chartWidth = 260;
-    const padding = 16;
+    const chartWidth = 150; // reduce width so 3 charts fit in one line
+    const padding = 14;
     
     // Color mapping for SVG
     const colorMap: { [key: string]: string } = {
@@ -178,12 +179,21 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
                 cy={pt.y}
                 r="3"
                 fill={strokeColor}
-              >
-                <title>{`${data[index].label}: ${formatCurrency(data[index].value)}`}</title>
-              </circle>
+                onMouseEnter={() => setHover({ x: pt.x, y: pt.y, label: data[index].label, value: data[index].value })}
+              />
             ))}
           </svg>
-          {/* X-axis labels removed; values shown on hover via <title> */}
+          {/* Tooltip */}
+          {hover && (
+            <div
+              className="absolute text-[11px] bg-white/95 border border-gray-200 rounded px-2 py-1 shadow-sm text-gray-700"
+              style={{ left: Math.min(Math.max(hover.x - 24, 0), chartWidth - 80), top: Math.max(hover.y - 28, 0) }}
+              onMouseLeave={() => setHover(null)}
+            >
+              <div className="font-medium">{hover.label}</div>
+              <div className="font-semibold">{formatCurrency(hover.value)}</div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -637,8 +647,11 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
 
         // Helper to determine if QREs are external (entered in Business Setup)
         const isExternalQRE = (year) => {
-          // If there is any internal computed QRE, treat as internal
-          return !(roundToDollar(year.internal_qre_total || 0) > 0);
+          // Priority: locked values → internal computed → external manual
+          const lockedValues = lockedQREValues[year.id];
+          if (lockedValues && lockedValues.qre_locked) return false; // locked are internal
+          if (roundToDollar(year.internal_qre_total || 0) > 0) return false; // internal present
+          return true; // otherwise external/manual
         };
 
         // Create unique historical cards and remove duplicates
@@ -1835,9 +1848,9 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                 </span>
             </div>
         </div>
-          {/* Move 3 KPI charts into header under summary, same width */}
+          {/* Move 3 KPI charts into header to the right, in a vertical stack inside summary card area */}
           <div className="mt-4 w-full md:min-w-[320px]">
-            <div className="grid grid-cols-1 gap-3">
+            <div className="flex md:flex-col lg:flex-col xl:flex-col gap-3">
               <KPIChart 
                 title="QREs Over Years" 
                 data={(chartData?.qreData || [])
