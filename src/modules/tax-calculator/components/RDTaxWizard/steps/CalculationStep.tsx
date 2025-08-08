@@ -2288,6 +2288,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           selectedYear={selectedYearData}
           calculations={results}
           selectedMethod={selectedMethod}
+          clientName={wizardState?.business?.client_full_name}
           debugData={{
             selectedMethod,
             results,

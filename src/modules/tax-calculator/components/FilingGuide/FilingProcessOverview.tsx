@@ -93,6 +93,19 @@ export const FilingProcessOverview: React.FC<FilingProcessOverviewProps> = ({
   return (
     <div className="filing-process-overview">
       <h2 className="filing-guide-section-title">Filing Process Overview</h2>
+      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 20, marginBottom: 16 }}>
+        <h3 style={{ margin: 0, marginBottom: 8, color: '#1f2937' }}>Federal Filing Guidance</h3>
+        <p style={{ margin: 0, marginBottom: 8 }}>
+          Filing for the Research and Development (R&D) tax credit can be a complex process, but with the right guidance
+          and a pro forma template, it can be done accurately and efficiently. This document provides clear guidance on
+          taking the credit. In addition, our team is standing by to assist you and your accounting team with any questions.
+        </p>
+        <p style={{ margin: 0 }}>
+          In this guide, we will walk you through the steps for filing for the R&D tax credit using federal Form 6765, and we
+          provide a pro forma template for your convenience. We also include information about the election under IRC 280C(c)(3)
+          and when a company might make this election.
+        </p>
+      </div>
       
       <div className="filing-summary-section">
         <h3 className="filing-guide-section-title">Summary</h3>
@@ -144,7 +157,6 @@ export const FilingProcessOverview: React.FC<FilingProcessOverviewProps> = ({
           <ul>
             <li>This guide provides a pro forma calculation for reference only.</li>
             <li>Actual filing should be done by a qualified tax professional.</li>
-            <li>Ensure all QREs meet the IRS requirements for qualified research.</li>
             <li>Consider consulting with a tax advisor for complex situations.</li>
             <li>Keep detailed records of all R&D activities and expenses.</li>
           </ul>

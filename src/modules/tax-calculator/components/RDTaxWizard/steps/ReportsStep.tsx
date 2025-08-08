@@ -2599,6 +2599,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
           calculations={wizardState.calculations}
           selectedMethod={wizardState.selectedMethod}
           debugData={wizardState.debugData}
+          clientName={wizardState?.business?.client_full_name}
         />
       )}
 
