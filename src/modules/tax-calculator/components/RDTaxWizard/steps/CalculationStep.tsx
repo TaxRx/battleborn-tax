@@ -145,9 +145,9 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
       }
     }
 
-    // Area path
+    // Area path (use bottom/top paddings)
     const areaD = pathD + (pts.length
-      ? ` L ${pts[pts.length - 1].x},${chartHeight - padding} L ${pts[0].x},${chartHeight - padding} Z`
+      ? ` L ${pts[pts.length - 1].x},${chartHeight - paddingBottom} L ${pts[0].x},${chartHeight - paddingBottom} Z`
       : '');
 
     return (
