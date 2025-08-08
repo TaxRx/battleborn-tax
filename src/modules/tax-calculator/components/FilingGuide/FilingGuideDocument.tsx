@@ -111,8 +111,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
     });
   }
 
-  // Debug output (collapsible)
-  const [showDebug, setShowDebug] = React.useState(false);
+  // Debug UI removed; keep logs only
 
   // Extract business state from business data (same logic as CalculationStep and IntegratedStateCredits)
   // Enhanced logic to handle different data structures
@@ -289,19 +288,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
 
   return (
     <div className="filing-guide-document">
-      {/* Debug Output Section */}
-      {debugData && (
-        <div className="filing-guide-debug-output" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, margin: '1rem 0', padding: '1rem' }}>
-          <button onClick={() => setShowDebug(v => !v)} style={{ fontWeight: 600, marginBottom: 8 }}>
-            {showDebug ? 'Hide' : 'Show'} Debug Data
-          </button>
-          {showDebug && (
-            <pre style={{ fontSize: 12, maxHeight: 300, overflow: 'auto', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 4, padding: 8 }}>
-              {JSON.stringify(debugData, null, 2)}
-            </pre>
-          )}
-        </div>
-      )}
+      {/* Debug Output removed from top of report */}
       
       {/* Cover Page */}
       <div id="filing-guide-section-cover" className="filing-guide-section">
