@@ -23,6 +23,7 @@ interface FormData {
   website_url: string;
   logo_url: string;
   contact_email: string;
+  auto_link_new_clients: boolean;
 }
 
 interface FormErrors {
@@ -45,7 +46,8 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
     address: '',
     website_url: '',
     logo_url: '',
-    contact_email: ''
+    contact_email: '',
+    auto_link_new_clients: false
   });
   
   const [errors, setErrors] = useState<FormErrors>({});
@@ -67,7 +69,8 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
           address: account.address || '',
           website_url: account.website_url || '',
           logo_url: account.logo_url || '',
-          contact_email: account.contact_email || ''
+          contact_email: account.contact_email || '',
+          auto_link_new_clients: account.auto_link_new_clients || false
         });
       } else {
         // Create mode - reset to defaults
@@ -77,7 +80,8 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
           address: '',
           website_url: '',
           logo_url: '',
-          contact_email: ''
+          contact_email: '',
+          auto_link_new_clients: false
         });
       }
       setErrors({});
@@ -86,8 +90,11 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
     }
   }, [isOpen, account, initialTab]);
 
-  const handleInputChange = (field: keyof FormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  const handleInputChange = (field: keyof FormData, value: string | boolean) => {
+    setFormData(prev => ({ 
+      ...prev, 
+      [field]: field === 'auto_link_new_clients' ? (value === 'true' || value === true) : value 
+    }));
     // Clear field error when user starts typing
     if (errors[field]) {
       setErrors(prev => {
@@ -261,10 +268,10 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
                 }`}
                 disabled={isSubmitting}
               >
-                <option value="client">Client</option>
+                <option value="operator">Operator</option>
                 <option value="affiliate">Affiliate</option>
                 <option value="expert">Expert</option>
-                <option value="operator">Operator</option>
+                <option value="client">Client</option>
                 <option value="admin">Admin</option>
               </select>
               {errors.type && (
@@ -378,6 +385,37 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
                 />
               </div>
             </div>
+
+            {/* Auto-link to new clients checkbox - only show for operator, affiliate, expert */}
+            {['operator', 'affiliate', 'expert'].includes(formData.type) && (
+              <div>
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={formData.auto_link_new_clients}
+                    onChange={(e) => handleInputChange('auto_link_new_clients', e.target.checked.toString())}
+                    disabled={isSubmitting}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">
+                    Automatically link to all new clients
+                  </span>
+                </label>
+                {errors.auto_link_new_clients && (
+                  <div className="mt-1 text-sm text-red-600">
+                    {errors.auto_link_new_clients.map((error, index) => (
+                      <div key={index} className="flex items-center">
+                        <AlertCircle className="h-4 w-4 mr-1" />
+                        {error}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="mt-1 text-xs text-gray-500">
+                  When enabled, this account will automatically gain access to all new clients created in the system.
+                </p>
+              </div>
+            )}
 
             {/* Submit Error */}
             {submitError && (

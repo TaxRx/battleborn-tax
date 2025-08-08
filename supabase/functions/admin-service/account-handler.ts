@@ -41,6 +41,8 @@ interface AccountRequest {
   logo_url?: string;
   website_url?: string;
   stripe_customer_id?: string;
+  contact_email?: string;
+  auto_link_new_clients?: boolean;
 }
 
 interface AccountFilters {
@@ -60,6 +62,8 @@ interface Account {
   logo_url?: string;
   website_url?: string;
   stripe_customer_id?: string;
+  contact_email?: string;
+  auto_link_new_clients?: boolean;
   created_at: string;
   updated_at: string;
   profile_count?: number;
@@ -175,6 +179,8 @@ async function getAccounts(
             logo_url,
             website_url,
             stripe_customer_id,
+            contact_email,
+            auto_link_new_clients,
             created_at,
             updated_at,
             profiles:profiles(count)
@@ -275,6 +281,8 @@ async function getAccount(
         logo_url,
         website_url,
         stripe_customer_id,
+        contact_email,
+        auto_link_new_clients,
         created_at,
         updated_at,
         profiles:profiles(
@@ -338,6 +346,7 @@ async function createAccount(
     if (body.website_url) body.website_url = sanitizeStringInput(body.website_url);
     if (body.logo_url) body.logo_url = sanitizeStringInput(body.logo_url);
     if (body.stripe_customer_id) body.stripe_customer_id = sanitizeStringInput(body.stripe_customer_id);
+    if (body.contact_email) body.contact_email = sanitizeStringInput(body.contact_email);
     
     // Comprehensive validation
     const validation = validateAccountData(body, { checkUniqueness: true });
@@ -391,7 +400,9 @@ async function createAccount(
         address: body.address?.trim() || null,
         logo_url: body.logo_url?.trim() || null,
         website_url: body.website_url?.trim() || null,
-        stripe_customer_id: body.stripe_customer_id?.trim() || null
+        stripe_customer_id: body.stripe_customer_id?.trim() || null,
+        contact_email: body.contact_email?.trim() || null,
+        auto_link_new_clients: body.auto_link_new_clients || false
       }])
       .select()
       .single();
@@ -476,6 +487,7 @@ async function updateAccount(
     if (body.website_url) body.website_url = sanitizeStringInput(body.website_url);
     if (body.logo_url) body.logo_url = sanitizeStringInput(body.logo_url);
     if (body.stripe_customer_id) body.stripe_customer_id = sanitizeStringInput(body.stripe_customer_id);
+    if (body.contact_email) body.contact_email = sanitizeStringInput(body.contact_email);
 
     // Check if account exists first
     const { data: existingAccount, error: fetchError } = await supabase
@@ -556,6 +568,8 @@ async function updateAccount(
     if (body.logo_url !== undefined) updateData.logo_url = body.logo_url?.trim() || null;
     if (body.website_url !== undefined) updateData.website_url = body.website_url?.trim() || null;
     if (body.stripe_customer_id !== undefined) updateData.stripe_customer_id = body.stripe_customer_id?.trim() || null;
+    if (body.contact_email !== undefined) updateData.contact_email = body.contact_email?.trim() || null;
+    if (body.auto_link_new_clients !== undefined) updateData.auto_link_new_clients = body.auto_link_new_clients;
 
     // Add updated timestamp
     updateData.updated_at = new Date().toISOString();

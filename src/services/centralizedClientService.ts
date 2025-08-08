@@ -155,47 +155,39 @@ export class CentralizedClientService {
         return { success: false, error: 'Email is required and cannot be empty' };
       }
 
-      // Get current user ID
-      const { data: { user } } = await supabase.auth.getUser();
-      const userId = user?.id;
+      console.log('[CentralizedClientService] Using admin-service edge function to create client');
 
-      console.log('[CentralizedClientService] Current user ID:', userId);
-      console.log('[CentralizedClientService] About to insert client with full_name:', clientData.full_name);
-
-      // First, create the client
-      const { data: clientDataResult, error: clientError } = await supabase
-        .from('clients')
-        .insert({
+      // Use the new admin-service edge function to create a complete client account
+      const { data, error } = await supabase.functions.invoke('admin-service', {
+        body: {
+          pathname: '/admin-service/create-client',
           full_name: clientData.full_name,
           email: clientData.email,
           phone: clientData.phone || null,
-          filing_status: clientData.filing_status,
+          filing_status: clientData.filing_status || 'single',
+          dependents: clientData.dependents || 0,
           home_address: clientData.home_address || null,
-          city: clientData.city || null,
-          state: clientData.state || null,
-          zip_code: clientData.zip_code || null,
-          dependents: clientData.dependents,
-          standard_deduction: clientData.standard_deduction,
-          custom_deduction: clientData.custom_deduction,
-          created_by: userId
-        })
-        .select('id')
-        .single();
-
-      if (clientError) {
-        console.error('[CentralizedClientService] Error creating client:', clientError);
-        
-        // Handle duplicate email error specifically
-        if (clientError.code === '23505' && clientError.message.includes('clients_email_key')) {
-          return { success: false, error: 'A client with this email address already exists. Please use a different email or edit the existing client.' };
+          state: clientData.state || 'CA'
         }
-        
-        return { success: false, error: clientError.message };
+      });
+
+      if (error) {
+        console.error('[CentralizedClientService] Error calling admin-service:', error);
+        return { success: false, error: error.message };
       }
 
-      console.log('[CentralizedClientService] Client created successfully with ID:', clientDataResult.id);
+      if (!data.success) {
+        console.error('[CentralizedClientService] Admin service returned error:', data.error);
+        return { success: false, error: data.error || 'Failed to create client' };
+      }
 
-      const clientId = clientDataResult.id;
+      console.log('[CentralizedClientService] Client created successfully via admin-service:', data);
+
+      const clientId = data.client?.id;
+      if (!clientId) {
+        console.error('[CentralizedClientService] No client ID returned from admin-service');
+        return { success: false, error: 'No client ID returned from server' };
+      }
 
       // Create personal years if provided
       if (clientData.personal_years && clientData.personal_years.length > 0) {
@@ -279,6 +271,7 @@ export class CentralizedClientService {
         }
       }
 
+      console.log('[CentralizedClientService] Client creation complete with ID:', clientId);
       return { success: true, clientId };
     } catch (error) {
       console.error('Error in createClient:', error);

@@ -178,7 +178,7 @@ serve(async (req) => {
         status: 200,
       })
     } else if (pathname === '/admin-service/create-account') {
-      const { name, type, address, website_url, logo_url, contact_email } = body
+      const { name, type, address, website_url, logo_url, contact_email, auto_link_new_clients } = body
 
       let stripeCustomerId = null;
 
@@ -223,7 +223,9 @@ serve(async (req) => {
           address: address || null,
           website_url: website_url || null,
           logo_url: logo_url || null,
+          contact_email: contact_email || null,
           stripe_customer_id: stripeCustomerId,
+          auto_link_new_clients: auto_link_new_clients || false
         })
         .select()
         .single()
@@ -251,6 +253,8 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       })
+    } else if (pathname === '/admin-service/create-client') {
+      return await handleAdminCreateClient(body, supabaseServiceClient)
     } else if (pathname === '/admin-service/list-operators') {
       // Query the public.accounts table for operator accounts
       const { data, error } = await supabaseServiceClient
@@ -804,6 +808,321 @@ async function handleAdminUpdateUserPassword(body, supabaseAdmin) {
     console.error('Error in handleAdminUpdateUserPassword:', error)
     return new Response(JSON.stringify({ 
       error: 'Failed to update user password',
+      details: error.message 
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500
+    })
+  }
+}
+
+// --- Handler for Admin Create Client --- //
+async function handleAdminCreateClient(body, supabaseAdmin) {
+  try {
+    const { full_name, email, phone, filing_status, dependents, home_address, state } = body
+
+    if (!full_name?.trim()) {
+      return new Response(JSON.stringify({ error: 'Full name is required' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400
+      })
+    }
+
+    if (!email?.trim()) {
+      return new Response(JSON.stringify({ error: 'Email is required' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400
+      })
+    }
+
+    // Step 1: Create account of type 'client'
+    const { data: account, error: accountError } = await supabaseAdmin
+      .from('accounts')
+      .insert({
+        name: full_name.trim(),
+        type: 'client',
+        contact_email: email.trim().toLowerCase()
+      })
+      .select()
+      .single()
+
+    if (accountError) {
+      console.error('Error creating account:', accountError)
+      return new Response(JSON.stringify({ 
+        error: 'Failed to create account',
+        details: accountError.message 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500
+      })
+    }
+
+    console.log(`Created account: ${account.id} for client: ${full_name}`)
+
+    let authUserId = null
+    let tempPassword = null
+
+    try {
+      // Step 2: Create auth.user with verified email
+      tempPassword = 'TempPass123!' // Default temp password
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email: email.trim().toLowerCase(),
+        password: tempPassword,
+        email_confirm: true // Auto-confirm the email
+      })
+
+      if (authError) {
+        // Cleanup: delete the account if auth user creation failed
+        await supabaseAdmin.from('accounts').delete().eq('id', account.id)
+        console.error('Error creating auth user:', authError)
+        return new Response(JSON.stringify({ 
+          error: 'Failed to create user login',
+          details: authError.message 
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400
+        })
+      }
+
+      if (!authData.user) {
+        // Cleanup: delete the account if no user returned
+        await supabaseAdmin.from('accounts').delete().eq('id', account.id)
+        return new Response(JSON.stringify({ 
+          error: 'Failed to create user - no user returned' 
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500
+        })
+      }
+
+      authUserId = authData.user.id
+      console.log(`Created auth user: ${email} with ID: ${authData.user.id}`)
+
+      // Step 3: Create profile record with same id as auth.user and account_id
+      const profileData = {
+        id: authUserId, // Use auth user ID
+        email: email.trim().toLowerCase(),
+        full_name: full_name.trim(),
+        phone: phone?.trim() || null,
+        role: 'admin',
+        account_id: account.id,
+        status: 'active',
+        auth_sync_status: 'synced',
+        metadata: {},
+        preferences: {},
+        timezone: 'UTC',
+        login_count: 0,
+        is_verified: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .insert([profileData])
+        .select()
+        .single()
+
+      if (profileError) {
+        // Cleanup: delete auth user and account
+        await supabaseAdmin.auth.admin.deleteUser(authUserId)
+        await supabaseAdmin.from('accounts').delete().eq('id', account.id)
+        console.error('Error creating profile:', profileError)
+        return new Response(JSON.stringify({
+          error: 'Failed to create profile',
+          details: profileError.message
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400
+        })
+      }
+
+      console.log(`Created profile: ${email} with ID: ${profile.id}`)
+
+      // Step 4: Create clients record with account_id
+      const clientData = {
+        account_id: account.id,
+        full_name: full_name.trim(),
+        email: email.trim().toLowerCase(),
+        phone: phone?.trim() || null,
+        filing_status: filing_status || 'single',
+        dependents: dependents || 0,
+        home_address: home_address?.trim() || null,
+        state: state || 'CA',
+        status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+
+      const { data: client, error: clientError } = await supabaseAdmin
+        .from('clients')
+        .insert([clientData])
+        .select()
+        .single()
+
+      if (clientError) {
+        // Cleanup: delete profile, auth user, and account
+        await supabaseAdmin.from('profiles').delete().eq('id', authUserId)
+        await supabaseAdmin.auth.admin.deleteUser(authUserId)
+        await supabaseAdmin.from('accounts').delete().eq('id', account.id)
+        console.error('Error creating client:', clientError)
+        return new Response(JSON.stringify({
+          error: 'Failed to create client record',
+          details: clientError.message
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500
+        })
+      }
+
+      console.log(`Created client: ${client.id} for account: ${account.id}`)
+
+      // Step 5: Auto-link accounts with auto_link_new_clients enabled and check current user's account type
+      try {
+        // First, find all accounts that should auto-link to new clients
+        const { data: autoLinkAccounts, error: autoLinkError } = await supabaseAdmin
+          .from('accounts')
+          .select('id, name, type')
+          .eq('auto_link_new_clients', true)
+          .in('type', ['operator', 'affiliate', 'expert']);
+
+        if (autoLinkError) {
+          console.error('Error fetching auto-link accounts:', autoLinkError);
+        } else if (autoLinkAccounts && autoLinkAccounts.length > 0) {
+          console.log(`Found ${autoLinkAccounts.length} accounts with auto-link enabled`);
+          
+          // Create account_client_access records for all auto-link accounts
+          const autoLinkRecords = autoLinkAccounts.map(account => ({
+            account_id: account.id,
+            client_id: client.id,
+            access_level: 'admin', // Default access level for auto-linked accounts
+            granted_by: null, // System-generated link (no specific user)
+            granted_at: new Date().toISOString(),
+            metadata: {
+              auto_linked: true,
+              linked_on_client_creation: true,
+              account_name: account.name,
+              account_type: account.type
+            }
+          }));
+
+          const { data: autoLinkResults, error: autoLinkInsertError } = await supabaseAdmin
+            .from('account_client_access')
+            .insert(autoLinkRecords)
+            .select();
+
+          if (autoLinkInsertError) {
+            console.error('Error creating auto-link records:', autoLinkInsertError);
+          } else {
+            console.log(`Successfully created ${autoLinkResults.length} auto-link records:`, autoLinkResults);
+          }
+        }
+      } catch (autoLinkSetupError) {
+        console.error('Error in auto-link setup:', autoLinkSetupError);
+        // Don't fail the whole operation, just log the error
+      }
+
+      // Step 6: Check current user's account type and create account_client_access if needed
+      try {
+        const { data: { user: currentUser } } = await supabaseClient.auth.getUser();
+        if (currentUser) {
+          // Get current user's profile and account type
+          const { data: currentUserProfile, error: profileQueryError } = await supabaseAdmin
+            .from('profiles')
+            .select(`
+              id,
+              account:accounts!inner(
+                id,
+                type
+              )
+            `)
+            .eq('id', currentUser.id)
+            .single();
+
+          if (profileQueryError) {
+            console.error('Error fetching current user profile:', profileQueryError);
+          } else if (currentUserProfile?.account) {
+            const currentUserAccountType = currentUserProfile.account.type;
+            const currentUserAccountId = currentUserProfile.account.id;
+            
+            console.log(`Current user account type: ${currentUserAccountType}, account ID: ${currentUserAccountId}`);
+            
+            // If current user is NOT admin or client, create account_client_access record
+            if (currentUserAccountType !== 'admin' && currentUserAccountType !== 'client') {
+              console.log(`Creating account_client_access record for ${currentUserAccountType} account`);
+              
+              const { data: accessRecord, error: accessError } = await supabaseAdmin
+                .from('account_client_access')
+                .insert({
+                  account_id: currentUserAccountId,
+                  client_id: client.id,
+                  access_level: 'admin', // Default access level for operators/affiliates
+                  granted_by: currentUser.id,
+                  granted_at: new Date().toISOString()
+                })
+                .select()
+                .single();
+
+              if (accessError) {
+                console.error('Error creating account_client_access:', accessError);
+                // Don't fail the whole operation, just log the error
+              } else {
+                console.log(`Created account_client_access record:`, accessRecord);
+              }
+            } else {
+              console.log(`Current user is ${currentUserAccountType}, no account_client_access record needed`);
+            }
+          }
+        }
+      } catch (accessSetupError) {
+        console.error('Error in account_client_access setup:', accessSetupError);
+        // Don't fail the whole operation, just log the error
+      }
+
+      return new Response(JSON.stringify({ 
+        success: true,
+        message: 'Client created successfully with complete user account',
+        client: client,
+        account: account,
+        profile: profile,
+        temporaryPassword: tempPassword,
+        userId: authUserId
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200
+      })
+
+    } catch (error) {
+      // Final cleanup: if we got here, try to clean up everything
+      if (authUserId) {
+        try {
+          await supabaseAdmin.from('profiles').delete().eq('id', authUserId)
+          await supabaseAdmin.auth.admin.deleteUser(authUserId)
+        } catch (cleanupError) {
+          console.error('Error in auth/profile cleanup:', cleanupError)
+        }
+      }
+      
+      try {
+        await supabaseAdmin.from('accounts').delete().eq('id', account.id)
+      } catch (cleanupError) {
+        console.error('Error in account cleanup:', cleanupError)
+      }
+
+      console.error('Error in handleAdminCreateClient:', error)
+      return new Response(JSON.stringify({ 
+        error: 'Failed to create client',
+        details: error.message 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500
+      })
+    }
+
+  } catch (error) {
+    console.error('Error in handleAdminCreateClient:', error)
+    return new Response(JSON.stringify({ 
+      error: 'Failed to create client',
       details: error.message 
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

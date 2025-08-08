@@ -62,6 +62,7 @@ export interface Account {
   website_url?: string;
   contact_email?: string;
   stripe_customer_id?: string;
+  auto_link_new_clients?: boolean;
   created_at: string;
   updated_at: string;
   profiles?: { count: number }[];
@@ -794,6 +795,7 @@ class AdminAccountService {
           website_url,
           contact_email,
           stripe_customer_id,
+          auto_link_new_clients,
           created_at,
           updated_at,
           profiles(count)
@@ -870,6 +872,7 @@ class AdminAccountService {
           logo_url,
           website_url,
           stripe_customer_id,
+          auto_link_new_clients,
           created_at,
           updated_at,
           profiles(count)
@@ -1044,6 +1047,7 @@ class AdminAccountService {
     website_url?: string;
     logo_url?: string;
     contact_email?: string;
+    auto_link_new_clients?: boolean;
   }): Promise<{ success: boolean; account?: Account; message: string }> {
     try {
       // Use the admin-service edge function for account creation with Stripe integration
@@ -1056,6 +1060,7 @@ class AdminAccountService {
           website_url: accountData.website_url?.trim() || null,
           logo_url: accountData.logo_url?.trim() || null,
           contact_email: accountData.contact_email?.trim() || null,
+          auto_link_new_clients: accountData.auto_link_new_clients || false,
         },
       });
 
@@ -1104,6 +1109,7 @@ class AdminAccountService {
     website_url?: string;
     logo_url?: string;
     contact_email?: string;
+    auto_link_new_clients?: boolean;
   }): Promise<{ success: boolean; account?: Account; message: string }> {
     try {
       // Get current account for comparison
@@ -1131,6 +1137,7 @@ class AdminAccountService {
       if (updates.website_url !== undefined) updateData.website_url = updates.website_url?.trim() || null;
       if (updates.logo_url !== undefined) updateData.logo_url = updates.logo_url?.trim() || null;
       if (updates.contact_email !== undefined) updateData.contact_email = updates.contact_email?.trim() || null;
+      if (updates.auto_link_new_clients !== undefined) updateData.auto_link_new_clients = updates.auto_link_new_clients;
 
       const { data: account, error } = await supabase
         .from('accounts')
@@ -1254,6 +1261,7 @@ class AdminAccountService {
     website_url?: string;
     logo_url?: string;
     contact_email?: string;
+    auto_link_new_clients?: boolean;
   }, isUpdate: boolean = false, accountId?: string): Promise<{ 
     isValid: boolean; 
     errors: Record<string, string[]> 
@@ -1300,6 +1308,14 @@ class AdminAccountService {
         new URL(accountData.website_url.trim());
       } catch {
         errors.website_url = ['Invalid website URL format'];
+      }
+    }
+
+    // Validate auto_link_new_clients setting
+    if (accountData.auto_link_new_clients === true) {
+      // Only operator, affiliate, and expert accounts can auto-link to clients
+      if (!['operator', 'affiliate', 'expert'].includes(accountData.type)) {
+        errors.auto_link_new_clients = ['Auto-linking to new clients is only available for operator, affiliate, and expert account types'];
       }
     }
 
