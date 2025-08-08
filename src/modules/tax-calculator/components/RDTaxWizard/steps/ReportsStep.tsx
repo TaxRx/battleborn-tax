@@ -1545,7 +1545,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
                       </div>
                     ) : (
                       <span className="text-lg font-bold text-blue-700">
-                        ${federalCredit.toLocaleString()}
+                        ${Math.round(federalCredit).toLocaleString()}
                       </span>
                     )}
                   </div>
@@ -1571,7 +1571,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
                       </div>
                     ) : (
                       <span className="text-lg font-bold text-green-700">
-                        ${stateCredit.toLocaleString()}
+                        ${Math.round(stateCredit).toLocaleString()}
                       </span>
                     )}
                   </div>
@@ -1582,7 +1582,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
                       Total Credits
                     </span>
                     <span className="text-2xl font-extrabold text-purple-700 drop-shadow-lg">
-                      ${((federalCredit || 0) + (stateCredit || 0)).toLocaleString()}
+                      ${Math.round((federalCredit || 0) + (stateCredit || 0)).toLocaleString()}
                     </span>
                   </div>
                   
@@ -1731,6 +1731,10 @@ I acknowledge that I had the opportunity to review and revise the report prior t
                       console.log('%c📊 [REPORTS] wizardState.business:', 'color: #00ffff; font-weight: bold;', wizardState.business);
                       console.log('%c📊 [REPORTS] businessYearId:', 'color: #00ffff; font-weight: bold;', wizardState.selectedYear?.id);
                       console.log('%c📊 [REPORTS] businessId:', 'color: #00ffff; font-weight: bold;', wizardState.business?.id);
+                      if (!wizardState.selectedYear?.id) {
+                        alert('Missing business year. Please select a year first.');
+                        return;
+                      }
                       console.log('%c🔍 [REPORTS] Setting modal to true...', 'color: #ffff00; font-weight: bold;');
                       setIsResearchReportOpen(true);
                     }}
