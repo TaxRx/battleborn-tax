@@ -958,52 +958,48 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           hasSupplyData: !!year.supplies?.length
         });
         
-        // Find 3 consecutive prior years with QREs > 0
-        let validPriorQREs = [];
-        let priorYearDetails = [];
-        
-        for (let i = idx - 1; i >= 0 && validPriorQREs.length < 3; i--) {
+        // Find up to 3 prior years (< current card year), most recent first
+        const candidatePriors = allYears
+          .filter((y) => y.year < year.year)
+          .sort((a, b) => b.year - a.year)
+          .slice(0, 3);
+        const validPriorQREs: number[] = [];
+        const priorYearDetails: any[] = [];
+        candidatePriors.forEach((priorYear) => {
           let priorQRE = 0;
-          const priorYear = allYears[i];
-          
-          // Check external QRE first, then internal calculation
           if (priorYear.total_qre > 0) {
-            priorQRE = priorYear.total_qre;
-          } else if (priorYear.employees || priorYear.contractors || priorYear.supplies) {
+            priorQRE = roundToDollar(priorYear.total_qre);
+          } else {
             const empQRE = priorYear.employees?.reduce((sum, e) => sum + roundToDollar(e.calculated_qre || 0), 0) || 0;
             const contQRE = priorYear.contractors?.reduce((sum, c) => sum + roundToDollar(c.calculated_qre || 0), 0) || 0;
             const supQRE = priorYear.supplies?.reduce((sum, s) => sum + roundToDollar(s.calculated_qre || 0), 0) || 0;
             priorQRE = roundToDollar(empQRE + contQRE + supQRE);
           }
-          
-          priorYearDetails.push({
-            year: priorYear.year,
-            qre: priorQRE,
-            external: priorYear.total_qre > 0
-          });
-          
-          if (priorQRE > 0) {
-            validPriorQREs.push(priorQRE);
-          } else {
-            // For ASC, we can be more lenient - don't break on first zero year
-            // Allow gaps in historical data for a more practical calculation
-            console.log(`⚠️ Year ${priorYear.year} has no QRE data - continuing search`);
-          }
-        }
-        
-        validPriorQREs = validPriorQREs.reverse();
-        priorYearDetails.reverse();
+          priorYearDetails.push({ year: priorYear.year, qre: priorQRE, external: priorYear.total_qre > 0 });
+          if (priorQRE > 0) validPriorQREs.push(priorQRE);
+        });
         
         console.log(`📊 Prior year QRE details for ${year.year}:`, priorYearDetails);
         console.log(`✅ Valid prior QREs found: ${validPriorQREs.length}`, validPriorQREs);
         
-        // ASC Calculation Logic aligned to Form6765v2024 and pro forma:
-        // - If we have three prior years with QREs, use 6% of Current QRE (accelerated model used elsewhere)
-        // - Otherwise fallback stays 6% of Current QRE
-        const avgPrior3 = validPriorQREs.slice(0, 3).reduce((a, b) => a + b, 0) / (validPriorQREs.slice(0, 3).length || 1);
-        ascAvgPrior3 = roundToDollar(avgPrior3 || 0);
-        ascPercent = 6;
-        ascCredit = roundToDollar(qre * 0.06);
+        // ASC Calculation Logic (matches RDCalculationsService):
+        if (validPriorQREs.length === 3) {
+          const avgPrior3 = (validPriorQREs[0] + validPriorQREs[1] + validPriorQREs[2]) / 3;
+          ascAvgPrior3 = roundToDollar(avgPrior3);
+          const baseAmount = avgPrior3 * 0.5;
+          const incrementalQRE = Math.max(0, qre - baseAmount);
+          ascCredit = roundToDollar(incrementalQRE * 0.14);
+          ascPercent = 14;
+        } else if (validPriorQREs.length > 0) {
+          const avgPrior = validPriorQREs.reduce((a, b) => a + b, 0) / validPriorQREs.length;
+          ascAvgPrior3 = roundToDollar(avgPrior);
+          ascCredit = roundToDollar(qre * 0.06);
+          ascPercent = 6;
+        } else {
+          ascAvgPrior3 = 0;
+          ascCredit = roundToDollar(qre * 0.06);
+          ascPercent = 6;
+        }
         
         // Ensure we have a valid credit amount
         if (qre > 0 && ascCredit === 0) {
