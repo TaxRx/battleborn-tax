@@ -83,8 +83,9 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
   // Line Chart Rendering (smooth path + area fill)
   if (type === 'line') {
     const chartHeight = 100;
-    // Wider chart for better readability after shrinking summary card
-    const chartWidth = 220;
+    // Responsive width: show up to 5 most recent points; cap width
+    const visibleData = data.slice(-5);
+    const chartWidth = Math.min(240, 36 * visibleData.length + 40);
     // Use asymmetric paddings to minimize the left margin of the plot area
     const paddingTop = 10;
     const paddingBottom = 10;
@@ -107,7 +108,7 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
     
     const toXY = (item: any, index: number) => {
       // Evenly space points across width with minimal left margin
-      const count = Math.max(data.length, 1);
+      const count = Math.max(visibleData.length, 1);
       const step = count > 1 ? (chartWidth - paddingLeft - paddingRight) / (count - 1) : 0;
       const x = count === 1 ? (chartWidth / 2) : (paddingLeft + index * step);
       const y = maxValue === minValue
@@ -116,7 +117,7 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
       return { x, y };
     };
 
-    const pts = data.map(toXY);
+    const pts = visibleData.map(toXY);
 
     // Create a smooth path using cubic Bezier curves
     const getControlPoints = (p0: any, p1: any, p2: any, t = 0.2) => {
@@ -184,7 +185,7 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
                 cy={pt.y}
                 r="3"
                 fill={strokeColor}
-                onMouseEnter={() => setHover({ x: pt.x, y: pt.y, label: data[index].label, value: data[index].value })}
+                onMouseEnter={() => setHover({ x: pt.x, y: pt.y, label: visibleData[index].label, value: visibleData[index].value })}
               />
             ))}
           </svg>
@@ -996,30 +997,13 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
         console.log(`📊 Prior year QRE details for ${year.year}:`, priorYearDetails);
         console.log(`✅ Valid prior QREs found: ${validPriorQREs.length}`, validPriorQREs);
         
-        // ASC Calculation Logic
-        if (validPriorQREs.length >= 3) {
-          // Multi-year ASC (14% rate) - CORRECTED FORMULA: 14% × max(0, Current QRE - 50% of avg prior 3 years)
-          const avgPrior3 = validPriorQREs.slice(0, 3).reduce((a, b) => a + b, 0) / 3;
-          const fiftyPercentOfAvg = avgPrior3 * 0.5; // 50% of average prior 3 years
-          const incrementalQRE = Math.max(0, qre - fiftyPercentOfAvg);
-          ascCredit = roundToDollar(incrementalQRE * 0.14);
-          ascPercent = 14;
-          ascAvgPrior3 = roundToDollar(avgPrior3);
-          
-          console.log(`✅ Multi-year ASC for ${year.year}: ${formatCurrency(ascCredit)} (${qre} - 50% of ${avgPrior3} = ${qre} - ${fiftyPercentOfAvg} = ${incrementalQRE} * 14%)`);
-        } else if (validPriorQREs.length >= 1) {
-          // Simplified ASC with available data (6% rate)
-          ascCredit = roundToDollar(qre * 0.06);
-          ascPercent = 6;
-          
-          console.log(`⚡ Single-year ASC for ${year.year}: ${formatCurrency(ascCredit)} (${qre} * 6%)`);
-        } else {
-          // Startup provision (6% rate)
-          ascCredit = roundToDollar(qre * 0.06);
-          ascPercent = 6;
-          
-          console.log(`🚀 Startup ASC for ${year.year}: ${formatCurrency(ascCredit)} (${qre} * 6%)`);
-        }
+        // ASC Calculation Logic aligned to Form6765v2024 and pro forma:
+        // - If we have three prior years with QREs, use 6% of Current QRE (accelerated model used elsewhere)
+        // - Otherwise fallback stays 6% of Current QRE
+        const avgPrior3 = validPriorQREs.slice(0, 3).reduce((a, b) => a + b, 0) / (validPriorQREs.slice(0, 3).length || 1);
+        ascAvgPrior3 = roundToDollar(avgPrior3 || 0);
+        ascPercent = 6;
+        ascCredit = roundToDollar(qre * 0.06);
         
         // Ensure we have a valid credit amount
         if (qre > 0 && ascCredit === 0) {
