@@ -543,17 +543,19 @@ Please provide:
         console.log('📝 No cached report found, will generate new');
       }
 
-      // Load selected activities with names
+      // Load selected activities with names (only active activities)
       const { data: activitiesData, error: activitiesError } = await supabase
         .from('rd_selected_activities')
         .select(`
           *,
-          activity:activity_id (
+          activity:activity_id!inner (
             id,
-            title
+            title,
+            is_active
           )
         `)
-        .eq('business_year_id', businessYearId);
+        .eq('business_year_id', businessYearId)
+        .eq('activity.is_active', true);
 
       if (activitiesError) {
         console.error('❌ Selected activities error:', activitiesError);
@@ -563,6 +565,7 @@ Please provide:
 
       setSelectedActivities(activitiesData || []);
       console.log('✅ Selected activities loaded:', activitiesData?.length || 0);
+      console.log('📋 Activities detail:', activitiesData?.map(a => ({ id: a.id, activityId: a.activity_id, title: a.activity?.title })));
 
       // Load selected steps with names
       const { data: stepsData, error: stepsError } = await supabase
@@ -584,11 +587,7 @@ Please provide:
 
       setSelectedSteps(stepsData || []);
       console.log('✅ Selected steps loaded:', stepsData?.length || 0);
-      console.log('✅ Selected steps data:', stepsData?.map(s => ({ 
-        name: s.step?.name, 
-        time_percentage: s.time_percentage, 
-        applied_percentage: s.applied_percentage 
-      })));
+      console.log('📋 Steps detail:', stepsData?.map(s => ({ id: s.id, stepId: s.step_id, name: s.step?.name })));
 
       // Load selected subcomponents with names from rd_research_subcomponents
       const { data: subcomponentsData, error: subcomponentsError } = await supabase
@@ -623,6 +622,7 @@ Please provide:
 
       setSelectedSubcomponents(subcomponentsData || []);
       console.log('✅ Selected subcomponents loaded:', subcomponentsData?.length || 0);
+      console.log('📋 Subcomponents detail:', subcomponentsData?.map(s => ({ id: s.id, subcomponentId: s.subcomponent_id, name: s.rd_research_subcomponents?.name })));
 
       // Load business roles - need to get business_id first
       setLoadingMessage('Loading business roles...');
@@ -712,12 +712,22 @@ Please provide:
       hasCachedReport: !!cachedReport
     });
     
-    if (!businessProfile || selectedActivities.length === 0) {
-      console.error(`❌ [RESEARCH REPORT MODAL] Missing required data:`, {
-        hasBusinessProfile: !!businessProfile,
-        selectedActivitiesCount: selectedActivities.length
+    if (!businessProfile) {
+      console.error(`❌ [RESEARCH REPORT MODAL] Missing business profile`);
+      setError('No business profile available');
+      return;
+    }
+    
+    if (selectedActivities.length === 0) {
+      console.error(`❌ [RESEARCH REPORT MODAL] No selected activities found for businessYearId:`, businessYearId);
+      console.log('📋 Available data for troubleshooting:', {
+        businessProfile: !!businessProfile,
+        selectedActivitiesCount: selectedActivities.length,
+        selectedStepsCount: selectedSteps.length,
+        selectedSubcomponentsCount: selectedSubcomponents.length,
+        businessYearId: businessYearId
       });
-      setError('No data available to generate report');
+      setError('No research activities found for this business year. Please complete the Research Design step first.');
       return;
     }
 
