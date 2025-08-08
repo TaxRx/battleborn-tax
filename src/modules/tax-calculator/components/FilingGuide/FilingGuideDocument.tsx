@@ -290,7 +290,40 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
 
   // Names for Welcome Letter salutation
   const businessName = businessData?.name || businessData?.business?.name || 'Client Business';
-  const resolvedClientName = clientName || businessData?.clients?.full_name || businessData?.client_full_name || businessData?.contact_name || businessData?.owner_name || businessData?.client_name || businessData?.primary_contact_name || businessData?.user_name || businessData?.business?.owner_name || 'Client';
+  const [fetchedClientName, setFetchedClientName] = useState<string | null>(null);
+  const resolvedClientName = clientName 
+    || fetchedClientName 
+    || businessData?.clients?.full_name 
+    || businessData?.client_full_name 
+    || businessData?.contact_name 
+    || businessData?.owner_name 
+    || businessData?.client_name 
+    || businessData?.primary_contact_name 
+    || businessData?.user_name 
+    || businessData?.business?.owner_name 
+    || 'Client';
+
+  // Fallback: fetch client name if not provided
+  useEffect(() => {
+    const loadClientName = async () => {
+      if (clientName || fetchedClientName) return;
+      const clientId = businessData?.client_id || businessData?.business?.client_id;
+      if (!clientId) return;
+      try {
+        const { data, error } = await supabase
+          .from('clients')
+          .select('full_name')
+          .eq('id', clientId)
+          .single();
+        if (!error && data?.full_name) {
+          setFetchedClientName(data.full_name);
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+    loadClientName();
+  }, [clientName, fetchedClientName, businessData?.client_id, businessData?.business?.client_id]);
 
   return (
     <div className="filing-guide-document">
@@ -301,7 +334,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
         <div className="filing-guide-cover-page">
           <div className="filing-guide-logo">
             <img 
-              src={`${import.meta.env.VITE_PUBLIC_SITE_URL}/images/Direct Research_horizontal advisors logo.png`} 
+              src={'/images/Direct%20Research_horizontal%20advisors%20logo.png'} 
               alt="Direct Research Logo"
               className="filing-guide-logo-img"
             />
