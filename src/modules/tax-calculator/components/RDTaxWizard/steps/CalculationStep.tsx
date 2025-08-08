@@ -300,6 +300,8 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
   const [availableActivityYears, setAvailableActivityYears] = useState<Array<{id: string, year: number}>>([]);
   const [selectedActivityYearId, setSelectedActivityYearId] = useState<string>(wizardState.selectedYear?.id || '');
   const [selectedActivityYear, setSelectedActivityYear] = useState<number>(wizardState.selectedYear?.year || new Date().getFullYear());
+  // Saved results for accurate cross-year charts
+  const [savedCreditResultsByYear, setSavedCreditResultsByYear] = useState<Record<string, { totalFederalCredit: number; totalStateCredits: number; totalCredits: number }>>({});
 
   // --- Add state for selectedYearGrossReceipts ---
   const [selectedYearGrossReceipts, setSelectedYearGrossReceipts] = useState<number>(0);
@@ -1003,6 +1005,36 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
     fetchHistoricalCards();
   }, [allYears]);
 
+  // Load saved calculation results for all years to power accurate charts
+  useEffect(() => {
+    const loadSavedResults = async () => {
+      if (!allYears || allYears.length === 0) return;
+      try {
+        const ids = allYears.map(y => y.id);
+        const { data, error } = await supabase
+          .from('rd_federal_credit_results')
+          .select('business_year_id,total_federal_credit,total_state_credits,total_credits')
+          .in('business_year_id', ids);
+        if (error) {
+          console.warn('Charts: failed to read saved credit results:', error);
+          return;
+        }
+        const map: Record<string, { totalFederalCredit: number; totalStateCredits: number; totalCredits: number }> = {};
+        (data || []).forEach((row: any) => {
+          map[row.business_year_id] = {
+            totalFederalCredit: Math.round(row.total_federal_credit || 0),
+            totalStateCredits: Math.round(row.total_state_credits || 0),
+            totalCredits: Math.round(row.total_credits || 0)
+          };
+        });
+        setSavedCreditResultsByYear(map);
+      } catch (e) {
+        console.warn('Charts: exception loading saved credit results:', e);
+      }
+    };
+    loadSavedResults();
+  }, [allYears]);
+
   // Load calculations when component mounts or year changes
   useEffect(() => {
     if (selectedActivityYearId) {
@@ -1470,9 +1502,12 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
     }
 
     const currentYear = new Date().getFullYear();
+    // Keep only the most recent 5 years
+    const yearsAsc = [...allYears].sort((a, b) => a.year - b.year);
+    const recentYears = yearsAsc.slice(Math.max(yearsAsc.length - 5, 0));
     
     // QRE over years chart data
-    const qreData = allYears.map(year => {
+    const qreData = recentYears.map(year => {
       const isCurrentYear = year.year === currentYear;
       
       if (isCurrentYear) {
@@ -1521,29 +1556,28 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
     });
 
     // Credit values over years chart data
-    const creditData = qreData.map(item => {
-      const isCurrentYear = item.year === new Date().getFullYear();
-      let federalCredit = 0;
-      let stateCredit = 0;
-      
-      if (isCurrentYear && results?.federalCredits) {
-        // Use actual calculated federal credit for current year
-        federalCredit = selectedMethod === 'asc' 
+    const creditData = recentYears.map(year => {
+      const saved = savedCreditResultsByYear[year.id];
+      if (saved) {
+        return {
+          year: year.year,
+          federalCredit: roundToDollar(saved.totalFederalCredit || 0),
+          stateCredit: roundToDollar(saved.totalStateCredits || 0),
+          totalCredit: roundToDollar(saved.totalCredits || (saved.totalFederalCredit || 0) + (saved.totalStateCredits || 0))
+        };
+      }
+      if (year.year === currentYear && results?.federalCredits) {
+        const federalCredit = selectedMethod === 'asc' 
           ? (results.federalCredits.asc?.adjustedCredit || results.federalCredits.asc?.credit || 0)
           : (results.federalCredits.standard?.adjustedCredit || results.federalCredits.standard?.credit || 0);
-        stateCredit = totalStateCredits;
-      } else {
-        // For historical years, use simplified calculation
-        federalCredit = roundToDollar((item.qre || 0) * 0.20);
-        stateCredit = 0; // No state credit data for historical years
+        return {
+          year: year.year,
+          federalCredit: roundToDollar(federalCredit),
+          stateCredit: roundToDollar(totalStateCredits || 0),
+          totalCredit: roundToDollar((federalCredit || 0) + (totalStateCredits || 0))
+        };
       }
-      
-      return {
-        year: item.year,
-        federalCredit: roundToDollar(federalCredit),
-        stateCredit: roundToDollar(stateCredit),
-        totalCredit: roundToDollar(federalCredit + stateCredit)
-      };
+      return { year: year.year, federalCredit: 0, stateCredit: 0, totalCredit: 0 };
     });
 
     // Efficiency metric chart data (simplified to avoid division by zero)
