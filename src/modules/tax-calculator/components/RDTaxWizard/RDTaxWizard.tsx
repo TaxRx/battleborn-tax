@@ -901,6 +901,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
           businessData={wizardState.business}
           selectedYear={wizardState.selectedYear}
           calculations={wizardState.calculations}
+          clientName={clientData?.full_name}
         />
       )}
 

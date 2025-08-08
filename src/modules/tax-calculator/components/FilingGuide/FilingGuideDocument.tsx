@@ -18,6 +18,7 @@ interface FilingGuideDocumentProps {
   selectedMethod?: 'asc' | 'standard';
   debugData?: any;
   readOnly?: boolean; // Add read-only mode for client portal
+  clientName?: string;
 }
 
 export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
@@ -26,7 +27,8 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
   calculations,
   selectedMethod,
   debugData,
-  readOnly = false
+  readOnly = false,
+  clientName
 }) => {
   // State for locked QRE values
   const [lockedQREValues, setLockedQREValues] = useState<{
@@ -288,7 +290,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
 
   // Names for Welcome Letter salutation
   const businessName = businessData?.name || businessData?.business?.name || 'Client Business';
-  const clientName = businessData?.contact_name || businessData?.owner_name || businessData?.client_name || businessData?.primary_contact_name || businessData?.user_name || businessData?.business?.owner_name || 'Client';
+  const resolvedClientName = clientName || businessData?.clients?.full_name || businessData?.client_full_name || businessData?.contact_name || businessData?.owner_name || businessData?.client_name || businessData?.primary_contact_name || businessData?.user_name || businessData?.business?.owner_name || 'Client';
 
   return (
     <div className="filing-guide-document">
@@ -341,7 +343,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
           </div>
         </div>
         <div style={{ background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24 }}>
-          <p style={{ marginBottom: 16 }}>Dear "{businessName}" and "{clientName}",</p>
+          <p style={{ marginBottom: 16 }}>Dear {businessName} and {resolvedClientName},</p>
           <p style={{ marginBottom: 12 }}>
             We wanted to take a moment to express our gratitude for the opportunity to work with you and develop your
             research and development credit–supporting documentation. It has been a pleasure to collaborate with your

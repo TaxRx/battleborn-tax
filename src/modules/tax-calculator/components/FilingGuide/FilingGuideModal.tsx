@@ -13,6 +13,7 @@ interface FilingGuideModalProps {
   calculations: any;
   selectedMethod?: 'asc' | 'standard';
   debugData?: any;
+  clientName?: string;
 }
 
 export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
@@ -22,7 +23,8 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
   selectedYear,
   calculations,
   selectedMethod,
-  debugData
+  debugData,
+  clientName
 }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [exportFormat, setExportFormat] = useState<'pdf' | 'html'>('pdf');
@@ -524,6 +526,7 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
                     calculations={calculations}
                     selectedMethod={selectedMethod}
                     debugData={debugData}
+                    clientName={clientName}
                     readOnly={window.location.pathname.includes('/client')}
                   />
                   
