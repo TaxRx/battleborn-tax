@@ -106,11 +106,8 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
     const strokeColor = colorMap[color] || '#3b82f6'; // Default to blue
     
     const toXY = (item: any, index: number) => {
-      // Evenly space points across width so each marker sits over its year label
+      // Evenly space points across width with minimal left margin
       const count = Math.max(data.length, 1);
-      const step = (chartWidth - 2 * padding) / count;
-      const count = Math.max(data.length, 1);
-      // Remove half-step offset so first point hugs the left padding
       const step = count > 1 ? (chartWidth - paddingLeft - paddingRight) / (count - 1) : 0;
       const x = count === 1 ? (chartWidth / 2) : (paddingLeft + index * step);
       const y = maxValue === minValue
