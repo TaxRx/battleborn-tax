@@ -67,7 +67,7 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
   const [hover, setHover] = React.useState<{ x: number; y: number; label: string; value: number } | null>(null);
   if (!data || data.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 w-[220px]">
         <h4 className="text-sm font-semibold text-gray-700 mb-2">{title}</h4>
         <div className="text-center py-8 text-gray-400">
           <div className="text-2xl mb-2">📊</div>
@@ -83,7 +83,7 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
   // Line Chart Rendering (smooth path + area fill)
   if (type === 'line') {
     const chartHeight = 90;
-    const chartWidth = 150; // reduce width so 3 charts fit in one line
+    const chartWidth = 180; // compact width so 3 charts fit in one row
     const padding = 14;
     
     // Color mapping for SVG
@@ -911,8 +911,13 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       
       // Use the cards already calculated in the first useEffect
       const cards = allYears.map((year, idx) => {
-        // Determine if QREs are external (entered in Business Setup)
-        const isExternalQRE = year.total_qre > 0;
+        // Determine internal/external using Business Setup + locked/internal signals
+        const lockedValues = lockedQREValues[year.id];
+        const internalTotal = roundToDollar(year.internal_qre_total || 0);
+        const isExternalQRE = !(
+          (lockedValues && lockedValues.qre_locked) ||
+          internalTotal > 0
+        ) && (roundToDollar(year.total_qre || 0) > 0);
         const isInternal = !isExternalQRE;
 
         // Get QRE for this year (Business Setup takes precedence)
@@ -921,11 +926,15 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           // Use external QRE from Business Setup
           qre = year.total_qre;
         } else {
-          // Calculate internal QRE from employees, contractors, supplies
+          // Calculate internal QRE from employees, contractors, supplies with fallback
           const employeeQRE = year.employees?.reduce((sum, e) => sum + roundToDollar(e.calculated_qre || 0), 0) || 0;
           const contractorQRE = year.contractors?.reduce((sum, c) => sum + roundToDollar(c.calculated_qre || 0), 0) || 0;
           const supplyQRE = year.supplies?.reduce((sum, s) => sum + roundToDollar(s.calculated_qre || 0), 0) || 0;
-          qre = roundToDollar(employeeQRE + contractorQRE + supplyQRE);
+          let computed = roundToDollar(employeeQRE + contractorQRE + supplyQRE);
+          if (computed <= 0 && internalQREByBusinessYearId[year.id]) {
+            computed = internalQREByBusinessYearId[year.id];
+          }
+          qre = computed;
         }
 
         // Calculate ASC credit based on the number of valid consecutive prior years
@@ -1844,7 +1853,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
             <div className="flex flex-row items-start justify-end gap-4">
               {/* Charts block (left of summary) */}
               <div className="mt-1">
-                <div className="flex flex-row flex-wrap gap-3 justify-end">
+                <div className="flex flex-row gap-3 justify-end items-start">
                   <KPIChart 
                     title="QREs Over Years" 
                     data={(chartData?.qreData || [])
@@ -1873,7 +1882,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
               </div>
 
               {/* Summary card (right) */}
-              <div className="bg-white/90 rounded-xl shadow-lg px-6 py-4 w-full md:min-w-[320px] flex flex-col items-end space-y-2">
+              <div className="bg-white/90 rounded-xl shadow-lg px-6 py-4 w-full md:min-w-[320px] max-w-[520px] flex flex-col items-end space-y-2">
               <div className="flex items-center justify-between w-full">
                 <span className="flex items-center text-sm font-medium text-blue-900">
                   <Building2 className="w-4 h-4 mr-1 text-blue-500" />
