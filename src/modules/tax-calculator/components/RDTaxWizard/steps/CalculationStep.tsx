@@ -1882,7 +1882,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
               </div>
 
               {/* Summary card (right) */}
-              <div className="bg-white/90 rounded-xl shadow-lg px-6 py-4 w-full md:min-w-[320px] max-w-[520px] flex flex-col items-end space-y-2">
+              <div className="bg-white/90 rounded-xl shadow-lg px-5 py-4 w-full md:min-w-[300px] max-w-[420px] flex flex-col items-end space-y-2">
               <div className="flex items-center justify-between w-full">
                 <span className="flex items-center text-sm font-medium text-blue-900">
                   <Building2 className="w-4 h-4 mr-1 text-blue-500" />
@@ -2035,9 +2035,10 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Historical Summary</h3>
           
           {(() => {
-            const sorted = [...historicalCards].sort((a, b) => b.year - a.year);
-            const topFour = sorted.slice(0, 4);
-            const olderCards = sorted.slice(4);
+            // Ascending left→right: oldest on left, most recent on right
+            const sortedAsc = [...historicalCards].sort((a, b) => a.year - b.year);
+            const topFour = sortedAsc.slice(-4); // last 4 (most recent) in ascending order
+            const olderCards = sortedAsc.slice(0, Math.max(0, sortedAsc.length - 4));
             
             return (
               <>
