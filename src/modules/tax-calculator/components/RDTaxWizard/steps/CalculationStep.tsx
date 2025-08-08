@@ -6,6 +6,7 @@ import { StateProFormaCalculationService } from '../../../services/stateProForma
 import { ContractorManagementService } from '../../../../../services/contractorManagementService';
 import { toast } from 'react-hot-toast';
 import { supabase } from '../../../lib/supabase';
+import { SectionGQREService } from '../../../services/sectionGQREService';
 import { FilingGuideModal } from '../../FilingGuide/FilingGuideModal';
 import AllocationReportModal from '../../AllocationReport/AllocationReportModal';
 import { IntegratedFederalCredits } from './IntegratedFederalCredits';
@@ -331,6 +332,8 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
   const [allYears, setAllYears] = useState<any[]>([]);
   const [selectedYearId, setSelectedYearId] = useState<string | null>(wizardState.selectedYear?.id || null);
   const [historicalCards, setHistoricalCards] = useState<any[]>([]);
+  // Computed internal QRE totals per business_year_id
+  const [internalQREByBusinessYearId, setInternalQREByBusinessYearId] = useState<Record<string, number>>({});
   const [availableActivityYears, setAvailableActivityYears] = useState<Array<{id: string, year: number}>>([]);
   const [selectedActivityYearId, setSelectedActivityYearId] = useState<string>(wizardState.selectedYear?.id || '');
   const [selectedActivityYear, setSelectedActivityYear] = useState<number>(wizardState.selectedYear?.year || new Date().getFullYear());
@@ -469,10 +472,20 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
               console.error('Error fetching contractors:', error);
             }
 
-            return { 
-              ...year, 
+            // Compute internal QRE using SectionGQREService to align with Business Setup
+            let internalQRETotal = 0;
+            try {
+              const entries = await SectionGQREService.getQREDataForSectionG(year.id);
+              internalQRETotal = entries.reduce((sum, e) => sum + (e.calculated_qre || 0), 0);
+            } catch (e) {
+              internalQRETotal = 0;
+            }
+
+            return {
+              ...year,
               supply_subcomponents: supplySubcomponents || [],
-              contractors_with_qre: contractorsWithQRE
+              contractors_with_qre: contractorsWithQRE,
+              internal_qre_total: internalQRETotal
             };
           })
         );
@@ -532,37 +545,10 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           const currentYear = new Date().getFullYear();
           const isCurrentYear = year.year === currentYear;
           
-          if (isCurrentYear) {
-            // For current year: Calculate from internal data
-            const supplyQRE = year.supply_subcomponents?.reduce((sum, ssc) => {
-              const amountApplied = ssc.amount_applied || 0;
-              const appliedPercentage = ssc.applied_percentage || 0;
-              const supplyCost = ssc.supply?.cost_amount || 0;
-              const supplyQRE = amountApplied > 0 ? amountApplied : (supplyCost * appliedPercentage / 100);
-              return sum + roundToDollar(supplyQRE);
-            }, 0) || 0;
-            
-            const employeeQRE = year.employees?.reduce((sum, e) => {
-              const annualWage = e.employee?.annual_wage || e.annual_wage || e.wage || 0;
-              const appliedPercent = e.applied_percent || 0;
-              const calculatedQRE = e.calculated_qre || e.qre || 0;
-              const employeeQRE = calculatedQRE > 0 ? calculatedQRE : (annualWage * appliedPercent / 100);
-              return sum + roundToDollar(employeeQRE);
-            }, 0) || 0;
-            
-            const contractorQRE = year.contractors?.reduce((sum, c) => {
-              const amount = c.amount || c.cost_amount || 0;
-              const appliedPercent = c.applied_percent || 0;
-              const calculatedQRE = c.calculated_qre || c.qre || 0;
-              const contractorQRE = calculatedQRE > 0 ? calculatedQRE : (amount * appliedPercent / 100);
-              return sum + roundToDollar(contractorQRE);
-            }, 0) || 0;
-            
-            return roundToDollar(supplyQRE + employeeQRE + contractorQRE);
-          } else {
-            // For historical years: Use external QRE from Business Setup
-            return roundToDollar(year.total_qre || 0);
-          }
+          // Prefer internal computed QRE when available; otherwise use external Business Setup total
+          const internal = roundToDollar(year.internal_qre_total || 0);
+          if (internal > 0) return internal;
+          return roundToDollar(year.total_qre || 0);
         };
 
         // Helper to get QRE breakdown for a year
@@ -579,51 +565,47 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
               directQRE: 0
             };
           }
-          
-          const currentYear = new Date().getFullYear();
-          const isCurrentYear = year.year === currentYear;
-          
-          if (isCurrentYear) {
-            // For current year: Calculate from internal data
-            const supplyQRE = year.supply_subcomponents?.reduce((sum, ssc) => {
+          // Prefer internal computed breakdown when available
+          const internalTotal = roundToDollar(year.internal_qre_total || 0);
+          if (internalTotal > 0) {
+            // If supply/employee/contractor sub-details are present, compute from them for richer breakdown
+            const suppliesQRE = (year.supply_subcomponents || []).reduce((sum, ssc) => {
               const amountApplied = ssc.amount_applied || 0;
               const appliedPercentage = ssc.applied_percentage || 0;
               const supplyCost = ssc.supply?.cost_amount || 0;
-              const supplyQRE = amountApplied > 0 ? amountApplied : (supplyCost * appliedPercentage / 100);
-              return sum + roundToDollar(supplyQRE);
-            }, 0) || 0;
-            
-            const employeeQRE = year.employees?.reduce((sum, e) => {
+              const qre = amountApplied > 0 ? amountApplied : (supplyCost * appliedPercentage / 100);
+              return sum + roundToDollar(qre);
+            }, 0);
+            const employeesQRE = (year.employees || []).reduce((sum, e) => {
               const annualWage = e.employee?.annual_wage || e.annual_wage || e.wage || 0;
               const appliedPercent = e.applied_percent || 0;
               const calculatedQRE = e.calculated_qre || e.qre || 0;
-              const employeeQRE = calculatedQRE > 0 ? calculatedQRE : (annualWage * appliedPercent / 100);
-              return sum + roundToDollar(employeeQRE);
-            }, 0) || 0;
-            
-            const contractorQRE = year.contractors?.reduce((sum, c) => {
+              const qreAppliedPercent = appliedPercent >= 80 ? 100 : appliedPercent;
+              const qre = calculatedQRE > 0 ? calculatedQRE : (annualWage * qreAppliedPercent / 100);
+              return sum + roundToDollar(qre);
+            }, 0);
+            const contractorsQRE = (year.contractors || []).reduce((sum, c) => {
               const amount = c.amount || c.cost_amount || 0;
               const appliedPercent = c.applied_percent || 0;
               const calculatedQRE = c.calculated_qre || c.qre || 0;
-              const contractorQRE = calculatedQRE > 0 ? calculatedQRE : (amount * appliedPercent / 100);
-              return sum + roundToDollar(contractorQRE);
-            }, 0) || 0;
-            
+              const qreAppliedPercent = appliedPercent >= 80 ? 100 : appliedPercent;
+              const qre = calculatedQRE > 0 ? calculatedQRE : (amount * qreAppliedPercent / 100);
+              return sum + roundToDollar(qre);
+            }, 0);
             return {
-              employeesQRE: employeeQRE,
-              contractorsQRE: contractorQRE,
-              suppliesQRE: supplyQRE,
+              employeesQRE,
+              contractorsQRE,
+              suppliesQRE,
               directQRE: 0
             };
-          } else {
-            // For historical years: Show all as direct since it's from Business Setup
-            return {
-              employeesQRE: 0,
-              contractorsQRE: 0,
-              suppliesQRE: 0,
-              directQRE: roundToDollar(year.total_qre || 0)
-            };
           }
+          // Otherwise, treat as external direct entry
+          return {
+            employeesQRE: 0,
+            contractorsQRE: 0,
+            suppliesQRE: 0,
+            directQRE: roundToDollar(year.total_qre || 0)
+          };
         };
 
         // Helper to get ASC credit for a year, and show percentage used
@@ -673,8 +655,8 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
 
         // Helper to determine if QREs are external (entered in Business Setup)
         const isExternalQRE = (year) => {
-          const currentYear = new Date().getFullYear();
-          return year.year !== currentYear; // Historical years are external
+          // If there is any internal computed QRE, treat as internal
+          return !(roundToDollar(year.internal_qre_total || 0) > 0);
         };
 
         // Create unique historical cards and remove duplicates
