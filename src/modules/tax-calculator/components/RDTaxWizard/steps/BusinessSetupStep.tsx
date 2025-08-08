@@ -5,6 +5,8 @@ import { supabase } from '../../../../../lib/supabase';
 import { Building2, MapPin, Calendar, Info, Image, Upload, BarChart3, ChevronRight, AlertTriangle } from 'lucide-react';
 import { formatCurrency } from '../../../../../utils/formatting';
 import StepCompletionBanner from '../../../../../components/common/StepCompletionBanner';
+import { SectionGQREService } from '../../../services/sectionGQREService';
+import ProgressTrackingService from '../../../services/progressTrackingService';
 
 interface BusinessSetupStepProps {
   business: any;
@@ -48,6 +50,12 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [debounceTimers, setDebounceTimers] = useState<Record<string, NodeJS.Timeout>>({});
   const [categories, setCategories] = useState<Array<{id: string, name: string}>>([]);
+  // Map year -> business_year_id
+  const [businessYearIdByYear, setBusinessYearIdByYear] = useState<Record<number, string>>({});
+  // Computed internal QRE by year
+  const [calculatedQREByYear, setCalculatedQREByYear] = useState<Record<number, number>>({});
+  // Expense lock status by year (optional styling/use)
+  const [dataEntryLockedByYear, setDataEntryLockedByYear] = useState<Record<number, boolean>>({});
   
   // Logo upload state
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -558,6 +566,21 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
             }));
             console.log('📊 [BusinessSetupStep] Transformed historical data:', transformedHistoricalData);
             setHistoricalData(transformedHistoricalData);
+            // Also fetch business_year ids for mapping
+            try {
+              const { data: businessYears, error: businessYearsError } = await supabase
+                .from('rd_business_years')
+                .select('id, year')
+                .eq('business_id', latestBusiness.id)
+                .order('year', { ascending: true });
+              if (!businessYearsError && businessYears) {
+                const mapping: Record<number, string> = {};
+                businessYears.forEach((y: any) => { mapping[y.year] = y.id; });
+                setBusinessYearIdByYear(mapping);
+              }
+            } catch (e) {
+              console.warn('[BusinessSetupStep] Could not load business_year ids:', e);
+            }
           } else {
             console.log('🔍 [BusinessSetupStep] No historical data in JSONB column, checking rd_business_years table...');
             
@@ -565,7 +588,7 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
             try {
               const { data: businessYears, error: businessYearsError } = await supabase
                 .from('rd_business_years')
-                .select('year, gross_receipts, total_qre')
+                .select('id, year, gross_receipts, total_qre')
                 .eq('business_id', latestBusiness.id)
                 .order('year', { ascending: true });
 
@@ -581,6 +604,9 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
                 }));
                 console.log('📊 [BusinessSetupStep] Transformed rd_business_years data:', transformedHistoricalData);
                 setHistoricalData(transformedHistoricalData);
+                const mapping: Record<number, string> = {};
+                businessYears.forEach((y: any) => { mapping[y.year] = y.id; });
+                setBusinessYearIdByYear(mapping);
               } else {
                 console.log('🔍 [BusinessSetupStep] No historical data found in either location, initializing empty array');
                 setHistoricalData([]);
@@ -609,6 +635,41 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
       });
     };
   }, [business?.id, userId]);
+
+  // Compute internal QREs per year and optionally lock status when we have mapping
+  useEffect(() => {
+    const computeInternalQREs = async () => {
+      const entries = Object.entries(businessYearIdByYear);
+      if (entries.length === 0) return;
+      try {
+        // Compute in parallel
+        const results = await Promise.all(entries.map(async ([yearStr, byId]) => {
+          try {
+            const qreEntries = await SectionGQREService.getQREDataForSectionG(byId);
+            const internalTotal = qreEntries.reduce((sum, e) => sum + (e.calculated_qre || 0), 0);
+            // Fetch data_entry milestone lock status
+            let isLocked = false;
+            try {
+              isLocked = await ProgressTrackingService.getMilestoneStatus(byId, 'data_entry');
+            } catch (e) {
+              // ignore
+            }
+            return { year: parseInt(yearStr, 10), internalTotal, isLocked };
+          } catch (e) {
+            return { year: parseInt(yearStr, 10), internalTotal: 0, isLocked: false };
+          }
+        }));
+        const qreMap: Record<number, number> = {};
+        const lockMap: Record<number, boolean> = {};
+        results.forEach(r => { qreMap[r.year] = r.internalTotal; lockMap[r.year] = r.isLocked; });
+        setCalculatedQREByYear(qreMap);
+        setDataEntryLockedByYear(lockMap);
+      } catch (e) {
+        console.warn('[BusinessSetupStep] Failed computing internal QREs:', e);
+      }
+    };
+    computeInternalQREs();
+  }, [businessYearIdByYear]);
 
   // Cleanup debounce timers on unmount
   useEffect(() => {
@@ -1069,7 +1130,7 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
     const fieldDisplayName = field === 'grossReceipts' ? 'Gross Receipts' : 'QRE';
     const validation = validateFinancialAmount(numValue, fieldDisplayName);
     
-    // Update the form state immediately for responsive UI
+    // Update the form state immediately for responsive UI (manual entry)
     setFormData(prev => ({
       ...prev,
       historicalDataInputs: {
@@ -1118,7 +1179,7 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
       }
     });
 
-    // Clear the form input for empty values  
+    // If user cleared the input, clear manual input state
     if (value === '' || numValue === 0) {
       setFormData(prev => ({
         ...prev,
@@ -1202,6 +1263,35 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
       ...prev,
       [timerKey]: newTimer
     }));
+  };
+
+  // Revert specific year's QRE to internal calculation and persist, without marking as manual input
+  const revertQREToCalculated = async (year: number) => {
+    const byId = businessYearIdByYear[year];
+    const internalQRE = calculatedQREByYear[year] || 0;
+    if (!byId || internalQRE <= 0 || !business?.id) return;
+    // Update historicalData state
+    setHistoricalData(prev => prev.map(h => h.year === year ? { ...h, qre: internalQRE } : h));
+    // Clear manual input string so UI classifies as calculated (green)
+    setFormData(prev => ({
+      ...prev,
+      historicalDataInputs: {
+        ...prev.historicalDataInputs,
+        [year.toString()]: {
+          ...prev.historicalDataInputs?.[year.toString()],
+          qre: ''
+        }
+      }
+    }));
+    try {
+      await RDBusinessService.saveBusinessYear(business.id, {
+        year,
+        grossReceipts: (historicalData.find(h => h.year === year)?.grossReceipts) || 0,
+        qre: internalQRE
+      });
+    } catch (e) {
+      console.warn('[BusinessSetupStep] Failed to persist auto-reverted QRE:', e);
+    }
   };
 
   const currentYear = parseInt(formData.taxYear);
@@ -1733,40 +1823,37 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
                           </div>
                           {/* COLOR-CODING LOGIC: Green for calculated, Black for manual */}
                           {(() => {
-                            const currentInput = formData.historicalDataInputs?.[data.year.toString()]?.qre;
-                            const hasManualInput = currentInput && currentInput.trim() !== '';
-                            const calculatedQRE = (data as any).calculated_qre || 0;
-                            const manualQRE = (data as any).manual_qre || 0;
-                            
-                            // Determine if showing calculated (internal) or manual (Business Setup) QRE
-                            const isUsingCalculated = !hasManualInput && calculatedQRE > 0;
-                            const displayValue = hasManualInput 
-                              ? currentInput 
-                              : (data.qre ? formatCurrency(data.qre.toString()) : '');
-                            
+                            const year = data.year;
+                            const manualInput = formData.historicalDataInputs?.[year.toString()]?.qre || '';
+                            const hasManualInput = manualInput.trim() !== '';
+                            const internalQRE = calculatedQREByYear[year] || 0;
+                            const isUsingCalculated = !hasManualInput && internalQRE > 0;
+                            const displayValue = hasManualInput
+                              ? manualInput
+                              : (isUsingCalculated
+                                  ? formatCurrency(internalQRE.toString())
+                                  : (data.qre ? formatCurrency(data.qre.toString()) : ''));
                             return (
                               <input
                                 type="text"
                                 value={displayValue}
                                 onChange={(e) => {
-                                  // When user deletes manual value, revert to calculated QRE
-                                  if (e.target.value === '' && calculatedQRE > 0) {
-                                    console.log(`🔄 [BusinessSetup] Reverting ${data.year} to calculated QRE: ${calculatedQRE}`);
-                                    handleHistoricalDataChange(data.year, 'qre', calculatedQRE.toString());
+                                  const v = e.target.value;
+                                  if (v === '' && internalQRE > 0) {
+                                    console.log(`🔄 [BusinessSetup] Reverting ${year} to calculated QRE: ${internalQRE}`);
+                                    void revertQREToCalculated(year);
                                   } else {
-                                    handleHistoricalDataChange(data.year, 'qre', e.target.value);
+                                    handleHistoricalDataChange(year, 'qre', v);
                                   }
                                 }}
                                 className={`w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                                  isUsingCalculated 
-                                    ? 'font-bold text-green-600' // Bold green for calculated values
-                                    : 'font-normal text-gray-900' // Standard black for manual values
+                                  isUsingCalculated ? 'font-bold text-green-600' : 'font-normal text-gray-900'
                                 }`}
                                 placeholder="0"
                                 title={
-                                  isUsingCalculated 
-                                    ? `Calculated from internal data: $${formatCurrency(calculatedQRE.toString())}`
-                                    : hasManualInput 
+                                  isUsingCalculated
+                                    ? `Calculated from internal data${dataEntryLockedByYear[year] ? ' (locked)' : ''}: $${formatCurrency(internalQRE.toString())}`
+                                    : hasManualInput
                                       ? 'Manual override (Business Setup QRE)'
                                       : 'Enter QRE amount'
                                 }
