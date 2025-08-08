@@ -2436,62 +2436,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
 
 
 
-       {/* Spacer for footer separation */}
-       <div className="pt-6"></div>
 
-       {/* Dark Footer - Consistent with other sections */}
-       <div className="bg-gradient-to-r from-indigo-900 via-purple-900 to-blue-900 rounded-lg shadow-lg p-4 mt-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-          {/* Left: Navigation */}
-          <div className="flex items-center mb-4 md:mb-0">
-            <button
-              onClick={onPrevious}
-              className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors border border-white/20"
-            >
-              Previous
-            </button>
-          </div>
-
-
-
-          {/* Right: Year Selector and Navigation */}
-          <div className="flex items-center space-x-3">
-            {/* Year Selector for QC */}
-            <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium text-blue-100">QC Year:</label>
-              <select
-                value={selectedYearId}
-                onChange={(e) => {
-                  const newYearId = e.target.value;
-                  setSelectedYearId(newYearId);
-                  
-                  // Clear current state to force fresh data load
-                  setQCControls([]);
-                  setBusinessYearData(null);
-                  setJuratUploaded(false);
-                  setJuratUploadDate(null);
-                  
-                  console.log(`QC year changed to year ID: ${newYearId}`);
-                }}
-                className="rounded-md border-none bg-white/10 text-white shadow-sm focus:ring-2 focus:ring-blue-400 px-3 py-1 text-sm"
-              >
-                {availableYears.map(year => (
-                  <option key={year.id} value={year.id} className="bg-gray-800 text-white">
-                    {year.year}
-                  </option>
-                ))}
-              </select>
-            </div>
-            
-            <button
-              onClick={onComplete}
-              className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors border border-white/20"
-            >
-              Complete Setup
-            </button>
-          </div>
-        </div>
-      </div>
 
       {/* Jurat Preview Modal */}
       {showJuratPreview && (
