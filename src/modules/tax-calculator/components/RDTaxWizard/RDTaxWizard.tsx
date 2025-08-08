@@ -749,8 +749,8 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
                   </div>
               )}
 
-              {/* Year Dropdown (when applicable) */}
-              {(wizardState.currentStep === 1 || wizardState.currentStep === 2 || wizardState.currentStep === 3 || wizardState.currentStep === 4) && wizardState.selectedYear && (
+              {/* Year Dropdown (shown on steps 1-4 and Reports step 5) */}
+              {(wizardState.currentStep === 1 || wizardState.currentStep === 2 || wizardState.currentStep === 3 || wizardState.currentStep === 4 || wizardState.currentStep === 5) && wizardState.selectedYear && (
                 <div className="flex items-center space-x-2">
                   <label className="text-sm font-medium text-blue-100">Year:</label>
                   <select

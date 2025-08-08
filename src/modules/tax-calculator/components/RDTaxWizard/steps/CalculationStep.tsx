@@ -852,6 +852,16 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
     }
   }, [selectedActivityYearId, allYears]);
 
+  // Keep local year state in sync with the wizard's bottom year selector
+  useEffect(() => {
+    const sy = wizardState.selectedYear;
+    if (sy?.id && sy.id !== selectedActivityYearId) {
+      setSelectedActivityYearId(sy.id);
+      setSelectedYearId(sy.id);
+      setSelectedActivityYear(sy.year);
+    }
+  }, [wizardState.selectedYear?.id, wizardState.selectedYear?.year]);
+
   // Fetch ASC credit for each year for the cards
   useEffect(() => {
     async function fetchHistoricalCards() {
@@ -1716,61 +1726,15 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
               <h2 className="text-3xl font-bold">R&D Tax Credits</h2>
               <div className="text-sm opacity-80">Federal + State Credits</div>
               <div className="flex items-center space-x-2 mt-2">
-                <label className="text-sm opacity-90">Year:</label>
-                <select
-                  value={selectedActivityYearId}
-                  onChange={async (e) => {
-                    const newYearId = e.target.value;
-                    const selectedYear = availableActivityYears.find(y => y.id === newYearId);
-                    
-                    console.log(`🔄 CRITICAL: CalculationStep year switch to ${newYearId} (${selectedYear?.year})`);
-                    console.log('🧹 FORCING QRE data isolation for CalculationStep');
-                    
-                    // CRITICAL: Update year selection and clear cached data
-                    setSelectedActivityYearId(newYearId);
-                    setSelectedYearId(newYearId);
-                    if (selectedYear) {
-                      setSelectedActivityYear(selectedYear.year);
-                    }
-                    
-                    // CRITICAL: Clear cached calculation results to prevent leakage
-                    setResults(null);
-                    setHistoricalCards([]);
-                    setAllYears([]);
-                    setStateCredits([]);
-                    setStateCalculations([]);
-                    setAvailableActivityYears([]);
-                    
-                    // CRITICAL: Reload locked QRE values and recalculate for the new year
-                    console.log('🔒 RELOADING locked QRE values and calculations for CalculationStep year:', newYearId);
-                    setLoading(true);
-                    try {
-                      await loadLockedQREValues();
-                      // CRITICAL: Force complete recalculation with new year data
-                      await loadCalculations();
-                      console.log('✅ CalculationStep year switch complete - QRE data isolated and recalculated');
-                    } catch (error) {
-                      console.error('❌ Error reloading QRE values and calculations in CalculationStep:', error);
-                    } finally {
-                      setLoading(false);
-                    }
-                  }}
-                  className="px-3 py-1 bg-white/10 border border-white/20 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/50"
-                >
-                  {availableActivityYears.map(y => (
-                    <option key={y.id} value={y.id}>{y.year}</option>
-                  ))}
-                </select>
-                {/* Refresh Button */}
                 <button
                   onClick={handleRecalculate}
                   disabled={loading}
-                  className="ml-2 flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-all duration-200 text-sm font-medium shadow-sm border border-white/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="ml-0 flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-all duration-200 text-sm font-medium shadow-sm border border-white/30 disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Refresh calculations with latest data"
                 >
                   <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
                 </button>
-      </div>
+              </div>
           </div>
         </div>
           {/* Right: Credit Summary Card */}
