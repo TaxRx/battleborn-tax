@@ -2015,16 +2015,15 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Historical Summary</h3>
           
           {(() => {
-            const currentYear = new Date().getFullYear();
-            const cutoffYear = currentYear - 8;
-            const recentCards = historicalCards.filter(card => card.year >= cutoffYear);
-            const olderCards = historicalCards.filter(card => card.year < cutoffYear);
+            const sorted = [...historicalCards].sort((a, b) => b.year - a.year);
+            const topFour = sorted.slice(0, 4);
+            const olderCards = sorted.slice(4);
             
             return (
               <>
-                {/* Recent Years (within 8 years) */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {recentCards.map((card, idx) => (
+                {/* Top four most recent years */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {topFour.map((card, idx) => (
               <div key={`${card.id || card.year}-${idx}`} className="bg-gradient-to-br from-gray-50 to-white rounded-lg border border-gray-200 p-4">
                 <div className="flex items-center justify-between mb-3">
                   <div className="text-lg font-bold text-gray-900">{card.year}</div>
