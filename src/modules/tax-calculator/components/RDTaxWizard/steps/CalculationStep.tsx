@@ -80,9 +80,9 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
 
   // Line Chart Rendering (smooth path + area fill)
   if (type === 'line') {
-    const chartHeight = 120;
-    const chartWidth = 200;
-    const padding = 20;
+    const chartHeight = 90;
+    const chartWidth = 260;
+    const padding = 16;
     
     // Color mapping for SVG
     const colorMap: { [key: string]: string } = {
@@ -144,10 +144,10 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
       : '');
 
     return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-        <h4 className="text-sm font-semibold text-gray-700 mb-3">{title}</h4>
+      <div className="bg-white/90 rounded-lg shadow-sm border border-gray-200 p-3">
+        <h4 className="text-xs font-semibold text-gray-700 mb-2">{title}</h4>
         <div className="relative">
-          <svg width={chartWidth} height={chartHeight} className="w-full h-32">
+          <svg width={chartWidth} height={chartHeight} className="w-full h-24">
             {/* Grid lines */}
             <defs>
               <pattern id={`grid-${title.replace(/\s+/g, '')}`} width="20" height="20" patternUnits="userSpaceOnUse">
@@ -170,38 +170,19 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
             />
             
             {/* Data points */}
-            {pts.map((pt, index) => {
-              return (
-                <circle
-                  key={index}
-                  cx={pt.x}
-                  cy={pt.y}
-                  r="4"
-                  fill={strokeColor}
-                  stroke="white"
-                  strokeWidth="2"
-                  className="drop-shadow-sm"
-                />
-              );
-            })}
-          </svg>
-          
-          {/* Value labels - Compact display for better UX */}
-          <div className="flex justify-between mt-2 text-xs text-gray-500 overflow-hidden">
-            {data.map((item, index) => (
-              <div key={index} className="text-center flex-1 min-w-0">
-                <div className="font-medium truncate">{item.label}</div>
-                <div className="text-gray-600 text-xs">
-                  {typeof item.value === 'number' && item.value >= 1000 
-                    ? `$${(item.value / 1000).toFixed(0)}k`
-                    : typeof item.value === 'number'
-                    ? `$${item.value.toLocaleString()}`
-                    : '$0'
-                  }
-                </div>
-              </div>
+            {pts.map((pt, index) => (
+              <circle
+                key={index}
+                cx={pt.x}
+                cy={pt.y}
+                r="3"
+                fill={strokeColor}
+              >
+                <title>{`${data[index].label}: ${formatCurrency(data[index].value)}`}</title>
+              </circle>
             ))}
-          </div>
+          </svg>
+          {/* X-axis labels removed; values shown on hover via <title> */}
         </div>
       </div>
     );
@@ -1817,9 +1798,9 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
               </div>
           </div>
         </div>
-          {/* Right: Credit Summary Card */}
-          <div className="flex flex-col items-end">
-            <div className="bg-white/90 rounded-xl shadow-lg px-6 py-4 min-w-[260px] flex flex-col items-end space-y-2">
+          {/* Right: Credit Summary + KPI charts stacked */}
+          <div className="flex flex-col items-end w-full md:w-auto">
+            <div className="bg-white/90 rounded-xl shadow-lg px-6 py-4 w-full md:min-w-[320px] flex flex-col items-end space-y-2">
               <div className="flex items-center justify-between w-full">
                 <span className="flex items-center text-sm font-medium text-blue-900">
                   <Building2 className="w-4 h-4 mr-1 text-blue-500" />
@@ -1851,8 +1832,37 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                 <span className="text-2xl font-extrabold text-purple-700 drop-shadow-lg">
                   {formatCurrency((selectedMethod === 'asc' ? federalCredits.asc.credit : federalCredits.standard.credit) + (enableStateCredits ? totalStateCredits : 0))}
                 </span>
-          </div>
+            </div>
         </div>
+          {/* Move 3 KPI charts into header under summary, same width */}
+          <div className="mt-4 w-full md:min-w-[320px]">
+            <div className="grid grid-cols-1 gap-3">
+              <KPIChart 
+                title="QREs Over Years" 
+                data={(chartData?.qreData || [])
+                  .sort((a, b) => a.year - b.year)
+                  .map(item => ({ label: item.year.toString(), value: item.qre }))} 
+                type="line" 
+                color="bg-blue-500" 
+              />
+              <KPIChart 
+                title="Total Federal Credits Over Years" 
+                data={(chartData?.creditData || [])
+                  .sort((a, b) => a.year - b.year)
+                  .map(item => ({ label: item.year.toString(), value: item.federalCredit }))} 
+                type="line" 
+                color="bg-green-500" 
+              />
+              <KPIChart 
+                title="Total State Credits Over Years" 
+                data={(chartData?.creditData || [])
+                  .sort((a, b) => a.year - b.year)
+                  .map(item => ({ label: item.year.toString(), value: item.stateCredit }))} 
+                type="line" 
+                color="bg-purple-500" 
+              />
+            </div>
+          </div>
           </div>
         </div>
       </div>
@@ -1925,33 +1935,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
             </div>
       </div>
 
-      {/* KPI Charts */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <KPIChart 
-          title="QREs Over Years" 
-          data={(chartData?.qreData || [])
-            .sort((a, b) => a.year - b.year)
-            .map(item => ({ label: item.year.toString(), value: item.qre }))} 
-          type="line" 
-          color="bg-blue-500" 
-        />
-        <KPIChart 
-          title="Total Federal Credits Over Years" 
-          data={(chartData?.creditData || [])
-            .sort((a, b) => a.year - b.year)
-            .map(item => ({ label: item.year.toString(), value: item.federalCredit }))} 
-          type="line" 
-          color="bg-green-500" 
-        />
-        <KPIChart 
-          title="Total State Credits Over Years" 
-          data={(chartData?.creditData || [])
-            .sort((a, b) => a.year - b.year)
-            .map(item => ({ label: item.year.toString(), value: item.stateCredit }))} 
-          type="line" 
-          color="bg-purple-500" 
-        />
-      </div>
+      {/* KPI Charts moved into header */}
 
       {/* Two Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
