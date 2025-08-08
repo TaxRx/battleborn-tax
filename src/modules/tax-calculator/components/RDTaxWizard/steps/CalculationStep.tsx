@@ -98,7 +98,10 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
     const strokeColor = colorMap[color] || '#3b82f6'; // Default to blue
     
     const toXY = (item: any, index: number) => {
-      const x = padding + (index * (chartWidth - 2 * padding)) / Math.max(data.length - 1, 1);
+      // Evenly space points across width so each marker sits over its year label
+      const count = Math.max(data.length, 1);
+      const step = (chartWidth - 2 * padding) / count;
+      const x = padding + step / 2 + index * step;
       const y = maxValue === minValue
         ? chartHeight / 2
         : chartHeight - padding - ((item.value - minValue) / (maxValue - minValue)) * (chartHeight - 2 * padding);
@@ -333,6 +336,8 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
   const [selectedActivityYear, setSelectedActivityYear] = useState<number>(wizardState.selectedYear?.year || new Date().getFullYear());
   // Saved results for accurate cross-year charts
   const [savedCreditResultsByYear, setSavedCreditResultsByYear] = useState<Record<string, { totalFederalCredit: number; totalStateCredits: number; totalCredits: number }>>({});
+  // Selected research subcomponent counts per business year
+  const [selectedSubcomponentCounts, setSelectedSubcomponentCounts] = useState<Record<string, number>>({});
 
   // --- Add state for selectedYearGrossReceipts ---
   const [selectedYearGrossReceipts, setSelectedYearGrossReceipts] = useState<number>(0);
@@ -1064,6 +1069,32 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       }
     };
     loadSavedResults();
+  }, [allYears]);
+
+  // Load selected research subcomponents count for all years (accurate Total Subcomponents)
+  useEffect(() => {
+    const loadSelectedSubcomponents = async () => {
+      if (!allYears || allYears.length === 0) return;
+      try {
+        const ids = allYears.map(y => y.id);
+        const { data, error } = await supabase
+          .from('rd_selected_subcomponents')
+          .select('business_year_id')
+          .in('business_year_id', ids);
+        if (error) {
+          console.warn('Could not load selected subcomponents:', error);
+          return;
+        }
+        const counts: Record<string, number> = {};
+        (data || []).forEach((row: any) => {
+          counts[row.business_year_id] = (counts[row.business_year_id] || 0) + 1;
+        });
+        setSelectedSubcomponentCounts(counts);
+      } catch (e) {
+        console.warn('Exception loading selected subcomponents:', e);
+      }
+    };
+    loadSelectedSubcomponents();
   }, [allYears]);
 
   // Load calculations when component mounts or year changes
@@ -1872,10 +1903,16 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
         </div>
         <div className="bg-indigo-50 rounded-lg p-4">
           <div className="text-2xl font-bold text-indigo-900">
-            {(selectedYearData?.supply_subcomponents?.length || 0) + (selectedYearData?.employees?.length || 0) + (selectedYearData?.contractors_with_qre?.length || 0)}
+            {(() => {
+              const byId = selectedYearData?.id;
+              const selectedCount = (byId && selectedSubcomponentCounts[byId]) || 0;
+              const internalCount = (selectedYearData?.employees?.length || 0) + (selectedYearData?.contractors_with_qre?.length || 0) + (selectedYearData?.supply_subcomponents?.length || 0);
+              // Use selected subcomponents if present; otherwise fallback to internal items
+              return selectedCount > 0 ? selectedCount : internalCount;
+            })()}
           </div>
           <div className="text-sm text-indigo-600">Total Subcomponents</div>
-            </div>
+        </div>
           </div>
 
       {/* QRE Summary Cards */}
