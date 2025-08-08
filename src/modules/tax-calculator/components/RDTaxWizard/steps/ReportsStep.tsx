@@ -2452,25 +2452,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
             </button>
           </div>
 
-          {/* Center: QC Status Info */}
-          <div className="flex items-center space-x-4 mb-4 md:mb-0">
-            <div className="flex items-center space-x-2 bg-white/10 rounded-md px-3 py-2">
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs font-medium text-blue-200">Documents:</span>
-                  <span className="text-sm font-bold text-green-300">
-                    {qcControls.filter(control => control.is_released).length}/{qcControls.length}
-                  </span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs font-medium text-blue-200">Status:</span>
-                  <span className="text-sm font-bold text-purple-300">
-                    {businessYearData?.qc_status || 'Pending'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
+
 
           {/* Right: Year Selector and Navigation */}
           <div className="flex items-center space-x-3">
