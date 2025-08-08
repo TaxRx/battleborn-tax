@@ -286,6 +286,10 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
     setStateProFormaData({}); // Clear data when method changes
   };
 
+  // Names for Welcome Letter salutation
+  const businessName = businessData?.name || businessData?.business?.name || 'Client Business';
+  const clientName = businessData?.contact_name || businessData?.owner_name || businessData?.client_name || businessData?.primary_contact_name || businessData?.user_name || businessData?.business?.owner_name || 'Client';
+
   return (
     <div className="filing-guide-document">
       {/* Debug Output removed from top of report */}
@@ -337,7 +341,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
           </div>
         </div>
         <div style={{ background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24 }}>
-          <p style={{ marginBottom: 16 }}>Dear {businessData?.contact_name || businessData?.owner_name || businessData?.name || 'Client'},</p>
+          <p style={{ marginBottom: 16 }}>Dear "{businessName}" and "{clientName}",</p>
           <p style={{ marginBottom: 12 }}>
             We wanted to take a moment to express our gratitude for the opportunity to work with you and develop your
             research and development credit–supporting documentation. It has been a pleasure to collaborate with your
@@ -354,8 +358,8 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
             any questions or concerns. You can contact us directly at (801) 318-5097.
           </p>
           <p style={{ marginTop: 20 }}>Sincerely,</p>
-          <p>Direct Research</p>
-          <p style={{ color: '#6b7280' }}>{businessData?.name || 'Your Business'} &middot; Tax Year {selectedYear?.year || ''}</p>
+          <p>Benjamin T. Dyches, DDS, JD</p>
+          <p>CEO Direct Research</p>
         </div>
       </div>
 
