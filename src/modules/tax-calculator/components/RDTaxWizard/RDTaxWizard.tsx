@@ -310,11 +310,16 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
   // 🔧 FIXED: Use exact same logic as working IntegratedStateCredits for footer display
   useEffect(() => {
     const calculateRealStateCredits = async () => {
-      // Use same conditions as IntegratedStateCredits - only need selectedYear and business state
-      if (!wizardState.selectedYear?.id || !wizardState.business?.state) {
+      // Use same conditions as IntegratedStateCredits - only need selectedYear and resolved business state
+      const resolvedBusinessState = wizardState.business?.domicile_state 
+        || wizardState.business?.contact_info?.state 
+        || wizardState.business?.state 
+        || null;
+
+      if (!wizardState.selectedYear?.id || !resolvedBusinessState) {
         console.log('🔍 Footer State Credits - Missing data:', {
           selectedYearId: wizardState.selectedYear?.id,
-          businessState: wizardState.business?.state,
+          businessState: resolvedBusinessState,
           fullBusiness: wizardState.business
         });
         setRealStateCredits(0);
@@ -324,11 +329,11 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
       try {
         console.log('🔍 Footer State Credits - Starting calculation with:', {
           selectedYearId: wizardState.selectedYear?.id,
-          businessState: wizardState.business?.state,
+          businessState: resolvedBusinessState,
           wizardStep: wizardState.currentStep
         });
         
-        const businessState = wizardState.business?.state || wizardState.business?.contact_info?.state || 'CA';
+        const businessState = resolvedBusinessState;
         console.log('🔍 Footer State Credits - Business state:', businessState);
         
         // 🔧 EXACT SAME LOGIC as IntegratedStateCredits - Step 1: Load base QRE data 
@@ -362,7 +367,7 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
       console.log('🔍 Footer State Credits - Skipping calculation, not on calculation step yet:', wizardState.currentStep);
       setRealStateCredits(0);
     }
-  }, [wizardState.selectedYear?.id, wizardState.business?.state, wizardState.currentStep]); // Added currentStep to dependencies
+  }, [wizardState.selectedYear?.id, wizardState.business?.domicile_state, wizardState.business?.contact_info?.state, wizardState.business?.state, wizardState.currentStep]); // Added currentStep to dependencies and state sources
 
   const handleNext = () => {
     if (wizardState.currentStep < steps.length - 1) {

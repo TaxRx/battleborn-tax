@@ -82,9 +82,11 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
 
   // Line Chart Rendering (smooth path + area fill)
   if (type === 'line') {
-    const chartHeight = 90;
-    const chartWidth = 180; // compact width so 3 charts fit in one row
-    const padding = 14;
+    const chartHeight = 100;
+    // Wider chart for better readability after shrinking summary card
+    const chartWidth = 220;
+    // Reduce top padding so plot aligns with the chart title
+    const padding = 10;
     
     // Color mapping for SVG
     const colorMap: { [key: string]: string } = {
