@@ -1026,14 +1026,15 @@ async function handleAdminCreateClient(body, supabaseAdmin) {
       try {
         const { data: { user: currentUser } } = await supabaseClient.auth.getUser();
         if (currentUser) {
-          // Get current user's profile and account type
+          // Get current user's profile, account type, and auto_link setting
           const { data: currentUserProfile, error: profileQueryError } = await supabaseAdmin
             .from('profiles')
             .select(`
               id,
               account:accounts!inner(
                 id,
-                type
+                type,
+                auto_link_new_clients
               )
             `)
             .eq('id', currentUser.id)
@@ -1044,12 +1045,13 @@ async function handleAdminCreateClient(body, supabaseAdmin) {
           } else if (currentUserProfile?.account) {
             const currentUserAccountType = currentUserProfile.account.type;
             const currentUserAccountId = currentUserProfile.account.id;
+            const currentUserAutoLink = currentUserProfile.account.auto_link_new_clients;
             
-            console.log(`Current user account type: ${currentUserAccountType}, account ID: ${currentUserAccountId}`);
+            console.log(`Current user account type: ${currentUserAccountType}, account ID: ${currentUserAccountId}, auto_link: ${currentUserAutoLink}`);
             
-            // If current user is NOT admin or client, create account_client_access record
-            if (currentUserAccountType !== 'admin' && currentUserAccountType !== 'client') {
-              console.log(`Creating account_client_access record for ${currentUserAccountType} account`);
+            // If current user is NOT admin or client AND auto_link_new_clients is false (to avoid duplicates from Step 5)
+            if (currentUserAccountType !== 'admin' && currentUserAccountType !== 'client' && !currentUserAutoLink) {
+              console.log(`Creating account_client_access record for ${currentUserAccountType} account (auto_link is disabled)`);
               
               const { data: accessRecord, error: accessError } = await supabaseAdmin
                 .from('account_client_access')
@@ -1070,7 +1072,7 @@ async function handleAdminCreateClient(body, supabaseAdmin) {
                 console.log(`Created account_client_access record:`, accessRecord);
               }
             } else {
-              console.log(`Current user is ${currentUserAccountType}, no account_client_access record needed`);
+              console.log(`Skipping account_client_access creation - user is ${currentUserAccountType} or auto_link is enabled`);
             }
           }
         }
