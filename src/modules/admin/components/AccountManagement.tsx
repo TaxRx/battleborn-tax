@@ -6,6 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Users, 
   User,
+  UserCheck,
   Search, 
   Filter, 
   Plus, 
@@ -170,6 +171,10 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
   // CRUD handlers
   const handleCreateAccount = () => {
     setShowCreateModal(true);
+  };
+
+  const handleNavigateToClients = () => {
+    window.location.href = '/admin/clients';
   };
 
   const handleEditAccount = (account: Account) => {
@@ -374,6 +379,13 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
                 <h2 className="text-lg font-medium text-gray-900">Account Management</h2>
                 <div className="flex items-center space-x-3">
                   <button
+                    onClick={handleNavigateToClients}
+                    className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <UserCheck className="h-4 w-4 mr-2" />
+                    Manage Clients
+                  </button>
+                  <button
                     onClick={handleCreateAccount}
                     className="flex items-center px-3 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
@@ -414,8 +426,6 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
                   <option value="operator">Operator</option>
                   <option value="affiliate">Affiliate</option>
                   <option value="expert">Expert</option>
-                  <option value="client">Client</option>
-                  <option value="admin">Admin</option>
                 </select>
 
                 <select
@@ -721,7 +731,6 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
         onClose={handleCloseModals}
         onSave={handleAccountSaved}
         account={accountToEdit}
-        title="Edit Account"
         initialTab={editModalInitialTab}
       />
 
