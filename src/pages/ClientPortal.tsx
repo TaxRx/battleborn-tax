@@ -1316,18 +1316,21 @@ const ClientPortal: React.FC = () => {
       const client = getSupabaseClient();
       const byId = selectedYear.business_years?.[0]?.id;
       if (!byId) return;
+      console.log('🔍 [Portal] Loading role designations for BY:', byId);
       const { data } = await client
         .from('rd_employee_role_designations_portal')
         .select('*')
         .eq('business_year_id', byId);
+      console.log('📊 [Portal] Role designations rows:', data?.length || 0);
       setRoleDesignationRows(data || []);
       // Load role options for this year
       const { data: roles } = await client
         .from('rd_roles')
-        .select('id,name,business_year_id')
+        .select('id,name,business_year_id,baseline_applied_percent')
         .eq('business_id', portalData?.business_id || '')
         .or(`business_year_id.is.null,business_year_id.eq.${byId}`)
         .order('name');
+      console.log('📊 [Portal] Role options loaded:', roles?.length || 0);
       const opts = [{ id: null, name: 'N/A' }, ...(roles || [])];
       setRoleOptions(opts);
       setShowRoleDesignations(true);

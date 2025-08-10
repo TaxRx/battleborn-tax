@@ -21,7 +21,47 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
         svc.listForYear(businessYearId),
         svc.listRolesForYear(businessId, businessYearId),
       ]);
-      setRows(r);
+      // Backfill: map roles by id and by lowercase name
+      const byId: Record<string, any> = {};
+      const byName: Record<string, any> = {};
+      (roleList || []).forEach((role: any) => {
+        if (role?.id) byId[String(role.id)] = role;
+        if (role?.name) {
+          const key = String(role.name).toLowerCase();
+          // prefer year-scoped; replace only if not present
+          if (!byName[key] || (role.business_year_id && !byName[key].business_year_id)) {
+            byName[key] = role;
+          }
+        }
+      });
+
+      // Auto-resolve role_id / applied_percent when missing
+      const fixed: any[] = [];
+      for (const row of r) {
+        let needsUpdate = false;
+        const updates: any = {};
+        let role = row.role_id ? byId[String(row.role_id)] : undefined;
+        if (!role && row.role_name) role = byName[String(row.role_name).toLowerCase()];
+        if (role && !row.role_id) {
+          updates.role_id = role.id;
+          updates.role_name = role.name;
+          needsUpdate = true;
+        }
+        if (role && (row.applied_percent === null || row.applied_percent === undefined)) {
+          if (typeof role.baseline_applied_percent === 'number') {
+            updates.applied_percent = role.baseline_applied_percent;
+            needsUpdate = true;
+          }
+        }
+        if (needsUpdate) {
+          const updated = await svc.updateRow(row.id, updates);
+          fixed.push(updated);
+        } else {
+          fixed.push(row);
+        }
+      }
+
+      setRows(fixed);
       setRoles(roleList);
     } finally {
       setLoading(false);
