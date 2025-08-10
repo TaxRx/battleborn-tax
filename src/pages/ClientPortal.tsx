@@ -870,6 +870,14 @@ const ClientPortal: React.FC = () => {
         return;
       }
 
+      // Gate downloads behind Filing Guide release (except for the Filing Guide itself)
+      const filingGuideDoc = documents.find(d => d.type === 'filing_guide');
+      const isFilingGuideReleased = !!filingGuideDoc?.can_release;
+      if (documentType !== 'filing_guide' && !isFilingGuideReleased) {
+        alert('Downloads are enabled only after the Filing Guide is released. You may still view released documents.');
+        return;
+      }
+
       // Get the document from rd_reports table
       const client = getSupabaseClient();
       
@@ -1478,7 +1486,9 @@ This annual signature covers all business entities and research activities for t
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       {documents.map((doc) => {
                         const IconComponent = doc.icon;
-                        
+                        const filingGuideDoc = documents.find(d => d.type === 'filing_guide');
+                        const isFilingGuideReleased = !!filingGuideDoc?.can_release;
+
                         return (
                           <div key={doc.type} className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-all">
                             <div className="flex items-center space-x-3 mb-4">
@@ -1518,13 +1528,13 @@ This annual signature covers all business entities and research activities for t
 
                             {doc.can_release ? (
                               (() => {
-                                // Determine if all documents are ready for download
+                                // Determine if all documents are ready and if Filing Guide is released
                                 const allDocumentsReady = documents.every(d => d.can_release && d.qc_approved);
                                 const paymentReceived = doc.payment_received;
                                 
-                                // Research Report: View-only until all documents ready
+                                // Research Report: only downloadable after Filing Guide released
                                 if (doc.type === 'research_report') {
-                                  if (allDocumentsReady && paymentReceived) {
+                                  if (isFilingGuideReleased && allDocumentsReady && paymentReceived) {
                                     return (
                                       <button 
                                         onClick={() => downloadDocument(doc.type)}
@@ -1581,7 +1591,7 @@ This annual signature covers all business entities and research activities for t
                                   );
                                 }
                                 
-                                // Default: Download if available
+                                // Default: Download only after Filing Guide released
                                 return (
                                   <button 
                                     onClick={() => downloadDocument(doc.type)}
