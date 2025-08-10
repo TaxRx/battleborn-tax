@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, FileText, Download, Printer, Users, DollarSign, Package, 
-  BarChart3, PieChart, Building2, Calendar, TrendingUp, Eye, EyeOff
+  BarChart3, PieChart, Building2, Calendar, TrendingUp, Eye, EyeOff, Save
 } from 'lucide-react';
 import { supabase } from '../../../../lib/supabase';
+import { toast } from 'react-hot-toast';
 
 interface AllocationReportModalProps {
   isOpen: boolean;
@@ -92,6 +93,7 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
   const [supplies, setSupplies] = useState<SupplyData[]>([]);
   const [businessProfile, setBusinessProfile] = useState<any>(null);
   const [subcomponentColors, setSubcomponentColors] = useState<{ [key: string]: string }>({});
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (isOpen && selectedYear?.id) {
@@ -1271,6 +1273,50 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  // Save the allocation report HTML to the database
+  const saveToDatabase = async () => {
+    if (!selectedYear?.id) {
+      toast.error('No year selected');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      console.log('📊 Saving Allocation Report to database...');
+      
+      // Generate the full HTML using our existing function
+      const allocationHTML = generatePuppeteerHTML();
+      
+      // Save to rd_reports table in allocation_report column
+      const { error } = await supabase
+        .from('rd_reports')
+        .upsert({
+          business_year_id: selectedYear.id,
+          business_id: businessData?.id,
+          type: 'RESEARCH_SUMMARY',
+          allocation_report: allocationHTML,
+          generated_text: 'Allocation report saved from modal',
+          ai_version: 'allocation_modal_v1.0'
+        }, { 
+          onConflict: 'business_year_id,type',
+          ignoreDuplicates: false 
+        });
+
+      if (error) {
+        console.error('❌ Error saving allocation report:', error);
+        toast.error('Failed to save allocation report');
+      } else {
+        console.log('✅ Allocation report saved successfully');
+        toast.success('Allocation report saved to database');
+      }
+    } catch (error) {
+      console.error('❌ Error saving allocation report:', error);
+      toast.error('Failed to save allocation report');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handlePDFDownload = async () => {
     setLoading(true);
     try {
@@ -1359,6 +1405,14 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
               >
                 <Printer className="w-4 h-4 mr-2" />
                 Print
+              </button>
+              <button
+                onClick={saveToDatabase}
+                disabled={saving}
+                className="flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Save className="w-4 h-4 mr-2" />
+                {saving ? 'Saving...' : 'Save to DB'}
               </button>
               <button
                 onClick={handleDownload}

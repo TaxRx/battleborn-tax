@@ -2175,6 +2175,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     }
   };
 
+
   // Handle locking QRE values - when user clicks lock, capture current calculated values
   const handleQRELockToggle = async () => {
     if (!qreLocked) {

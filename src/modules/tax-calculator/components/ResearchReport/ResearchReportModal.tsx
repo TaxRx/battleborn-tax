@@ -983,6 +983,7 @@ Please provide:
           .from('rd_reports')
           .insert({
             business_year_id: businessYearId,
+            business_id: businessId,
             type: 'RESEARCH_SUMMARY',
             generated_text: '',
             generated_html: report,

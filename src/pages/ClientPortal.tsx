@@ -7,7 +7,6 @@ import { createClient } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase'; // Import main authenticated client
 import { ExpenseDistributionChart } from '../modules/tax-calculator/components/common/ExpenseDistributionChart';
 import SignaturePad from '../components/SignaturePad';
-import ProgressTrackingService from '../modules/tax-calculator/services/progressTrackingService';
 // Dynamic import for AllocationReportModal to avoid module resolution issues
 // Force cache refresh with comment change
 
@@ -542,7 +541,7 @@ const ClientPortal: React.FC = () => {
 
   useEffect(() => {
     validateSessionAndLoadData();
-  }, [effectiveUserId]);
+  }, [userId, clientId, isAdminPreview, previewBusinessId, previewToken]);
 
   useEffect(() => {
     console.log('🔄 [ClientPortal] selectedYear useEffect triggered');
@@ -554,13 +553,18 @@ const ClientPortal: React.FC = () => {
       loadDocumentStatus();
       loadQREBreakdown();
       
-      // CRITICAL: Load jurat signatures when selectedYear changes
-      console.log('🔄 [ClientPortal] Calling loadAnnualJuratSignatures from selectedYear useEffect');
-      loadAnnualJuratSignatures([selectedYear.year]);
+      // Only load jurat signatures if we haven't checked them for this year yet
+      // This prevents the circular dependency issue
+      if (selectedYear.jurat_signed === undefined) {
+        console.log('🔄 [ClientPortal] Calling loadAnnualJuratSignatures for unchecked year');
+        loadAnnualJuratSignatures([selectedYear.year]);
+      } else {
+        console.log('🔍 [ClientPortal] Jurat status already known, skipping signature check');
+      }
     } else {
       console.warn('⚠️ [ClientPortal] selectedYear is null/undefined, not loading document status or QRE breakdown');
     }
-  }, [selectedYear]);
+  }, [selectedYear?.year, selectedYear?.id]); // Use stable primitive values instead of the whole object
 
   const loadDocumentStatus = async () => {
     console.log('🚀 [ClientPortal] loadDocumentStatus called');
@@ -948,22 +952,38 @@ const ClientPortal: React.FC = () => {
         return;
       }
 
-      // Handle allocation report differently - use the dedicated modal
-      if (documentType === 'allocation_report') {
-        // Temporary: Simple alert until caching issues resolve
-        alert('Allocation Report temporarily unavailable - cache clearing in progress');
-        return;
-      }
+      // Allocation reports will be handled in the normal flow below
+      console.log('📊 [ClientPortal] Loading document:', documentType);
 
       // Get the document from rd_reports table
       const client = getSupabaseClient();
       
       // Get the first business year ID (or handle multiple business years)
-      const businessYearId = selectedYear.business_years[0]?.id;
+      console.log('🔍 [ClientPortal] selectedYear structure for viewDocument:', {
+        hasSelectedYear: !!selectedYear,
+        year: selectedYear?.year,
+        hasBusinessYears: !!selectedYear?.business_years,
+        businessYearsLength: selectedYear?.business_years?.length || 0,
+        firstBusinessYear: selectedYear?.business_years?.[0]
+      });
+      
+      console.log('🔍 [ClientPortal] portalData for viewDocument:', {
+        hasPortalData: !!portalData,
+        businessId: portalData?.business_id,
+        businessName: portalData?.business_name
+      });
+      
+      const businessYearId = selectedYear.business_years?.[0]?.id;
       if (!businessYearId) {
-        alert('No business year data available');
+        console.error('❌ [ClientPortal] No business year ID found in viewDocument', {
+          selectedYear: selectedYear,
+          businessYears: selectedYear?.business_years
+        });
+        alert('No business year data available. Please refresh the page and try again.');
         return;
       }
+      
+      console.log('✅ [ClientPortal] Using business year ID:', businessYearId);
 
       console.log('👁️ [ClientPortal] Viewing document:', {
         documentType,
@@ -971,14 +991,98 @@ const ClientPortal: React.FC = () => {
         businessYearCount: selectedYear.business_years.length
       });
 
-      const { data, error } = await client
+      // COMPREHENSIVE DEBUGGING: Let's see what's actually in the database
+      console.log('🔍 [ClientPortal] DEBUGGING: Checking all reports for this business year...');
+      const { data: allReports } = await client
         .from('rd_reports')
-        .select('generated_html, filing_guide')
+        .select('*')
+        .eq('business_year_id', businessYearId);
+      
+      console.log('📊 [ClientPortal] All reports in database:', allReports);
+      console.log('📊 [ClientPortal] Business data:', { businessId: portalData?.business_id, businessYearId });
+      
+      if (allReports) {
+        allReports.forEach((report, index) => {
+          console.log(`📄 [ClientPortal] Report ${index + 1}:`, {
+            id: report.id,
+            type: report.type,
+            business_id: report.business_id,
+            business_year_id: report.business_year_id,
+            hasGeneratedHtml: !!report.generated_html,
+            generatedHtmlLength: report.generated_html?.length || 0,
+            hasFilingGuide: !!report.filing_guide,
+            filingGuideLength: report.filing_guide?.length || 0,
+            hasAllocationReport: !!report.allocation_report,
+            allocationReportLength: report.allocation_report?.length || 0,
+            created_at: report.created_at,
+            updated_at: report.updated_at,
+            htmlPreview: report.generated_html?.substring(0, 200) + '...' || 'None'
+          });
+        });
+      }
+
+      // First try to get the report with business_id context for better reliability
+      const queryType = documentType === 'filing_guide' ? 'FILING_GUIDE' : 'RESEARCH_SUMMARY';
+      console.log('🔍 [ClientPortal] Executing query:', {
+        table: 'rd_reports',
+        businessYearId,
+        queryType,
+        documentType,
+        selectFields: 'generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked'
+      });
+      
+      let { data, error } = await client
+        .from('rd_reports')
+        .select('generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked')
         .eq('business_year_id', businessYearId)
-        .eq('type', documentType === 'research_report' ? 'RESEARCH_SUMMARY' : 'FILING_GUIDE')
+        .eq('type', queryType)
         .single();
 
-      if (error) throw error;
+      // If that fails and we have business context, try with business_id as well
+      if (error?.code === 'PGRST116' && portalData?.business_id) {
+        console.log('🔄 [ClientPortal] Retrying query with business_id context');
+        const retryResult = await client
+          .from('rd_reports')
+          .select('generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked')
+          .eq('business_year_id', businessYearId)
+          .eq('business_id', portalData.business_id)
+          .eq('type', queryType)
+          .single();
+        
+        if (!retryResult.error) {
+          data = retryResult.data;
+          error = retryResult.error;
+          console.log('✅ [ClientPortal] Successfully found report with business_id context');
+        }
+      }
+
+      console.log('📄 [ClientPortal] Document query result:', {
+        error,
+        data: data ? {
+          id: data.id,
+          type: data.type,
+          business_id: data.business_id,
+          business_year_id: data.business_year_id,
+          hasGeneratedHtml: !!data.generated_html,
+          hasFilingGuide: !!data.filing_guide,
+          hasAllocationReport: !!data.allocation_report,
+          generatedHtmlLength: data.generated_html?.length || 0,
+          filingGuideLength: data.filing_guide?.length || 0,
+          allocationReportLength: data.allocation_report?.length || 0,
+          created_at: data.created_at,
+          updated_at: data.updated_at,
+          htmlPreview: data.generated_html?.substring(0, 200) + '...' || 'None',
+          generatedHtmlValue: data.generated_html,
+          ai_version: data.ai_version,
+          locked: data.locked
+        } : null
+      });
+
+      if (error) {
+        console.error('❌ [ClientPortal] Error fetching document:', error);
+        alert(`Error loading document: ${error.message}`);
+        return;
+      }
 
       if (!data) {
         alert('Document not found');
@@ -987,14 +1091,162 @@ const ClientPortal: React.FC = () => {
 
       // Get the HTML content based on document type
       let htmlContent = '';
-      if (documentType === 'research_report' && data.generated_html) {
-        htmlContent = data.generated_html;
-      } else if (documentType === 'filing_guide' && data.filing_guide) {
-        htmlContent = data.filing_guide;
+      
+      try {
+        console.log('🔍 [ClientPortal] Processing document type:', documentType);
+        
+        if (documentType === 'research_report') {
+        console.log('🔍 [ClientPortal] Research report detailed analysis:', {
+          hasGeneratedHtml: !!data.generated_html,
+          generatedHtmlType: typeof data.generated_html,
+          generatedHtmlLength: data.generated_html?.length || 0,
+          generatedHtmlIsNull: data.generated_html === null,
+          generatedHtmlIsUndefined: data.generated_html === undefined,
+          generatedHtmlIsEmptyString: data.generated_html === '',
+          allDataKeys: Object.keys(data),
+          businessYearId: data.business_year_id,
+          reportId: data.id
+        });
+        
+        if (data.generated_html) {
+          htmlContent = data.generated_html;
+          console.log('✅ [ClientPortal] Using generated_html for research report');
+          
+          // DIAGNOSTIC: Check if we accidentally got allocation report content
+          if (htmlContent.includes('ALLOCATION REPORT') || htmlContent.includes('Allocation Report')) {
+            console.error('🚨 [ClientPortal] CRITICAL: Research report contains allocation report content!');
+            console.log('📄 [ClientPortal] Content sample:', htmlContent.substring(0, 500));
+            
+            // Provide options to fix the issue
+            const userChoice = confirm(
+              'ERROR: The Research Report contains incorrect content (Allocation Report data).\n\n' +
+              'Click OK to automatically clear the corrupted data (you can regenerate the correct report in the R&D Wizard).\n' +
+              'Click Cancel to close this dialog and manually regenerate the report.'
+            );
+            
+            if (userChoice) {
+              // Clear the corrupted data
+              try {
+                await client
+                  .from('rd_reports')
+                  .update({ generated_html: null })
+                  .eq('business_year_id', businessYearId)
+                  .eq('type', 'RESEARCH_SUMMARY');
+                
+                console.log('✅ [ClientPortal] Corrupted research report data cleared');
+                alert('Corrupted data has been cleared. Please go to R&D Wizard > Calculations step > Research Report button to generate the correct report.');
+              } catch (error) {
+                console.error('❌ [ClientPortal] Failed to clear corrupted data:', error);
+                alert('Failed to clear corrupted data. Please contact support or manually regenerate the report in the R&D Wizard.');
+              }
+            } else {
+              alert('Please go to R&D Wizard > Calculations step > Research Report button to regenerate the correct report.');
+            }
+            return;
+          } else if (htmlContent.includes('Research Report') || htmlContent.includes('RESEARCH REPORT') || htmlContent.includes('report-main-content')) {
+            console.log('✅ [ClientPortal] Content appears to be correct research report');
+          } else {
+            console.warn('⚠️ [ClientPortal] Content type unclear, contains neither research nor allocation markers');
+            console.log('📄 [ClientPortal] Content sample for debugging:', htmlContent.substring(0, 500));
+            
+            // Also check for very short content which indicates corruption
+            if (htmlContent.length < 1000) {
+              console.warn('⚠️ [ClientPortal] Research report content is suspiciously short, may be corrupted');
+              alert('The Research Report appears to be incomplete or corrupted. Please contact your advisor for assistance.');
+              return;
+            }
+          }
+        } else {
+          console.warn('⚠️ [ClientPortal] No generated_html found for research report');
+          console.log('🔍 [ClientPortal] Research report record exists but generated_html is missing:', {
+            reportId: data.id,
+            businessYearId: data.business_year_id,
+            type: data.type,
+            createdAt: data.created_at,
+            updatedAt: data.updated_at,
+            aiVersion: data.ai_version,
+            locked: data.locked,
+            hasAnyContent: !!(data.generated_html || data.filing_guide || data.allocation_report)
+          });
+          
+          alert(
+            'Research Report is not available for viewing at this time.\n\n' +
+            'The report record exists but the content is missing. This may be because:\n' +
+            '• The report generation was interrupted\n' +
+            '• The report needs to be regenerated\n' +
+            '• There was a technical issue with the report data\n\n' +
+            'Please contact your advisor to regenerate the report in the R&D Wizard.'
+          );
+          return;
+        }
+      } else if (documentType === 'allocation_report') {
+        // Cast to any to safely access allocation_report column
+        const allocationReportContent = (data as any).allocation_report;
+        console.log('🔍 [ClientPortal] Allocation report content check:', {
+          hasContent: !!allocationReportContent,
+          contentType: typeof allocationReportContent,
+          contentLength: allocationReportContent?.length || 0
+        });
+        
+        if (allocationReportContent) {
+          htmlContent = allocationReportContent;
+          console.log('✅ [ClientPortal] Using allocation_report column for allocation report');
+        } else {
+          console.warn('⚠️ [ClientPortal] No allocation_report content found');
+          alert(
+            'Allocation Report is not available for viewing at this time.\n\n' +
+            'This may be because:\n' +
+            '• The report is still being processed\n' +
+            '• The report has not been released to clients yet\n' +
+            '• There was a technical issue with the report data\n\n' +
+            'Please contact your advisor for assistance.'
+          );
+          return;
+        }
+      } else if (documentType === 'filing_guide') {
+        if (data.filing_guide) {
+          htmlContent = data.filing_guide;
+          console.log('✅ [ClientPortal] Using filing_guide for filing guide');
+        } else {
+          console.warn('⚠️ [ClientPortal] No filing_guide found for filing guide');
+          alert('Filing guide content not available. The guide may not have been generated yet.');
+          return;
+        }
       } else {
-        alert('Document content not available');
+        alert('Unknown document type');
         return;
       }
+      
+      } catch (contentError) {
+        console.error('❌ [ClientPortal] Error processing document content:', contentError);
+        alert(`Error processing document content: ${contentError.message || 'Unknown error'}`);
+        return;
+      }
+
+      // Validate HTML content before showing
+      if (!htmlContent || htmlContent.trim() === '') {
+        console.error('❌ [ClientPortal] HTML content is empty or invalid');
+        alert('Document content is empty or corrupted. Please contact your advisor for assistance.');
+        return;
+      }
+      
+      // Check for weird characters that might cause issues (BOM, null bytes, etc.)
+      if (htmlContent.includes('\ufeff')) {
+        console.warn('⚠️ [ClientPortal] HTML content contains BOM character, cleaning...');
+        htmlContent = htmlContent.replace(/\ufeff/g, '');
+      }
+      
+      // Remove any null bytes or other problematic characters
+      htmlContent = htmlContent.replace(/\0/g, '');
+      
+      // Trim the content to remove leading/trailing whitespace that might contain problematic chars
+      htmlContent = htmlContent.trim();
+      
+      console.log('✅ [ClientPortal] Validated HTML content:', {
+        length: htmlContent.length,
+        startsWithDoctype: htmlContent.trim().toLowerCase().startsWith('<!doctype'),
+        preview: htmlContent.substring(0, 100) + '...'
+      });
 
       // Show the EXACT saved document in a modal
       setCurrentDocumentContent(htmlContent);
@@ -1161,7 +1413,40 @@ This annual signature covers all business entities and research activities for t
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    <>
+      {/* Global styles to fix Table of Contents positioning in modal */}
+      <style>{`
+        .document-content-container .filing-guide-toc,
+        .document-content-container [data-toc],
+        .document-content-container .table-of-contents,
+        .document-content-container .toc-sidebar {
+          position: relative !important;
+          top: auto !important;
+          left: auto !important;
+          right: auto !important;
+          bottom: auto !important;
+          transform: none !important;
+          z-index: auto !important;
+          max-width: 100% !important;
+        }
+        
+        /* Ensure the ToC container doesn't overflow */
+        .document-content-container {
+          contain: layout style !important;
+        }
+        
+        /* Force any absolutely positioned elements within the document to be contained */
+        .document-content-container * {
+          max-width: 100% !important;
+        }
+        
+        .document-content-container .filing-guide-toc {
+          display: block !important;
+          visibility: visible !important;
+        }
+      `}</style>
+      
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -1732,7 +2017,7 @@ This annual signature covers all business entities and research activities for t
             
             <div className="flex-1 overflow-hidden">
               <div 
-                className="h-full w-full overflow-y-auto px-4 py-2"
+                className="h-full w-full overflow-y-auto px-4 py-2 document-content-container"
                 dangerouslySetInnerHTML={{ __html: currentDocumentContent }}
                 style={{
                   minHeight: '100%'
@@ -1771,7 +2056,8 @@ This annual signature covers all business entities and research activities for t
         }}
         title="Annual Jurat Digital Signature"
       />
-    </div>
+      </div>
+    </>
   );
 };
 

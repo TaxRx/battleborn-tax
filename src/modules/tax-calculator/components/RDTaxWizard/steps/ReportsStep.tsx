@@ -8,6 +8,7 @@ import SignatureCapture from '../../SignatureCapture/SignatureCapture';
 import { qcService } from '../../../services/qcService';
 import { RDCalculationsService } from '../../../services/rdCalculationsService';
 import { StateProFormaCalculationService } from '../../../services/stateProFormaCalculationService';
+import { toast } from 'react-hot-toast';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
@@ -15,6 +16,11 @@ interface ReportsStepProps {
   wizardState: any;
   onComplete: () => void;
   onPrevious: () => void;
+  reportGenerationDates?: {
+    research_report?: string;
+    allocation_report?: string;
+  };
+  onReportGenerated?: () => void;
 }
 
 interface QCDocumentControl {
@@ -50,11 +56,43 @@ interface PortalToken {
   access_count: number;
 }
 
-const ReportsStep: React.FC<ReportsStepProps> = ({ wizardState, onComplete, onPrevious }) => {
+const ReportsStep: React.FC<ReportsStepProps> = ({ 
+  wizardState, 
+  onComplete, 
+  onPrevious, 
+  reportGenerationDates = {}, 
+  onReportGenerated 
+}) => {
+  // 📊 Helper function to format generation date chip
+  const formatGenerationDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric',
+        year: 'numeric'
+      });
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return 'Generated';
+    }
+  };
+
+  // Save Allocation Report by opening the modal (which now has its own save button)
+  const saveAllocationReport = async () => {
+    // Open the allocation report modal where user can use the "Save to DB" button
+    setShowAllocationReport(true);
+    toast('Please use the "Save to DB" button in the Allocation Report modal to save the full report.', {
+      duration: 4000,
+      icon: 'ℹ️'
+    });
+  };
+
   const [isFilingGuideOpen, setIsFilingGuideOpen] = useState(false);
   const [isResearchReportOpen, setIsResearchReportOpen] = useState(false);
   const [showAllocationReport, setShowAllocationReport] = useState(false);
   const [loading, setLoading] = useState(false);
+
   const [qcControls, setQCControls] = useState<QCDocumentControl[]>([]);
   const [businessYearData, setBusinessYearData] = useState<BusinessYearData | null>(null);
   const [magicLink, setMagicLink] = useState<string | null>(null);
@@ -669,6 +707,154 @@ I acknowledge that I had the opportunity to review and revise the report prior t
           </body>
           </html>
         `;
+      } else if (documentType === 'allocation_report') {
+        // Generate a basic allocation report - this will be improved to integrate with AllocationReportModal later
+        htmlContent = `
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Allocation Report - ${businessName} - ${year}</title>
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+            <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;0,800;1,200;1,300;1,400;1,500;1,600;1,700;1,800&display=swap" rel="stylesheet">
+            <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body { 
+                font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+                font-size: 14px;
+                line-height: 1.6; 
+                color: #1f2937;
+                background: white;
+                margin: 40px;
+              }
+              .header { 
+                background: linear-gradient(135deg, #10b981 0%, #047857 100%);
+                color: white;
+                padding: 20px;
+                border-radius: 8px;
+                text-align: center;
+                margin-bottom: 30px;
+              }
+              .header h1 { font-size: 24px; font-weight: 800; margin-bottom: 8px; }
+              .header h2 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+              .header p { font-size: 14px; opacity: 0.9; }
+              .section { margin-bottom: 30px; }
+              .section h2 { 
+                color: #1f2937; 
+                font-size: 20px;
+                font-weight: 600;
+                border-bottom: 2px solid #10b981; 
+                padding-bottom: 8px;
+                margin-bottom: 16px;
+              }
+              .allocation-table { 
+                width: 100%; 
+                border-collapse: collapse; 
+                margin: 20px 0;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+                border-radius: 8px;
+                overflow: hidden;
+              }
+              .allocation-table th, .allocation-table td { 
+                border: 1px solid #e5e7eb; 
+                padding: 12px 16px; 
+                text-align: left; 
+              }
+              .allocation-table th { 
+                background-color: #f8fafc; 
+                font-weight: 600;
+                color: #374151;
+                font-size: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+              }
+              .amount { text-align: right; font-weight: 600; }
+              .total-row { 
+                background-color: #f0fdf4; 
+                font-weight: 600;
+                border-top: 2px solid #10b981;
+              }
+              .summary-text {
+                background: #f8fafc;
+                padding: 16px;
+                border-radius: 6px;
+                color: #4b5563;
+                font-size: 14px;
+              }
+              .disclaimer {
+                background: #fef3c7;
+                border: 1px solid #f59e0b;
+                border-radius: 6px;
+                padding: 16px;
+                margin-top: 30px;
+                font-size: 12px;
+                color: #92400e;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>Employee & Expense Allocation Report</h1>
+              <h2>${businessName}</h2>
+              <h3>Tax Year ${year}</h3>
+              <p>Generated on: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+            </div>
+            
+            <div class="section">
+              <h2>Report Summary</h2>
+              <div class="summary-text">
+                This report details the allocation of employee time, contractor expenses, and supply costs to qualified research activities for the ${year} tax year. All amounts are calculated based on the research activities defined in the R&D tax credit analysis.
+              </div>
+            </div>
+            
+            <div class="section">
+              <h2>QRE Allocation Summary</h2>
+              <table class="allocation-table">
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th>Total Amount</th>
+                    <th>Allocated to QRE</th>
+                    <th>Allocation %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Employee Wages</td>
+                    <td class="amount">$${(calcData.total_wages || 0).toLocaleString()}</td>
+                    <td class="amount">$${(calcData.qre_wages || 0).toLocaleString()}</td>
+                    <td class="amount">${calcData.total_wages ? ((calcData.qre_wages || 0) / calcData.total_wages * 100).toFixed(1) : '0.0'}%</td>
+                  </tr>
+                  <tr>
+                    <td>Contractor Expenses</td>
+                    <td class="amount">$${(calcData.total_contractors || 0).toLocaleString()}</td>
+                    <td class="amount">$${(calcData.qre_contractors || 0).toLocaleString()}</td>
+                    <td class="amount">${calcData.total_contractors ? ((calcData.qre_contractors || 0) / calcData.total_contractors * 100).toFixed(1) : '0.0'}%</td>
+                  </tr>
+                  <tr>
+                    <td>Supply Costs</td>
+                    <td class="amount">$${(calcData.total_supplies || 0).toLocaleString()}</td>
+                    <td class="amount">$${(calcData.qre_supplies || 0).toLocaleString()}</td>
+                    <td class="amount">${calcData.total_supplies ? ((calcData.qre_supplies || 0) / calcData.total_supplies * 100).toFixed(1) : '0.0'}%</td>
+                  </tr>
+                  <tr class="total-row">
+                    <td><strong>TOTAL QRE</strong></td>
+                    <td class="amount"><strong>$${((calcData.total_wages || 0) + (calcData.total_contractors || 0) + (calcData.total_supplies || 0)).toLocaleString()}</strong></td>
+                    <td class="amount"><strong>$${(calcData.total_qre || 0).toLocaleString()}</strong></td>
+                    <td class="amount"><strong>${((calcData.total_wages || 0) + (calcData.total_contractors || 0) + (calcData.total_supplies || 0)) > 0 ? ((calcData.total_qre || 0) / ((calcData.total_wages || 0) + (calcData.total_contractors || 0) + (calcData.total_supplies || 0)) * 100).toFixed(1) : '0.0'}%</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="disclaimer">
+              <strong>Note:</strong> This is a summary allocation report. For detailed employee-by-employee breakdowns, activity-specific allocations, and subcomponent analysis, please refer to the comprehensive allocation report generated through the allocation report modal in the R&D Wizard.
+            </div>
+          </body>
+          </html>
+        `;
       } else {
         // Default HTML for other document types
         htmlContent = `
@@ -758,33 +944,71 @@ I acknowledge that I had the opportunity to review and revise the report prior t
       const ipAddress = await getUserIPAddress();
       const approvalDate = new Date().toISOString();
 
-      // Generate HTML report if toggling ON
+      // Generate or retrieve HTML if toggling ON
       let generatedHTML = '';
+      let hasExistingHTML = false;
       if (newStatus) {
+        if (pendingToggleType === 'allocation_report') {
+          // Generate allocation report HTML
+          console.log('📊 Generating allocation report HTML');
         generatedHTML = await generateReportHTML(pendingToggleType);
-        
-        // Save HTML to rd_reports table with enhanced error handling
+        } else if (pendingToggleType === 'research_report') {
+          // CRITICAL: Do not overwrite the rich, fully formatted Research Report if it already exists
+          const { data: existing } = await supabase
+            .from('rd_reports')
+            .select('id, generated_html')
+            .eq('business_year_id', wizardState.selectedYear?.id)
+            .eq('type', 'RESEARCH_SUMMARY')
+            .single();
+
+          if (existing?.generated_html) {
+            hasExistingHTML = true;
+            generatedHTML = existing.generated_html; // preserve previously generated full CSS report
+            console.log('📄 Using existing saved Research Report HTML (preserving full formatting)');
+          } else {
+            generatedHTML = await generateReportHTML(pendingToggleType);
+          }
+        } else {
+          // Filing Guide and other docs can be (re)generated here
+          generatedHTML = await generateReportHTML(pendingToggleType);
+        }
+
+        // Save to rd_reports table
         console.log('💾 Attempting to save report HTML for:', pendingToggleType);
         
         // ✅ ENUM MAPPING: Convert frontend document type to database enum value
         const dbEnumType = mapDocumentTypeToEnum(pendingToggleType);
         console.log('🔄 Mapping document type:', pendingToggleType, '→', dbEnumType);
         
-        const reportData = {
+        const reportData: any = {
           business_year_id: wizardState.selectedYear?.id,
           business_id: wizardState.business?.id,
           type: dbEnumType, // ✅ Use mapped enum value instead of frontend type
-          generated_html: generatedHTML,
           qc_approved_by: qcApproverForm.name,
           qc_approved_at: approvalDate,
           qc_approver_ip: ipAddress,
           generated_text: `QC approved report for ${pendingToggleType}`,
           ai_version: 'manual_qc_v1.0'
         };
+
+          // Save HTML to appropriate column based on document type
+          if (pendingToggleType === 'allocation_report') {
+            // Save allocation reports to the allocation_report column
+            if (generatedHTML) {
+              reportData.allocation_report = generatedHTML;
+            }
+          } else {
+            // Only include generated_html if we actually generated new content or for non-Research Report docs
+            // This prevents overwriting the fully formatted Research Report that was generated elsewhere
+            if (generatedHTML && (!hasExistingHTML || pendingToggleType !== 'research_report')) {
+              reportData.generated_html = generatedHTML;
+            }
+          }
         
         console.log('📄 Report data to save:', {
           ...reportData,
-          generated_html: generatedHTML.length + ' characters'
+            generated_html: reportData.generated_html ? reportData.generated_html.length + ' characters' : 'unchanged',
+            allocation_report: reportData.allocation_report ? reportData.allocation_report.length + ' characters' : 'unchanged'
         });
 
         const { error: reportError } = await supabase
@@ -990,7 +1214,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
       case 'filing_guide':
         return 'FILING_GUIDE';
       case 'allocation_report':
-        return 'RESEARCH_SUMMARY';
+        return 'RESEARCH_SUMMARY'; // ✅ Use RESEARCH_SUMMARY type but save to allocation_report column
       case 'research_design':
         return 'RESEARCH_DESIGN';
       default:
@@ -1702,24 +1926,11 @@ I acknowledge that I had the opportunity to review and revise the report prior t
             {/* Document Cards with QC Controls */}
             <div className="grid md:grid-cols-4 gap-6">
               {/* Research Report QC */}
-              <div className="bg-white rounded-lg border p-6 hover:shadow-lg transition-all duration-200">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center">
+              <div className="bg-white rounded-lg border p-6 hover:shadow-lg transition-all duration-200 relative">
+                {/* Header: Icon + Title */}
+                <div className="flex items-center mb-4">
                     <FileText className="text-blue-600 mr-3" size={24} />
-                    <div>
                       <h4 className="font-semibold text-gray-900">Research Report</h4>
-                      <p className="text-sm text-gray-600">Comprehensive R&D documentation</p>
-                    </div>
-                  </div>
-                  {(() => {
-                    const status = getDocumentStatus('research_report');
-                    return (
-                      <div className={`flex items-center px-3 py-1 rounded-full ${status.bgColor}`}>
-                        <status.icon className={`mr-1 ${status.color}`} size={16} />
-                        <span className={`text-sm font-medium ${status.color}`}>{status.text}</span>
-                      </div>
-                    );
-                  })()}
                 </div>
 
                 {/* Action Button */}
@@ -1738,10 +1949,20 @@ I acknowledge that I had the opportunity to review and revise the report prior t
                       console.log('%c🔍 [REPORTS] Setting modal to true...', 'color: #ffff00; font-weight: bold;');
                       setIsResearchReportOpen(true);
                     }}
-                    className="w-full flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                    className="w-full flex items-center justify-between px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm min-w-[160px]"
                   >
+                    <div className="flex items-center">
                     <Eye className="mr-2" size={16} />
-                    Preview Report
+                      Preview
+                    </div>
+                    {reportGenerationDates?.research_report && (
+                      <div className="flex items-center ml-2 px-2 py-1 bg-blue-700 rounded-full">
+                        <CheckCircle className="mr-1" size={12} />
+                        <span className="text-xs">
+                          {formatGenerationDate(reportGenerationDates.research_report)}
+                        </span>
+                      </div>
+                    )}
                   </button>
                 </div>
 
@@ -1808,43 +2029,46 @@ I acknowledge that I had the opportunity to review and revise the report prior t
 
                 {/* Release Date */}
                 {releaseToggles['research_report'] && (
-                  <div className="mt-3 text-xs text-gray-600">
+                  <div className="mt-3">
+                    <div className="inline-flex items-center px-3 py-1 rounded-full bg-green-50">
+                      <CheckCircle className="mr-1 text-green-600" size={16} />
+                      <span className="text-sm font-medium text-green-600">
                     Released: {qcControls.find(c => c.document_type === 'research_report')?.released_at 
-                      ? new Date(qcControls.find(c => c.document_type === 'research_report')!.released_at!).toLocaleString()
-                      : 'Just now'}
+                          ? new Date(qcControls.find(c => c.document_type === 'research_report')!.released_at!).toLocaleDateString()
+                          : 'Today'}
+                      </span>
+                    </div>
                   </div>
                 )}
               </div>
 
               {/* Filing Guide QC */}
               <div className="bg-white rounded-lg border p-6 hover:shadow-lg transition-all duration-200">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center">
+                {/* Header: Icon + Title */}
+                <div className="flex items-center mb-4">
                     <FileText className="text-purple-600 mr-3" size={24} />
-                    <div>
                       <h4 className="font-semibold text-gray-900">Filing Guide</h4>
-                      <p className="text-sm text-gray-600">Tax credit claiming instructions</p>
-                    </div>
-                  </div>
-                  {(() => {
-                    const status = getDocumentStatus('filing_guide');
-                    return (
-                      <div className={`flex items-center px-3 py-1 rounded-full ${status.bgColor}`}>
-                        <status.icon className={`mr-1 ${status.color}`} size={16} />
-                        <span className={`text-sm font-medium ${status.color}`}>{status.text}</span>
-                      </div>
-                    );
-                  })()}
                 </div>
 
                 {/* Action Button */}
                 <div className="mb-4">
                   <button
                     onClick={() => setIsFilingGuideOpen(true)}
-                    className="w-full flex items-center justify-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shadow-sm"
+                    className="w-full flex items-center justify-between px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shadow-sm min-w-[160px]"
                   >
+                    <div className="flex items-center">
                     <Eye className="mr-2" size={16} />
-                    Preview Guide
+                      Preview
+                    </div>
+                    {/* Filing Guide date comes from business year update when saved */}
+                    {businessYearData?.updated_at && (
+                      <div className="flex items-center ml-2 px-2 py-1 bg-purple-700 rounded-full">
+                        <CheckCircle className="mr-1" size={12} />
+                        <span className="text-xs">
+                          {formatGenerationDate(businessYearData.updated_at)}
+                        </span>
+                      </div>
+                    )}
                   </button>
                 </div>
 
@@ -1911,43 +2135,55 @@ I acknowledge that I had the opportunity to review and revise the report prior t
 
                 {/* Release Date */}
                 {releaseToggles['filing_guide'] && (
-                  <div className="mt-3 text-xs text-gray-600">
+                  <div className="mt-3">
+                    <div className="inline-flex items-center px-3 py-1 rounded-full bg-green-50">
+                      <CheckCircle className="mr-1 text-green-600" size={16} />
+                      <span className="text-sm font-medium text-green-600">
                     Released: {qcControls.find(c => c.document_type === 'filing_guide')?.released_at 
-                      ? new Date(qcControls.find(c => c.document_type === 'filing_guide')!.released_at!).toLocaleString()
-                      : 'Just now'}
+                          ? new Date(qcControls.find(c => c.document_type === 'filing_guide')!.released_at!).toLocaleDateString()
+                          : 'Today'}
+                      </span>
+                    </div>
                   </div>
                 )}
               </div>
 
               {/* Allocation Report QC */}
-              <div className="bg-white rounded-lg border p-6 hover:shadow-lg transition-all duration-200">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center">
+              <div className="bg-white rounded-lg border p-6 hover:shadow-lg transition-all duration-200 relative">
+                {/* Header: Icon + Title */}
+                <div className="flex items-center mb-4">
                     <Building2 className="text-green-600 mr-3" size={24} />
-                    <div>
                       <h4 className="font-semibold text-gray-900">Allocation Report</h4>
-                      <p className="text-sm text-gray-600">Detailed QRE breakdown and analysis</p>
-                    </div>
-                  </div>
-                  {(() => {
-                    const status = getDocumentStatus('allocation_report');
-                    return (
-                      <div className={`flex items-center px-3 py-1 rounded-full ${status.bgColor}`}>
-                        <status.icon className={`mr-1 ${status.color}`} size={16} />
-                        <span className={`text-sm font-medium ${status.color}`}>{status.text}</span>
-                      </div>
-                    );
-                  })()}
                 </div>
 
-                {/* Action Button */}
-                <div className="mb-4">
+                {/* Action Buttons */}
+                <div className="mb-4 space-y-2">
                   <button
                     onClick={() => setShowAllocationReport(true)}
-                    className="w-full flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm"
+                    className="w-full flex items-center justify-between px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm min-w-[160px]"
                   >
+                    <div className="flex items-center">
                     <Eye className="mr-2" size={16} />
-                    View Allocation Report
+                      Preview
+                    </div>
+                    {reportGenerationDates?.allocation_report && (
+                      <div className="flex items-center ml-2 px-2 py-1 bg-green-700 rounded-full">
+                        <CheckCircle className="mr-1" size={12} />
+                        <span className="text-xs">
+                          {formatGenerationDate(reportGenerationDates.allocation_report)}
+                        </span>
+                      </div>
+                    )}
+                  </button>
+                  
+                  <button
+                    onClick={saveAllocationReport}
+                    className="w-full flex items-center justify-center px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+                  >
+                    <div className="flex items-center">
+                      <Save className="mr-2" size={16} />
+                      Save to Database
+                    </div>
                   </button>
                 </div>
 
@@ -2014,10 +2250,15 @@ I acknowledge that I had the opportunity to review and revise the report prior t
 
                 {/* Release Date */}
                 {releaseToggles['allocation_report'] && (
-                  <div className="mt-3 text-xs text-gray-600">
+                  <div className="mt-3">
+                    <div className="inline-flex items-center px-3 py-1 rounded-full bg-green-50">
+                      <CheckCircle className="mr-1 text-green-600" size={16} />
+                      <span className="text-sm font-medium text-green-600">
                     Released: {qcControls.find(c => c.document_type === 'allocation_report')?.released_at 
-                      ? new Date(qcControls.find(c => c.document_type === 'allocation_report')!.released_at!).toLocaleString()
-                      : 'Just now'}
+                          ? new Date(qcControls.find(c => c.document_type === 'allocation_report')!.released_at!).toLocaleDateString()
+                          : 'Today'}
+                      </span>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2540,6 +2781,10 @@ I acknowledge that I had the opportunity to review and revise the report prior t
           onClose={() => {
             console.log('%c🔒 [REPORTS] Research Report Modal closing...', 'color: #ff0000; font-size: 16px; font-weight: bold;');
             setIsResearchReportOpen(false);
+            // Refresh report generation dates when modal closes
+            if (onReportGenerated) {
+              onReportGenerated();
+            }
           }}
           businessYearId={(() => {
             const yearId = wizardState.selectedYear?.id;

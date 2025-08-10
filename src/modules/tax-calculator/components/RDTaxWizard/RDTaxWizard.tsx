@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { CheckCircle } from 'lucide-react';
 import { supabase } from '../../../../lib/supabase';
 import BusinessSetupStep from './steps/BusinessSetupStep';
 import ResearchExplorerStep from './steps/ResearchExplorerStep';
@@ -111,6 +112,12 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
   // 🔧 NEW: Real state credits for footer display (using StateProFormaCalculationService)
   const [realStateCredits, setRealStateCredits] = useState<number>(0);
 
+  // 📊 NEW: Report generation tracking
+  const [reportGenerationDates, setReportGenerationDates] = useState<{
+    research_report?: string;
+    allocation_report?: string;
+  }>({});
+
   // Add state for client data and business selector
   const [clientData, setClientData] = useState<any>(null);
   const [availableBusinesses, setAvailableBusinesses] = useState<any[]>([]);
@@ -119,6 +126,52 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
   // Business change tracking for state management
   const lastBusinessIdRef = useRef<string>('');
   const businessSelectorRef = useRef<HTMLDivElement>(null);
+
+  // 📊 Function to fetch report generation dates
+  const fetchReportGenerationDates = async (businessYearId: string) => {
+    try {
+      console.log('📊 Fetching report generation dates for business year:', businessYearId);
+      
+      // Check for Research Report - use more robust query
+      const { data: researchReport } = await supabase
+        .from('rd_reports')
+        .select('created_at, updated_at, business_id')
+        .eq('business_year_id', businessYearId)
+        .eq('type', 'RESEARCH_SUMMARY')
+        .not('generated_html', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      // Check for Allocation Report in rd_reports table
+      const { data: allocationReport } = await supabase
+        .from('rd_reports')
+        .select('created_at, updated_at, business_id')
+        .eq('business_year_id', businessYearId)
+        .eq('type', 'RESEARCH_SUMMARY')
+        .not('allocation_report', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const dates: typeof reportGenerationDates = {};
+
+      if (researchReport) {
+        dates.research_report = researchReport.created_at;
+        console.log('📊 Research Report found, generated at:', researchReport.created_at);
+      }
+
+      if (allocationReport) {
+        dates.allocation_report = allocationReport.created_at;
+        console.log('📊 Allocation Report found, generated at:', allocationReport.created_at);
+      }
+
+      setReportGenerationDates(dates);
+    } catch (error) {
+      console.error('❌ Error fetching report generation dates:', error);
+      setReportGenerationDates({});
+    }
+  };
 
   // Reset wizard state when businessId changes, but less aggressively
   useEffect(() => {
@@ -369,6 +422,30 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
     }
   }, [wizardState.selectedYear?.id, wizardState.business?.domicile_state, wizardState.business?.contact_info?.state, wizardState.business?.state, wizardState.currentStep]); // Added currentStep to dependencies and state sources
 
+  // 📊 Fetch report generation dates when year changes
+  useEffect(() => {
+    if (wizardState.selectedYear?.id) {
+      fetchReportGenerationDates(wizardState.selectedYear.id);
+    } else {
+      setReportGenerationDates({});
+    }
+  }, [wizardState.selectedYear?.id]);
+
+  // 📊 Helper function to format generation date chip
+  const formatGenerationDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric',
+        year: 'numeric'
+      });
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return 'Generated';
+    }
+  };
+
   const handleNext = () => {
     if (wizardState.currentStep < steps.length - 1) {
       setWizardState(prev => ({
@@ -475,6 +552,13 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
             wizardState={wizardState}
             onComplete={onClose}
             onPrevious={handlePrevious}
+            reportGenerationDates={reportGenerationDates}
+            onReportGenerated={() => {
+              // Refresh report generation dates when a report is generated
+              if (wizardState.selectedYear?.id) {
+                fetchReportGenerationDates(wizardState.selectedYear.id);
+              }
+            }}
           />
         );
       default:
@@ -657,10 +741,18 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
                 {(wizardState.currentStep === 1 || wizardState.currentStep === 2) && (
                   <button
                     onClick={() => setIsResearchReportOpen(true)}
-                    className="px-3 py-1.5 text-xs bg-white/10 text-blue-200 rounded-md hover:bg-white/20 hover:text-white transition-colors border border-white/20"
+                    className="flex items-center justify-between px-4 py-2 text-xs bg-white/10 text-blue-200 rounded-md hover:bg-white/20 hover:text-white transition-colors border border-white/20 min-w-[160px]"
                     title="Generate Research Report"
                   >
-                    Research Report
+                    <span>Research Report</span>
+                    {reportGenerationDates.research_report && (
+                      <div className="flex items-center px-2 py-0.5 rounded-full bg-white/20">
+                        <CheckCircle className="mr-1 text-blue-100" size={12} />
+                        <span className="text-xs font-medium text-blue-100">
+                          {formatGenerationDate(reportGenerationDates.research_report)}
+                        </span>
+                      </div>
+                    )}
                   </button>
                 )}
                 
@@ -669,10 +761,18 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
                   <>
                     <button
                       onClick={() => setIsAllocationReportOpen(true)}
-                      className="px-3 py-1.5 text-xs bg-white/10 text-blue-200 rounded-md hover:bg-white/20 hover:text-white transition-colors border border-white/20"
+                      className="flex items-center justify-between px-4 py-2 text-xs bg-white/10 text-blue-200 rounded-md hover:bg-white/20 hover:text-white transition-colors border border-white/20 min-w-[160px]"
                       title="Generate Allocation Report"
                     >
-                      Allocation Report
+                      <span>Allocation Report</span>
+                      {reportGenerationDates.allocation_report && (
+                        <div className="flex items-center px-2 py-0.5 rounded-full bg-white/20">
+                          <CheckCircle className="mr-1 text-blue-100" size={12} />
+                          <span className="text-xs font-medium text-blue-100">
+                            {formatGenerationDate(reportGenerationDates.allocation_report)}
+                          </span>
+                        </div>
+                      )}
                     </button>
                     <button
                       onClick={async () => {

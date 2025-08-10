@@ -14,6 +14,7 @@ import { IntegratedFederalCredits } from './IntegratedFederalCredits';
 import { IntegratedStateCredits } from './IntegratedStateCredits';
 import { useUser } from '../../../../../context/UserContext';
 import StepCompletionBanner from '../../../../../components/common/StepCompletionBanner';
+import { rdReportService } from '../../../services/rdReportService';
 
 // Standardized rounding functions
 const roundToDollar = (value: number): number => Math.round(value);
@@ -268,9 +269,204 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
   yearRefreshTrigger
 }) => {
   // Get user information for userId
-  const { user } = useUser();
-  
+    const { user } = useUser();
+
   const [results, setResults] = useState<CalculationResults | null>(null);
+
+  // Auto-save Filing Guide when calculations are completed
+  const autoSaveFilingGuide = async (calculationResults: any) => {
+    if (!wizardState.business || !wizardState.selectedYear || !calculationResults) {
+      console.log('📋 [Auto-Save] Skipping Filing Guide save - missing required data');
+      return;
+    }
+
+    try {
+      console.log('📋 [Auto-Save] Generating and saving Filing Guide...');
+      
+      // Generate Filing Guide HTML using simplified template
+      const htmlContent = generateFilingGuideHTML(calculationResults);
+      
+      // Save to rd_reports table
+      await rdReportService.saveReport(
+        wizardState.selectedYear.id,
+        htmlContent,
+        'FILING_GUIDE'
+      );
+      
+      console.log('✅ [Auto-Save] Filing Guide saved successfully');
+    } catch (error) {
+      console.error('❌ [Auto-Save] Error saving Filing Guide:', error);
+      // Don't throw - this shouldn't break the calculation flow
+    }
+  };
+
+  // Generate Filing Guide HTML (simplified version)
+  const generateFilingGuideHTML = (calculationResults: any): string => {
+    const businessName = wizardState.business?.name || 'Business';
+    const year = wizardState.selectedYear?.year || new Date().getFullYear();
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    return `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>R&D Tax Credit Filing Guide - ${businessName} - ${year}</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;0,800;1,200;1,300;1,400;1,500;1,600;1,700;1,800&display=swap" rel="stylesheet">
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { 
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            line-height: 1.6; 
+            color: #1f2937;
+            background: white;
+            margin: 40px;
+          }
+          .header { 
+            background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+            color: white;
+            padding: 24px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 40px;
+          }
+          .header h1 { font-size: 28px; font-weight: 800; margin-bottom: 8px; }
+          .header h2 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+          .header p { font-size: 16px; opacity: 0.9; }
+          .section { margin-bottom: 40px; }
+          .section h2 { 
+            color: #1f2937; 
+            font-size: 22px;
+            font-weight: 700;
+            border-bottom: 3px solid #7c3aed; 
+            padding-bottom: 8px;
+            margin-bottom: 20px;
+          }
+          .credit-summary { 
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 24px;
+          }
+          .credit-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
+            gap: 16px; 
+          }
+          .credit-item { 
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 16px;
+            text-align: center;
+          }
+          .credit-value { 
+            font-size: 24px; 
+            font-weight: 700; 
+            color: #7c3aed; 
+            margin-bottom: 4px;
+          }
+          .credit-label { 
+            font-size: 14px; 
+            color: #64748b; 
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+          }
+          .checklist { 
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 24px;
+          }
+          .checklist-item {
+            display: flex;
+            align-items: flex-start;
+            padding: 12px 0;
+            border-bottom: 1px solid #f1f5f9;
+          }
+          .checklist-item:last-child { border-bottom: none; }
+          .checklist-icon { 
+            color: #10b981;
+            margin-right: 12px;
+            margin-top: 2px;
+            font-weight: bold;
+          }
+          .important-note {
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            border-radius: 6px;
+            padding: 16px;
+            margin: 16px 0;
+            color: #92400e;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>R&D Tax Credit Filing Guide</h1>
+          <h2>${businessName}</h2>
+          <h3>Tax Year ${year}</h3>
+          <p>Generated on: ${currentDate}</p>
+        </div>
+        
+        <div class="section">
+          <h2>Credit Summary</h2>
+          <div class="credit-summary">
+            <div class="credit-grid">
+              <div class="credit-item">
+                <div class="credit-value">$${(calculationResults.federalCredit || 0).toLocaleString()}</div>
+                <div class="credit-label">Federal R&D Credit</div>
+              </div>
+              <div class="credit-item">
+                <div class="credit-value">$${(calculationResults.totalQRE || 0).toLocaleString()}</div>
+                <div class="credit-label">Total QRE</div>
+              </div>
+              <div class="credit-item">
+                <div class="credit-value">$${((calculationResults.stateCredits && calculationResults.stateCredits.length > 0) ? calculationResults.stateCredits.reduce((sum: number, sc: any) => sum + (sc.finalCredit || 0), 0) : 0).toLocaleString()}</div>
+                <div class="credit-label">State Credits</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>Filing Requirements</h2>
+          <div class="checklist">
+            <div class="checklist-item">
+              <span class="checklist-icon">✓</span>
+              <div>Complete Form 6765 - Credit for Increasing Research Activities</div>
+            </div>
+            <div class="checklist-item">
+              <span class="checklist-icon">✓</span>
+              <div>Attach supporting documentation for qualified research expenses</div>
+            </div>
+            <div class="checklist-item">
+              <span class="checklist-icon">✓</span>
+              <div>Include state-specific forms if applicable</div>
+            </div>
+            <div class="checklist-item">
+              <span class="checklist-icon">✓</span>
+              <div>Maintain detailed records for potential audit support</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="important-note">
+          <strong>Important:</strong> This filing guide is generated based on your R&D tax credit calculations. 
+          Please consult with your tax advisor before filing to ensure compliance with all applicable regulations.
+        </div>
+      </body>
+      </html>
+    `;
+  };
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [use280C, setUse280C] = useState(false);
@@ -1136,6 +1332,9 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       );
       setResults(newResults);
       onUpdate({ calculations: newResults, selectedMethod });
+      
+      // Auto-save Filing Guide when calculations are loaded
+      autoSaveFilingGuide(newResults);
     } catch (err) {
       console.error('Error loading calculations:', err);
       setError('Failed to load calculations. Please check your data and try again.');
@@ -1161,6 +1360,10 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
 
       setResults(newResults);
       onUpdate({ calculations: newResults, selectedMethod });
+      
+      // Auto-save Filing Guide when calculations are recalculated
+      autoSaveFilingGuide(newResults);
+      
       toast.success('Calculations updated successfully');
     } catch (err) {
       console.error('Error recalculating:', err);
