@@ -1116,12 +1116,12 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
   const loadResearchData = async () => {
     setLoading(true);
     try {
-      // Load all research data from Supabase
+      // Load all research data from Supabase (filtering out inactive/archived activities)
       const [categoriesResult, areasResult, focusesResult, activitiesResult, subcomponentsResult] = await Promise.all([
         supabase.from('rd_research_categories').select('*'),
         supabase.from('rd_areas').select('*'),
         supabase.from('rd_focuses').select('*'),
-        supabase.from('rd_research_activities').select('*'),
+        supabase.from('rd_research_activities').select('*').eq('is_active', true),
         supabase.from('rd_subcomponents').select('*')
       ]);
 
@@ -2470,13 +2470,15 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
           selected_roles,
           config,
           research_guidelines,
-          rd_research_activities (
+          rd_research_activities!inner (
             id,
             title,
-            focus_id
+            focus_id,
+            is_active
           )
         `)
-        .eq('business_year_id', selectedBusinessYearId);
+        .eq('business_year_id', selectedBusinessYearId)
+        .eq('rd_research_activities.is_active', true);
 
       if (error) {
         console.error('Error loading selected activities:', error);
@@ -2484,9 +2486,10 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       }
 
       if (data && data.length > 0) {
-        const mappedActivities = data.map(activity => {
+        const mappedActivities = data.map((activity: any) => {
           // Get the related focus, area, and category names
-          const focusObj = focuses.find((f: any) => f.id === activity.rd_research_activities?.focus_id);
+          const researchActivity = activity.rd_research_activities;
+          const focusObj = focuses.find((f: any) => f.id === researchActivity?.focus_id);
           const area = focusObj ? areas.find((a: any) => a.id === focusObj.area_id) : null;
           const category = area ? categories.find((c: any) => c.id === area.category_id) : null;
 
@@ -2497,7 +2500,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
             selected_roles: Array.isArray(activity.selected_roles) ? activity.selected_roles : [],
             config: activity.config,
             research_guidelines: activity.research_guidelines,
-            activity_name: activity.rd_research_activities?.title || 'Unknown Activity',
+            activity_name: researchActivity?.title || 'Unknown Activity',
             activity_category: category?.name || '',
             activity_area: area?.name || '',
             activity_focus: focusObj?.name || ''
