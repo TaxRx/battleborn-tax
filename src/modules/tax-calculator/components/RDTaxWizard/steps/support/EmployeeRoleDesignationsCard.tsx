@@ -19,7 +19,7 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
     try {
       const [r, roleList] = await Promise.all([
         svc.listForYear(businessYearId),
-        svc.listRolesForBusiness(businessId),
+        svc.listRolesForYear(businessId, businessYearId),
       ]);
       setRows(r);
       setRoles(roleList);
@@ -57,8 +57,14 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
   };
 
   const onRequestDetails = async () => {
-    await svc.requestDetails(businessYearId, userId);
-    await load();
+    try {
+      await svc.requestDetails(businessYearId, userId);
+      await load();
+      alert('Request sent. This table is now visible to the client.');
+    } catch (e) {
+      console.error(e);
+      alert('Failed to request details');
+    }
   };
 
   const onApply = async () => {
@@ -120,7 +126,15 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
                   <input className="border rounded px-2 py-1 w-40" value={r.last_name || ''} onChange={e => onUpdateCell(r.id, { last_name: e.target.value })} />
                 </td>
                 <td className="px-3 py-2 text-right">
-                  <input className="border rounded px-2 py-1 w-32 text-right" value={r.annual_wage ?? 0} onChange={e => onUpdateCell(r.id, { annual_wage: parseFloat(e.target.value || '0') })} />
+                  <input
+                    className="border rounded px-2 py-1 w-40 text-right"
+                    value={typeof r.annual_wage === 'number' ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.round(r.annual_wage)) : ''}
+                    onChange={e => {
+                      const raw = e.target.value.replace(/[^0-9]/g, '');
+                      const val = raw ? parseInt(raw, 10) : 0;
+                      onUpdateCell(r.id, { annual_wage: val });
+                    }}
+                  />
                 </td>
                 <td className="px-3 py-2">
                   <select className="border rounded px-2 py-1" value={r.role_id || ''} onChange={e => onUpdateCell(r.id, { role_id: e.target.value || null })}>

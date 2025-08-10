@@ -38,11 +38,13 @@ export const employeeRoleDesignationsService = {
     return data as EmployeeRoleDesignationRow[];
   },
 
-  async listRolesForBusiness(businessId: string) {
+  async listRolesForYear(businessId: string, businessYearId: string) {
+    // Prefer roles scoped to this business year; include global/business defaults (null business_year_id)
     const { data, error } = await supabase
       .from('rd_roles')
       .select('*')
       .eq('business_id', businessId)
+      .or(`business_year_id.is.null,business_year_id.eq.${businessYearId}`)
       .order('name', { ascending: true });
     if (error) throw error;
     return data || [];
