@@ -17,6 +17,9 @@ build/
 .env.production.local
 .env.*
 
+# Supabase
+supabase/.temp
+
 # IDE files
 .vscode/
 .idea/
