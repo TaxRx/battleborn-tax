@@ -135,9 +135,15 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
           <FileSpreadsheet className="w-4 h-4 inline mr-2" /> Import
         </button>
         <div className="ml-auto flex gap-2">
-          <button onClick={onRequestDetails} className="px-3 py-2 bg-blue-600 text-white rounded-lg">
-            <Send className="w-4 h-4 inline mr-2" /> Request Details
-          </button>
+          {rows.some(r => r.client_visible && r.status === 'requested' && r.requested_at) ? (
+            <div className="px-3 py-2 bg-blue-50 text-blue-700 rounded-lg border border-blue-200">
+              Requested {new Date(rows.find(r => r.requested_at)?.requested_at).toLocaleDateString()}
+            </div>
+          ) : (
+            <button onClick={onRequestDetails} className="px-3 py-2 bg-blue-600 text-white rounded-lg">
+              <Send className="w-4 h-4 inline mr-2" /> Request Details
+            </button>
+          )}
           <button onClick={onApply} className="px-3 py-2 bg-emerald-600 text-white rounded-lg">
             <CheckCircle2 className="w-4 h-4 inline mr-2" /> Apply
           </button>
@@ -153,6 +159,7 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
               <th className="px-3 py-2 text-right">Wage</th>
               <th className="px-3 py-2 text-left">Role</th>
               <th className="px-3 py-2 text-right">Applied %</th>
+              <th className="px-3 py-2 text-left">Actualization</th>
               <th className="px-3 py-2 text-left">Status</th>
             </tr>
           </thead>
@@ -194,7 +201,14 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
                 <td className="px-3 py-2 text-right">
                   <input className="border rounded px-2 py-1 w-24 text-right" value={r.applied_percent ?? ''} onChange={e => onUpdateCell(r.id, { applied_percent: e.target.value ? parseFloat(e.target.value) : null })} />
                 </td>
-                <td className="px-3 py-2">{r.status}</td>
+                <td className="px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={!!r.actualization}
+                    onChange={e => onUpdateCell(r.id, { actualization: e.target.checked })}
+                  />
+                </td>
+                <td className="px-3 py-2">{r.status}{r.requested_at ? ` — ${new Date(r.requested_at).toLocaleDateString()}` : ''}{r.client_completed_at ? ` — Completed ${new Date(r.client_completed_at).toLocaleDateString()}` : ''}</td>
               </tr>
             ))}
             {rows.length === 0 && (

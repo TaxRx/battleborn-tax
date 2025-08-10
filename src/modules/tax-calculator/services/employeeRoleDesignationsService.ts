@@ -15,6 +15,9 @@ export interface EmployeeRoleDesignationRow {
   activity_allocations?: Record<string, number>;
   status?: 'draft' | 'requested' | 'client_updated' | 'applied';
   client_visible?: boolean;
+  requested_at?: string | null;
+  client_completed_at?: string | null;
+  actualization?: boolean | null;
 }
 
 export const employeeRoleDesignationsService = {
@@ -150,6 +153,15 @@ export const employeeRoleDesignationsService = {
       .update({ client_visible: true, status: 'requested', requested_at: new Date().toISOString(), requested_by: userId || null })
       .eq('business_year_id', businessYearId)
       .in('status', ['draft', 'client_updated']);
+    if (error) throw error;
+  },
+
+  async clientMarkComplete(businessYearId: string) {
+    const { error } = await supabase
+      .from('rd_employee_role_designations')
+      .update({ client_completed_at: new Date().toISOString(), status: 'client_updated' })
+      .eq('business_year_id', businessYearId)
+      .eq('client_visible', true);
     if (error) throw error;
   },
 

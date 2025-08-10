@@ -2114,6 +2114,26 @@ This annual signature covers all business entities and research activities for t
             </div>
             <div className="p-6 space-y-4">
               <p className="text-gray-600">Assign roles and adjust participation for your employees. Changes here are saved for your advisor to review and apply.</p>
+              <div className="flex justify-end">
+                <button
+                  onClick={async () => {
+                    try {
+                      const client = getSupabaseClient();
+                      const byId = selectedYear?.business_years?.[0]?.id;
+                      if (!byId) return;
+                      await client
+                        .from('rd_employee_role_designations')
+                        .update({ client_completed_at: new Date().toISOString(), status: 'client_updated' })
+                        .eq('business_year_id', byId)
+                        .eq('client_visible', true);
+                      alert('Thanks! Your updates have been marked complete. Your advisor will be notified.');
+                    } catch (e) {
+                      alert('Failed to mark complete');
+                    }
+                  }}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg"
+                >Mark Complete</button>
+              </div>
               <div className="overflow-auto rounded-lg border">
                 <table className="min-w-full text-sm">
                   <thead className="bg-gray-50 text-gray-700">
@@ -2179,7 +2199,14 @@ This annual signature covers all business entities and research activities for t
                             onClick={() => {
                               setAllocationRow(r);
                               const alloc = (r.activity_allocations || {}) as Record<string, number>;
-                              setAllocationValues(alloc);
+                              // Initialize from baseline equally if empty
+                              if (!alloc || Object.keys(alloc).length === 0) {
+                                const baseline = Math.round(r.applied_percent || 0);
+                                // temp initialize after activities load
+                                setAllocationValues({ __baseline: baseline } as any);
+                              } else {
+                                setAllocationValues(alloc);
+                              }
                               // Load activities list
                               (async () => {
                                 const client = getSupabaseClient();
@@ -2187,7 +2214,17 @@ This annual signature covers all business entities and research activities for t
                                   .from('rd_selected_activities')
                                   .select('activity_id, research_activity:activity_id(id,title)')
                                   .eq('business_year_id', selectedYear.business_years[0]?.id || '');
-                                setAllocationActivities((acts || []).map(a => ({ id: a.research_activity?.id, title: a.research_activity?.title })).filter(a => a.id));
+                                const arr = (acts || []).map(a => ({ id: a.research_activity?.id, title: a.research_activity?.title })).filter(a => a.id);
+                                setAllocationActivities(arr);
+                                // If no prior alloc, seed equally across activities up to baseline
+                                if ((allocationValues as any).__baseline !== undefined && arr.length > 0) {
+                                  const baseline = (allocationValues as any).__baseline as number;
+                                  const each = arr.length ? Math.floor(baseline / arr.length) : 0;
+                                  const remainder = arr.length ? baseline - each * arr.length : 0;
+                                  const seeded: Record<string, number> = {};
+                                  arr.forEach((act, idx) => { seeded[act.id] = each + (idx < remainder ? 1 : 0); });
+                                  setAllocationValues(seeded);
+                                }
                               })();
                             }}
                             className="px-3 py-1 bg-white border rounded hover:bg-gray-50 text-sm"
