@@ -318,13 +318,15 @@ export class ResearchDesignService {
         activity_id,
         practice_percent,
         selected_roles,
-        rd_research_activities (
+        rd_research_activities!inner (
           id,
           title,
-          focus_id
+          focus_id,
+          is_active
         )
       `)
-      .eq('business_year_id', businessYearId);
+      .eq('business_year_id', businessYearId)
+      .eq('rd_research_activities.is_active', true);
 
     console.log('ResearchDesignService: Supabase query result - data:', data, 'error:', error);
 
@@ -338,13 +340,16 @@ export class ResearchDesignService {
       return [];
     }
 
-    const mappedActivities = data.map(activity => ({
-      id: activity.id,
-      activity_id: activity.activity_id,
-      activity_name: activity.rd_research_activities?.title || 'Unknown Activity',
-      practice_percent: activity.practice_percent,
-      selected_roles: activity.selected_roles || []
-    }));
+    const mappedActivities = data.map(activity => {
+      const researchActivity = activity.rd_research_activities;
+      return {
+        id: activity.id,
+        activity_id: activity.activity_id,
+        activity_name: researchActivity?.title || 'Unknown Activity',
+        practice_percent: activity.practice_percent,
+        selected_roles: activity.selected_roles || []
+      };
+    });
 
     console.log('ResearchDesignService: Mapped activities:', mappedActivities);
     return mappedActivities;

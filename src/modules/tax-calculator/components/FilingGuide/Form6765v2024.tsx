@@ -3,6 +3,7 @@ import { FilingGuideService } from './FilingGuideService';
 import { Form6765Override } from './types';
 import { supabase } from '../../lib/supabase';
 import SectionGTable from './SectionGTable';
+import ProgressTrackingService from '../../services/progressTrackingService';
 
 // Types for lines and sections
 interface Form6765Line {
@@ -153,6 +154,29 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
   useEffect(() => {
     loadOverrides();
   }, [clientId, selectedYear?.year]);
+
+  // Auto-generate and save AI Section G when Research Design is locked for 2024+
+  useEffect(() => {
+    const maybePrecomputeSectionG = async () => {
+      try {
+        if (!selectedYear?.id || !businessData?.id) return;
+        if ((selectedYear?.year || 0) < 2024) return;
+        // Use milestone as proxy for lock (data_entry or research design complete)
+        const isDesignLocked = await ProgressTrackingService.getMilestoneStatus(selectedYear.id, 'data_entry');
+        if (!isDesignLocked) return;
+        // Trigger FilingGuideService to (re)build and persist Section G narrative if not already saved
+        if ((FilingGuideService as any).ensureSectionGNarrativeSaved) {
+          await (FilingGuideService as any).ensureSectionGNarrativeSaved({
+            businessYearId: selectedYear.id,
+            businessId: businessData.id
+          });
+        }
+      } catch (e) {
+        console.warn('[Form6765v2024] Precompute Section G skipped:', e);
+      }
+    };
+    maybePrecomputeSectionG();
+  }, [selectedYear?.id, selectedYear?.year, businessData?.id]);
 
   // On mount, initialize use280C from calculations (optimized dependencies)
   useEffect(() => {
@@ -370,7 +394,7 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
 
   // Update Section F when QRE values change (optimized to prevent infinite loops)
   useEffect(() => {
-    setSectionF(prev => {
+    setSectionF((prev: Form6765Line[]) => {
       const updated = [...prev];
       
       // Use memoized QRE values to prevent excessive recalculation
@@ -842,14 +866,14 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
                   value={maskedInputs[`F-${line.lineNumber}`] || (line.format ? line.format(line.value) : line.value)}
                   onChange={e => {
                     const val = e.target.value;
-                    setMaskedInputs(prev => ({ ...prev, [`F-${line.lineNumber}`]: val }));
+                    setMaskedInputs((prev: {[key: string]: string}) => ({ ...prev, [`F-${line.lineNumber}`]: val }));
                   }}
                   onBlur={e => {
                     const val = parseCurrencyInput(e.target.value);
                     const newLines = [...sectionF];
                     newLines[idx].value = val;
                     setSectionF(recalcSectionF(newLines));
-                    setMaskedInputs(prev => ({
+                    setMaskedInputs((prev: {[key: string]: string}) => ({
                       ...prev,
                       [`F-${line.lineNumber}`]: line.format ? line.format(val) : val
                     }));
@@ -889,12 +913,12 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
                       value={maskedInputs[`A-${line.lineNumber}`] || (line.format ? line.format(line.value) : line.value)}
                       onChange={e => {
                         const val = e.target.value;
-                        setMaskedInputs(prev => ({ ...prev, [`A-${line.lineNumber}`]: val }));
+                        setMaskedInputs((prev: {[key: string]: string}) => ({ ...prev, [`A-${line.lineNumber}`]: val }));
                       }}
                       onBlur={e => {
                         const val = line.lineNumber === 6 ? parsePercentInput(e.target.value) : parseCurrencyInput(e.target.value);
                         handleLineChange('A', line.lineNumber, val);
-                        setMaskedInputs(prev => ({
+                        setMaskedInputs((prev: {[key: string]: string}) => ({
                           ...prev,
                           [`A-${line.lineNumber}`]: line.format ? line.format(val) : val
                         }));
@@ -933,12 +957,12 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
                       value={maskedInputs[`B-${line.lineNumber}`] || (line.format ? line.format(line.value) : line.value)}
                       onChange={e => {
                         const val = e.target.value;
-                        setMaskedInputs(prev => ({ ...prev, [`B-${line.lineNumber}`]: val }));
+                        setMaskedInputs((prev: {[key: string]: string}) => ({ ...prev, [`B-${line.lineNumber}`]: val }));
                       }}
                       onBlur={e => {
                         const val = parseCurrencyInput(e.target.value);
                         handleLineChange('B', line.lineNumber, val);
-                        setMaskedInputs(prev => ({
+                        setMaskedInputs((prev: {[key: string]: string}) => ({
                           ...prev,
                           [`B-${line.lineNumber}`]: line.format ? line.format(val) : val
                         }));
@@ -977,12 +1001,12 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
                       value={maskedInputs[`C-${line.lineNumber}`] || (line.format ? line.format(line.value) : line.value)}
                       onChange={e => {
                         const val = e.target.value;
-                        setMaskedInputs(prev => ({ ...prev, [`C-${line.lineNumber}`]: val }));
+                        setMaskedInputs((prev: {[key: string]: string}) => ({ ...prev, [`C-${line.lineNumber}`]: val }));
                       }}
                       onBlur={e => {
                         const val = parseCurrencyInput(e.target.value);
                         handleLineChange('C', line.lineNumber, val);
-                        setMaskedInputs(prev => ({
+                        setMaskedInputs((prev: {[key: string]: string}) => ({
                           ...prev,
                           [`C-${line.lineNumber}`]: line.format ? line.format(val) : val
                         }));
@@ -1062,12 +1086,12 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
                       value={maskedInputs[`D-${line.lineNumber}`] || (line.format ? line.format(line.value) : line.value)}
                       onChange={e => {
                         const val = e.target.value;
-                        setMaskedInputs(prev => ({ ...prev, [`D-${line.lineNumber}`]: val }));
+                        setMaskedInputs((prev: {[key: string]: string}) => ({ ...prev, [`D-${line.lineNumber}`]: val }));
                       }}
                       onBlur={e => {
                         const val = parseCurrencyInput(e.target.value);
                         handleLineChange('D', line.lineNumber, val);
-                        setMaskedInputs(prev => ({
+                        setMaskedInputs((prev: {[key: string]: string}) => ({
                           ...prev,
                           [`D-${line.lineNumber}`]: line.format ? line.format(val) : val
                         }));
@@ -1142,12 +1166,12 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
                             value={maskedInputs[`E-${line.lineNumber}-amount`] || formatCurrency(line.value)}
                             onChange={e => {
                               const val = e.target.value;
-                              setMaskedInputs(prev => ({ ...prev, [`E-${line.lineNumber}-amount`]: val }));
+                              setMaskedInputs((prev: {[key: string]: string}) => ({ ...prev, [`E-${line.lineNumber}-amount`]: val }));
                             }}
                             onBlur={e => {
                               const val = parseCurrencyInput(e.target.value);
                               handleLineChange('E', line.lineNumber, val);
-                              setMaskedInputs(prev => ({
+                              setMaskedInputs((prev: {[key: string]: string}) => ({
                                 ...prev,
                                 [`E-${line.lineNumber}-amount`]: formatCurrency(val)
                               }));
@@ -1170,12 +1194,12 @@ const Form6765v2024: React.FC<Form6765v2024Props> = ({
                       value={maskedInputs[`E-${line.lineNumber}`] || (line.format ? line.format(line.value) : line.value)}
                       onChange={e => {
                         const val = e.target.value;
-                        setMaskedInputs(prev => ({ ...prev, [`E-${line.lineNumber}`]: val }));
+                        setMaskedInputs((prev: {[key: string]: string}) => ({ ...prev, [`E-${line.lineNumber}`]: val }));
                       }}
                       onBlur={e => {
                         const val = line.lineNumber === 37 ? parseInt(e.target.value) || 0 : parseCurrencyInput(e.target.value);
                         handleLineChange('E', line.lineNumber, val);
-                        setMaskedInputs(prev => ({
+                        setMaskedInputs((prev: {[key: string]: string}) => ({
                           ...prev,
                           [`E-${line.lineNumber}`]: line.format ? line.format(val) : val
                         }));

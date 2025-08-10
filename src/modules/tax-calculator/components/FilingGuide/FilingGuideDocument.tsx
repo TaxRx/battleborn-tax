@@ -18,6 +18,7 @@ interface FilingGuideDocumentProps {
   selectedMethod?: 'asc' | 'standard';
   debugData?: any;
   readOnly?: boolean; // Add read-only mode for client portal
+  clientName?: string;
 }
 
 export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
@@ -26,7 +27,8 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
   calculations,
   selectedMethod,
   debugData,
-  readOnly = false
+  readOnly = false,
+  clientName
 }) => {
   // State for locked QRE values
   const [lockedQREValues, setLockedQREValues] = useState<{
@@ -111,8 +113,7 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
     });
   }
 
-  // Debug output (collapsible)
-  const [showDebug, setShowDebug] = React.useState(false);
+  // Debug UI removed; keep logs only
 
   // Extract business state from business data (same logic as CalculationStep and IntegratedStateCredits)
   // Enhanced logic to handle different data structures
@@ -287,28 +288,53 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
     setStateProFormaData({}); // Clear data when method changes
   };
 
+  // Names for Welcome Letter salutation
+  const businessName = businessData?.name || businessData?.business?.name || 'Client Business';
+  const [fetchedClientName, setFetchedClientName] = useState<string | null>(null);
+  const resolvedClientName = clientName 
+    || fetchedClientName 
+    || businessData?.clients?.full_name 
+    || businessData?.client_full_name 
+    || businessData?.contact_name 
+    || businessData?.owner_name 
+    || businessData?.client_name 
+    || businessData?.primary_contact_name 
+    || businessData?.user_name 
+    || businessData?.business?.owner_name 
+    || 'Client';
+
+  // Fallback: fetch client name if not provided
+  useEffect(() => {
+    const loadClientName = async () => {
+      if (clientName || fetchedClientName) return;
+      const clientId = businessData?.client_id || businessData?.business?.client_id;
+      if (!clientId) return;
+      try {
+        const { data, error } = await supabase
+          .from('clients')
+          .select('full_name')
+          .eq('id', clientId)
+          .single();
+        if (!error && data?.full_name) {
+          setFetchedClientName(data.full_name);
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+    loadClientName();
+  }, [clientName, fetchedClientName, businessData?.client_id, businessData?.business?.client_id]);
+
   return (
     <div className="filing-guide-document">
-      {/* Debug Output Section */}
-      {debugData && (
-        <div className="filing-guide-debug-output" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, margin: '1rem 0', padding: '1rem' }}>
-          <button onClick={() => setShowDebug(v => !v)} style={{ fontWeight: 600, marginBottom: 8 }}>
-            {showDebug ? 'Hide' : 'Show'} Debug Data
-          </button>
-          {showDebug && (
-            <pre style={{ fontSize: 12, maxHeight: 300, overflow: 'auto', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 4, padding: 8 }}>
-              {JSON.stringify(debugData, null, 2)}
-            </pre>
-          )}
-        </div>
-      )}
+      {/* Debug Output removed from top of report */}
       
       {/* Cover Page */}
       <div id="filing-guide-section-cover" className="filing-guide-section">
         <div className="filing-guide-cover-page">
           <div className="filing-guide-logo">
             <img 
-              src={`${import.meta.env.VITE_PUBLIC_SITE_URL}/images/Direct Research_horizontal advisors logo.png`} 
+              src={'/images/Direct%20Research_horizontal%20advisors%20logo.png'} 
               alt="Direct Research Logo"
               className="filing-guide-logo-img"
             />
@@ -337,6 +363,38 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
           <div className="filing-guide-footer">
             Direct Research | Federal Filing Guide – {selectedYear?.year || 'N/A'}
           </div>
+        </div>
+      </div>
+
+      {/* Welcome Letter (Thank You & Commitment) */}
+      <div id="filing-guide-section-welcome" className="filing-guide-section">
+        <div className="filing-guide-section-header">
+          <div className="filing-guide-section-icon">✉️</div>
+          <div>
+            <h2 className="filing-guide-section-title">Welcome Letter</h2>
+            <p className="filing-guide-section-subtitle">A note of thanks and our commitment to assist</p>
+          </div>
+        </div>
+        <div style={{ background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 12, padding: 24 }}>
+          <p style={{ marginBottom: 16 }}>Dear {businessName} and {resolvedClientName},</p>
+          <p style={{ marginBottom: 12 }}>
+            We wanted to take a moment to express our gratitude for the opportunity to work with you and develop your
+            research and development credit–supporting documentation. It has been a pleasure to collaborate with your
+            team, and we are excited to assist you in your pursuit of this valuable tax credit.
+          </p>
+          <p style={{ marginBottom: 12 }}>
+            In the attached guide, you will find detailed instructions for filing your research and development credit,
+            along with all necessary supporting documentation. We have included clear guidance on how to claim this
+            credit, and we are available to answer any questions you or your accounting team may have as you navigate
+            the filing process.
+          </p>
+          <p style={{ marginBottom: 12 }}>
+            Thank you again for entrusting us with this important project. Please do not hesitate to reach out if you have
+            any questions or concerns. You can contact us directly at (801) 318-5097.
+          </p>
+          <p style={{ marginTop: 20 }}>Sincerely,</p>
+          <p>Benjamin T. Dyches, DDS, JD</p>
+          <p>CEO Direct Research</p>
         </div>
       </div>
 

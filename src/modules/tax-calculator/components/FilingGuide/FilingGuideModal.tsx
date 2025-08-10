@@ -13,6 +13,7 @@ interface FilingGuideModalProps {
   calculations: any;
   selectedMethod?: 'asc' | 'standard';
   debugData?: any;
+  clientName?: string;
 }
 
 export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
@@ -22,7 +23,8 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
   selectedYear,
   calculations,
   selectedMethod,
-  debugData
+  debugData,
+  clientName
 }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [exportFormat, setExportFormat] = useState<'pdf' | 'html'>('pdf');
@@ -65,6 +67,11 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
       id: 'cover',
       title: 'Cover Page',
       icon: '📄'
+    },
+    {
+      id: 'welcome',
+      title: 'Welcome Letter',
+      icon: '✉️'
     },
     {
       id: 'about',
@@ -454,7 +461,7 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
         <div className="filing-guide-modal-content">
           {showPreview ? (
             <div className="filing-guide-layout">
-              {/* Table of Contents Sidebar */}
+              {/* Table of Contents Sidebar (inside modal layout) */}
               <div className="filing-guide-toc-sidebar">
                 <h3 className="filing-guide-toc-title">Table of Contents</h3>
                 
@@ -519,6 +526,7 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
                     calculations={calculations}
                     selectedMethod={selectedMethod}
                     debugData={debugData}
+                    clientName={clientName}
                     readOnly={window.location.pathname.includes('/client')}
                   />
                   

@@ -6,6 +6,8 @@ import { StateProFormaCalculationService } from '../../../services/stateProForma
 import { ContractorManagementService } from '../../../../../services/contractorManagementService';
 import { toast } from 'react-hot-toast';
 import { supabase } from '../../../lib/supabase';
+import { formatCurrency } from '../../../../../utils/formatting';
+import { SectionGQREService } from '../../../services/sectionGQREService';
 import { FilingGuideModal } from '../../FilingGuide/FilingGuideModal';
 import AllocationReportModal from '../../AllocationReport/AllocationReportModal';
 import { IntegratedFederalCredits } from './IntegratedFederalCredits';
@@ -60,11 +62,12 @@ const AccordionSection: React.FC<{ title: string; details: string[] | null }> = 
   );
 };
 
-// KPI Chart Component
+// KPI Chart Component (refined with smooth curves and shaded area)
 const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'pie'; color: string }> = ({ title, data, type, color }) => {
+  const [hover, setHover] = React.useState<{ x: number; y: number; label: string; value: number } | null>(null);
   if (!data || data.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 w-[220px]">
         <h4 className="text-sm font-semibold text-gray-700 mb-2">{title}</h4>
         <div className="text-center py-8 text-gray-400">
           <div className="text-2xl mb-2">📊</div>
@@ -77,11 +80,17 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
   const maxValue = Math.max(...data.map(item => item.value));
   const minValue = Math.min(...data.map(item => item.value));
 
-  // Line Chart Rendering
+  // Line Chart Rendering (smooth path + area fill)
   if (type === 'line') {
-    const chartHeight = 120;
-    const chartWidth = 200;
-    const padding = 20;
+    const chartHeight = 100;
+    // Responsive width: show up to 5 most recent points; cap width
+    const visibleData = data.slice(-5);
+    const chartWidth = Math.min(240, 36 * visibleData.length + 40);
+    // Use asymmetric paddings to minimize the left margin of the plot area
+    const paddingTop = 10;
+    const paddingBottom = 10;
+    const paddingLeft = 8;   // make left margin narrow
+    const paddingRight = 8;  // keep right margin similar to left
     
     // Color mapping for SVG
     const colorMap: { [key: string]: string } = {
@@ -97,20 +106,56 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
     
     const strokeColor = colorMap[color] || '#3b82f6'; // Default to blue
     
-    // Calculate points for SVG path
-    const points = data.map((item, index) => {
-      const x = padding + (index * (chartWidth - 2 * padding)) / (data.length - 1);
-      const y = maxValue === minValue 
-        ? chartHeight / 2 
-        : chartHeight - padding - ((item.value - minValue) / (maxValue - minValue)) * (chartHeight - 2 * padding);
-      return `${x},${y}`;
-    }).join(' ');
+    const toXY = (item: any, index: number) => {
+      // Evenly space points across width with minimal left margin
+      const count = Math.max(visibleData.length, 1);
+      const step = count > 1 ? (chartWidth - paddingLeft - paddingRight) / (count - 1) : 0;
+      const x = count === 1 ? (chartWidth / 2) : (paddingLeft + index * step);
+      const y = maxValue === minValue
+        ? chartHeight / 2
+        : chartHeight - paddingBottom - ((item.value - minValue) / (maxValue - minValue)) * (chartHeight - paddingTop - paddingBottom);
+      return { x, y };
+    };
+
+    const pts = visibleData.map(toXY);
+
+    // Create a smooth path using cubic Bezier curves
+    const getControlPoints = (p0: any, p1: any, p2: any, t = 0.2) => {
+      const d01 = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+      const d12 = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      const fa = t * d01 / (d01 + d12 || 1);
+      const fb = t * d12 / (d01 + d12 || 1);
+      const p1x = p1.x - fa * (p2.x - p0.x);
+      const p1y = p1.y - fa * (p2.y - p0.y);
+      const p2x = p1.x + fb * (p2.x - p0.x);
+      const p2y = p1.y + fb * (p2.y - p0.y);
+      return [{ x: p1x, y: p1y }, { x: p2x, y: p2y }];
+    };
+
+    let pathD = '';
+    if (pts.length > 0) {
+      pathD = `M ${pts[0].x},${pts[0].y}`;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p0 = i === 0 ? pts[0] : pts[i - 1];
+        const p1 = pts[i];
+        const p2 = pts[i + 1];
+        const p3 = i + 2 < pts.length ? pts[i + 2] : p2;
+        const [cp1, cp2] = getControlPoints(p0, p1, p2);
+        const [cp3, cp4] = getControlPoints(p1, p2, p3);
+        pathD += ` C ${cp2.x},${cp2.y} ${cp3.x},${cp3.y} ${p2.x},${p2.y}`;
+      }
+    }
+
+    // Area path (use bottom/top paddings)
+    const areaD = pathD + (pts.length
+      ? ` L ${pts[pts.length - 1].x},${chartHeight - paddingBottom} L ${pts[0].x},${chartHeight - paddingBottom} Z`
+      : '');
 
     return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-        <h4 className="text-sm font-semibold text-gray-700 mb-3">{title}</h4>
+      <div className="bg-white/90 rounded-lg shadow-sm border border-gray-200 p-3">
+        <h4 className="text-xs font-semibold text-gray-700 mb-2">{title}</h4>
         <div className="relative">
-          <svg width={chartWidth} height={chartHeight} className="w-full h-32">
+          <svg width={chartWidth} height={chartHeight} className="w-full h-24">
             {/* Grid lines */}
             <defs>
               <pattern id={`grid-${title.replace(/\s+/g, '')}`} width="20" height="20" patternUnits="userSpaceOnUse">
@@ -119,54 +164,42 @@ const KPIChart: React.FC<{ title: string; data: any[]; type: 'line' | 'bar' | 'p
             </defs>
             <rect width="100%" height="100%" fill={`url(#grid-${title.replace(/\s+/g, '')})`} />
             
-            {/* Line path */}
-            <polyline
+            {/* Shaded area under curve */}
+            <path d={areaD} fill={strokeColor} opacity="0.12" />
+            {/* Smooth curve */}
+            <path
+              d={pathD}
               fill="none"
               stroke={strokeColor}
               strokeWidth="3"
               strokeLinecap="round"
               strokeLinejoin="round"
-              points={points}
               className="drop-shadow-sm"
             />
             
             {/* Data points */}
-            {data.map((item, index) => {
-              const x = padding + (index * (chartWidth - 2 * padding)) / (data.length - 1);
-              const y = maxValue === minValue 
-                ? chartHeight / 2 
-                : chartHeight - padding - ((item.value - minValue) / (maxValue - minValue)) * (chartHeight - 2 * padding);
-              return (
-                <circle
-                  key={index}
-                  cx={x}
-                  cy={y}
-                  r="4"
-                  fill={strokeColor}
-                  stroke="white"
-                  strokeWidth="2"
-                  className="drop-shadow-sm"
-                />
-              );
-            })}
-          </svg>
-          
-          {/* Value labels - Compact display for better UX */}
-          <div className="flex justify-between mt-2 text-xs text-gray-500 overflow-hidden">
-            {data.map((item, index) => (
-              <div key={index} className="text-center flex-1 min-w-0">
-                <div className="font-medium truncate">{item.label}</div>
-                <div className="text-gray-600 text-xs">
-                  {typeof item.value === 'number' && item.value >= 1000 
-                    ? `$${(item.value / 1000).toFixed(0)}k`
-                    : typeof item.value === 'number'
-                    ? `$${item.value.toLocaleString()}`
-                    : '$0'
-                  }
-                </div>
-              </div>
+            {pts.map((pt, index) => (
+              <circle
+                key={index}
+                cx={pt.x}
+                cy={pt.y}
+                r="3"
+                fill={strokeColor}
+                onMouseEnter={() => setHover({ x: pt.x, y: pt.y, label: visibleData[index].label, value: visibleData[index].value })}
+              />
             ))}
-          </div>
+          </svg>
+          {/* Tooltip */}
+          {hover && (
+            <div
+              className="absolute text-[11px] bg-white/95 border border-gray-200 rounded px-2 py-1 shadow-sm text-gray-700"
+              style={{ left: Math.min(Math.max(hover.x - 24, 0), chartWidth - 80), top: Math.max(hover.y - 28, 0) }}
+              onMouseLeave={() => setHover(null)}
+            >
+              <div className="font-medium">{hover.label}</div>
+              <div className="font-semibold">{formatCurrency(hover.value)}</div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -297,9 +330,15 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
   const [allYears, setAllYears] = useState<any[]>([]);
   const [selectedYearId, setSelectedYearId] = useState<string | null>(wizardState.selectedYear?.id || null);
   const [historicalCards, setHistoricalCards] = useState<any[]>([]);
+  // Computed internal QRE totals per business_year_id
+  const [internalQREByBusinessYearId, setInternalQREByBusinessYearId] = useState<Record<string, number>>({});
   const [availableActivityYears, setAvailableActivityYears] = useState<Array<{id: string, year: number}>>([]);
   const [selectedActivityYearId, setSelectedActivityYearId] = useState<string>(wizardState.selectedYear?.id || '');
   const [selectedActivityYear, setSelectedActivityYear] = useState<number>(wizardState.selectedYear?.year || new Date().getFullYear());
+  // Saved results for accurate cross-year charts
+  const [savedCreditResultsByYear, setSavedCreditResultsByYear] = useState<Record<string, { totalFederalCredit: number; totalStateCredits: number; totalCredits: number }>>({});
+  // Selected research subcomponent counts per business year
+  const [selectedSubcomponentCounts, setSelectedSubcomponentCounts] = useState<Record<string, number>>({});
 
   // --- Add state for selectedYearGrossReceipts ---
   const [selectedYearGrossReceipts, setSelectedYearGrossReceipts] = useState<number>(0);
@@ -431,10 +470,47 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
               console.error('Error fetching contractors:', error);
             }
 
-            return { 
-              ...year, 
+            // Compute internal QRE using SectionGQREService to align with Business Setup
+            let internalQRETotal = 0;
+            try {
+              const entries = await SectionGQREService.getQREDataForSectionG(year.id);
+              internalQRETotal = entries.reduce((sum, e) => sum + (e.calculated_qre || 0), 0);
+            } catch (e) {
+              internalQRETotal = 0;
+            }
+
+            // Fallback: derive internal QRE from year-level employee/contractor/supply datasets
+            if (!internalQRETotal || internalQRETotal <= 0) {
+              const supplyQRE = (supplySubcomponents || []).reduce((sum, ssc) => {
+                const amountApplied = ssc.amount_applied || 0;
+                const appliedPercentage = ssc.applied_percentage || 0;
+                const supplyCost = ssc.supply?.cost_amount || 0;
+                const q = amountApplied > 0 ? amountApplied : (supplyCost * appliedPercentage / 100);
+                return sum + roundToDollar(q);
+              }, 0);
+              const employeeQRE = (year.employees || []).reduce((sum: number, e: any) => {
+                const annualWage = e.employee?.annual_wage || e.annual_wage || e.wage || 0;
+                const appliedPercent = e.applied_percent || 0;
+                const calculatedQRE = e.calculated_qre || e.qre || 0;
+                const q = calculatedQRE > 0 ? calculatedQRE : (annualWage * appliedPercent / 100);
+                return sum + roundToDollar(q);
+              }, 0);
+              const contractorBase = (year.contractors || year.contractors_with_qre || []) as any[];
+              const contractorQRE = contractorBase.reduce((sum: number, c: any) => {
+                const amount = c.amount || c.cost_amount || 0;
+                const appliedPercent = c.applied_percent || 0;
+                const calculatedQRE = c.calculated_qre || c.qre || 0;
+                const q = calculatedQRE > 0 ? calculatedQRE : (amount * appliedPercent / 100);
+                return sum + roundToDollar(q);
+              }, 0);
+              internalQRETotal = roundToDollar(supplyQRE + employeeQRE + contractorQRE);
+            }
+
+            return {
+              ...year,
               supply_subcomponents: supplySubcomponents || [],
-              contractors_with_qre: contractorsWithQRE
+              contractors_with_qre: contractorsWithQRE,
+              internal_qre_total: internalQRETotal
             };
           })
         );
@@ -494,37 +570,10 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           const currentYear = new Date().getFullYear();
           const isCurrentYear = year.year === currentYear;
           
-          if (isCurrentYear) {
-            // For current year: Calculate from internal data
-            const supplyQRE = year.supply_subcomponents?.reduce((sum, ssc) => {
-              const amountApplied = ssc.amount_applied || 0;
-              const appliedPercentage = ssc.applied_percentage || 0;
-              const supplyCost = ssc.supply?.cost_amount || 0;
-              const supplyQRE = amountApplied > 0 ? amountApplied : (supplyCost * appliedPercentage / 100);
-              return sum + roundToDollar(supplyQRE);
-            }, 0) || 0;
-            
-            const employeeQRE = year.employees?.reduce((sum, e) => {
-              const annualWage = e.employee?.annual_wage || e.annual_wage || e.wage || 0;
-              const appliedPercent = e.applied_percent || 0;
-              const calculatedQRE = e.calculated_qre || e.qre || 0;
-              const employeeQRE = calculatedQRE > 0 ? calculatedQRE : (annualWage * appliedPercent / 100);
-              return sum + roundToDollar(employeeQRE);
-            }, 0) || 0;
-            
-            const contractorQRE = year.contractors?.reduce((sum, c) => {
-              const amount = c.amount || c.cost_amount || 0;
-              const appliedPercent = c.applied_percent || 0;
-              const calculatedQRE = c.calculated_qre || c.qre || 0;
-              const contractorQRE = calculatedQRE > 0 ? calculatedQRE : (amount * appliedPercent / 100);
-              return sum + roundToDollar(contractorQRE);
-            }, 0) || 0;
-            
-            return roundToDollar(supplyQRE + employeeQRE + contractorQRE);
-          } else {
-            // For historical years: Use external QRE from Business Setup
-            return roundToDollar(year.total_qre || 0);
-          }
+          // Prefer internal computed QRE when available; otherwise use external Business Setup total
+          const internal = roundToDollar(year.internal_qre_total || 0);
+          if (internal > 0) return internal;
+          return roundToDollar(year.total_qre || 0);
         };
 
         // Helper to get QRE breakdown for a year
@@ -541,51 +590,47 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
               directQRE: 0
             };
           }
-          
-          const currentYear = new Date().getFullYear();
-          const isCurrentYear = year.year === currentYear;
-          
-          if (isCurrentYear) {
-            // For current year: Calculate from internal data
-            const supplyQRE = year.supply_subcomponents?.reduce((sum, ssc) => {
+          // Prefer internal computed breakdown when available
+          const internalTotal = roundToDollar(year.internal_qre_total || 0);
+          if (internalTotal > 0) {
+            // If supply/employee/contractor sub-details are present, compute from them for richer breakdown
+            const suppliesQRE = (year.supply_subcomponents || []).reduce((sum, ssc) => {
               const amountApplied = ssc.amount_applied || 0;
               const appliedPercentage = ssc.applied_percentage || 0;
               const supplyCost = ssc.supply?.cost_amount || 0;
-              const supplyQRE = amountApplied > 0 ? amountApplied : (supplyCost * appliedPercentage / 100);
-              return sum + roundToDollar(supplyQRE);
-            }, 0) || 0;
-            
-            const employeeQRE = year.employees?.reduce((sum, e) => {
+              const qre = amountApplied > 0 ? amountApplied : (supplyCost * appliedPercentage / 100);
+              return sum + roundToDollar(qre);
+            }, 0);
+            const employeesQRE = (year.employees || []).reduce((sum, e) => {
               const annualWage = e.employee?.annual_wage || e.annual_wage || e.wage || 0;
               const appliedPercent = e.applied_percent || 0;
               const calculatedQRE = e.calculated_qre || e.qre || 0;
-              const employeeQRE = calculatedQRE > 0 ? calculatedQRE : (annualWage * appliedPercent / 100);
-              return sum + roundToDollar(employeeQRE);
-            }, 0) || 0;
-            
-            const contractorQRE = year.contractors?.reduce((sum, c) => {
+              const qreAppliedPercent = appliedPercent >= 80 ? 100 : appliedPercent;
+              const qre = calculatedQRE > 0 ? calculatedQRE : (annualWage * qreAppliedPercent / 100);
+              return sum + roundToDollar(qre);
+            }, 0);
+            const contractorsQRE = (year.contractors || []).reduce((sum, c) => {
               const amount = c.amount || c.cost_amount || 0;
               const appliedPercent = c.applied_percent || 0;
               const calculatedQRE = c.calculated_qre || c.qre || 0;
-              const contractorQRE = calculatedQRE > 0 ? calculatedQRE : (amount * appliedPercent / 100);
-              return sum + roundToDollar(contractorQRE);
-            }, 0) || 0;
-            
+              const qreAppliedPercent = appliedPercent >= 80 ? 100 : appliedPercent;
+              const qre = calculatedQRE > 0 ? calculatedQRE : (amount * qreAppliedPercent / 100);
+              return sum + roundToDollar(qre);
+            }, 0);
             return {
-              employeesQRE: employeeQRE,
-              contractorsQRE: contractorQRE,
-              suppliesQRE: supplyQRE,
+              employeesQRE,
+              contractorsQRE,
+              suppliesQRE,
               directQRE: 0
             };
-          } else {
-            // For historical years: Show all as direct since it's from Business Setup
-            return {
-              employeesQRE: 0,
-              contractorsQRE: 0,
-              suppliesQRE: 0,
-              directQRE: roundToDollar(year.total_qre || 0)
-            };
           }
+          // Otherwise, treat as external direct entry
+          return {
+            employeesQRE: 0,
+            contractorsQRE: 0,
+            suppliesQRE: 0,
+            directQRE: roundToDollar(year.total_qre || 0)
+          };
         };
 
         // Helper to get ASC credit for a year, and show percentage used
@@ -635,8 +680,11 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
 
         // Helper to determine if QREs are external (entered in Business Setup)
         const isExternalQRE = (year) => {
-          const currentYear = new Date().getFullYear();
-          return year.year !== currentYear; // Historical years are external
+          // Priority: locked values → internal computed → external manual
+          const lockedValues = lockedQREValues[year.id];
+          if (lockedValues && lockedValues.qre_locked) return false; // locked are internal
+          if (roundToDollar(year.internal_qre_total || 0) > 0) return false; // internal present
+          return true; // otherwise external/manual
         };
 
         // Create unique historical cards and remove duplicates
@@ -852,6 +900,16 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
     }
   }, [selectedActivityYearId, allYears]);
 
+  // Keep local year state in sync with the wizard's bottom year selector
+  useEffect(() => {
+    const sy = wizardState.selectedYear;
+    if (sy?.id && sy.id !== selectedActivityYearId) {
+      setSelectedActivityYearId(sy.id);
+      setSelectedYearId(sy.id);
+      setSelectedActivityYear(sy.year);
+    }
+  }, [wizardState.selectedYear?.id, wizardState.selectedYear?.year]);
+
   // Fetch ASC credit for each year for the cards
   useEffect(() => {
     async function fetchHistoricalCards() {
@@ -859,8 +917,13 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       
       // Use the cards already calculated in the first useEffect
       const cards = allYears.map((year, idx) => {
-        // Determine if QREs are external (entered in Business Setup)
-        const isExternalQRE = year.total_qre > 0;
+        // Determine internal/external using Business Setup + locked/internal signals
+        const lockedValues = lockedQREValues[year.id];
+        const internalTotal = roundToDollar(year.internal_qre_total || 0);
+        const isExternalQRE = !(
+          (lockedValues && lockedValues.qre_locked) ||
+          internalTotal > 0
+        ) && (roundToDollar(year.total_qre || 0) > 0);
         const isInternal = !isExternalQRE;
 
         // Get QRE for this year (Business Setup takes precedence)
@@ -869,11 +932,15 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           // Use external QRE from Business Setup
           qre = year.total_qre;
         } else {
-          // Calculate internal QRE from employees, contractors, supplies
+          // Calculate internal QRE from employees, contractors, supplies with fallback
           const employeeQRE = year.employees?.reduce((sum, e) => sum + roundToDollar(e.calculated_qre || 0), 0) || 0;
           const contractorQRE = year.contractors?.reduce((sum, c) => sum + roundToDollar(c.calculated_qre || 0), 0) || 0;
           const supplyQRE = year.supplies?.reduce((sum, s) => sum + roundToDollar(s.calculated_qre || 0), 0) || 0;
-          qre = roundToDollar(employeeQRE + contractorQRE + supplyQRE);
+          let computed = roundToDollar(employeeQRE + contractorQRE + supplyQRE);
+          if (computed <= 0 && internalQREByBusinessYearId[year.id]) {
+            computed = internalQREByBusinessYearId[year.id];
+          }
+          qre = computed;
         }
 
         // Calculate ASC credit based on the number of valid consecutive prior years
@@ -891,68 +958,47 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           hasSupplyData: !!year.supplies?.length
         });
         
-        // Find 3 consecutive prior years with QREs > 0
-        let validPriorQREs = [];
-        let priorYearDetails = [];
-        
-        for (let i = idx - 1; i >= 0 && validPriorQREs.length < 3; i--) {
+        // Find up to 3 prior years (< current card year), most recent first
+        const candidatePriors = allYears
+          .filter((y) => y.year < year.year)
+          .sort((a, b) => b.year - a.year)
+          .slice(0, 3);
+        const validPriorQREs: number[] = [];
+        const priorYearDetails: any[] = [];
+        candidatePriors.forEach((priorYear) => {
           let priorQRE = 0;
-          const priorYear = allYears[i];
-          
-          // Check external QRE first, then internal calculation
           if (priorYear.total_qre > 0) {
-            priorQRE = priorYear.total_qre;
-          } else if (priorYear.employees || priorYear.contractors || priorYear.supplies) {
+            priorQRE = roundToDollar(priorYear.total_qre);
+          } else {
             const empQRE = priorYear.employees?.reduce((sum, e) => sum + roundToDollar(e.calculated_qre || 0), 0) || 0;
             const contQRE = priorYear.contractors?.reduce((sum, c) => sum + roundToDollar(c.calculated_qre || 0), 0) || 0;
             const supQRE = priorYear.supplies?.reduce((sum, s) => sum + roundToDollar(s.calculated_qre || 0), 0) || 0;
             priorQRE = roundToDollar(empQRE + contQRE + supQRE);
           }
-          
-          priorYearDetails.push({
-            year: priorYear.year,
-            qre: priorQRE,
-            external: priorYear.total_qre > 0
-          });
-          
-          if (priorQRE > 0) {
-            validPriorQREs.push(priorQRE);
-          } else {
-            // For ASC, we can be more lenient - don't break on first zero year
-            // Allow gaps in historical data for a more practical calculation
-            console.log(`⚠️ Year ${priorYear.year} has no QRE data - continuing search`);
-          }
-        }
-        
-        validPriorQREs = validPriorQREs.reverse();
-        priorYearDetails.reverse();
+          priorYearDetails.push({ year: priorYear.year, qre: priorQRE, external: priorYear.total_qre > 0 });
+          if (priorQRE > 0) validPriorQREs.push(priorQRE);
+        });
         
         console.log(`📊 Prior year QRE details for ${year.year}:`, priorYearDetails);
         console.log(`✅ Valid prior QREs found: ${validPriorQREs.length}`, validPriorQREs);
         
-        // ASC Calculation Logic
-        if (validPriorQREs.length >= 3) {
-          // Multi-year ASC (14% rate) - CORRECTED FORMULA: 14% × max(0, Current QRE - 50% of avg prior 3 years)
-          const avgPrior3 = validPriorQREs.slice(0, 3).reduce((a, b) => a + b, 0) / 3;
-          const fiftyPercentOfAvg = avgPrior3 * 0.5; // 50% of average prior 3 years
-          const incrementalQRE = Math.max(0, qre - fiftyPercentOfAvg);
+        // ASC Calculation Logic (matches RDCalculationsService):
+        if (validPriorQREs.length === 3) {
+          const avgPrior3 = (validPriorQREs[0] + validPriorQREs[1] + validPriorQREs[2]) / 3;
+          ascAvgPrior3 = roundToDollar(avgPrior3);
+          const baseAmount = avgPrior3 * 0.5;
+          const incrementalQRE = Math.max(0, qre - baseAmount);
           ascCredit = roundToDollar(incrementalQRE * 0.14);
           ascPercent = 14;
-          ascAvgPrior3 = roundToDollar(avgPrior3);
-          
-          console.log(`✅ Multi-year ASC for ${year.year}: ${formatCurrency(ascCredit)} (${qre} - 50% of ${avgPrior3} = ${qre} - ${fiftyPercentOfAvg} = ${incrementalQRE} * 14%)`);
-        } else if (validPriorQREs.length >= 1) {
-          // Simplified ASC with available data (6% rate)
+        } else if (validPriorQREs.length > 0) {
+          const avgPrior = validPriorQREs.reduce((a, b) => a + b, 0) / validPriorQREs.length;
+          ascAvgPrior3 = roundToDollar(avgPrior);
           ascCredit = roundToDollar(qre * 0.06);
           ascPercent = 6;
-          
-          console.log(`⚡ Single-year ASC for ${year.year}: ${formatCurrency(ascCredit)} (${qre} * 6%)`);
         } else {
-          // Startup provision (6% rate)
+          ascAvgPrior3 = 0;
           ascCredit = roundToDollar(qre * 0.06);
           ascPercent = 6;
-          
-          console.log(`🚀 Startup ASC for ${year.year}: ${formatCurrency(ascCredit)} (${qre} * 6%)`);
         }
         
         // Ensure we have a valid credit amount
@@ -991,6 +1037,62 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       setHistoricalCards(cards);
     }
     fetchHistoricalCards();
+  }, [allYears]);
+
+  // Load saved calculation results for all years to power accurate charts
+  useEffect(() => {
+    const loadSavedResults = async () => {
+      if (!allYears || allYears.length === 0) return;
+      try {
+        const ids = allYears.map(y => y.id);
+        const { data, error } = await supabase
+          .from('rd_federal_credit_results')
+          .select('business_year_id,total_federal_credit,total_state_credits,total_credits')
+          .in('business_year_id', ids);
+        if (error) {
+          console.warn('Charts: failed to read saved credit results:', error);
+          return;
+        }
+        const map: Record<string, { totalFederalCredit: number; totalStateCredits: number; totalCredits: number }> = {};
+        (data || []).forEach((row: any) => {
+          map[row.business_year_id] = {
+            totalFederalCredit: Math.round(row.total_federal_credit || 0),
+            totalStateCredits: Math.round(row.total_state_credits || 0),
+            totalCredits: Math.round(row.total_credits || 0)
+          };
+        });
+        setSavedCreditResultsByYear(map);
+      } catch (e) {
+        console.warn('Charts: exception loading saved credit results:', e);
+      }
+    };
+    loadSavedResults();
+  }, [allYears]);
+
+  // Load selected research subcomponents count for all years (accurate Total Subcomponents)
+  useEffect(() => {
+    const loadSelectedSubcomponents = async () => {
+      if (!allYears || allYears.length === 0) return;
+      try {
+        const ids = allYears.map(y => y.id);
+        const { data, error } = await supabase
+          .from('rd_selected_subcomponents')
+          .select('business_year_id')
+          .in('business_year_id', ids);
+        if (error) {
+          console.warn('Could not load selected subcomponents:', error);
+          return;
+        }
+        const counts: Record<string, number> = {};
+        (data || []).forEach((row: any) => {
+          counts[row.business_year_id] = (counts[row.business_year_id] || 0) + 1;
+        });
+        setSelectedSubcomponentCounts(counts);
+      } catch (e) {
+        console.warn('Exception loading selected subcomponents:', e);
+      }
+    };
+    loadSelectedSubcomponents();
   }, [allYears]);
 
   // Load calculations when component mounts or year changes
@@ -1460,9 +1562,12 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
     }
 
     const currentYear = new Date().getFullYear();
+    // Keep only the most recent 5 years
+    const yearsAsc = [...allYears].sort((a, b) => a.year - b.year);
+    const recentYears = yearsAsc.slice(Math.max(yearsAsc.length - 5, 0));
     
     // QRE over years chart data
-    const qreData = allYears.map(year => {
+    const qreData = recentYears.map(year => {
       const isCurrentYear = year.year === currentYear;
       
       if (isCurrentYear) {
@@ -1511,29 +1616,30 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
     });
 
     // Credit values over years chart data
-    const creditData = qreData.map(item => {
-      const isCurrentYear = item.year === new Date().getFullYear();
-      let federalCredit = 0;
-      let stateCredit = 0;
-      
-      if (isCurrentYear && results?.federalCredits) {
-        // Use actual calculated federal credit for current year
-        federalCredit = selectedMethod === 'asc' 
-          ? (results.federalCredits.asc?.adjustedCredit || results.federalCredits.asc?.credit || 0)
-          : (results.federalCredits.standard?.adjustedCredit || results.federalCredits.standard?.credit || 0);
-        stateCredit = totalStateCredits;
-      } else {
-        // For historical years, use simplified calculation
-        federalCredit = roundToDollar((item.qre || 0) * 0.20);
-        stateCredit = 0; // No state credit data for historical years
+    const creditData = recentYears.map(year => {
+      const saved = savedCreditResultsByYear[year.id];
+      if (saved) {
+        return {
+          year: year.year,
+          federalCredit: roundToDollar(saved.totalFederalCredit || 0),
+          stateCredit: roundToDollar(saved.totalStateCredits || 0),
+          totalCredit: roundToDollar(saved.totalCredits || (saved.totalFederalCredit || 0) + (saved.totalStateCredits || 0))
+        };
       }
-      
-      return {
-        year: item.year,
-        federalCredit: roundToDollar(federalCredit),
-        stateCredit: roundToDollar(stateCredit),
-        totalCredit: roundToDollar(federalCredit + stateCredit)
-      };
+      // Fallback: for current year use in-memory results, prefer ASC when no saved
+      if (year.year === currentYear && results?.federalCredits) {
+        // ASC fallback per requirement
+        const ascFallback = (results.federalCredits.asc?.adjustedCredit || results.federalCredits.asc?.credit || 0);
+        const stdValue = (results.federalCredits.standard?.adjustedCredit || results.federalCredits.standard?.credit || 0);
+        const federalCredit = ascFallback || stdValue;
+        return {
+          year: year.year,
+          federalCredit: roundToDollar(federalCredit),
+          stateCredit: roundToDollar(totalStateCredits || 0),
+          totalCredit: roundToDollar((federalCredit || 0) + (totalStateCredits || 0))
+        };
+      }
+      return { year: year.year, federalCredit: 0, stateCredit: 0, totalCredit: 0 };
     });
 
     // Efficiency metric chart data (simplified to avoid division by zero)
@@ -1708,74 +1814,60 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
       
       {/* Header with Year Selector and Filing Guide Button */}
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow-lg p-6 text-white">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
           {/* Left: Title, Year Selector, Filing Guide */}
-          <div className="flex items-center mb-4 md:mb-0">
+          <div className="flex items-center mb-4 lg:mb-0 flex-1 min-w-[40%]">
             <TrendingUp className="w-8 h-8 mr-3" />
             <div>
               <h2 className="text-3xl font-bold">R&D Tax Credits</h2>
               <div className="text-sm opacity-80">Federal + State Credits</div>
               <div className="flex items-center space-x-2 mt-2">
-                <label className="text-sm opacity-90">Year:</label>
-                <select
-                  value={selectedActivityYearId}
-                  onChange={async (e) => {
-                    const newYearId = e.target.value;
-                    const selectedYear = availableActivityYears.find(y => y.id === newYearId);
-                    
-                    console.log(`🔄 CRITICAL: CalculationStep year switch to ${newYearId} (${selectedYear?.year})`);
-                    console.log('🧹 FORCING QRE data isolation for CalculationStep');
-                    
-                    // CRITICAL: Update year selection and clear cached data
-                    setSelectedActivityYearId(newYearId);
-                    setSelectedYearId(newYearId);
-                    if (selectedYear) {
-                      setSelectedActivityYear(selectedYear.year);
-                    }
-                    
-                    // CRITICAL: Clear cached calculation results to prevent leakage
-                    setResults(null);
-                    setHistoricalCards([]);
-                    setAllYears([]);
-                    setStateCredits([]);
-                    setStateCalculations([]);
-                    setAvailableActivityYears([]);
-                    
-                    // CRITICAL: Reload locked QRE values and recalculate for the new year
-                    console.log('🔒 RELOADING locked QRE values and calculations for CalculationStep year:', newYearId);
-                    setLoading(true);
-                    try {
-                      await loadLockedQREValues();
-                      // CRITICAL: Force complete recalculation with new year data
-                      await loadCalculations();
-                      console.log('✅ CalculationStep year switch complete - QRE data isolated and recalculated');
-                    } catch (error) {
-                      console.error('❌ Error reloading QRE values and calculations in CalculationStep:', error);
-                    } finally {
-                      setLoading(false);
-                    }
-                  }}
-                  className="px-3 py-1 bg-white/10 border border-white/20 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/50"
-                >
-                  {availableActivityYears.map(y => (
-                    <option key={y.id} value={y.id}>{y.year}</option>
-                  ))}
-                </select>
-                {/* Refresh Button */}
                 <button
                   onClick={handleRecalculate}
                   disabled={loading}
-                  className="ml-2 flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-all duration-200 text-sm font-medium shadow-sm border border-white/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="ml-0 flex items-center gap-2 px-3 py-1 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-all duration-200 text-sm font-medium shadow-sm border border-white/30 disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Refresh calculations with latest data"
                 >
                   <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
                 </button>
-      </div>
+              </div>
           </div>
         </div>
-          {/* Right: Credit Summary Card */}
-          <div className="flex flex-col items-end">
-            <div className="bg-white/90 rounded-xl shadow-lg px-6 py-4 min-w-[260px] flex flex-col items-end space-y-2">
+          {/* Right: Charts to the left, Summary card to the right */}
+          <div className="w-full lg:w-auto">
+            <div className="flex flex-row items-start justify-end gap-4">
+              {/* Charts block (left of summary) */}
+              <div className="mt-1">
+                <div className="flex flex-row gap-3 justify-end items-start">
+                  <KPIChart 
+                    title="QREs" 
+                    data={(chartData?.qreData || [])
+                      .sort((a, b) => a.year - b.year)
+                      .map(item => ({ label: item.year.toString(), value: item.qre }))} 
+                    type="line" 
+                    color="bg-blue-500" 
+                  />
+                  <KPIChart 
+                    title="Federal Credits" 
+                    data={(chartData?.creditData || [])
+                      .sort((a, b) => a.year - b.year)
+                      .map(item => ({ label: item.year.toString(), value: item.federalCredit }))} 
+                    type="line" 
+                    color="bg-green-500" 
+                  />
+                  <KPIChart 
+                    title="State Credits" 
+                    data={(chartData?.creditData || [])
+                      .sort((a, b) => a.year - b.year)
+                      .map(item => ({ label: item.year.toString(), value: item.stateCredit }))} 
+                    type="line" 
+                    color="bg-purple-500" 
+                  />
+                </div>
+              </div>
+
+              {/* Summary card (right) */}
+              <div className="bg-white/90 rounded-xl shadow-lg px-5 py-4 w-full md:min-w-[300px] max-w-[420px] flex flex-col items-end space-y-2">
               <div className="flex items-center justify-between w-full">
                 <span className="flex items-center text-sm font-medium text-blue-900">
                   <Building2 className="w-4 h-4 mr-1 text-blue-500" />
@@ -1807,8 +1899,9 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                 <span className="text-2xl font-extrabold text-purple-700 drop-shadow-lg">
                   {formatCurrency((selectedMethod === 'asc' ? federalCredits.asc.credit : federalCredits.standard.credit) + (enableStateCredits ? totalStateCredits : 0))}
                 </span>
-          </div>
-        </div>
+            </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1841,10 +1934,16 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
         </div>
         <div className="bg-indigo-50 rounded-lg p-4">
           <div className="text-2xl font-bold text-indigo-900">
-            {(selectedYearData?.supply_subcomponents?.length || 0) + (selectedYearData?.employees?.length || 0) + (selectedYearData?.contractors_with_qre?.length || 0)}
+            {(() => {
+              const byId = selectedYearData?.id;
+              const selectedCount = (byId && selectedSubcomponentCounts[byId]) || 0;
+              const internalCount = (selectedYearData?.employees?.length || 0) + (selectedYearData?.contractors_with_qre?.length || 0) + (selectedYearData?.supply_subcomponents?.length || 0);
+              // Use selected subcomponents if present; otherwise fallback to internal items
+              return selectedCount > 0 ? selectedCount : internalCount;
+            })()}
           </div>
           <div className="text-sm text-indigo-600">Total Subcomponents</div>
-            </div>
+        </div>
           </div>
 
       {/* QRE Summary Cards */}
@@ -1875,36 +1974,10 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
             </div>
       </div>
 
-      {/* KPI Charts */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <KPIChart 
-          title="QREs Over Years" 
-          data={(chartData?.qreData || [])
-            .sort((a, b) => a.year - b.year)
-            .map(item => ({ label: item.year.toString(), value: item.qre }))} 
-          type="line" 
-          color="bg-blue-500" 
-        />
-        <KPIChart 
-          title="Total Federal Credits Over Years" 
-          data={(chartData?.creditData || [])
-            .sort((a, b) => a.year - b.year)
-            .map(item => ({ label: item.year.toString(), value: item.federalCredit }))} 
-          type="line" 
-          color="bg-green-500" 
-        />
-        <KPIChart 
-          title="Total State Credits Over Years" 
-          data={(chartData?.creditData || [])
-            .sort((a, b) => a.year - b.year)
-            .map(item => ({ label: item.year.toString(), value: item.stateCredit }))} 
-          type="line" 
-          color="bg-purple-500" 
-        />
-      </div>
+      {/* KPI Charts moved into header */}
 
-      {/* Two Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Stack Federal then State Pro Forma */}
+      <div className="space-y-6">
         {/* Federal Credits - INTEGRATED */}
         <IntegratedFederalCredits
           businessData={wizardState.business}
@@ -1918,7 +1991,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           onTaxRateChange={setCorporateTaxRate}
         />
 
-        {/* State Credits - INTEGRATED */}
+        {/* State Credits - INTEGRATED (stacked under Federal) */}
         {(() => {
           console.log('🔍 CalculationStep - About to render IntegratedStateCredits with props:', {
             businessData: wizardState.business,
@@ -1947,16 +2020,16 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Historical Summary</h3>
           
           {(() => {
-            const currentYear = new Date().getFullYear();
-            const cutoffYear = currentYear - 8;
-            const recentCards = historicalCards.filter(card => card.year >= cutoffYear);
-            const olderCards = historicalCards.filter(card => card.year < cutoffYear);
+            // Ascending left→right: oldest on left, most recent on right
+            const sortedAsc = [...historicalCards].sort((a, b) => a.year - b.year);
+            const topFour = sortedAsc.slice(-4); // last 4 (most recent) in ascending order
+            const olderCards = sortedAsc.slice(0, Math.max(0, sortedAsc.length - 4));
             
             return (
               <>
-                {/* Recent Years (within 8 years) */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {recentCards.map((card, idx) => (
+                {/* Top four most recent years */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {topFour.map((card, idx) => (
               <div key={`${card.id || card.year}-${idx}`} className="bg-gradient-to-br from-gray-50 to-white rounded-lg border border-gray-200 p-4">
                 <div className="flex items-center justify-between mb-3">
                   <div className="text-lg font-bold text-gray-900">{card.year}</div>
@@ -2215,6 +2288,7 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           selectedYear={selectedYearData}
           calculations={results}
           selectedMethod={selectedMethod}
+          clientName={wizardState?.business?.client_full_name}
           debugData={{
             selectedMethod,
             results,

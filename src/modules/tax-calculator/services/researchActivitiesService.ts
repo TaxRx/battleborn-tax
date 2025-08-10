@@ -118,7 +118,8 @@ export class ResearchActivitiesService {
             is_active
           )
         `)
-        .eq('business_year_id', businessYearId);
+        .eq('business_year_id', businessYearId)
+        .eq('rd_research_activities.is_active', true);
 
       if (error) {
         console.error('[ResearchActivitiesService] Error fetching selected activities:', error);
