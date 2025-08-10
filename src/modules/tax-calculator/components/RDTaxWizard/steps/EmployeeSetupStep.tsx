@@ -11,6 +11,7 @@ import { toast } from 'react-toastify';
 import { SupplyManagementService, QuickSupplyEntry } from '../../../services/supplyManagementService';
 import ContractorAllocationsModal from './ContractorAllocationsModal';
 import AllocationReportModal from '../../AllocationReport/AllocationReportModal';
+import EmployeeRoleDesignationsCard from './support/EmployeeRoleDesignationsCard';
 import LockBanner from '../../../../../components/common/LockBanner';
 import useLockStore from '../../../../../store/lockStore';
 import ProgressTrackingService from '../../../services/progressTrackingService';
@@ -5462,6 +5463,16 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                       No invoices uploaded yet
                     </div>
                   </div>
+                </div>
+
+                {/* Employee Role Designations (New) */}
+                <div className="lg:col-span-3">
+                  {businessId && businessYearId && (
+                    // Lazy import avoided for simplicity here
+                    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                    // @ts-ignore
+                    <EmployeeRoleDesignationsCard businessId={businessId} businessYearId={businessYearId} />
+                  )}
                 </div>
 
                 {/* 1099s Section */}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Calendar, Download, FileText, CheckCircle, Clock, AlertCircle, Eye, PenTool, User, Building2, Shield, Award, ChevronRight, XCircle } from 'lucide-react';
+import { Calendar, Download, FileText, CheckCircle, Clock, AlertCircle, Eye, PenTool, User, Building2, Shield, Award, ChevronRight, XCircle, Users, Sliders } from 'lucide-react';
 
 // Create a separate supabase client instance for the portal
 import { createClient } from '@supabase/supabase-js';
@@ -113,6 +113,9 @@ const ClientPortal: React.FC = () => {
   const [currentDocumentTitle, setCurrentDocumentTitle] = useState('');
   const [showAllocationModal, setShowAllocationModal] = useState(false);
   const [AllocationReportModalComponent, setAllocationReportModalComponent] = useState<React.ComponentType<any> | null>(null);
+  const [dashboardTiles, setDashboardTiles] = useState<any | null>(null);
+  const [showRoleDesignations, setShowRoleDesignations] = useState(false);
+  const [roleDesignationRows, setRoleDesignationRows] = useState<any[]>([]);
 
   // Check for admin preview mode and extract URL parameters
   const searchParams = new URLSearchParams(window.location.search);
@@ -552,6 +555,7 @@ const ClientPortal: React.FC = () => {
       console.log('✅ [ClientPortal] selectedYear exists, calling loadDocumentStatus and loadQREBreakdown');
       loadDocumentStatus();
       loadQREBreakdown();
+      loadDashboardTiles();
       
       // Only load jurat signatures if we haven't checked them for this year yet
       // This prevents the circular dependency issue
@@ -565,6 +569,20 @@ const ClientPortal: React.FC = () => {
       console.warn('⚠️ [ClientPortal] selectedYear is null/undefined, not loading document status or QRE breakdown');
     }
   }, [selectedYear?.year, selectedYear?.id]); // Use stable primitive values instead of the whole object
+
+  const loadDashboardTiles = async () => {
+    if (!selectedYear || !portalData?.business_id) return;
+    const client = getSupabaseClient();
+    const firstById = selectedYear.business_years?.[0]?.id;
+    if (!firstById) return;
+    const { data } = await client
+      .from('rd_client_portal_dashboard')
+      .select('*')
+      .eq('business_id', portalData.business_id)
+      .eq('business_year_id', firstById)
+      .maybeSingle();
+    setDashboardTiles(data || null);
+  };
 
   const loadDocumentStatus = async () => {
     console.log('🚀 [ClientPortal] loadDocumentStatus called');
@@ -1287,6 +1305,24 @@ const ClientPortal: React.FC = () => {
     }
   };
 
+  // Role Designations (client view)
+  const openRoleDesignations = async () => {
+    try {
+      if (!selectedYear) return;
+      const client = getSupabaseClient();
+      const byId = selectedYear.business_years?.[0]?.id;
+      if (!byId) return;
+      const { data } = await client
+        .from('rd_employee_role_designations_portal')
+        .select('*')
+        .eq('business_year_id', byId);
+      setRoleDesignationRows(data || []);
+      setShowRoleDesignations(true);
+    } catch (e) {
+      console.error('Failed to load role designations for portal:', e);
+    }
+  };
+
   // Load QRE breakdown data for expense distribution chart
   const loadQREBreakdown = async () => {
     if (!selectedYear) {
@@ -1545,6 +1581,30 @@ This annual signature covers all business entities and research activities for t
           <div className="lg:col-span-3">
             {selectedYear && (
               <div className="space-y-8">
+                {/* Dashboard Tiles */}
+                {dashboardTiles && (
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="bg-white rounded-lg shadow p-4">
+                      <div className="text-sm text-gray-500">Ready for Review</div>
+                      <div className={`text-xl font-bold ${dashboardTiles.ready_for_review ? 'text-emerald-600' : 'text-gray-400'}`}>{dashboardTiles.ready_for_review ? 'Yes' : 'No'}</div>
+                    </div>
+                    <div className="bg-white rounded-lg shadow p-4">
+                      <div className="text-sm text-gray-500">Jurat Required</div>
+                      <div className={`text-xl font-bold ${dashboardTiles.jurat_required ? 'text-red-600' : 'text-gray-400'}`}>{dashboardTiles.jurat_required ? 'Yes' : 'No'}</div>
+                    </div>
+                    <div className="bg-white rounded-lg shadow p-4">
+                      <div className="text-sm text-gray-500">Role Designations Needed</div>
+                      <div className={`text-xl font-bold ${dashboardTiles.role_designations_needed ? 'text-indigo-600' : 'text-gray-400'}`}>{dashboardTiles.role_designations_needed ? 'Yes' : 'No'}</div>
+                      {dashboardTiles.role_designations_needed && (
+                        <button onClick={() => openRoleDesignations()} className="text-xs text-indigo-600 underline mt-2">Open</button>
+                      )}
+                    </div>
+                    <div className="bg-white rounded-lg shadow p-4">
+                      <div className="text-sm text-gray-500">Subcomponent Review</div>
+                      <div className={`text-xl font-bold ${dashboardTiles.subcomponent_review_recommended ? 'text-amber-600' : 'text-gray-400'}`}>{dashboardTiles.subcomponent_review_recommended ? 'Yes' : 'No'}</div>
+                    </div>
+                  </div>
+                )}
                 {/* Year Overview */}
                 <div className="bg-white rounded-xl shadow-lg p-6">
                   <div className="flex items-center justify-between mb-6">
@@ -2028,6 +2088,62 @@ This annual signature covers all business entities and research activities for t
         </div>
       )}
 
+      {/* Role Designations Modal */}
+      {showRoleDesignations && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4 text-white flex items-center justify-between">
+              <h3 className="text-xl font-semibold flex items-center"><Users className="w-5 h-5 mr-2"/>Employee Role Designations</h3>
+              <button onClick={() => setShowRoleDesignations(false)} className="text-white hover:text-gray-200">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-gray-600">Assign roles and adjust participation for your employees. Changes here are saved for your advisor to review and apply.</p>
+              <div className="overflow-auto rounded-lg border">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-700">
+                    <tr>
+                      <th className="px-3 py-2 text-left">First Name</th>
+                      <th className="px-3 py-2 text-left">Last Name</th>
+                      <th className="px-3 py-2 text-right">Wage</th>
+                      <th className="px-3 py-2 text-left">Role (optional)</th>
+                      <th className="px-3 py-2 text-left">Applied %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {roleDesignationRows.map((r) => (
+                      <tr key={r.id} className="border-t">
+                        <td className="px-3 py-2">{r.first_name}</td>
+                        <td className="px-3 py-2">{r.last_name}</td>
+                        <td className="px-3 py-2 text-right">${r.annual_wage?.toLocaleString?.() || r.annual_wage}</td>
+                        <td className="px-3 py-2">
+                          <input className="border rounded px-2 py-1 w-48" defaultValue={r.role_name || ''} onBlur={async (e) => {
+                            const client = getSupabaseClient();
+                            await client.from('rd_employee_role_designations').update({ role_name: e.target.value || null }).eq('id', r.id);
+                          }} placeholder="Select or type" />
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-3">
+                            <input type="number" className="border rounded px-2 py-1 w-24" defaultValue={r.applied_percent ?? ''} onBlur={async (e) => {
+                              const val = e.target.value ? parseFloat(e.target.value) : null;
+                              const client = getSupabaseClient();
+                              await client.from('rd_employee_role_designations').update({ applied_percent: val }).eq('id', r.id);
+                            }} />
+                            <div className="flex items-center text-gray-600 text-xs"><Sliders className="w-4 h-4 mr-1"/>Activities by advisor</div>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {roleDesignationRows.length === 0 && (
+                      <tr><td className="px-3 py-6 text-center text-gray-500" colSpan={5}>No entries available.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div className="text-sm text-gray-500">Note: Activity sliders are simplified and will be finalized by your advisor.</div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Allocation Report Modal - Temporarily disabled for cache clearing */}
 
       {/* Signature Pad Modal */}
