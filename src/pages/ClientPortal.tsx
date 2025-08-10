@@ -116,6 +116,10 @@ const ClientPortal: React.FC = () => {
   const [dashboardTiles, setDashboardTiles] = useState<any | null>(null);
   const [showRoleDesignations, setShowRoleDesignations] = useState(false);
   const [roleDesignationRows, setRoleDesignationRows] = useState<any[]>([]);
+  const [roleOptions, setRoleOptions] = useState<any[]>([]);
+  const [allocationRow, setAllocationRow] = useState<any | null>(null);
+  const [allocationActivities, setAllocationActivities] = useState<any[]>([]);
+  const [allocationValues, setAllocationValues] = useState<Record<string, number>>({});
 
   // Check for admin preview mode and extract URL parameters
   const searchParams = new URLSearchParams(window.location.search);
@@ -1317,6 +1321,15 @@ const ClientPortal: React.FC = () => {
         .select('*')
         .eq('business_year_id', byId);
       setRoleDesignationRows(data || []);
+      // Load role options for this year
+      const { data: roles } = await client
+        .from('rd_roles')
+        .select('id,name,business_year_id')
+        .eq('business_id', portalData?.business_id || '')
+        .or(`business_year_id.is.null,business_year_id.eq.${byId}`)
+        .order('name');
+      const opts = [{ id: null, name: 'N/A' }, ...(roles || [])];
+      setRoleOptions(opts);
       setShowRoleDesignations(true);
     } catch (e) {
       console.error('Failed to load role designations for portal:', e);
@@ -2107,6 +2120,7 @@ This annual signature covers all business entities and research activities for t
                       <th className="px-3 py-2 text-right">Wage</th>
                       <th className="px-3 py-2 text-left">Role (optional)</th>
                       <th className="px-3 py-2 text-left">Applied %</th>
+                      <th className="px-3 py-2 text-left">Allocation</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2116,20 +2130,62 @@ This annual signature covers all business entities and research activities for t
                         <td className="px-3 py-2">{r.last_name}</td>
                         <td className="px-3 py-2 text-right">${r.annual_wage?.toLocaleString?.() || r.annual_wage}</td>
                         <td className="px-3 py-2">
-                          <input className="border rounded px-2 py-1 w-48" defaultValue={r.role_name || ''} onBlur={async (e) => {
-                            const client = getSupabaseClient();
-                            await client.from('rd_employee_role_designations').update({ role_name: e.target.value || null }).eq('id', r.id);
-                          }} placeholder="Select or type" />
+                          <select
+                            className="border rounded px-2 py-1 w-48"
+                            defaultValue={r.role_id || ''}
+                            onChange={async (e) => {
+                              const client = getSupabaseClient();
+                              const roleId = e.target.value || null;
+                              const roleName = roleOptions.find(ro => String(ro.id) === String(roleId))?.name || null;
+                              await client.from('rd_employee_role_designations').update({ role_id: roleId, role_name: roleName }).eq('id', r.id);
+                            }}
+                          >
+                            {roleOptions.map(opt => (
+                              <option key={String(opt.id)} value={opt.id || ''}>{opt.name}</option>
+                            ))}
+                          </select>
                         </td>
                         <td className="px-3 py-2">
-                          <div className="flex items-center gap-3">
-                            <input type="number" className="border rounded px-2 py-1 w-24" defaultValue={r.applied_percent ?? ''} onBlur={async (e) => {
-                              const val = e.target.value ? parseFloat(e.target.value) : null;
-                              const client = getSupabaseClient();
-                              await client.from('rd_employee_role_designations').update({ applied_percent: val }).eq('id', r.id);
-                            }} />
-                            <div className="flex items-center text-gray-600 text-xs"><Sliders className="w-4 h-4 mr-1"/>Activities by advisor</div>
+                          {/* Progress bar with inline editing via slider */}
+                          <div className="flex items-center gap-3 w-64">
+                            <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                              <div className="h-full bg-indigo-600" style={{ width: `${Math.min(100, Math.max(0, r.applied_percent || 0))}%` }} />
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              step={1}
+                              defaultValue={r.applied_percent ?? 0}
+                              onMouseUp={async (e) => {
+                                const val = parseInt((e.target as HTMLInputElement).value, 10);
+                                const client = getSupabaseClient();
+                                await client.from('rd_employee_role_designations').update({ applied_percent: val }).eq('id', r.id);
+                              }}
+                            />
+                            <div className="text-xs text-gray-700 w-10 text-right">{Math.round(r.applied_percent || 0)}%</div>
                           </div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <button
+                            onClick={() => {
+                              setAllocationRow(r);
+                              const alloc = (r.activity_allocations || {}) as Record<string, number>;
+                              setAllocationValues(alloc);
+                              // Load activities list
+                              (async () => {
+                                const client = getSupabaseClient();
+                                const { data: acts } = await client
+                                  .from('rd_selected_activities')
+                                  .select('activity_id, research_activity:activity_id(id,title)')
+                                  .eq('business_year_id', selectedYear.business_years[0]?.id || '');
+                                setAllocationActivities((acts || []).map(a => ({ id: a.research_activity?.id, title: a.research_activity?.title })).filter(a => a.id));
+                              })();
+                            }}
+                            className="px-3 py-1 bg-white border rounded hover:bg-gray-50 text-sm"
+                          >
+                            Edit
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -2140,6 +2196,60 @@ This annual signature covers all business entities and research activities for t
                 </table>
               </div>
               <div className="text-sm text-gray-500">Note: Activity sliders are simplified and will be finalized by your advisor.</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Simplified Allocation Modal */}
+      {allocationRow && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-3xl w-full shadow-2xl">
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4 text-white flex items-center justify-between">
+              <h3 className="text-xl font-semibold flex items-center"><Sliders className="w-5 h-5 mr-2"/>Allocation - {allocationRow.first_name} {allocationRow.last_name}</h3>
+              <button onClick={() => setAllocationRow(null)} className="text-white hover:text-gray-200">✕</button>
+            </div>
+            <div className="p-6 space-y-6">
+              <p className="text-gray-600">Adjust research activity allocations. The sum of sliders cannot exceed the Applied % ({Math.round(allocationRow.applied_percent || 0)}%).</p>
+              <div className="space-y-4">
+                {allocationActivities.map((act) => {
+                  const current = allocationValues[act.id] || 0;
+                  const total = Object.values(allocationValues).reduce((s, v) => s + (v || 0), 0);
+                  const remaining = Math.max(0, (allocationRow.applied_percent || 0) - (total - current));
+                  return (
+                    <div key={act.id} className="flex items-center gap-4">
+                      <div className="w-48 text-sm text-gray-800">{act.title}</div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={current}
+                        onChange={(e) => {
+                          const val = Math.min(remaining, parseInt(e.target.value, 10));
+                          setAllocationValues(prev => ({ ...prev, [act.id]: val }));
+                        }}
+                        className="flex-1"
+                      />
+                      <div className="w-12 text-right text-sm">{Math.round(current)}%</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button onClick={() => setAllocationRow(null)} className="px-4 py-2 rounded border">Cancel</button>
+                <button
+                  onClick={async () => {
+                    const client = getSupabaseClient();
+                    await client
+                      .from('rd_employee_role_designations')
+                      .update({ activity_allocations: allocationValues, status: 'client_updated' })
+                      .eq('id', allocationRow.id);
+                    setAllocationRow(null);
+                  }}
+                  className="px-4 py-2 rounded bg-indigo-600 text-white"
+                >Save</button>
+              </div>
             </div>
           </div>
         </div>
