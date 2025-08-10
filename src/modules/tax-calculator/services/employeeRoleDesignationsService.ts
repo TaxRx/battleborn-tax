@@ -42,7 +42,7 @@ export const employeeRoleDesignationsService = {
     // Prefer roles scoped to this business year; include global/business defaults (null business_year_id)
     const { data, error } = await supabase
       .from('rd_roles')
-      .select('*')
+      .select('id,name,baseline_applied_percent,business_year_id')
       .eq('business_id', businessId)
       .or(`business_year_id.is.null,business_year_id.eq.${businessYearId}`)
       .order('name', { ascending: true });
@@ -73,6 +73,19 @@ export const employeeRoleDesignationsService = {
     if (byErr) throw byErr;
     const yearToId = new Map<number, string>((bys || []).map(r => [r.year as number, r.id as string]));
 
+    // Preload roles for matching by name (case-insensitive), prefer year-scoped
+    const byIds = Array.from(new Set((bys || []).map(b => b.id)));
+    const { data: rolesAll } = await supabase
+      .from('rd_roles')
+      .select('id,name,baseline_applied_percent,business_year_id')
+      .eq('business_id', businessId);
+    const roleIndex = (rolesAll || []).reduce((map, r: any) => {
+      const key = (r.name || '').toLowerCase();
+      if (!map[key]) map[key] = [] as any[];
+      map[key].push(r);
+      return map;
+    }, {} as Record<string, any[]>);
+
     const payload: EmployeeRoleDesignationRow[] = [];
     for (const r of rows) {
       const firstName = (r['First Name'] || r['first_name'] || r['firstName'] || '').trim();
@@ -83,6 +96,19 @@ export const employeeRoleDesignationsService = {
       const yearNum = parseInt(yearStr, 10);
       if (!firstName || !lastName || !yearNum || !yearToId.get(yearNum)) continue;
       const annualWage = parseFloat(wageStr || '0') || 0;
+      // Attempt role match by name
+      let role_id: string | null | undefined = null;
+      let applied_percent: number | undefined;
+      if (roleName) {
+        const candidates = roleIndex[(roleName || '').toLowerCase()] || [];
+        let match = candidates.find((c: any) => c.business_year_id === yearToId.get(yearNum));
+        if (!match) match = candidates.find((c: any) => !c.business_year_id);
+        if (match) {
+          role_id = match.id;
+          applied_percent = typeof match.baseline_applied_percent === 'number' ? match.baseline_applied_percent : undefined;
+        }
+      }
+
       payload.push({
         business_id: businessId,
         business_year_id: yearToId.get(yearNum)!,
@@ -90,6 +116,8 @@ export const employeeRoleDesignationsService = {
         last_name: lastName,
         annual_wage: annualWage,
         role_name: roleName,
+        role_id,
+        applied_percent,
         status: 'draft',
         client_visible: false,
         activity_allocations: {},

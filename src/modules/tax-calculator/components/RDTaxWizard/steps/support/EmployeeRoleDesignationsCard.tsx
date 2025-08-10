@@ -33,7 +33,7 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [businessId, businessYearId]);
 
-  const roleOptions = useMemo(() => [{ id: null, name: '— None —' }, ...roles], [roles]);
+  const roleOptions = useMemo(() => [{ id: null, name: '— None —', baseline_applied_percent: 0 }, ...roles], [roles]);
 
   const onUploadCSV = async () => {
     if (!file) return;
@@ -137,7 +137,15 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
                   />
                 </td>
                 <td className="px-3 py-2">
-                  <select className="border rounded px-2 py-1" value={r.role_id || ''} onChange={e => onUpdateCell(r.id, { role_id: e.target.value || null })}>
+                  <select
+                    className="border rounded px-2 py-1"
+                    value={r.role_id || ''}
+                    onChange={async e => {
+                      const opt = roleOptions.find(o => String(o.id) === String(e.target.value));
+                      const baseline = opt ? (opt.baseline_applied_percent ?? 0) : 0;
+                      await onUpdateCell(r.id, { role_id: opt?.id || null, role_name: opt?.name || null, applied_percent: baseline });
+                    }}
+                  >
                     {roleOptions.map(opt => (
                       <option key={String(opt.id)} value={opt.id || ''}>{opt.name}</option>
                     ))}

@@ -2136,8 +2136,13 @@ This annual signature covers all business entities and research activities for t
                             onChange={async (e) => {
                               const client = getSupabaseClient();
                               const roleId = e.target.value || null;
-                              const roleName = roleOptions.find(ro => String(ro.id) === String(roleId))?.name || null;
-                              await client.from('rd_employee_role_designations').update({ role_id: roleId, role_name: roleName }).eq('id', r.id);
+                              const opt = roleOptions.find(ro => String(ro.id) === String(roleId));
+                              const roleName = opt?.name || null;
+                              const baseline = typeof opt?.baseline_applied_percent === 'number' ? opt?.baseline_applied_percent : null;
+                              await client
+                                .from('rd_employee_role_designations')
+                                .update({ role_id: roleId, role_name: roleName, applied_percent: baseline })
+                                .eq('id', r.id);
                             }}
                           >
                             {roleOptions.map(opt => (
