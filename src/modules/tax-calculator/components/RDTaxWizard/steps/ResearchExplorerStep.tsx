@@ -2275,6 +2275,8 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       }
 
       // STEP 4: Copy Selected Subcomponents
+      // Guard: Do NOT paste subcomponents into a target year that predates their start_year
+      // We collect the set of subcomponents that are actually copied so we can filter employee allocations accordingly
       const { data: sourceSubcomponents, error: subcomponentsError } = await supabase
         .from('rd_selected_subcomponents')
         .select('*')
@@ -2284,9 +2286,17 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         console.error('Error fetching source subcomponents:', subcomponentsError);
       } else if (sourceSubcomponents && sourceSubcomponents.length > 0) {
         console.log(`🧩 Copying ${sourceSubcomponents.length} subcomponents...`);
+        const allowedTargetSubcomponentIds = new Set<string>();
         
         for (const subcomponent of sourceSubcomponents) {
           try {
+            // Skip subcomponents whose start_year is after the target year
+            const scStartYear = typeof subcomponent.start_year === 'number' ? subcomponent.start_year : parseInt(String(subcomponent.start_year || ''), 10);
+            if (targetYear && !Number.isNaN(scStartYear) && targetYear < scStartYear) {
+              console.log(`⏭️ Skipping subcomponent ${subcomponent.subcomponent_id} (start_year=${scStartYear}) for target year ${targetYear}`);
+              continue;
+            }
+
             await supabase
               .from('rd_selected_subcomponents')
               .insert({
@@ -2320,6 +2330,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
                 practice_percent: subcomponent.practice_percent
               });
             console.log(`✅ Copied subcomponent ${subcomponent.subcomponent_id}`);
+            allowedTargetSubcomponentIds.add(subcomponent.subcomponent_id);
     } catch (error) {
             console.error(`❌ Error copying subcomponent ${subcomponent.subcomponent_id}:`, error);
           }
@@ -2327,6 +2338,7 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
       }
 
       // STEP 5: Copy Employee Subcomponents (Employee Allocations)
+      // Guard: Only copy allocations for subcomponents that were actually copied in STEP 4
       const { data: sourceEmployeeSubcomponents, error: empSubError } = await supabase
         .from('rd_employee_subcomponents')
         .select('*')
@@ -2339,6 +2351,19 @@ const ResearchExplorerStep: React.FC<ResearchExplorerStepProps> = ({
         
         for (const empSub of sourceEmployeeSubcomponents) {
           try {
+            // If STEP 4 ran and produced a set of allowed subcomponents, enforce it
+            // Note: If there were no source subcomponents (edge), we won't restrict by set
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-ignore: allowedTargetSubcomponentIds is defined in STEP 4 block
+            if (typeof allowedTargetSubcomponentIds !== 'undefined' && allowedTargetSubcomponentIds.size > 0) {
+              // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+              // @ts-ignore
+              if (!allowedTargetSubcomponentIds.has(empSub.subcomponent_id)) {
+                console.log(`⏭️ Skipping employee allocation for subcomponent ${empSub.subcomponent_id} (not available in target year due to start_year guard)`);
+                continue;
+              }
+            }
+
             await supabase
               .from('rd_employee_subcomponents')
               .insert({
