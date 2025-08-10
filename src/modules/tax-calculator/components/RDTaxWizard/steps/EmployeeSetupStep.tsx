@@ -3850,6 +3850,8 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         let successCount = 0;
         let errorCount = 0;
         let invalidYearCount = 0;
+        let skippedMissingYearCount = 0; // New: attempts to import into a non-existent year
+        let skippedNoResearchDesignCount = 0; // New: attempts to import where research design not set up
         let rolesAssignedCount = 0;
         let detailedErrors: Array<{employee: string, error: string, row: number}> = [];
         
@@ -3921,54 +3923,58 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
             continue;
           }
           
-          // Find or create the target business year (NO DEFAULT FALLBACK TO CURRENT YEAR)
+          // Find the target business year (do NOT create new years during CSV import)
           let targetBusinessYearId: string;
           
-          // Find existing business year or create new one
+          // Find existing business year only
           console.log(`🔍 Looking for business year ${yearNumber} in available years:`, availableYears.map(y => `${y.year} (${y.id})`));
           const targetYear = availableYears.find(y => y.year === yearNumber);
           if (targetYear) {
             targetBusinessYearId = targetYear.id;
             console.log(`✅ Found business year ${yearNumber} with ID: ${targetYear.id}`);
           } else {
-            // Create a new business year for this year (with user confirmation)
-            try {
-              targetBusinessYearId = await createBusinessYearWithConfirmation(yearNumber, businessId);
-              if (!targetBusinessYearId) {
-                const errorMessage = `Failed to create or find business year ${yearNumber}`;
-                const employeeName = `${firstName} ${lastName}`;
-                
-                console.warn(`⚠️ Failed to get business year ID for ${yearNumber}. Skipping employee ${firstName} ${lastName}.`);
-                
-                detailedErrors.push({
-                  employee: employeeName,
-                  error: errorMessage,
-                  row: i + 2 // +2 because: +1 for 0-based index, +1 for header row
-                });
-                
-                invalidYearCount++;
-                errorCount++;
-                continue;
-              }
-            } catch (error) {
-              const errorMessage = `Failed to create business year ${yearNumber}: ${(error as Error).message || 'Unknown error'}`;
+            // Skip import when target year does not exist
+            const employeeName = `${firstName} ${lastName}`;
+            const errorMessage = `Target year ${yearNumber} does not exist for this business. Import only allowed for years with existing Research Design.`;
+            console.warn(`⚠️ ${errorMessage} Skipping employee ${employeeName}.`);
+            detailedErrors.push({
+              employee: employeeName,
+              error: errorMessage,
+              row: i + 2
+            });
+            skippedMissingYearCount++;
+            errorCount++;
+            continue;
+          }
+          
+          // Verify Research Design exists for the target business year before importing
+          try {
+            const { count: rdConfigCount, error: rdCheckError } = await supabase
+              .from('rd_selected_subcomponents')
+              .select('id', { count: 'exact', head: true })
+              .eq('business_year_id', targetBusinessYearId);
+
+            if (rdCheckError) {
+              console.error('❌ Error checking Research Design configuration:', rdCheckError);
+            }
+
+            if (!rdCheckError && (rdConfigCount === null || rdConfigCount === 0)) {
               const employeeName = `${firstName} ${lastName}`;
-              
-              console.error('❌ Error in business year creation:', error);
-              console.warn(`⚠️ Failed to create year ${yearNumber} for employee ${firstName} ${lastName}. ${(error as Error).message || 'Unknown error'}`);
-              
+              const errorMessage = `No Research Design found for year ${yearNumber}. Employees can only be imported into years with existing Research Design.`;
+              console.warn(`⚠️ ${errorMessage} Skipping employee ${employeeName}.`);
               detailedErrors.push({
                 employee: employeeName,
                 error: errorMessage,
-                row: i + 2 // +2 because: +1 for 0-based index, +1 for header row
+                row: i + 2
               });
-              
-              invalidYearCount++;
+              skippedNoResearchDesignCount++;
               errorCount++;
               continue;
             }
+          } catch (rdGuardErr) {
+            console.error('❌ Unexpected error during Research Design pre-check:', rdGuardErr);
           }
-          
+
           try {
             // Create employee WITHOUT role assignment (as requested)
             console.log(`👤 Creating employee ${firstName} ${lastName} for business year: ${targetBusinessYearId} (Year: ${yearNumber})`);
@@ -4356,6 +4362,8 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         if (errorCount > 0) summary += `, ${errorCount} failed`;
         if (rolesAssignedCount > 0) summary += `, ${rolesAssignedCount} with roles assigned`;
         if (invalidYearCount > 0) summary += `, ${invalidYearCount} with invalid years (skipped)`;
+        if (skippedMissingYearCount > 0) summary += `, ${skippedMissingYearCount} skipped (target year missing)`;
+        if (skippedNoResearchDesignCount > 0) summary += `, ${skippedNoResearchDesignCount} skipped (no Research Design)`;
         
         console.log('📊 Import Summary:', summary);
         
