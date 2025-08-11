@@ -195,7 +195,9 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
                     }}
                   >
                     {roleOptions.map(opt => (
-                      <option key={String(opt.id)} value={opt.id || ''}>{opt.name}</option>
+                      <option key={String(opt.id)} value={opt.id || ''}>
+                        {opt.name}{typeof opt.baseline_applied_percent === 'number' ? ` (${Number(opt.baseline_applied_percent).toFixed(2)}%)` : ''}
+                      </option>
                     ))}
                   </select>
                 </td>

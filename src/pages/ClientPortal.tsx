@@ -1309,6 +1309,72 @@ const ClientPortal: React.FC = () => {
     }
   };
 
+  // Lightweight component for Data Requests list
+  const DataRequestsList: React.FC<{ getSupabaseClient: typeof getSupabaseClient; onSelect: (yr: any) => void }> = ({ getSupabaseClient, onSelect }) => {
+    const [requestYears, setRequestYears] = useState<ApprovedYear[]>([]);
+    useEffect(() => {
+      (async () => {
+        try {
+          const client = getSupabaseClient();
+          // Find all BY with client_visible requests and not approved
+          const { data: reqs } = await client
+            .from('rd_employee_role_designations')
+            .select('business_year_id')
+            .eq('client_visible', true)
+            .neq('status', 'applied');
+          const byIds = Array.from(new Set((reqs || []).map(r => r.business_year_id).filter(Boolean)));
+          if (byIds.length === 0) { setRequestYears([]); return; }
+          const { data: bys } = await client
+            .from('rd_business_years')
+            .select('id, year, business_id')
+            .in('id', byIds);
+          const grouped = (bys || []).reduce((map: Record<number, any[]>, by: any) => {
+            if (!map[by.year]) map[by.year] = [];
+            map[by.year].push({ ...by, business_name: portalData?.business_name || '' });
+            return map;
+          }, {});
+          const list: ApprovedYear[] = Object.entries(grouped).map(([year, arr]) => ({
+            year: parseInt(year, 10),
+            business_years: arr as any,
+            total_qre: 0,
+            jurat_signed: false,
+            all_documents_released: false,
+          })).sort((a,b) => b.year - a.year);
+          setRequestYears(list);
+        } catch (e) {
+          setRequestYears([]);
+        }
+      })();
+    }, []);
+
+    if (requestYears.length === 0) return null;
+    return (
+      <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+        <div className="bg-gradient-to-r from-amber-500 to-orange-600 px-6 py-4">
+          <h2 className="text-lg font-semibold text-white">Data Requests</h2>
+          <p className="text-orange-100 text-sm">Years needing your input</p>
+        </div>
+        <div className="p-2">
+          {requestYears.map((year) => (
+            <button
+              key={`req-${year.year}`}
+              onClick={() => onSelect(year)}
+              className={`w-full p-4 text-left rounded-lg mb-2 transition-all hover:bg-gray-50 border-2 border-transparent`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-gray-900">{year.year}</div>
+                  <div className="text-sm text-gray-600">{year.business_years.length} business{year.business_years.length !== 1 ? 'es' : ''}</div>
+                  <div className="text-sm font-medium text-amber-600">Role Designations Requested</div>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   // Role Designations (client view)
   const openRoleDesignations = async () => {
     try {
@@ -1536,8 +1602,8 @@ This annual signature covers all business entities and research activities for t
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          {/* Sidebar - Year Selection */}
-          <div className="lg:col-span-1">
+           {/* Sidebar - Year Selection */}
+          <div className="lg:col-span-1 space-y-6">
             <div className="bg-white rounded-xl shadow-lg overflow-hidden">
               <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4">
                 <h2 className="text-lg font-semibold text-white">Approved Years</h2>
@@ -1600,6 +1666,9 @@ This annual signature covers all business entities and research activities for t
                 })}
               </div>
             </div>
+
+            {/* Data Requests (non-approved years with client-visible requests) */}
+            <DataRequestsList getSupabaseClient={getSupabaseClient} onSelect={(yr) => setSelectedYear(yr)} />
           </div>
 
           {/* Main Content */}
@@ -2177,9 +2246,11 @@ This annual signature covers all business entities and research activities for t
                                 .eq('id', r.id);
                             }}
                           >
-                            {roleOptions.map(opt => (
-                              <option key={String(opt.id)} value={opt.id || ''}>{opt.name}</option>
-                            ))}
+                              {roleOptions.map(opt => (
+                                <option key={String(opt.id)} value={opt.id || ''}>
+                                  {opt.name}{typeof opt.baseline_applied_percent === 'number' ? ` (${Number(opt.baseline_applied_percent).toFixed(2)}%)` : ''}
+                                </option>
+                              ))}
                           </select>
                         </td>
                         <td className="px-3 py-2">
