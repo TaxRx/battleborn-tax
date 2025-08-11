@@ -1823,7 +1823,9 @@ const NewClientModal: React.FC<NewClientModalProps> = ({
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden animate-fade-in">
         {/* Header */}
         <div className="flex justify-between items-center p-6 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-purple-600 text-white">
-          <h2 className="text-2xl font-bold">New Client</h2>
+          <h2 className="text-2xl font-bold">
+            {initialData?.id ? `Edit Client - ${initialData.fullName}` : 'New Client'}
+          </h2>
           <button 
             onClick={onClose} 
             className="text-white hover:text-gray-200 text-2xl font-bold transition-colors duration-200"

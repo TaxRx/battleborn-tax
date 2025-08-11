@@ -806,8 +806,8 @@ class AdminAccountService {
         query = query.neq('status', 'deleted');
       }
 
-      // Filter out admin and client account types (managed elsewhere)
-      query = query.not('type', 'in', '(admin,client)');
+      // Filter out client account types (managed elsewhere)
+      query = query.not('type', 'in', '(client)');
 
       // Apply filters
       if (filters.search) {
