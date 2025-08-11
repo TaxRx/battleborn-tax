@@ -278,6 +278,65 @@ export const employeeRoleDesignationsService = {
         }
       }
 
+      // Seed rd_employee_subcomponents so Allocation views show data
+      try {
+        if (employeeId) {
+          // Clear existing baseline entries for this BY
+          await supabase
+            .from('rd_employee_subcomponents')
+            .delete()
+            .eq('employee_id', employeeId)
+            .eq('business_year_id', businessYearId);
+
+          // Load selected subcomponents for this BY
+          const { data: selectedSubs } = await supabase
+            .from('rd_selected_subcomponents')
+            .select('subcomponent_id, research_activity_id')
+            .eq('business_year_id', businessYearId);
+
+          const alloc = (row.activity_allocations || {}) as Record<string, number>;
+          let allocationMap: Record<string, number> = {};
+          if (alloc && Object.keys(alloc).length > 0) allocationMap = alloc;
+          // If no per-activity allocations, distribute evenly across activities
+          if (Object.keys(allocationMap).length === 0) {
+            const activityIds = Array.from(new Set((selectedSubs || []).map(s => s.research_activity_id).filter(Boolean)));
+            const per = activityIds.length > 0 ? (row.applied_percent || 0) / activityIds.length : 0;
+            activityIds.forEach(aid => { allocationMap[aid] = per; });
+          }
+
+          // Group subcomponents by activity
+          const activityToSubs = (selectedSubs || []).reduce((m: Record<string, string[]>, s: any) => {
+            const key = s.research_activity_id;
+            if (!key) return m;
+            if (!m[key]) m[key] = [];
+            m[key].push(s.subcomponent_id);
+            return m;
+          }, {});
+
+          const inserts: any[] = [];
+          for (const [activityId, percent] of Object.entries(allocationMap)) {
+            const subs = activityToSubs[activityId] || [];
+            if (subs.length === 0) continue;
+            const each = percent / subs.length;
+            subs.forEach(subId => {
+              inserts.push({
+                employee_id: employeeId,
+                business_year_id: businessYearId,
+                subcomponent_id: subId,
+                applied_percentage: each,
+                is_included: true,
+              });
+            });
+          }
+
+          if (inserts.length > 0) {
+            await supabase.from('rd_employee_subcomponents').insert(inserts);
+          }
+        }
+      } catch (seedErr) {
+        console.warn('rd_employee_subcomponents seeding skipped due to error', seedErr);
+      }
+
       // Mark applied
       await supabase
         .from('rd_employee_role_designations')
