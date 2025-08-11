@@ -518,7 +518,7 @@ async function handleAdminCheckAuthUser(body, supabaseAdmin) {
 // --- Handler for Admin Create Auth User --- //
 async function handleAdminCreateAuthUser(body, supabaseAdmin) {
   try {
-    const { email, password = 'TempPass123!' } = body
+    const { email, password = '' } = body
 
     if (!email?.trim()) {
       return new Response(JSON.stringify({ error: 'Email is required' }), {
