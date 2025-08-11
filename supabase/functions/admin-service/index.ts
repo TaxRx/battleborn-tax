@@ -64,6 +64,7 @@ serve(async (req) => {
     const pathname = body.pathname || new URL(req.url).pathname;
 
     // Route-specific authorization
+    const { data: { user: authUser } } = await supabaseClient.auth.getUser();
     const accountType = await getCallerAccountType(supabaseClient, supabaseServiceClient);
     const allowCreateClientFor = new Set(['admin', 'operator', 'affiliate', 'expert']);
 
@@ -71,7 +72,9 @@ serve(async (req) => {
       if (!accountType) return false;
       // Relaxed auth for create-client endpoint to allow operator/affiliate/expert too
       if (pathname === '/admin-service/create-client') {
-        return allowCreateClientFor.has(accountType);
+        // Allow any authenticated user if account linkage hasn't been established yet
+        if (allowCreateClientFor.has(accountType)) return true;
+        return !!authUser; 
       }
       // Default: admin-only for other endpoints
       return accountType === 'admin';
