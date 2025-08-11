@@ -154,6 +154,8 @@ export const employeeRoleDesignationsService = {
       .eq('business_year_id', businessYearId)
       .in('status', ['draft', 'client_updated']);
     if (error) throw error;
+    // Mirror to rd_client_requests (roles)
+    await this.upsertClientRequest(businessYearId, 'roles', 'requested');
   },
 
   async clientMarkComplete(businessYearId: string) {
@@ -163,6 +165,43 @@ export const employeeRoleDesignationsService = {
       .eq('business_year_id', businessYearId)
       .eq('client_visible', true);
     if (error) throw error;
+    await this.upsertClientRequest(businessYearId, 'roles', 'client_completed');
+  },
+
+  async markClientInProgress(businessYearId: string) {
+    await this.upsertClientRequest(businessYearId, 'roles', 'client_in_progress');
+  },
+
+  async markAdminAcknowledged(businessYearId: string) {
+    // Mark admin acknowledged on staging rows
+    await supabase
+      .from('rd_employee_role_designations')
+      .update({ admin_acknowledged_at: new Date().toISOString() })
+      .eq('business_year_id', businessYearId)
+      .eq('client_visible', true);
+    await this.upsertClientRequest(businessYearId, 'roles', 'admin_acknowledged');
+  },
+
+  async upsertClientRequest(businessYearId: string, type: 'roles' | 'subcomponents', status: 'requested' | 'client_in_progress' | 'client_completed' | 'admin_acknowledged') {
+    // Try to find existing
+    const { data: existing } = await supabase
+      .from('rd_client_requests')
+      .select('id, status')
+      .eq('business_year_id', businessYearId)
+      .eq('type', type)
+      .maybeSingle();
+
+    if (existing?.id) {
+      const changes: any = { status };
+      if (status === 'client_completed') changes.client_completed_at = new Date().toISOString();
+      if (status === 'admin_acknowledged') changes.admin_acknowledged_at = new Date().toISOString();
+      await supabase.from('rd_client_requests').update(changes).eq('id', existing.id);
+    } else {
+      const payload: any = { business_year_id: businessYearId, type, status };
+      if (status === 'client_completed') payload.client_completed_at = new Date().toISOString();
+      if (status === 'admin_acknowledged') payload.admin_acknowledged_at = new Date().toISOString();
+      await supabase.from('rd_client_requests').insert(payload);
+    }
   },
 
   async apply(businessId: string, businessYearId: string) {

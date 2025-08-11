@@ -1856,8 +1856,15 @@ This annual signature covers all business entities and research activities for t
                                 An annual jurat signature is required to access your {selectedYear.year} tax year documents.
                                 This single signature covers all business entities for the {selectedYear.year} tax year.
                               </p>
-                              <div className="bg-white rounded-lg p-4 mb-4 text-left">
-                                <h5 className="font-medium text-gray-900 mb-2">What this covers:</h5>
+                <div className="bg-white rounded-lg p-4 mb-4 text-left">
+                  <div className="flex items-center justify-between">
+                    <h5 className="font-medium text-gray-900">What this covers</h5>
+                    {roleRequestInfo?.hasRequest && (
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${roleRequestInfo.completed ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                        {roleRequestInfo.completed ? 'Submitted' : 'Requested'}
+                      </span>
+                    )}
+                  </div>
                                 <ul className="space-y-1 text-sm text-gray-700">
                                   {selectedYear.business_years.map((by, index) => (
                                     <li key={by.id} className="flex items-center">

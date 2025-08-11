@@ -101,7 +101,7 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
     try {
       await svc.requestDetails(businessYearId, userId);
       await load();
-      alert('Request sent. This table is now visible to the client.');
+      alert('Request sent. This table is now visible to the client. The year will appear under Data Requests.');
     } catch (e) {
       console.error(e);
       alert('Failed to request details');
