@@ -61,6 +61,7 @@ import OperatorsList from '../components/OperatorsList'; // Import the new compo
 import AccountManagement from '../components/AccountManagement';
 import BulkActivityOperations from '../components/BulkActivityOperations';
 import ToolManagement from '../components/tools/ToolManagement';
+import UserProfileModal from '../../../components/UserProfileModal';
 
 const proposalService = ProposalService.getInstance();
 
@@ -75,6 +76,7 @@ const AdminDashboard: React.FC = () => {
   const { logout: authLogout } = useAuthStore();
   const [activeTab, setActiveTab] = useState('overview');
   const [showCreateClientModal, setShowCreateClientModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -264,9 +266,13 @@ const AdminDashboard: React.FC = () => {
         {/* User Profile Section */}
         <div className="px-6 py-4 border-b border-slate-200">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
+            <button 
+              onClick={() => setShowProfileModal(true)}
+              className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center hover:from-blue-600 hover:to-blue-700 transition-colors cursor-pointer"
+              title="Edit Profile"
+            >
               <User className="h-5 w-5 text-white" />
-            </div>
+            </button>
             <div className="flex-1 min-w-0">
               <p className="text-body-md font-medium text-slate-900 truncate">{effectiveUser.full_name}</p>
               <p className="text-body-sm text-slate-500">Administrator</p>
@@ -404,12 +410,18 @@ const AdminDashboard: React.FC = () => {
         <CreateClientModal
           isOpen={showCreateClientModal}
           onClose={() => setShowCreateClientModal(false)}
-          onSubmit={async (clientData) => {
+          onClientCreated={async (clientData) => {
             console.log('Creating client:', clientData);
             setShowCreateClientModal(false);
           }}
         />
       )}
+
+      {/* User Profile Modal */}
+      <UserProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+      />
     </div>
   );
 };

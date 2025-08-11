@@ -43,6 +43,7 @@ interface UnifiedClientDashboardProps {
   toolFilter?: ToolEnrollment['tool_slug'];
   adminId?: string;
   affiliateId?: string;
+  operatorAccountId?: string;
   onClientSelect?: (client: UnifiedClientRecord) => void;
 }
 
@@ -422,6 +423,7 @@ export default function UnifiedClientDashboard({
   toolFilter,
   adminId,
   affiliateId,
+  operatorAccountId,
   onClientSelect
 }: UnifiedClientDashboardProps) {
   const { userType, demoMode } = useAuthStore();
@@ -449,7 +451,7 @@ export default function UnifiedClientDashboard({
   // Load clients on component mount and when filters change
   useEffect(() => {
     loadClients();
-  }, [toolFilter, adminId, affiliateId]);
+  }, [toolFilter, adminId, affiliateId, operatorAccountId]);
 
   const loadClients = async () => {
     try {
@@ -458,6 +460,7 @@ export default function UnifiedClientDashboard({
         toolFilter,
         adminId,
         affiliateId,
+        operatorAccountId,
       });
       setClients(clientList);
     } catch (error) {
@@ -579,19 +582,16 @@ export default function UnifiedClientDashboard({
   const handleCreateClient = async (taxInfo: TaxInfo) => {
     try {
       setAddingClient(true);
-      const createClientData = CentralizedClientService.transformTaxInfoToCreateData(taxInfo);
-      const result = await CentralizedClientService.createClient(createClientData);
+      console.log('[UnifiedClientDashboard] handleCreateClient called - this is a success callback, not creating client');
       
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to create client');
-      }
-      
+      // This is a success callback from NewClientModal - the client has already been created
+      // Just refresh the client list and close the modal
       await loadClients();
       setShowAddClientModal(false);
       toast.success('Client created successfully');
     } catch (error) {
-      console.error('Error creating client:', error);
-      toast.error('Failed to create client');
+      console.error('Error refreshing client list:', error);
+      toast.error('Client created but failed to refresh list');
     } finally {
       setAddingClient(false);
     }

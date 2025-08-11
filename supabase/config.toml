@@ -35,4 +35,7 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/ai-service/index.ts"
 
-
+[functions.rd-service]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/rd-service/index.ts"

@@ -873,6 +873,7 @@ export class CentralizedClientService {
     toolFilter?: ToolEnrollment['tool_slug'];
     adminId?: string;
     affiliateId?: string;
+    operatorAccountId?: string;
   }): Promise<any[]> {
     try {
       // First, get clients from the new clients table
@@ -938,6 +939,28 @@ export class CentralizedClientService {
       // Apply filters
       if (params.adminId) {
         clientsQuery = clientsQuery.eq('created_by', params.adminId);
+      }
+
+      // Add operator filtering if provided - only show clients linked via account_client_access
+      if (params.operatorAccountId) {
+        // Join with account_client_access to filter by operator account
+        const { data: linkedClientIds, error: linkError } = await supabase
+          .from('account_client_access')
+          .select('client_id')
+          .eq('account_id', params.operatorAccountId);
+        
+        if (linkError) {
+          console.error('Error fetching linked client IDs for operator:', linkError);
+          throw linkError;
+        }
+        
+        if (linkedClientIds && linkedClientIds.length > 0) {
+          const clientIds = linkedClientIds.map(link => link.client_id);
+          clientsQuery = clientsQuery.in('id', clientIds);
+        } else {
+          // No linked clients - return empty result
+          return [];
+        }
       }
 
       const { data: clients, error: clientsError } = await clientsQuery;
