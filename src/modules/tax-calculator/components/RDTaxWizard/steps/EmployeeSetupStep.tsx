@@ -3883,9 +3883,26 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     // ✅ AUTO-POPULATION FEATURE: If importing employees into years without Research Design data,
     // the system will automatically copy configuration from the most recent completed year.
     // This resolves the dependency issue where CSV import relied on Research Design being loaded first.
+    // Robust CSV/TSV parsing: trim headers, remove BOM, and support tab-delimited files
+    const normalizeHeader = (h: string) => {
+      const cleaned = (h || '').replace(/\ufeff/g, '').trim();
+      const key = cleaned.toLowerCase().replace(/[\s_-]+/g, '');
+      if (['firstname','first'].includes(key)) return 'First Name';
+      if (['lastname','last'].includes(key)) return 'Last Name';
+      if (['wage','salary','annualwage','annualsalary','pay','compensation'].includes(key)) return 'Wage';
+      if (['year','taxyear'].includes(key)) return 'Year';
+      if (['role','title','position'].includes(key)) return 'Role';
+      return cleaned;
+    };
+
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
+      transformHeader: normalizeHeader,
+      beforeFirstChunk: (chunk: string) => {
+        // Remove BOM and normalize tabs to commas to gracefully handle TSV
+        return chunk.replace(/\ufeff/g, '').replace(/\t/g, ',');
+      },
       complete: async (results: Papa.ParseResult<Record<string, string>>) => {
         const rows: Record<string, string>[] = results.data;
         let successCount = 0;

@@ -55,9 +55,22 @@ export const employeeRoleDesignationsService = {
 
   async parseCSV(file: File) {
     return new Promise<Record<string, string>[]>((resolve, reject) => {
+      const normalizeHeader = (h: string) => {
+        const cleaned = (h || '').replace(/\ufeff/g, '').trim();
+        const key = cleaned.toLowerCase().replace(/[\s_-]+/g, '');
+        if (["firstname","first"].includes(key)) return 'First Name';
+        if (["lastname","last"].includes(key)) return 'Last Name';
+        if (["wage","salary","annualwage","annualsalary","pay","compensation"].includes(key)) return 'Wage';
+        if (["year","taxyear"].includes(key)) return 'Year';
+        if (["role","title","position"].includes(key)) return 'Role';
+        return cleaned;
+      };
+
       Papa.parse<Record<string, string>>(file, {
         header: true,
         skipEmptyLines: true,
+        transformHeader: normalizeHeader,
+        beforeFirstChunk: (chunk: string) => chunk.replace(/\ufeff/g, '').replace(/\t/g, ','),
         complete: (results) => resolve(results.data),
         error: (err) => reject(err),
       });
@@ -66,7 +79,7 @@ export const employeeRoleDesignationsService = {
 
   async upsertFromCSV(rows: Record<string, string>[], businessId: string) {
     // Map Year -> business_year_id
-    const years = Array.from(new Set(rows.map(r => (r['Year'] || r['year'] || '').trim()).filter(Boolean))).map(y => parseInt(y, 10)).filter(y => !Number.isNaN(y));
+    const years = Array.from(new Set(rows.map(r => ((r['Year'] || r['year'] || '').toString().replace(/\D/g,'')).trim()).filter(Boolean))).map(y => parseInt(y, 10)).filter(y => !Number.isNaN(y));
     if (years.length === 0) return { inserted: 0 };
     const { data: bys, error: byErr } = await supabase
       .from('rd_business_years')
@@ -91,11 +104,12 @@ export const employeeRoleDesignationsService = {
 
     const payload: EmployeeRoleDesignationRow[] = [];
     for (const r of rows) {
-      const firstName = (r['First Name'] || r['first_name'] || r['firstName'] || '').trim();
-      const lastName = (r['Last Name'] || r['last_name'] || r['lastName'] || '').trim();
-      const wageStr = (r['Wage'] || r['wage'] || '').replace(/[^0-9.\-]/g, '');
-      const roleName = (r['Role'] || r['role'] || '').trim() || null;
-      const yearStr = (r['Year'] || r['year'] || '').trim();
+      const firstName = (r['First Name'] || r['first_name'] || r['firstName'] || '').replace(/\ufeff/g,'').trim();
+      const lastName = (r['Last Name'] || r['last_name'] || r['lastName'] || '').replace(/\ufeff/g,'').trim();
+      const wageStr = (r['Wage'] || r['wage'] || '').toString().replace(/[^0-9.\-]/g, '');
+      const roleName = (r['Role'] || r['role'] || '').toString().trim() || null;
+      const yearRaw = (r['Year'] || r['year'] || '').toString();
+      const yearStr = yearRaw.replace(/\D/g,'');
       const yearNum = parseInt(yearStr, 10);
       if (!firstName || !lastName || !yearNum || !yearToId.get(yearNum)) continue;
       const annualWage = parseFloat(wageStr || '0') || 0;
