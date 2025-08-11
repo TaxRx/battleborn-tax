@@ -92,6 +92,7 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
   };
 
   const onUpdateCell = async (id: string, updates: any) => {
+    // When applied_percent or activity_allocations changes, reflect in local UI immediately
     const updated = await svc.updateRow(id, updates);
     setRows(prev => prev.map(r => (r.id === id ? updated : r)));
   };

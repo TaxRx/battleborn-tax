@@ -1312,10 +1312,19 @@ const ClientPortal: React.FC = () => {
   // Role Designations (client view)
   const openRoleDesignations = async () => {
     try {
-      if (!selectedYear) return;
       const client = getSupabaseClient();
-      const byId = selectedYear.business_years?.[0]?.id;
-      if (!byId) return;
+      // Prefer selected year BY, else find most recent requested/visible BY for this business
+      let byId = selectedYear?.business_years?.[0]?.id || null;
+      if (!byId) {
+        const { data: anyReq } = await client
+          .from('rd_employee_role_designations')
+          .select('business_year_id, requested_at')
+          .eq('client_visible', true)
+          .order('requested_at', { ascending: false })
+          .limit(1);
+        byId = anyReq?.[0]?.business_year_id || null;
+        if (!byId) return;
+      }
       console.log('🔍 [Portal] Loading role designations for BY:', byId);
       const { data } = await client
         .from('rd_employee_role_designations_portal')
@@ -1331,7 +1340,7 @@ const ClientPortal: React.FC = () => {
         .or(`business_year_id.is.null,business_year_id.eq.${byId}`)
         .order('name');
       console.log('📊 [Portal] Role options loaded:', roles?.length || 0);
-      const opts = [{ id: null, name: 'N/A' }, ...(roles || [])];
+      const opts = [{ id: null, name: 'N/A', baseline_applied_percent: null }, ...(roles || [])];
       setRoleOptions(opts);
       setShowRoleDesignations(true);
     } catch (e) {
@@ -2188,7 +2197,12 @@ This annual signature covers all business entities and research activities for t
                               onMouseUp={async (e) => {
                                 const val = parseInt((e.target as HTMLInputElement).value, 10);
                                 const client = getSupabaseClient();
-                                await client.from('rd_employee_role_designations').update({ applied_percent: val }).eq('id', r.id);
+                                await client
+                                  .from('rd_employee_role_designations')
+                                  .update({ applied_percent: val, status: 'client_updated' })
+                                  .eq('id', r.id);
+                                // Update local
+                                setRoleDesignationRows(prev => prev.map(row => row.id === r.id ? { ...row, applied_percent: val } : row));
                               }}
                             />
                             <div className="text-xs text-gray-700 w-10 text-right">{Math.round(r.applied_percent || 0)}%</div>
@@ -2199,13 +2213,12 @@ This annual signature covers all business entities and research activities for t
                             onClick={() => {
                               setAllocationRow(r);
                               const alloc = (r.activity_allocations || {}) as Record<string, number>;
-                              // Initialize from baseline equally if empty
-                              if (!alloc || Object.keys(alloc).length === 0) {
-                                const baseline = Math.round(r.applied_percent || 0);
-                                // temp initialize after activities load
-                                setAllocationValues({ __baseline: baseline } as any);
-                              } else {
+                              // Initialize from existing allocation or baseline
+                              if (alloc && Object.keys(alloc).length > 0) {
                                 setAllocationValues(alloc);
+                              } else {
+                                const baseline = Math.max(0, Math.round(r.applied_percent || 0));
+                                setAllocationValues({ __baseline: baseline } as any);
                               }
                               // Load activities list
                               (async () => {
@@ -2216,9 +2229,10 @@ This annual signature covers all business entities and research activities for t
                                   .eq('business_year_id', selectedYear.business_years[0]?.id || '');
                                 const arr = (acts || []).map(a => ({ id: a.research_activity?.id, title: a.research_activity?.title })).filter(a => a.id);
                                 setAllocationActivities(arr);
-                                // If no prior alloc, seed equally across activities up to baseline
-                                if ((allocationValues as any).__baseline !== undefined && arr.length > 0) {
-                                  const baseline = (allocationValues as any).__baseline as number;
+                                // If no prior alloc, seed equally across activities up to baseline (use r.applied_percent if undefined)
+                                const seededBaseline = (allocationValues as any).__baseline !== undefined ? (allocationValues as any).__baseline : Math.max(0, Math.round(r.applied_percent || 0));
+                                if (arr.length > 0 && seededBaseline > 0) {
+                                  const baseline = seededBaseline;
                                   const each = arr.length ? Math.floor(baseline / arr.length) : 0;
                                   const remainder = arr.length ? baseline - each * arr.length : 0;
                                   const seeded: Record<string, number> = {};
