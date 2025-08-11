@@ -423,6 +423,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({ className 
                   onChange={(e) => handleFilterChange({ type: e.target.value || undefined })}
                 >
                   <option value="">All Types</option>
+                  <option value="admin">Admin</option>
                   <option value="operator">Operator</option>
                   <option value="affiliate">Affiliate</option>
                   <option value="expert">Expert</option>

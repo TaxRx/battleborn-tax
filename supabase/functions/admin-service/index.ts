@@ -960,7 +960,6 @@ async function handleAdminCreateClient(body, supabaseAdmin) {
         dependents: dependents || 0,
         home_address: home_address?.trim() || null,
         state: state || 'CA',
-        status: 'active',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }
