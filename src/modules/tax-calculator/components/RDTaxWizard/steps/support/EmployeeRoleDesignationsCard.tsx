@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Upload, FileSpreadsheet, Users, Send, CheckCircle2 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 import { employeeRoleDesignationsService as svc } from '../../../../services/employeeRoleDesignationsService';
 
 type Props = {
@@ -85,7 +86,7 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
       setFile(null);
     } catch (e) {
       console.error(e);
-      alert('Failed to import CSV');
+      toast.error('Failed to import CSV');
     } finally {
       setLoading(false);
     }
@@ -101,10 +102,10 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
     try {
       await svc.requestDetails(businessYearId, userId);
       await load();
-      alert('Request sent. This table is now visible to the client. The year will appear under Data Requests.');
+      toast.success('Request sent. Client can now respond under Data Requests.');
     } catch (e) {
       console.error(e);
-      alert('Failed to request details');
+      toast.error('Failed to request details');
     }
   };
 
@@ -112,12 +113,9 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
     try {
       const res = await svc.apply(businessId, businessYearId);
       await load();
-      // Success toast-like UX, show real selected year based on card BY
-      // eslint-disable-next-line no-alert
-      alert(`Applied ${res.applied} employee(s) for selected year.`);
+      toast.success(`Applied ${res.applied} employee(s) for selected year`);
     } catch (e) {
-      // eslint-disable-next-line no-alert
-      alert('Failed to apply changes');
+      toast.error('Failed to apply changes');
     }
   };
 

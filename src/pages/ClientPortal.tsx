@@ -1763,6 +1763,14 @@ This annual signature covers all business entities and research activities for t
                               <span className="text-xs">Complete</span>
                             </div>
                           )}
+
+                          {/* Requested/Submitted Chips for this selected year */}
+                          {selectedYear?.year === year.year && roleRequestInfo?.hasRequest && !roleRequestInfo.completed && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-yellow-100 text-yellow-800">Requested</span>
+                          )}
+                          {selectedYear?.year === year.year && roleRequestInfo?.completed && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-100 text-green-800">Submitted</span>
+                          )}
                         </div>
                       </div>
                       
