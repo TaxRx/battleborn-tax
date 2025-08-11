@@ -2956,7 +2956,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       console.log('📊 EmployeeSetupStep - QRE calculation:', { annualWage, baselinePercent, calculatedQRE: 0, roleName });
 
       // Create employee record
-      console.log('👤 EmployeeSetupStep - Creating employee in rd_employees table');
+          console.log('👤 EmployeeSetupStep - Creating employee in rd_employees table for BY', businessYearId);
       const { data: newEmployee, error: employeeError } = await supabase
         .from('rd_employees')
         .insert({
@@ -2977,7 +2977,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
 
       console.log('✅ EmployeeSetupStep - Employee created successfully:', newEmployee);
 
-      // Create employee year data for the selected year
+      // Create employee year data ONLY for the selected year
       if (businessYearId) {
         console.log('📅 EmployeeSetupStep - Creating employee year data for year:', businessYearId);
         

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Calendar, Download, FileText, CheckCircle, Clock, AlertCircle, Eye, PenTool, User, Building2, Shield, Award, ChevronRight, XCircle, Users, Sliders } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 // Create a separate supabase client instance for the portal
 import { createClient } from '@supabase/supabase-js';
@@ -120,6 +121,7 @@ const ClientPortal: React.FC = () => {
   const [allocationRow, setAllocationRow] = useState<any | null>(null);
   const [allocationActivities, setAllocationActivities] = useState<any[]>([]);
   const [allocationValues, setAllocationValues] = useState<Record<string, number>>({});
+  const [roleRequestInfo, setRoleRequestInfo] = useState<{ hasRequest: boolean; completed: boolean } | null>(null);
 
   // Check for admin preview mode and extract URL parameters
   const searchParams = new URLSearchParams(window.location.search);
@@ -560,6 +562,7 @@ const ClientPortal: React.FC = () => {
       loadDocumentStatus();
       loadQREBreakdown();
       loadDashboardTiles();
+      loadRoleRequestStatus();
       
       // Only load jurat signatures if we haven't checked them for this year yet
       // This prevents the circular dependency issue
@@ -1468,6 +1471,25 @@ const ClientPortal: React.FC = () => {
     }
   };
 
+  const loadRoleRequestStatus = async () => {
+    try {
+      const client = getSupabaseClient();
+      const byId = selectedYear?.business_years?.[0]?.id;
+      if (!byId) { setRoleRequestInfo(null); return; }
+      const { data } = await client
+        .from('rd_employee_role_designations')
+        .select('id, client_visible, client_completed_at')
+        .eq('business_year_id', byId);
+      if (!data || data.length === 0) { setRoleRequestInfo({ hasRequest: false, completed: false }); return; }
+      const visible = data.filter(r => r.client_visible);
+      const hasRequest = visible.length > 0;
+      const completed = hasRequest && visible.every(r => !!r.client_completed_at);
+      setRoleRequestInfo({ hasRequest, completed });
+    } catch {
+      setRoleRequestInfo(null);
+    }
+  };
+
   // Set default jurat text
   useEffect(() => {
     setJuratText(`Annual Jurat and Attestation of R&D Tax Credit Documentation - ${selectedYear?.year || new Date().getFullYear()}
@@ -2204,9 +2226,11 @@ This annual signature covers all business entities and research activities for t
                         .update({ client_completed_at: new Date().toISOString(), status: 'client_updated' })
                         .eq('business_year_id', byId)
                         .eq('client_visible', true);
-                      alert('Thanks! Your updates have been marked complete. Your advisor will be notified.');
+                      toast.success('Thanks! Your updates have been marked complete. Your advisor will be notified.');
+                      setShowRoleDesignations(false);
+                      await loadRoleRequestStatus();
                     } catch (e) {
-                      alert('Failed to mark complete');
+                      toast.error('Failed to mark complete');
                     }
                   }}
                   className="px-4 py-2 bg-emerald-600 text-white rounded-lg"

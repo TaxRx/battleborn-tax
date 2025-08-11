@@ -109,9 +109,16 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
   };
 
   const onApply = async () => {
-    const res = await svc.apply(businessId, businessYearId);
-    await load();
-    alert(`Applied ${res.applied} employees to roster`);
+    try {
+      const res = await svc.apply(businessId, businessYearId);
+      await load();
+      // Success toast-like UX
+      // eslint-disable-next-line no-alert
+      alert(`Applied ${res.applied} employee(s) for ${new Date().getFullYear()} year context`);
+    } catch (e) {
+      // eslint-disable-next-line no-alert
+      alert('Failed to apply changes');
+    }
   };
 
   return (
