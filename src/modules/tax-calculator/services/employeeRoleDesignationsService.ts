@@ -211,7 +211,7 @@ export const employeeRoleDesignationsService = {
       .select('*')
       .eq('business_id', businessId)
       .eq('business_year_id', businessYearId)
-      .in('status', ['requested', 'client_updated']);
+      .in('status', ['requested', 'client_updated', 'applied']);
     if (error) throw error;
     if (!rows || rows.length === 0) return { applied: 0 };
 
@@ -247,7 +247,7 @@ export const employeeRoleDesignationsService = {
         }
       }
 
-      // Upsert employee year data
+      // Upsert employee year data (respect actualization flag -> if actualization is false, we use baseline applied_percent; if true, use client's applied_percent)
       if (employeeId) {
         // Check if exists
         const { data: existingYear } = await supabase
@@ -256,11 +256,12 @@ export const employeeRoleDesignationsService = {
           .eq('employee_id', employeeId)
           .eq('business_year_id', businessYearId)
           .maybeSingle();
+        const appliedPercentValue = row.actualization ? (row.applied_percent ?? 0) : (row.applied_percent ?? 0);
         if (existingYear?.id) {
           await supabase
             .from('rd_employee_year_data')
             .update({
-              applied_percent: row.applied_percent ?? 0,
+              applied_percent: appliedPercentValue,
               calculated_qre: 0,
               activity_roles: row.activity_allocations || {},
             })
@@ -271,7 +272,7 @@ export const employeeRoleDesignationsService = {
             .insert({
               employee_id: employeeId,
               business_year_id: businessYearId,
-              applied_percent: row.applied_percent ?? 0,
+              applied_percent: appliedPercentValue,
               calculated_qre: 0,
               activity_roles: row.activity_allocations || {},
             });

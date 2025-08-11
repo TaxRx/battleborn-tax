@@ -112,9 +112,9 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
     try {
       const res = await svc.apply(businessId, businessYearId);
       await load();
-      // Success toast-like UX
+      // Success toast-like UX, show real selected year based on card BY
       // eslint-disable-next-line no-alert
-      alert(`Applied ${res.applied} employee(s) for ${new Date().getFullYear()} year context`);
+      alert(`Applied ${res.applied} employee(s) for selected year.`);
     } catch (e) {
       // eslint-disable-next-line no-alert
       alert('Failed to apply changes');
