@@ -16,23 +16,19 @@ const corsHeaders = {
   'Access-Control-Max-Age': '86400',
 }
 
-// Helper function to check for admin privileges
-const isAdmin = async (supabaseClient, supabaseServiceClient) => {
+// Helper to read the caller's account type (admin/operator/affiliate/expert/client)
+const getCallerAccountType = async (supabaseClient, supabaseServiceClient) => {
   const { data: { user } } = await supabaseClient.auth.getUser();
-  if (!user) return false;
+  if (!user) return null;
 
-  // Use service role client to bypass RLS and avoid circular dependency
   const { data, error } = await supabaseServiceClient
     .from('profiles')
-    .select(`
-      account:accounts!inner(type)
-    `)
+    .select(`account:accounts!inner(type)`) 
     .eq('id', user.id)
     .single();
 
-  if (error || !data) return false;
-
-  return data.account?.type === 'admin';
+  if (error || !data) return null;
+  return data.account?.type || null;
 }
 
 serve(async (req) => {
@@ -55,15 +51,6 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     )
 
-    // Check if the user is a platform admin before proceeding
-    const isPlatformAdmin = await isAdmin(supabaseClient, supabaseServiceClient);
-    if (!isPlatformAdmin) {
-      return new Response(JSON.stringify({ error: 'Forbidden: Not an admin' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 403,
-      })
-    }
-
     // Get the request body to check for pathname (only for POST/PUT/PATCH requests)
     let body = {};
     try {
@@ -75,6 +62,27 @@ serve(async (req) => {
       // Continue with empty body object
     }
     const pathname = body.pathname || new URL(req.url).pathname;
+
+    // Route-specific authorization
+    const accountType = await getCallerAccountType(supabaseClient, supabaseServiceClient);
+    const allowCreateClientFor = new Set(['admin', 'operator', 'affiliate', 'expert']);
+
+    const isAuthorized = (() => {
+      if (!accountType) return false;
+      // Relaxed auth for create-client endpoint to allow operator/affiliate/expert too
+      if (pathname === '/admin-service/create-client') {
+        return allowCreateClientFor.has(accountType);
+      }
+      // Default: admin-only for other endpoints
+      return accountType === 'admin';
+    })();
+
+    if (!isAuthorized) {
+      return new Response(JSON.stringify({ error: 'Forbidden', accountType, route: pathname }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 403,
+      })
+    }
 
     // Handle security operations (highest priority for authentication/authorization)
     if (pathname.includes('/security/')) {
