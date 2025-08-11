@@ -152,7 +152,11 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
               <Send className="w-4 h-4 inline mr-2" /> Request Details
             </button>
           )}
-          <button onClick={onApply} className="px-3 py-2 bg-emerald-600 text-white rounded-lg">
+          <button onClick={async () => {
+            await onApply();
+            // After applying, acknowledge client request status for this BY
+            try { await svc.markAdminAcknowledged(businessYearId); } catch {}
+          }} className="px-3 py-2 bg-emerald-600 text-white rounded-lg">
             <CheckCircle2 className="w-4 h-4 inline mr-2" /> Apply
           </button>
         </div>

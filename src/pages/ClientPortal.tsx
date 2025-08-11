@@ -122,6 +122,29 @@ const ClientPortal: React.FC = () => {
   const [allocationActivities, setAllocationActivities] = useState<any[]>([]);
   const [allocationValues, setAllocationValues] = useState<Record<string, number>>({});
   const [roleRequestInfo, setRoleRequestInfo] = useState<{ hasRequest: boolean; completed: boolean } | null>(null);
+  const upsertClientRequest = async (byId: string, type: 'roles' | 'subcomponents', status: 'client_in_progress' | 'client_completed') => {
+    try {
+      const client = getSupabaseClient();
+      const { data: existing } = await client
+        .from('rd_client_requests')
+        .select('id,status')
+        .eq('business_year_id', byId)
+        .eq('type', type)
+        .maybeSingle();
+      if (existing?.id) {
+        const changes: any = { status };
+        if (status === 'client_completed') changes.client_completed_at = new Date().toISOString();
+        await client.from('rd_client_requests').update(changes).eq('id', existing.id);
+      } else {
+        const payload: any = { business_year_id: byId, type, status };
+        if (status === 'client_completed') payload.client_completed_at = new Date().toISOString();
+        await client.from('rd_client_requests').insert(payload);
+      }
+    } catch (e) {
+      // ignore quietly if registry not present
+      console.warn('registry upsert failed', e);
+    }
+  };
 
   // Check for admin preview mode and extract URL parameters
   const searchParams = new URLSearchParams(window.location.search);
@@ -1378,6 +1401,69 @@ const ClientPortal: React.FC = () => {
     );
   };
 
+  const InProgressList: React.FC<{ getSupabaseClient: typeof getSupabaseClient; onSelect: (yr: any) => void }> = ({ getSupabaseClient, onSelect }) => {
+    const [years, setYears] = useState<ApprovedYear[]>([]);
+    useEffect(() => {
+      (async () => {
+        try {
+          const client = getSupabaseClient();
+          const { data: reqs } = await client
+            .from('rd_client_requests')
+            .select('business_year_id, status')
+            .in('status', ['client_in_progress','client_completed']);
+          const byIds = Array.from(new Set((reqs || []).map(r => r.business_year_id).filter(Boolean)));
+          if (byIds.length === 0) { setYears([]); return; }
+          const { data: bys } = await client
+            .from('rd_business_years')
+            .select('id, year, business_id')
+            .in('id', byIds);
+          const grouped = (bys || []).reduce((map: Record<number, any[]>, by: any) => {
+            if (!map[by.year]) map[by.year] = [];
+            map[by.year].push({ ...by, business_name: portalData?.business_name || '' });
+            return map;
+          }, {});
+          const list: ApprovedYear[] = Object.entries(grouped).map(([year, arr]) => ({
+            year: parseInt(year, 10),
+            business_years: arr as any,
+            total_qre: 0,
+            jurat_signed: false,
+            all_documents_released: false,
+          })).sort((a,b) => b.year - a.year);
+          setYears(list);
+        } catch {
+          setYears([]);
+        }
+      })();
+    }, []);
+
+    if (years.length === 0) return null;
+    return (
+      <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+        <div className="bg-gradient-to-r from-sky-500 to-cyan-600 px-6 py-4">
+          <h2 className="text-lg font-semibold text-white">In Progress</h2>
+          <p className="text-cyan-100 text-sm">We’re reviewing your data</p>
+        </div>
+        <div className="p-2">
+          {years.map((year) => (
+            <button
+              key={`prog-${year.year}`}
+              onClick={() => onSelect(year)}
+              className={`w-full p-4 text-left rounded-lg mb-2 transition-all hover:bg-gray-50 border-2 border-transparent`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-gray-900">{year.year}</div>
+                  <div className="text-sm text-gray-600">{year.business_years.length} business{year.business_years.length !== 1 ? 'es' : ''}</div>
+                  <div className="text-sm font-medium text-sky-600">Submitted / Under Review</div>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   // Role Designations (client view)
   const openRoleDesignations = async () => {
     try {
@@ -1691,6 +1777,9 @@ This annual signature covers all business entities and research activities for t
 
             {/* Data Requests (non-approved years with client-visible requests) */}
             <DataRequestsList getSupabaseClient={getSupabaseClient} onSelect={(yr) => setSelectedYear(yr)} />
+
+            {/* In Progress (info requested and client has started or submitted) */}
+            <InProgressList getSupabaseClient={getSupabaseClient} onSelect={(yr) => setSelectedYear(yr)} />
           </div>
 
           {/* Main Content */}
@@ -2233,6 +2322,8 @@ This annual signature covers all business entities and research activities for t
                         .update({ client_completed_at: new Date().toISOString(), status: 'client_updated' })
                         .eq('business_year_id', byId)
                         .eq('client_visible', true);
+                      // registry mirror
+                      await upsertClientRequest(byId, 'roles', 'client_completed');
                       toast.success('Thanks! Your updates have been marked complete. Your advisor will be notified.');
                       setShowRoleDesignations(false);
                       await loadRoleRequestStatus();
@@ -2305,6 +2396,9 @@ This annual signature covers all business entities and research activities for t
                                   .eq('id', r.id);
                                 // Update local
                                 setRoleDesignationRows(prev => prev.map(row => row.id === r.id ? { ...row, applied_percent: val } : row));
+                                // Mark in-progress in registry
+                                const byId = selectedYear?.business_years?.[0]?.id;
+                                if (byId) await upsertClientRequest(byId, 'roles', 'client_in_progress');
                               }}
                             />
                             <div className="text-xs text-gray-700 w-10 text-right">{Math.round(r.applied_percent || 0)}%</div>
