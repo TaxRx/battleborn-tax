@@ -154,6 +154,8 @@ export default function EmployeeRoleDesignationsCard({ businessId, businessYearI
             await onApply();
             // After applying, acknowledge client request status for this BY
             try { await svc.markAdminAcknowledged(businessYearId); } catch {}
+            // Notify roster to refresh immediately (no page reload)
+            window.dispatchEvent(new CustomEvent('erd:applied', { detail: { businessYearId } }));
           }} className="px-3 py-2 bg-emerald-600 text-white rounded-lg">
             <CheckCircle2 className="w-4 h-4 inline mr-2" /> Apply
           </button>

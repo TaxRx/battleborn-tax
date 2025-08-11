@@ -3728,6 +3728,21 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     getCurrentUser();
   }, []);
 
+  // Listen for ERD Apply to refresh roster immediately
+  useEffect(() => {
+    const handler = (e: any) => {
+      console.log('🔔 [EmployeeSetupStep] Received erd:applied event, reloading roster for BY:', e?.detail?.businessYearId);
+      // Trigger existing loader
+      loadData?.();
+    };
+    // @ts-ignore
+    window.addEventListener('erd:applied', handler);
+    return () => {
+      // @ts-ignore
+      window.removeEventListener('erd:applied', handler);
+    };
+  }, []);
+
   // Helper function to create business year with user confirmation
   const createBusinessYearWithConfirmation = async (yearNumber: number, businessId: string) => {
     console.log(`📅 Creating new business year for ${yearNumber}`);
@@ -5049,7 +5064,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
 
 
               </div>
-              {employeesWithData.length === 0 ? (
+                {employeesWithData.length === 0 ? (
                 <div className="text-center py-12">
                   <div className="w-16 h-16 bg-gradient-to-r from-blue-100 to-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
                     <Users className="w-8 h-8 text-blue-600" />
@@ -5058,6 +5073,12 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                   <p className="text-gray-500 mb-6 max-w-md mx-auto">
                     Add employees using the quick entry form above to start tracking their R&D involvement and calculate tax credits
                   </p>
+                    {/* shimmer placeholder for roster while waiting */}
+                    <div className="space-y-2 max-w-3xl mx-auto">
+                      {[...Array(4)].map((_, i) => (
+                        <div key={i} className="animate-pulse h-10 bg-gray-100 rounded-md" />
+                      ))}
+                    </div>
                 </div>
               ) : (
                 <div className="space-y-4">
