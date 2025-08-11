@@ -3002,6 +3002,24 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
 
       // Get selected activities for this business year to create subcomponent relationships
       if (businessYearId && roleId) {
+        // Preload Non-R&D percentages per step for this business year to apply reductions consistently
+        const stepNonRdMap: Record<string, number> = {};
+        try {
+          const { data: stepsForYear } = await supabase
+            .from('rd_selected_steps')
+            .select('step_id, non_rd_percentage')
+            .eq('business_year_id', businessYearId);
+          if (stepsForYear && stepsForYear.length > 0) {
+            for (const s of stepsForYear) {
+              if (s.step_id) {
+                stepNonRdMap[s.step_id] = Number(s.non_rd_percentage || 0);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('⚠️ Could not preload Non-R&D percentages; proceeding without reductions', e);
+        }
+
         const { data: selectedActivities, error: activitiesError } = await supabase
           .from('rd_selected_activities')
           .select('activity_id, practice_percent, selected_roles')
@@ -3072,6 +3090,12 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                                                (frequencyPercentage / 100) * 
                                                (stepTimePercentage / 100) * 100;
 
+                // Apply Non-R&D reduction for this step/year if present
+                const nonRdForStep = stepNonRdMap[selectedSubcomponent?.step_id] || 0;
+                const appliedAfterNonRd = nonRdForStep > 0
+                  ? baselineAppliedPercentage * ((100 - nonRdForStep) / 100)
+                  : baselineAppliedPercentage;
+
                 const { error: subcomponentError } = await supabase
                   .from('rd_employee_subcomponents')
                   .insert({
@@ -3079,7 +3103,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                     subcomponent_id: subcomponent.subcomponent_id,
                     business_year_id: businessYearId,
                     time_percentage: stepTimePercentage,
-                    applied_percentage: baselineAppliedPercentage,
+                    applied_percentage: appliedAfterNonRd,
                     practice_percentage: baselinePracticePercentage,
                     year_percentage: yearPercentage,
                     frequency_percentage: frequencyPercentage,
@@ -3095,7 +3119,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                   console.log('✅ EmployeeSetupStep - Created subcomponent relationship with baseline values:', {
                     subcomponent: subcomponent.subcomponent_id,
                     timePercentage: stepTimePercentage,
-                    appliedPercentage: baselineAppliedPercentage,
+                    appliedPercentage: appliedAfterNonRd,
                     practicePercentage: baselinePracticePercentage
                   });
                 }
