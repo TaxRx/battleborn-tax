@@ -39,7 +39,7 @@ CREATE INDEX IF NOT EXISTS idx_rd_erd_status_visibility ON public.rd_employee_ro
 
 -- Table Triggers
 
-create trigger update_rd_erd_updated_at before
+create trigger if not exists update_rd_erd_updated_at before
 update
     on
     public.rd_employee_role_designations for each row execute function update_updated_at_column();
