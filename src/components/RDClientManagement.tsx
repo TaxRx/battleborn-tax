@@ -51,6 +51,7 @@ import RDTaxWizard from '../modules/tax-calculator/components/RDTaxWizard/RDTaxW
 import ProgressSnapshot from './ProgressSnapshot';
 
 interface RDClientManagementProps {
+  operatorAccountId?: string;
   onClientSelect?: (client: UnifiedClientRecord) => void;
 }
 
@@ -379,8 +380,11 @@ const ClientCard: React.FC<ClientCardProps> = ({
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-      {/* Client Header */}
-      <div className="p-6">
+      {/* Client Header - Clickable */}
+      <div 
+        className="p-6 cursor-pointer hover:bg-gray-50 transition-colors"
+        onClick={() => onExpand(client.id)}
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <div className="flex-shrink-0">
@@ -413,16 +417,13 @@ const ClientCard: React.FC<ClientCardProps> = ({
           </div>
           
           <div className="flex items-center space-x-2">
-            <button
-              onClick={() => onExpand(client.id)}
-              className="p-2 rounded-full hover:bg-gray-100 transition-colors"
-            >
+            <div className="p-2">
               {isExpanded ? (
                 <ChevronDown className="w-5 h-5 text-gray-500" />
               ) : (
                 <ChevronRight className="w-5 h-5 text-gray-500" />
               )}
-            </button>
+            </div>
           </div>
         </div>
       </div>
@@ -474,6 +475,7 @@ const ClientCard: React.FC<ClientCardProps> = ({
 };
 
 export default function RDClientManagement({
+  operatorAccountId,
   onClientSelect
 }: RDClientManagementProps) {
   console.log('🎯 RDClientManagement component rendered');
@@ -499,7 +501,7 @@ export default function RDClientManagement({
     if (activeTab === 'clients') {
       loadClients();
     }
-  }, [activeTab]);
+  }, [activeTab, operatorAccountId]);
 
   // Handle URL parameters for launching R&D wizard
   useEffect(() => {
@@ -523,7 +525,8 @@ export default function RDClientManagement({
       
       // Get only clients enrolled in R&D tools
       const allClients = await CentralizedClientService.getUnifiedClientList({
-        toolFilter: 'rd'
+        toolFilter: 'rd',
+        operatorAccountId
       });
       console.log('📊 R&D clients loaded:', allClients.length);
       

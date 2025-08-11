@@ -334,7 +334,14 @@ export default function InfoForm({
       // Update the tax store with current form data
       setTaxInfo(formData);
       
-      // Save to database if clientId is provided
+      // If no clientId is provided, this is client creation - call onSubmit
+      if (!clientId) {
+        console.log('[InfoForm] No clientId provided, calling onSubmit for client creation');
+        onSubmit(formData, currentYear);
+        return; // Don't continue with the rest of the logic
+      }
+      
+      // Save to database if clientId is provided (existing client editing)
       if (clientId && selectedYear) {
         // First get the existing personal year to get the yearId
         const existingYear = await CentralizedClientService.getPersonalYear(clientId, selectedYear);

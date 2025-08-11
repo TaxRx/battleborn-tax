@@ -27,9 +27,10 @@ import useAuthStore from '../../../store/authStore';
 import { useUser } from '../../../context/UserContext';
 import OperatorToolsPage from './OperatorToolsPage';
 import OperatorDashboardOverview from '../components/OperatorDashboardOverview';
-import OperatorAffiliatesPage from './OperatorAffiliatesPage';
-import OperatorClientsPage from './OperatorClientsPage';
-import OperatorExpertsPage from './OperatorExpertsPage';
+// Import admin components that operators should use with filtering
+import UnifiedClientDashboard from '../../../components/UnifiedClientDashboard';
+import RDClientManagement from '../../../components/RDClientManagement';
+import UserProfileModal from '../../../components/UserProfileModal';
 // Import tax calculator tools
 import AdminTaxCalculator from '../../admin/components/AdminTaxCalculator';
 import AugustaRuleWizard from '../../../modules/tax-calculator/components/AugustaRuleWizard';
@@ -39,6 +40,7 @@ const OperatorDashboard: React.FC = () => {
   const { user } = useUser();
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { logout: authLogout } = useAuthStore();
@@ -84,9 +86,8 @@ const OperatorDashboard: React.FC = () => {
   const navigationItems = [
     { name: 'Dashboard', href: '/operator', icon: Home, current: location.pathname === '/operator' },
     { name: 'Tools', href: '/operator/tools', icon: Cog, current: location.pathname === '/operator/tools' },
-    { name: 'Affiliates', href: '/operator/affiliates', icon: Users, current: location.pathname === '/operator/affiliates' },
-    { name: 'Clients', href: '/operator/clients', icon: Building, current: location.pathname === '/operator/clients' },
-    { name: 'Experts', href: '/operator/experts', icon: UserCheck, current: location.pathname === '/operator/experts' },
+    { name: 'Client Management', href: '/operator/client-management', icon: Users, current: location.pathname === '/operator/client-management' },
+    { name: 'R&D Clients', href: '/operator/rd-clients', icon: FileText, current: location.pathname === '/operator/rd-clients' },
   ];
 
   const getPageTitle = () => {
@@ -166,9 +167,13 @@ const OperatorDashboard: React.FC = () => {
         {/* User Profile Section */}
         <div className="px-6 py-4 border-b border-slate-200">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
+            <button
+              onClick={() => setShowProfileModal(true)}
+              className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center hover:from-blue-600 hover:to-blue-700 transition-colors cursor-pointer"
+              title="Edit Profile"
+            >
               <User className="h-5 w-5 text-white" />
-            </div>
+            </button>
             <div className="flex-1 min-w-0">
               <p className="text-body-md font-medium text-slate-900 truncate">{effectiveUser.full_name}</p>
               <p className="text-body-sm text-slate-500">Operator</p>
@@ -270,9 +275,8 @@ const OperatorDashboard: React.FC = () => {
           <Routes>
             <Route path="/" element={<OperatorDashboardOverview />} />
             <Route path="/tools" element={<OperatorToolsPage />} />
-            <Route path="/affiliates" element={<OperatorAffiliatesPage />} />
-            <Route path="/clients" element={<OperatorClientsPage />} />
-            <Route path="/experts" element={<OperatorExpertsPage />} />
+            <Route path="/client-management" element={<UnifiedClientDashboard operatorAccountId={effectiveUser?.account?.id} />} />
+            <Route path="/rd-clients" element={<RDClientManagement operatorAccountId={effectiveUser?.account?.id} />} />
             
             {/* Tax Tools Routes */}
             <Route path="/tax-calculator" element={<AdminTaxCalculator />} />
@@ -283,6 +287,12 @@ const OperatorDashboard: React.FC = () => {
           </Routes>
         </main>
       </div>
+      
+      {/* User Profile Modal */}
+      <UserProfileModal 
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+      />
     </div>
   );
 };

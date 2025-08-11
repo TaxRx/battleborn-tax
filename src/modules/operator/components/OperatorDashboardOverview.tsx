@@ -7,12 +7,12 @@ import { useNavigate } from 'react-router-dom';
 import { 
   Users, 
   Cog, 
-  UserCheck, 
   Building, 
   TrendingUp,
   Clock,
   CheckCircle,
-  AlertTriangle
+  AlertTriangle,
+  FileText
 } from 'lucide-react';
 import { useUser } from '../../../context/UserContext';
 import OperatorToolService from '../services/operatorToolService';
@@ -133,7 +133,7 @@ const OperatorDashboardOverview: React.FC = () => {
       </div>
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div 
           className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer"
           onClick={() => navigate('/operator/tools')}
@@ -151,45 +151,30 @@ const OperatorDashboardOverview: React.FC = () => {
 
         <div 
           className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => navigate('/operator/affiliates')}
-        >
-          <div className="flex items-center space-x-3">
-            <div className="flex-shrink-0 h-10 w-10 rounded-md bg-blue-100 flex items-center justify-center">
-              <Users className="h-5 w-5 text-blue-600" />
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-gray-900">Affiliates</h3>
-              <p className="text-xs text-gray-500">Manage affiliates</p>
-            </div>
-          </div>
-        </div>
-
-        <div 
-          className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => navigate('/operator/clients')}
+          onClick={() => navigate('/operator/client-management')}
         >
           <div className="flex items-center space-x-3">
             <div className="flex-shrink-0 h-10 w-10 rounded-md bg-purple-100 flex items-center justify-center">
-              <Building className="h-5 w-5 text-purple-600" />
+              <Users className="h-5 w-5 text-purple-600" />
             </div>
             <div>
-              <h3 className="text-sm font-medium text-gray-900">Clients</h3>
-              <p className="text-xs text-gray-500">View clients</p>
+              <h3 className="text-sm font-medium text-gray-900">Client Management</h3>
+              <p className="text-xs text-gray-500">Manage your clients</p>
             </div>
           </div>
         </div>
 
         <div 
           className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => navigate('/operator/experts')}
+          onClick={() => navigate('/operator/rd-clients')}
         >
           <div className="flex items-center space-x-3">
-            <div className="flex-shrink-0 h-10 w-10 rounded-md bg-indigo-100 flex items-center justify-center">
-              <UserCheck className="h-5 w-5 text-indigo-600" />
+            <div className="flex-shrink-0 h-10 w-10 rounded-md bg-blue-100 flex items-center justify-center">
+              <FileText className="h-5 w-5 text-blue-600" />
             </div>
             <div>
-              <h3 className="text-sm font-medium text-gray-900">Experts</h3>
-              <p className="text-xs text-gray-500">Manage experts</p>
+              <h3 className="text-sm font-medium text-gray-900">R&D Clients</h3>
+              <p className="text-xs text-gray-500">R&D tax credit clients</p>
             </div>
           </div>
         </div>

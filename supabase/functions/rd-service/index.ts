@@ -1,0 +1,347 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+interface RDReportData {
+  business_year: {
+    id: string;
+    year: number;
+    business_id: string;
+    rd_business_id: string;
+    research_design_completed: boolean;
+    qre_locked: boolean;
+    calculations_completed: boolean;
+    created_at: string;
+    updated_at: string;
+  };
+  business: {
+    id: string;
+    business_name: string;
+    business_type: string;
+    industry: string;
+    client_id: string;
+    created_at: string;
+  };
+  client: {
+    id: string;
+    full_name: string;
+    email: string;
+    company_name?: string;
+  };
+  rd_business: {
+    id: string;
+    business_name: string;
+    business_type: string;
+    industry: string;
+    client_id: string;
+    created_at: string;
+  };
+  research_activities: Array<{
+    id: string;
+    rd_business_year_id: string;
+    activity_name: string;
+    activity_description: string;
+    research_focus: string;
+    technological_advancement: string;
+    scientific_uncertainty: string;
+    systematic_approach: string;
+    created_at: string;
+    updated_at: string;
+    subcomponents: Array<{
+      id: string;
+      research_activity_id: string;
+      subcomponent_name: string;
+      subcomponent_description: string;
+      technological_challenge: string;
+      research_methodology: string;
+      expected_outcome: string;
+      created_at: string;
+      updated_at: string;
+      steps: Array<{
+        id: string;
+        subcomponent_id: string;
+        step_name: string;
+        step_description: string;
+        step_order: number;
+        time_spent_hours: number;
+        resources_used: string;
+        challenges_encountered: string;
+        outcomes_achieved: string;
+        created_at: string;
+        updated_at: string;
+      }>;
+    }>;
+  }>;
+  employee_allocations: Array<{
+    id: string;
+    rd_business_year_id: string;
+    employee_name: string;
+    employee_role: string;
+    total_hours: number;
+    rd_hours: number;
+    hourly_wage: number;
+    total_wages: number;
+    rd_wages: number;
+    created_at: string;
+    updated_at: string;
+  }>;
+  supply_allocations: Array<{
+    id: string;
+    rd_business_year_id: string;
+    supply_name: string;
+    supply_description: string;
+    total_cost: number;
+    rd_cost: number;
+    allocation_percentage: number;
+    created_at: string;
+    updated_at: string;
+  }>;
+  calculations: {
+    total_qre_wages: number;
+    total_qre_supplies: number;
+    total_qre_amount: number;
+    federal_credit_amount: number;
+    state_credit_amount: number;
+    total_credit_amount: number;
+    calculated_at: string;
+  } | null;
+}
+
+Deno.serve(async (req) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  try {
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    const url = new URL(req.url);
+    const pathname = url.pathname;
+
+    // Route: /rd-service/rd-report-data
+    if (pathname.includes('/rd-report-data')) {
+      return await handleRDReportData(req, supabase);
+    }
+
+    return new Response(
+      JSON.stringify({ error: 'Endpoint not found' }),
+      { 
+        status: 404, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
+    );
+
+  } catch (error) {
+    console.error('RD Service Error:', error);
+    return new Response(
+      JSON.stringify({ error: 'Internal server error', details: error.message }),
+      { 
+        status: 500, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
+    );
+  }
+});
+
+async function handleRDReportData(req: Request, supabase: any): Promise<Response> {
+  if (req.method !== 'GET') {
+    return new Response(
+      JSON.stringify({ error: 'Method not allowed' }),
+      { 
+        status: 405, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
+    );
+  }
+
+  const url = new URL(req.url);
+  const businessYearId = url.searchParams.get('business_year_id');
+
+  if (!businessYearId) {
+    return new Response(
+      JSON.stringify({ error: 'business_year_id parameter is required' }),
+      { 
+        status: 400, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
+    );
+  }
+
+  try {
+    // 1. Get the business year record
+    const { data: businessYear, error: businessYearError } = await supabase
+      .from('rd_business_years')
+      .select('*')
+      .eq('id', businessYearId)
+      .single();
+
+    if (businessYearError || !businessYear) {
+      return new Response(
+        JSON.stringify({ error: 'Business year not found', details: businessYearError?.message }),
+        { 
+          status: 404, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+
+    // 2. Get the RD business record
+    const { data: rdBusiness, error: rdBusinessError } = await supabase
+      .from('rd_businesses')
+      .select('*')
+      .eq('id', businessYear.rd_business_id)
+      .single();
+
+    if (rdBusinessError || !rdBusiness) {
+      return new Response(
+        JSON.stringify({ error: 'RD business not found', details: rdBusinessError?.message }),
+        { 
+          status: 404, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+
+    // 3. Get the business record
+    const { data: business, error: businessError } = await supabase
+      .from('businesses')
+      .select('*')
+      .eq('id', businessYear.business_id)
+      .single();
+
+    if (businessError || !business) {
+      return new Response(
+        JSON.stringify({ error: 'Business not found', details: businessError?.message }),
+        { 
+          status: 404, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+
+    // 4. Get the client record
+    const { data: client, error: clientError } = await supabase
+      .from('clients')
+      .select('id, full_name, email, company_name')
+      .eq('id', rdBusiness.client_id)
+      .single();
+
+    if (clientError || !client) {
+      return new Response(
+        JSON.stringify({ error: 'Client not found', details: clientError?.message }),
+        { 
+          status: 404, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+
+    // 5. Get research activities with subcomponents and steps
+    const { data: researchActivities, error: activitiesError } = await supabase
+      .from('research_activities')
+      .select(`
+        *,
+        subcomponents:rd_subcomponents (
+          *,
+          steps:rd_steps (*)
+        )
+      `)
+      .eq('rd_business_year_id', businessYearId);
+
+    if (activitiesError) {
+      console.error('Error fetching research activities:', activitiesError);
+    }
+
+    // 6. Get employee allocations
+    const { data: employeeAllocations, error: employeeError } = await supabase
+      .from('rd_employee_allocations')
+      .select('*')
+      .eq('rd_business_year_id', businessYearId);
+
+    if (employeeError) {
+      console.error('Error fetching employee allocations:', employeeError);
+    }
+
+    // 7. Get supply allocations
+    const { data: supplyAllocations, error: supplyError } = await supabase
+      .from('rd_supply_allocations')
+      .select('*')
+      .eq('rd_business_year_id', businessYearId);
+
+    if (supplyError) {
+      console.error('Error fetching supply allocations:', supplyError);
+    }
+
+    // 8. Calculate totals for QRE amounts and credits
+    const calculations = calculateRDCredits(employeeAllocations || [], supplyAllocations || []);
+
+    // 9. Build comprehensive report data structure
+    const reportData: RDReportData = {
+      business_year: businessYear,
+      business: business,
+      client: client,
+      rd_business: rdBusiness,
+      research_activities: researchActivities || [],
+      employee_allocations: employeeAllocations || [],
+      supply_allocations: supplyAllocations || [],
+      calculations: calculations
+    };
+
+    return new Response(
+      JSON.stringify(reportData),
+      { 
+        status: 200, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
+    );
+
+  } catch (error) {
+    console.error('Error generating RD report data:', error);
+    return new Response(
+      JSON.stringify({ error: 'Failed to generate report data', details: error.message }),
+      { 
+        status: 500, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
+    );
+  }
+}
+
+function calculateRDCredits(employeeAllocations: any[], supplyAllocations: any[]) {
+  // Calculate total QRE wages
+  const totalQREWages = employeeAllocations.reduce((sum, emp) => sum + (emp.rd_wages || 0), 0);
+  
+  // Calculate total QRE supplies
+  const totalQRESupplies = supplyAllocations.reduce((sum, supply) => sum + (supply.rd_cost || 0), 0);
+  
+  // Calculate total QRE amount
+  const totalQREAmount = totalQREWages + totalQRESupplies;
+  
+  // Federal credit calculation (typically 20% for small businesses, 14% for others)
+  // For simplicity, using 20% - this could be made configurable based on business size
+  const federalCreditAmount = totalQREAmount * 0.20;
+  
+  // State credit amount (varies by state - this would need to be configurable)
+  // For now, using a placeholder calculation
+  const stateCreditAmount = totalQREAmount * 0.05; // 5% as example
+  
+  const totalCreditAmount = federalCreditAmount + stateCreditAmount;
+
+  return {
+    total_qre_wages: totalQREWages,
+    total_qre_supplies: totalQRESupplies,
+    total_qre_amount: totalQREAmount,
+    federal_credit_amount: federalCreditAmount,
+    state_credit_amount: stateCreditAmount,
+    total_credit_amount: totalCreditAmount,
+    calculated_at: new Date().toISOString()
+  };
+}
