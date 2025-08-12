@@ -142,54 +142,152 @@ export class SectionGQREService {
 
       const qreEntries: SectionGQREEntry[] = [];
 
-      // Use the first activity as the default activity for all entries
-      // This matches how the Expense step aggregates QREs
-      const defaultActivity = selectedActivities?.[0]?.research_activity || {
-        id: 'default',
-        title: 'Research Activities'
-      };
+      // Get employee activity allocations to properly distribute QRE by research activity
+      const { data: employeeActivityData, error: activityError } = await supabase
+        .from('rd_employee_year_data')
+        .select(`
+          employee_id,
+          activity_roles
+        `)
+        .eq('business_year_id', businessYearId);
 
-      // Process employee year data - use EXACT same calculated_qre as Expense step
+      if (activityError) {
+        console.warn('⚠️ Could not load employee activity allocations:', activityError);
+      }
+
+      // Create activity mapping for easy lookup
+      const activityMap = new Map();
+      (selectedActivities || []).forEach(act => {
+        if (act.research_activity) {
+          activityMap.set(act.activity_id, act.research_activity);
+        }
+      });
+
+      // Process employee year data - distribute QRE across research activities
       for (const empData of employeeYearData || []) {
         const employee = empData.employee;
         if (!employee) continue;
 
         const calculatedQRE = empData.calculated_qre || 0;
         
-        console.log(`💰 [SectionGQREService] Employee ${employee.first_name} ${employee.last_name}: $${calculatedQRE.toLocaleString()} (from calculated_qre)`);
+        if (calculatedQRE <= 0) continue;
 
-        if (calculatedQRE > 0) {
-          qreEntries.push({
-            activity_id: defaultActivity.id,
-            activity_title: defaultActivity.title,
-            subcomponent_id: 'aggregate', // Use aggregate since we're using year-level data
-            subcomponent_name: 'Applied Wages',
-            step_id: 'aggregate',
-            step_name: 'Applied Wages',
-            category: 'Employee',
-            name: `${employee.first_name} ${employee.last_name}`.trim(),
-            first_name: employee.first_name || '',
-            last_name: employee.last_name || '',
-            role: employee.role?.name || '',
-            annual_cost: employee.annual_wage || 0,
-            applied_percentage: empData.applied_percent || 0,
-            calculated_qre: calculatedQRE, // EXACT same value as Expense step
-            is_owner: employee.is_owner || false
-          });
+        // Get this employee's activity allocations
+        const empActivityData = employeeActivityData?.find(ea => ea.employee_id === empData.employee_id);
+        const activityRoles = empActivityData?.activity_roles || {};
+
+        console.log(`💰 [SectionGQREService] Employee ${employee.first_name} ${employee.last_name}: $${calculatedQRE.toLocaleString()} (from calculated_qre)`);
+        console.log(`🎯 Activity allocations:`, activityRoles);
+
+        // If employee has specific activity allocations, distribute QRE proportionally
+        if (Object.keys(activityRoles).length > 0) {
+          const totalActivityPercent = Object.values(activityRoles).reduce((sum: number, percent: any) => sum + (percent || 0), 0);
+          
+          if (totalActivityPercent > 0) {
+            // Distribute QRE proportionally across activities
+            for (const [activityId, activityPercent] of Object.entries(activityRoles)) {
+              const activity = activityMap.get(activityId);
+              if (!activity || !activityPercent) continue;
+
+              const proportionalQRE = Math.round(calculatedQRE * (activityPercent as number) / totalActivityPercent);
+              
+              if (proportionalQRE > 0) {
+                console.log(`  📊 ${activity.title}: ${activityPercent}% = $${proportionalQRE.toLocaleString()}`);
+                
+                qreEntries.push({
+                  activity_id: activityId,
+                  activity_title: activity.title,
+                  subcomponent_id: 'aggregate',
+                  subcomponent_name: 'Applied Wages',
+                  step_id: 'aggregate',
+                  step_name: 'Applied Wages',
+                  category: 'Employee',
+                  name: `${employee.first_name} ${employee.last_name}`.trim(),
+                  first_name: employee.first_name || '',
+                  last_name: employee.last_name || '',
+                  role: employee.role?.name || '',
+                  annual_cost: employee.annual_wage || 0,
+                  applied_percentage: empData.applied_percent || 0,
+                  calculated_qre: proportionalQRE,
+                  is_owner: employee.is_owner || false
+                });
+              }
+            }
+          } else {
+            // Fallback: if activity percentages sum to 0, use first activity
+            const firstActivity = selectedActivities?.[0]?.research_activity;
+            if (firstActivity) {
+              qreEntries.push({
+                activity_id: firstActivity.id,
+                activity_title: firstActivity.title,
+                subcomponent_id: 'aggregate',
+                subcomponent_name: 'Applied Wages',
+                step_id: 'aggregate',
+                step_name: 'Applied Wages',
+                category: 'Employee',
+                name: `${employee.first_name} ${employee.last_name}`.trim(),
+                first_name: employee.first_name || '',
+                last_name: employee.last_name || '',
+                role: employee.role?.name || '',
+                annual_cost: employee.annual_wage || 0,
+                applied_percentage: empData.applied_percent || 0,
+                calculated_qre: calculatedQRE,
+                is_owner: employee.is_owner || false
+              });
+            }
+          }
+        } else {
+          // No activity allocations - distribute evenly across all activities
+          const activityCount = selectedActivities?.length || 1;
+          const qrePerActivity = Math.round(calculatedQRE / activityCount);
+          
+          for (const selectedActivity of selectedActivities || []) {
+            const activity = selectedActivity.research_activity;
+            if (!activity) continue;
+
+            console.log(`  📊 ${activity.title}: evenly distributed = $${qrePerActivity.toLocaleString()}`);
+            
+            qreEntries.push({
+              activity_id: activity.id,
+              activity_title: activity.title,
+              subcomponent_id: 'aggregate',
+              subcomponent_name: 'Applied Wages',
+              step_id: 'aggregate',
+              step_name: 'Applied Wages',
+              category: 'Employee',
+              name: `${employee.first_name} ${employee.last_name}`.trim(),
+              first_name: employee.first_name || '',
+              last_name: employee.last_name || '',
+              role: employee.role?.name || '',
+              annual_cost: employee.annual_wage || 0,
+              applied_percentage: empData.applied_percent || 0,
+              calculated_qre: qrePerActivity,
+              is_owner: employee.is_owner || false
+            });
+          }
         }
       }
 
-      // Process contractor year data - use EXACT same calculated_qre as Expense step
+      // Process contractor year data - distribute across activities
       for (const contrData of contractorYearData || []) {
         const calculatedQRE = contrData.calculated_qre || 0;
         const contractorName = contrData.name || 'Unknown Contractor';
         
+        if (calculatedQRE <= 0) continue;
+
         console.log(`💰 [SectionGQREService] Contractor ${contractorName}: $${calculatedQRE.toLocaleString()} (from calculated_qre)`);
 
-        if (calculatedQRE > 0) {
+        // Distribute contractor QRE evenly across all activities
+        const activityCount = selectedActivities?.length || 1;
+        const qrePerActivity = Math.round(calculatedQRE / activityCount);
+
+        for (const selectedActivity of selectedActivities || []) {
+          const activity = selectedActivity.research_activity;
+          if (!activity) continue;
+
           qreEntries.push({
-            activity_id: defaultActivity.id,
-            activity_title: defaultActivity.title,
+            activity_id: activity.id,
+            activity_title: activity.title,
             subcomponent_id: 'aggregate',
             subcomponent_name: 'Applied Costs',
             step_id: 'aggregate',
@@ -201,23 +299,32 @@ export class SectionGQREService {
             role: '',
             annual_cost: 0,
             applied_percentage: contrData.applied_percent || 0,
-            calculated_qre: calculatedQRE, // EXACT same value as Expense step
+            calculated_qre: qrePerActivity,
             is_owner: false
           });
         }
       }
 
-      // Process supply year data - use EXACT same calculated_qre as Expense step
+      // Process supply year data - distribute across activities
       for (const suppData of supplyYearData || []) {
         const calculatedQRE = suppData.calculated_qre || 0;
         const supplyName = suppData.name || 'Unknown Supply';
         
+        if (calculatedQRE <= 0) continue;
+
         console.log(`💰 [SectionGQREService] Supply ${supplyName}: $${calculatedQRE.toLocaleString()} (from calculated_qre)`);
 
-        if (calculatedQRE > 0) {
+        // Distribute supply QRE evenly across all activities
+        const activityCount = selectedActivities?.length || 1;
+        const qrePerActivity = Math.round(calculatedQRE / activityCount);
+
+        for (const selectedActivity of selectedActivities || []) {
+          const activity = selectedActivity.research_activity;
+          if (!activity) continue;
+
           qreEntries.push({
-            activity_id: defaultActivity.id,
-            activity_title: defaultActivity.title,
+            activity_id: activity.id,
+            activity_title: activity.title,
             subcomponent_id: 'aggregate',
             subcomponent_name: 'Applied Supplies',
             step_id: 'aggregate',
@@ -226,7 +333,7 @@ export class SectionGQREService {
             name: supplyName,
             annual_cost: 0,
             applied_percentage: suppData.applied_percent || 0,
-            calculated_qre: calculatedQRE, // EXACT same value as Expense step
+            calculated_qre: qrePerActivity,
             is_owner: false
           });
         }
