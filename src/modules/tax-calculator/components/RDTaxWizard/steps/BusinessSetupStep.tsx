@@ -636,34 +636,69 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
     };
   }, [business?.id, userId]);
 
-  // Compute internal QREs per year and optionally lock status when we have mapping
+  // Compute internal QREs per year, prioritizing locked values from Expense step
   useEffect(() => {
     const computeInternalQREs = async () => {
       const entries = Object.entries(businessYearIdByYear);
       if (entries.length === 0) return;
       try {
-        // Compute in parallel
+        // First check for locked QRE values from rd_business_years
+        const businessYearIds = entries.map(([_, byId]) => byId);
+        const { data: lockedData, error: lockedError } = await supabase
+          .from('rd_business_years')
+          .select('id, employee_qre, contractor_qre, supply_qre, qre_locked')
+          .in('id', businessYearIds);
+
+        const lockedQREMap = new Map<string, { total: number; locked: boolean }>();
+        if (!lockedError && lockedData) {
+          lockedData.forEach(row => {
+            if (row.qre_locked) {
+              const total = (row.employee_qre || 0) + (row.contractor_qre || 0) + (row.supply_qre || 0);
+              lockedQREMap.set(row.id, { total, locked: true });
+              console.log(`🔒 [BusinessSetup] Using LOCKED QRE for year ${row.id}: $${total.toLocaleString()}`);
+            }
+          });
+        }
+
+        // Compute in parallel, using locked values when available
         const results = await Promise.all(entries.map(async ([yearStr, byId]) => {
           try {
-            const qreEntries = await SectionGQREService.getQREDataForSectionG(byId);
-            const internalTotal = qreEntries.reduce((sum, e) => sum + (e.calculated_qre || 0), 0);
-            // Fetch data_entry milestone lock status
+            let internalTotal = 0;
             let isLocked = false;
-            try {
-              isLocked = await ProgressTrackingService.getMilestoneStatus(byId, 'data_entry');
-            } catch (e) {
-              // ignore
+
+            // PRIORITY 1: Use locked QRE values if available
+            const lockedQRE = lockedQREMap.get(byId);
+            if (lockedQRE) {
+              internalTotal = lockedQRE.total;
+              isLocked = lockedQRE.locked;
+              console.log(`✅ [BusinessSetup] Using locked QRE for year ${yearStr}: $${internalTotal.toLocaleString()}`);
+            } else {
+              // FALLBACK: Calculate from individual components
+              const qreEntries = await SectionGQREService.getQREDataForSectionG(byId);
+              internalTotal = qreEntries.reduce((sum, e) => sum + (e.calculated_qre || 0), 0);
+              
+              // Check milestone lock status for non-locked values
+              try {
+                isLocked = await ProgressTrackingService.getMilestoneStatus(byId, 'data_entry');
+              } catch (e) {
+                // ignore
+              }
+              console.log(`📊 [BusinessSetup] Using calculated QRE for year ${yearStr}: $${internalTotal.toLocaleString()}`);
             }
+
             return { year: parseInt(yearStr, 10), internalTotal, isLocked };
           } catch (e) {
+            console.warn(`⚠️ [BusinessSetup] Error computing QRE for year ${yearStr}:`, e);
             return { year: parseInt(yearStr, 10), internalTotal: 0, isLocked: false };
           }
         }));
+        
         const qreMap: Record<number, number> = {};
         const lockMap: Record<number, boolean> = {};
         results.forEach(r => { qreMap[r.year] = r.internalTotal; lockMap[r.year] = r.isLocked; });
         setCalculatedQREByYear(qreMap);
         setDataEntryLockedByYear(lockMap);
+        console.log('✅ [BusinessSetup] QRE totals updated:', qreMap);
       } catch (e) {
         console.warn('[BusinessSetupStep] Failed computing internal QREs:', e);
       }
