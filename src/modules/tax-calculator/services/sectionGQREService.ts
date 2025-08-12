@@ -67,49 +67,53 @@ export class SectionGQREService {
       }
 
       // Get contractor year data from the same source as Expense step
-      const { data: contractorYearData, error: contractorYearError } = await supabase
-        .from('rd_contractor_year_data')
-        .select(`
-          contractor_id,
-          calculated_qre,
-          applied_percent,
-          contractor:rd_contractors (
-            id,
-            first_name,
-            last_name,
-            amount,
-            is_owner,
-            role:rd_roles (
-              id,
-              name
-            )
-          )
-        `)
-        .eq('business_year_id', businessYearId);
+      // NOTE: Handle gracefully if table doesn't exist or has no data
+      let contractorYearData = null;
+      try {
+        const { data, error } = await supabase
+          .from('rd_contractor_year_data')
+          .select(`
+            contractor_id,
+            calculated_qre,
+            applied_percent,
+            name
+          `)
+          .eq('business_year_id', businessYearId);
 
-      if (contractorYearError) {
-        console.error('❌ Error fetching contractor year data:', contractorYearError);
-        throw contractorYearError;
+        if (error) {
+          console.warn('⚠️ rd_contractor_year_data query failed (table may not exist):', error.message);
+          contractorYearData = [];
+        } else {
+          contractorYearData = data || [];
+        }
+      } catch (error) {
+        console.warn('⚠️ rd_contractor_year_data table not available:', error);
+        contractorYearData = [];
       }
 
       // Get supply year data from the same source as Expense step  
-      const { data: supplyYearData, error: supplyYearError } = await supabase
-        .from('rd_supply_year_data')
-        .select(`
-          supply_id,
-          calculated_qre,
-          applied_percent,
-          supply:rd_supplies (
-            id,
-            name,
-            annual_cost
-          )
-        `)
-        .eq('business_year_id', businessYearId);
+      // NOTE: Handle gracefully if table doesn't exist or has no data
+      let supplyYearData = null;
+      try {
+        const { data, error } = await supabase
+          .from('rd_supply_year_data')
+          .select(`
+            supply_id,
+            calculated_qre,
+            applied_percent,
+            name
+          `)
+          .eq('business_year_id', businessYearId);
 
-      if (supplyYearError) {
-        console.error('❌ Error fetching supply year data:', supplyYearError);
-        throw supplyYearError;
+        if (error) {
+          console.warn('⚠️ rd_supply_year_data query failed (table may not exist):', error.message);
+          supplyYearData = [];
+        } else {
+          supplyYearData = data || [];
+        }
+      } catch (error) {
+        console.warn('⚠️ rd_supply_year_data table not available:', error);
+        supplyYearData = [];
       }
 
       // Get research activities for proper categorization
@@ -177,12 +181,10 @@ export class SectionGQREService {
 
       // Process contractor year data - use EXACT same calculated_qre as Expense step
       for (const contrData of contractorYearData || []) {
-        const contractor = contrData.contractor;
-        if (!contractor) continue;
-
         const calculatedQRE = contrData.calculated_qre || 0;
+        const contractorName = contrData.name || 'Unknown Contractor';
         
-        console.log(`💰 [SectionGQREService] Contractor ${contractor.first_name} ${contractor.last_name}: $${calculatedQRE.toLocaleString()} (from calculated_qre)`);
+        console.log(`💰 [SectionGQREService] Contractor ${contractorName}: $${calculatedQRE.toLocaleString()} (from calculated_qre)`);
 
         if (calculatedQRE > 0) {
           qreEntries.push({
@@ -193,26 +195,24 @@ export class SectionGQREService {
             step_id: 'aggregate',
             step_name: 'Applied Costs',
             category: 'Contractor',
-            name: `${contractor.first_name} ${contractor.last_name}`.trim(),
-            first_name: contractor.first_name || '',
-            last_name: contractor.last_name || '',
-            role: contractor.role?.name || '',
-            annual_cost: contractor.amount || 0,
+            name: contractorName,
+            first_name: '',
+            last_name: '',
+            role: '',
+            annual_cost: 0,
             applied_percentage: contrData.applied_percent || 0,
             calculated_qre: calculatedQRE, // EXACT same value as Expense step
-            is_owner: contractor.is_owner || false
+            is_owner: false
           });
         }
       }
 
       // Process supply year data - use EXACT same calculated_qre as Expense step
       for (const suppData of supplyYearData || []) {
-        const supply = suppData.supply;
-        if (!supply) continue;
-
         const calculatedQRE = suppData.calculated_qre || 0;
+        const supplyName = suppData.name || 'Unknown Supply';
         
-        console.log(`💰 [SectionGQREService] Supply ${supply.name}: $${calculatedQRE.toLocaleString()} (from calculated_qre)`);
+        console.log(`💰 [SectionGQREService] Supply ${supplyName}: $${calculatedQRE.toLocaleString()} (from calculated_qre)`);
 
         if (calculatedQRE > 0) {
           qreEntries.push({
@@ -223,8 +223,8 @@ export class SectionGQREService {
             step_id: 'aggregate',
             step_name: 'Applied Supplies',
             category: 'Supply',
-            name: supply.name || '',
-            annual_cost: supply.annual_cost || 0,
+            name: supplyName,
+            annual_cost: 0,
             applied_percentage: suppData.applied_percent || 0,
             calculated_qre: calculatedQRE, // EXACT same value as Expense step
             is_owner: false
