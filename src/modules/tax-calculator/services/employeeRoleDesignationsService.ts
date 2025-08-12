@@ -345,6 +345,30 @@ export const employeeRoleDesignationsService = {
           }
 
           if (inserts.length > 0) {
+            // Apply Non-R&D reduction by step before insert
+            try {
+              const { data: subsForYear } = await supabase
+                .from('rd_selected_subcomponents')
+                .select('subcomponent_id, step_id')
+                .eq('business_year_id', businessYearId);
+              const { data: stepsForYear } = await supabase
+                .from('rd_selected_steps')
+                .select('step_id, non_rd_percentage')
+                .eq('business_year_id', businessYearId);
+              const stepMap: Record<string, number> = {};
+              (stepsForYear || []).forEach((s: any) => { if (s.step_id) stepMap[s.step_id] = Number(s.non_rd_percentage || 0); });
+              const subToStep: Record<string, string> = {};
+              (subsForYear || []).forEach((s: any) => { if (s.subcomponent_id && s.step_id) subToStep[s.subcomponent_id] = s.step_id; });
+              inserts.forEach(i => {
+                const stepId = subToStep[i.subcomponent_id];
+                const nonRd = stepId ? (stepMap[stepId] || 0) : 0;
+                if (nonRd > 0) {
+                  i.applied_percentage = i.applied_percentage * ((100 - nonRd) / 100);
+                }
+              });
+            } catch (e) {
+              console.warn('⚠️ Skipping Non-R&D reduction during seed due to error', e);
+            }
             await supabase.from('rd_employee_subcomponents').insert(inserts);
           }
         }

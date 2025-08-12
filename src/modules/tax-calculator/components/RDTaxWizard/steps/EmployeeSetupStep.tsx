@@ -1341,6 +1341,20 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
     try {
       console.log('💾 BATCH SAVE: Saving all allocation changes for employee:', employee.id);
       console.log('🎯 All UI changes are now batched and saved only when Save button is clicked');
+
+      // Preload Non-R&D percentages per step and subcomponent->step map for this business year
+      const stepNonRdMap: Record<string, number> = {};
+      const subToStepMap: Record<string, string> = {};
+      try {
+        const [{ data: stepsForYear }, { data: subsForYear }] = await Promise.all([
+          supabase.from('rd_selected_steps').select('step_id, non_rd_percentage').eq('business_year_id', businessYearId),
+          supabase.from('rd_selected_subcomponents').select('subcomponent_id, step_id').eq('business_year_id', businessYearId)
+        ]);
+        (stepsForYear || []).forEach((s: any) => { if (s.step_id) stepNonRdMap[s.step_id] = Number(s.non_rd_percentage || 0); });
+        (subsForYear || []).forEach((s: any) => { if (s.subcomponent_id && s.step_id) subToStepMap[s.subcomponent_id] = s.step_id; });
+      } catch (e) {
+        console.warn('⚠️ Could not preload Non-R&D or subcomponent-step maps; proceeding without reductions', e);
+      }
       
       // FIRST: Save activity enabled states to rd_selected_activities
       for (const activity of activities) {
@@ -1396,10 +1410,15 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
           for (const subcomponent of activity.subcomponents) {
             if (subcomponent.isIncluded) {
               // Calculate applied percentage using modal's formula: Practice% × Year% × Frequency% × Time%
-              const appliedPercentage = (activity.practicePercentage / 100) * 
+              const baselineApplied = (activity.practicePercentage / 100) * 
                                      (subcomponent.yearPercentage / 100) * 
                                      (subcomponent.frequencyPercentage / 100) * 
                                      (subcomponent.timePercentage / 100) * 100;
+
+              // Apply Non-R&D reduction based on the step for this subcomponent (if available)
+              const stepIdForSub = subToStepMap[subcomponent.id];
+              const nonRdForStep = stepIdForSub ? (stepNonRdMap[stepIdForSub] || 0) : 0;
+              const appliedPercentage = nonRdForStep > 0 ? baselineApplied * ((100 - nonRdForStep) / 100) : baselineApplied;
               
               console.log('🔍 Calculated applied percentage for subcomponent:', {
                 subcomponent: subcomponent.name,
@@ -1407,20 +1426,21 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
                 yearPercentage: subcomponent.yearPercentage,
                 frequencyPercentage: subcomponent.frequencyPercentage,
                 timePercentage: subcomponent.timePercentage,
-                appliedPercentage: appliedPercentage
+                nonRdForStep,
+                baselineApplied,
+                appliedPercentage
               });
               
               // Add to total
               totalAppliedPercentage += appliedPercentage;
               
               // Prepare upsert data - save exact values from modal calculations
-              // NO BASELINE CONSTRAINTS - all data goes to standard columns
               const upsertData: any = {
                 employee_id: employee.id,
                 business_year_id: businessYearId,
                 subcomponent_id: subcomponent.id,
                 time_percentage: subcomponent.timePercentage,
-                applied_percentage: appliedPercentage, // Use exact calculated value (no constraints)
+                applied_percentage: appliedPercentage,
                 practice_percentage: activity.practicePercentage,
                 year_percentage: subcomponent.yearPercentage,
                 frequency_percentage: subcomponent.frequencyPercentage,
@@ -1442,7 +1462,7 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
               } else {
                 console.log('✅ Saved subcomponent allocation:', {
                   subcomponent: subcomponent.name,
-                  appliedPercentage: appliedPercentage
+                  appliedPercentage
                 });
               }
             } else {
@@ -4573,39 +4593,42 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     try {
       console.log('🎯 [ROSTER-MODAL SYNC] Getting Applied% directly from modal calculation for employee:', employeeId);
       
-      // ❌ PROBLEM IDENTIFIED: Roster was applying its own calculation instead of using modal's values
-      // ✅ SOLUTION: Don't recalculate - use applied_percentage that modal already calculated and saved
+      // Load valid subcomponents for this year to avoid lingering-row inflation
+      const { data: validSubs } = await supabase
+        .from('rd_selected_subcomponents')
+        .select('subcomponent_id')
+        .eq('business_year_id', selectedYear || businessYearId);
+      const validIds = (validSubs || []).map((r: any) => r.subcomponent_id);
       
-      const { data: subcomponentAllocations, error } = await supabase
+      const query = supabase
         .from('rd_employee_subcomponents')
         .select('applied_percentage, subcomponent_id, practice_percentage, time_percentage, year_percentage, frequency_percentage, is_included')
         .eq('employee_id', employeeId)
         .eq('business_year_id', selectedYear || businessYearId)
         .eq('is_included', true);
+      const { data: subcomponentAllocations, error } = validIds.length > 0
+        ? await query.in('subcomponent_id', validIds)
+        : await query;
       
       if (error) {
         console.error('❌ Error loading subcomponent allocations:', error);
         return 0;
       }
       
-      // ✅ DEBUG: Check what's actually in the database  
       if (subcomponentAllocations?.length === 0) {
-        console.log(`🔍 DEBUG: Employee ${employeeId} has no subcomponent records - QRE will be $0`);
-        console.log(`📋 This likely means: (1) CSV import didn't create subcomponent relationships, or (2) Research Design step not set up for this business year`);
+        console.log(`🔍 DEBUG: Employee ${employeeId} has no valid subcomponent records for this year - QRE will be $0`);
       }
       
-      // ✅ NO RECALCULATION: Just sum the applied_percentage values that modal calculated and saved
       const totalAppliedPercentage = subcomponentAllocations?.reduce((sum, alloc) => {
         return sum + (alloc.applied_percentage || 0);
       }, 0) || 0;
       
       const finalResult = +totalAppliedPercentage.toFixed(2);
       
-      console.log('✅ [ROSTER-MODAL SYNC] Using saved applied_percentage values (no recalculation):', {
+      console.log('✅ [ROSTER-MODAL SYNC] Using saved applied_percentage values (filtered to active subcomponents):', {
         employeeId,
         subcomponentCount: subcomponentAllocations?.length || 0,
-        totalAppliedPercentage: finalResult,
-        note: 'Uses EXACT applied_percentage values that modal calculated and saved - no actualization reapplied'
+        totalAppliedPercentage: finalResult
       });
       
       return finalResult;
@@ -4699,31 +4722,19 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                       setEmployeesWithData([]);
                       setContractorsWithData([]);
                       setSupplies([]);
-                      setExpenses([]);
-                      console.log('🧹 ✅ All cached data cleared');
+                      setExpenses([]); // CRITICAL: Clear expenses immediately
+                      setRoles([]);
+                      setSelectedEmployee(null);
+                      setSelectedContractor(null);
+                      setShowEmployeeDetailModal(false);
+                      setShowContractorDetailModal(false);
+                      setActiveTab('employees'); // Reset to employees tab to prevent showing stale data on other tabs
                       
-                      // CRITICAL: Reset QRE locked state to prevent cross-year contamination
-                      console.log('🔒 RESETTING QRE state to prevent year contamination');
-                      setLockedEmployeeQRE(0);
-                      setLockedContractorQRE(0);
-                      setLockedSupplyQRE(0);
-                      setQreLocked(false);
-                      
-                      // CRITICAL: Force complete data reload for new year
-                      console.log('💾 FORCING complete data reload for year:', newYearId);
-                      setLoading(true);
-                      
-                      try {
-                        // Load all data for the new year - CRITICAL: Pass newYearId to prevent stale state
-                        await loadData(newYearId);
-                        // Load QRE values for the new year
-                        await loadQREValues(newYearId);
-                        console.log('✅ Year switch complete - data fully isolated');
-                      } catch (error) {
-                        console.error('❌ Error during year switch:', error);
-                      } finally {
-                        setLoading(false);
-                      }
+                      console.log('🧹 State cleared, loading fresh data for year:', selectedYear);
+                      // Small delay to ensure state is cleared before loading
+                      setTimeout(() => {
+                        loadData(selectedYear || businessYearId);
+                      }, 100);
                     }}
                     className="px-3 py-1 bg-white/10 border border-white/20 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/50"
                   >
