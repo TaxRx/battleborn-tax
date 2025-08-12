@@ -1,17 +1,14 @@
 BEGIN;
 
 -- Normalize employee allocations to match Allocation Modal logic across the database.
+-- Uses per-employee saved sliders in rd_employee_subcomponents to preserve Actualization.
 -- For each employee/year:
---  1) Recompute per-subcomponent applied% using Practice×Year×Frequency×Time with step-level Non‑R&D reduction
+--  1) Recompute per-subcomponent applied% using employee-level Practice×Year×Frequency×Time with step-level Non‑R&D reduction
 --  2) Cap summed applied% at 100% proportionally and write back to rd_employee_subcomponents
 --  3) Update rd_employee_year_data.applied_percent and calculated_qre (using 80% threshold for dollars)
 
-WITH sub_map AS (
-  SELECT sc.business_year_id, sc.subcomponent_id, sc.step_id,
-         COALESCE(sc.practice_percent,0)  AS practice_percent,
-         COALESCE(sc.year_percentage,100) AS year_percent,
-         COALESCE(sc.frequency_percentage,100) AS freq_percent,
-         COALESCE(sc.time_percentage,0)   AS time_percent
+WITH sub_to_step AS (
+  SELECT sc.business_year_id, sc.subcomponent_id, sc.step_id
   FROM rd_selected_subcomponents sc
 ),
 step_nonrd AS (
@@ -23,26 +20,35 @@ base AS (
          es.employee_id,
          es.business_year_id,
          es.subcomponent_id,
-         sm.step_id,
-         sm.practice_percent,
-         sm.year_percent,
-         sm.freq_percent,
-         sm.time_percent,
+         sts.step_id,
+         COALESCE(es.practice_percentage,0)  AS practice_percent,
+         COALESCE(es.year_percentage,100)    AS year_percent,
+         COALESCE(es.frequency_percentage,100) AS freq_percent,
+         COALESCE(es.time_percentage,0)      AS time_percent,
          sn.non_rd,
-         /* Modal formula baseline */
-         ((sm.practice_percent/100.0) * (sm.year_percent/100.0) * (sm.freq_percent/100.0) * (sm.time_percent/100.0) * 100.0) AS baseline_applied,
+         /* Modal formula baseline from employee-level values */
+         ((COALESCE(es.practice_percentage,0)/100.0) *
+          (COALESCE(es.year_percentage,100)/100.0) *
+          (COALESCE(es.frequency_percentage,100)/100.0) *
+          (COALESCE(es.time_percentage,0)/100.0) * 100.0) AS baseline_applied,
          /* Apply Non‑R&D reduction */
          CASE WHEN COALESCE(sn.non_rd,0) > 0
-              THEN ((sm.practice_percent/100.0) * (sm.year_percent/100.0) * (sm.freq_percent/100.0) * (sm.time_percent/100.0) * 100.0) * ((100.0 - sn.non_rd)/100.0)
-              ELSE ((sm.practice_percent/100.0) * (sm.year_percent/100.0) * (sm.freq_percent/100.0) * (sm.time_percent/100.0) * 100.0)
+              THEN ((COALESCE(es.practice_percentage,0)/100.0) *
+                    (COALESCE(es.year_percentage,100)/100.0) *
+                    (COALESCE(es.frequency_percentage,100)/100.0) *
+                    (COALESCE(es.time_percentage,0)/100.0) * 100.0) * ((100.0 - sn.non_rd)/100.0)
+              ELSE ((COALESCE(es.practice_percentage,0)/100.0) *
+                    (COALESCE(es.year_percentage,100)/100.0) *
+                    (COALESCE(es.frequency_percentage,100)/100.0) *
+                    (COALESCE(es.time_percentage,0)/100.0) * 100.0)
           END AS applied_after_nonrd
   FROM rd_employee_subcomponents es
-  JOIN sub_map sm
-    ON sm.business_year_id = es.business_year_id
-   AND sm.subcomponent_id   = es.subcomponent_id
+  LEFT JOIN sub_to_step sts
+    ON sts.business_year_id = es.business_year_id
+   AND sts.subcomponent_id   = es.subcomponent_id
   LEFT JOIN step_nonrd sn
-    ON sn.business_year_id = sm.business_year_id
-   AND sn.step_id          = sm.step_id
+    ON sn.business_year_id = es.business_year_id
+   AND sn.step_id          = sts.step_id
   WHERE es.is_included = true
 ),
 totals AS (
