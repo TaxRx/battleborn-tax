@@ -39,20 +39,70 @@ CREATE INDEX IF NOT EXISTS idx_rd_erd_status_visibility ON public.rd_employee_ro
 
 -- Table Triggers
 
-create trigger if not exists update_rd_erd_updated_at before
-update
-    on
-    public.rd_employee_role_designations for each row execute function update_updated_at_column();
+drop trigger if exists update_rd_erd_updated_at on public.rd_employee_role_designations;
+create trigger update_rd_erd_updated_at 
+    before update on public.rd_employee_role_designations 
+    for each row execute function update_updated_at_column();
 
 
 -- public.rd_employee_role_designations foreign keys
 
-ALTER TABLE public.rd_employee_role_designations ADD CONSTRAINT rd_employee_role_designations_applied_by_fkey FOREIGN KEY (applied_by) REFERENCES auth.users(id) ON DELETE SET NULL;
-ALTER TABLE public.rd_employee_role_designations ADD CONSTRAINT rd_employee_role_designations_business_id_fkey FOREIGN KEY (business_id) REFERENCES public.rd_businesses(id) ON DELETE CASCADE;
-ALTER TABLE public.rd_employee_role_designations ADD CONSTRAINT rd_employee_role_designations_business_year_id_fkey FOREIGN KEY (business_year_id) REFERENCES public.rd_business_years(id) ON DELETE CASCADE;
-ALTER TABLE public.rd_employee_role_designations ADD CONSTRAINT rd_employee_role_designations_employee_id_fkey FOREIGN KEY (employee_id) REFERENCES public.rd_employees(id) ON DELETE SET NULL;
-ALTER TABLE public.rd_employee_role_designations ADD CONSTRAINT rd_employee_role_designations_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES auth.users(id) ON DELETE SET NULL;
-ALTER TABLE public.rd_employee_role_designations ADD CONSTRAINT rd_employee_role_designations_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.rd_roles(id) ON DELETE SET NULL;
+DO $$
+BEGIN
+    -- Add applied_by foreign key if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'rd_employee_role_designations_applied_by_fkey'
+    ) THEN
+        ALTER TABLE public.rd_employee_role_designations ADD CONSTRAINT rd_employee_role_designations_applied_by_fkey 
+            FOREIGN KEY (applied_by) REFERENCES auth.users(id) ON DELETE SET NULL;
+    END IF;
+    
+    -- Add business_id foreign key if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'rd_employee_role_designations_business_id_fkey'
+    ) THEN
+        ALTER TABLE public.rd_employee_role_designations ADD CONSTRAINT rd_employee_role_designations_business_id_fkey 
+            FOREIGN KEY (business_id) REFERENCES public.rd_businesses(id) ON DELETE CASCADE;
+    END IF;
+    
+    -- Add business_year_id foreign key if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'rd_employee_role_designations_business_year_id_fkey'
+    ) THEN
+        ALTER TABLE public.rd_employee_role_designations ADD CONSTRAINT rd_employee_role_designations_business_year_id_fkey 
+            FOREIGN KEY (business_year_id) REFERENCES public.rd_business_years(id) ON DELETE CASCADE;
+    END IF;
+    
+    -- Add employee_id foreign key if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'rd_employee_role_designations_employee_id_fkey'
+    ) THEN
+        ALTER TABLE public.rd_employee_role_designations ADD CONSTRAINT rd_employee_role_designations_employee_id_fkey 
+            FOREIGN KEY (employee_id) REFERENCES public.rd_employees(id) ON DELETE SET NULL;
+    END IF;
+    
+    -- Add requested_by foreign key if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'rd_employee_role_designations_requested_by_fkey'
+    ) THEN
+        ALTER TABLE public.rd_employee_role_designations ADD CONSTRAINT rd_employee_role_designations_requested_by_fkey 
+            FOREIGN KEY (requested_by) REFERENCES auth.users(id) ON DELETE SET NULL;
+    END IF;
+    
+    -- Add role_id foreign key if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'rd_employee_role_designations_role_id_fkey'
+    ) THEN
+        ALTER TABLE public.rd_employee_role_designations ADD CONSTRAINT rd_employee_role_designations_role_id_fkey 
+            FOREIGN KEY (role_id) REFERENCES public.rd_roles(id) ON DELETE SET NULL;
+    END IF;
+END $$;
 
 
 -- Extend staging table with fields for client completion and actualization snapshot
