@@ -1451,17 +1451,12 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
        for (const activity of activities) {
          if (activity.isEnabled) {
            for (const subcomponent of activity.subcomponents) {
-             if (subcomponent.isIncluded) {
-               // Calculate applied percentage using modal's formula: Practice% × Year% × Frequency% × Time%
-               const baselineApplied = (activity.practicePercentage / 100) * 
-                                      (subcomponent.yearPercentage / 100) * 
-                                      (subcomponent.frequencyPercentage / 100) * 
-                                      (subcomponent.timePercentage / 100) * 100;
-
-               // Apply Non-R&D reduction based on the step for this subcomponent (if available)
-               const stepIdForSub = subToStepMap[subcomponent.id];
-               const nonRdForStep = stepIdForSub ? (stepNonRdMap[stepIdForSub] || 0) : 0;
-               const appliedPercentage = nonRdForStep > 0 ? baselineApplied * ((100 - nonRdForStep) / 100) : baselineApplied;
+              if (subcomponent.isIncluded) {
+                // Calculate applied percentage using modal's core formula only (RD step already accounts for non‑R&D)
+                const appliedPercentage = (activity.practicePercentage / 100) * 
+                                          (subcomponent.yearPercentage / 100) * 
+                                          (subcomponent.frequencyPercentage / 100) * 
+                                          (subcomponent.timePercentage / 100) * 100;
                
                console.log('🔍 Calculated applied percentage for subcomponent:', {
                  subcomponent: subcomponent.name,
@@ -1469,8 +1464,6 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
                  yearPercentage: subcomponent.yearPercentage,
                  frequencyPercentage: subcomponent.frequencyPercentage,
                  timePercentage: subcomponent.timePercentage,
-                 nonRdForStep,
-                 baselineApplied,
                  appliedPercentage
                });
                

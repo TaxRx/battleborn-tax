@@ -25,30 +25,21 @@ base AS (
          COALESCE(es.year_percentage,100)    AS year_percent,
          COALESCE(es.frequency_percentage,100) AS freq_percent,
          COALESCE(es.time_percentage,0)      AS time_percent,
-         sn.non_rd,
          /* Modal formula baseline from employee-level values */
          ((COALESCE(es.practice_percentage,0)/100.0) *
           (COALESCE(es.year_percentage,100)/100.0) *
           (COALESCE(es.frequency_percentage,100)/100.0) *
           (COALESCE(es.time_percentage,0)/100.0) * 100.0) AS baseline_applied,
-         /* Apply Non‑R&D reduction */
-         CASE WHEN COALESCE(sn.non_rd,0) > 0
-              THEN ((COALESCE(es.practice_percentage,0)/100.0) *
-                    (COALESCE(es.year_percentage,100)/100.0) *
-                    (COALESCE(es.frequency_percentage,100)/100.0) *
-                    (COALESCE(es.time_percentage,0)/100.0) * 100.0) * ((100.0 - sn.non_rd)/100.0)
-              ELSE ((COALESCE(es.practice_percentage,0)/100.0) *
-                    (COALESCE(es.year_percentage,100)/100.0) *
-                    (COALESCE(es.frequency_percentage,100)/100.0) *
-                    (COALESCE(es.time_percentage,0)/100.0) * 100.0)
-          END AS applied_after_nonrd
+         /* Do NOT re-apply Non‑R&D here; RD step time already reflects non‑R&D adjustments */
+         ((COALESCE(es.practice_percentage,0)/100.0) *
+          (COALESCE(es.year_percentage,100)/100.0) *
+          (COALESCE(es.frequency_percentage,100)/100.0) *
+          (COALESCE(es.time_percentage,0)/100.0) * 100.0) AS applied_after_nonrd
   FROM rd_employee_subcomponents es
   LEFT JOIN sub_to_step sts
     ON sts.business_year_id = es.business_year_id
    AND sts.subcomponent_id   = es.subcomponent_id
-  LEFT JOIN step_nonrd sn
-    ON sn.business_year_id = es.business_year_id
-   AND sn.step_id          = sts.step_id
+  -- Intentionally not joining step_nonrd to avoid double-counting non‑R&D
   WHERE es.is_included = true
 ),
 totals AS (
