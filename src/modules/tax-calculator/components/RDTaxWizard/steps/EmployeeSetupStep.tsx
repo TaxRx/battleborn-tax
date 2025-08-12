@@ -675,17 +675,52 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
   
   // Color palette for activities
   const activityColors = [
-    '#3B82F6', // blue-500
-    '#10B981', // emerald-500
-    '#F59E0B', // amber-500
-    '#EF4444', // red-500
-    '#8B5CF6', // violet-500
-    '#06B6D4', // cyan-500
-    '#84CC16', // lime-500
-    '#F97316', // orange-500
-    '#EC4899', // pink-500
-    '#6366F1', // indigo-500
+    '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
+    '#06B6D4', '#84CC16', '#F97316', '#EC4899', '#6366F1'
   ];
+
+  // Segments for Practice Percentage Distribution bar
+  const getPracticePercentageSegments = (): Array<{
+    activityId: string;
+    name: string;
+    percentage: number;
+    color: string;
+    startPosition: number;
+    width: number;
+  }> => {
+    const enabledActivities = activities.filter((a: ResearchActivityAllocation) => a.isEnabled);
+    const segments: Array<{ activityId: string; name: string; percentage: number; color: string; startPosition: number; width: number }> = [];
+    let currentPosition = 0;
+
+    enabledActivities.forEach((activity: ResearchActivityAllocation, index: number) => {
+      const pct = Math.max(0, activity.practicePercentage || 0);
+      if (pct > 0) {
+        const width = pct;
+        segments.push({
+          activityId: activity.id,
+          name: activity.name,
+          percentage: pct,
+          color: activityColors[index % activityColors.length],
+          startPosition: currentPosition,
+          width
+        });
+        currentPosition += width;
+      }
+    });
+
+    if (nonRdPercentage && nonRdPercentage > 0) {
+      segments.push({
+        activityId: 'non-rd',
+        name: 'Non‑R&D',
+        percentage: nonRdPercentage,
+        color: '#9CA3AF',
+        startPosition: currentPosition,
+        width: nonRdPercentage
+      });
+    }
+
+    return segments;
+  };
 
   // AGGRESSIVE STATE CLEARING AND FRESH DATA LOADING
   useEffect(() => {
@@ -1027,8 +1062,9 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
       console.log('🎯 FINAL VERIFICATION: Setting activities for employee:', employee.first_name, employee.last_name, employee.id);
       console.log('🎯 Activities being set:', activitiesWithSubcomponents);
       
-      setActivities(activitiesWithSubcomponents);
-      calculateTotalAllocated(activitiesWithSubcomponents);
+      const normalized = normalizePracticeDistribution(activitiesWithSubcomponents, nonRdPercentage);
+      setActivities(normalized);
+      calculateTotalAllocated(normalized);
       
       console.log('✅ FRESH DATA LOADED and SET for employee:', employee.first_name, employee.last_name);
       console.log('✅ Activities loaded:', activitiesWithSubcomponents.length);
@@ -1061,54 +1097,31 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
     setTotalAllocated(total);
   };
 
-  // Calculate practice percentage segments for visualization (including non-R&D)
-  const getPracticePercentageSegments = () => {
-    const enabledActivities = activities.filter(a => a.isEnabled);
-    const segments: any[] = [];
-    let currentPosition = 0;
-    
-    // Add enabled research activities
-    enabledActivities.forEach((activity, index) => {
-      if (activity.practicePercentage > 0) {
-        segments.push({
-          activityId: activity.id,
-          name: activity.name,
-          percentage: activity.practicePercentage,
-          color: activityColors[index % activityColors.length],
-          startPosition: currentPosition,
-          width: activity.practicePercentage
-        });
-        currentPosition += activity.practicePercentage;
+  // Normalize practice% to ensure sum(enabled) + non-R&D <= 100
+  const normalizePracticeDistribution = (
+    activitiesData: ResearchActivityAllocation[],
+    nonRd: number
+  ): ResearchActivityAllocation[] => {
+    const enabled = activitiesData.filter(a => a.isEnabled);
+    const total = enabled.reduce((s, a) => s + (a.practicePercentage || 0), 0) + (nonRd || 0);
+    if (total <= 100 || enabled.length === 0) return activitiesData;
+
+    const availableForResearch = 100 - (nonRd || 0);
+    const researchTotal = Math.max(0.0001, enabled.reduce((s, a) => s + (a.practicePercentage || 0), 0));
+    const scale = availableForResearch / researchTotal;
+    let scaled = activitiesData.map(a => a.isEnabled ? { ...a, practicePercentage: +(a.practicePercentage * scale).toFixed(2) } : a);
+    const postSum = scaled.filter(a => a.isEnabled).reduce((s, a) => s + (a.practicePercentage || 0), 0);
+    let diff = +(availableForResearch - postSum).toFixed(2);
+    if (Math.abs(diff) >= 0.01) {
+      const idx = scaled
+        .map((a, i) => ({ i, v: a.isEnabled ? (a.practicePercentage || 0) : -1 }))
+        .sort((a, b) => b.v - a.v)[0]?.i;
+      if (idx !== undefined && idx >= 0) {
+        const adjusted = Math.max(0, (scaled[idx].practicePercentage || 0) + diff);
+        scaled[idx] = { ...scaled[idx], practicePercentage: +adjusted.toFixed(2) };
       }
-    });
-    
-    // Add non-R&D segment
-    if (nonRdPercentage > 0) {
-      segments.push({
-        activityId: 'non-rd',
-        name: 'Non-R&D Time',
-        percentage: nonRdPercentage,
-        color: '#6B7280', // gray-500
-        startPosition: currentPosition,
-        width: nonRdPercentage
-      });
-      currentPosition += nonRdPercentage;
     }
-    
-    // Add remaining/available time if under 100%
-    const remainingPercentage = 100 - currentPosition;
-    if (remainingPercentage > 0) {
-      segments.push({
-        activityId: 'remaining',
-        name: 'Available Time',
-        percentage: remainingPercentage,
-        color: '#E5E7EB', // gray-200
-        startPosition: currentPosition,
-        width: remainingPercentage
-      });
-    }
-    
-    return segments;
+    return scaled;
   };
 
   // ✅ HYBRID APPROACH: Show saved total when no edits, real-time total when editing
@@ -1339,8 +1352,41 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
     
     setLoading(true);
     try {
+      // If the user made no edits in the modal, do NOT recompute from design baselines.
+      // Simply normalize existing saved rows and refresh year totals so values remain stable.
+      if (!hasUnsavedChanges) {
+        console.log('🛑 No changes detected in modal. Normalizing saved allocations only.');
+        const finalApplied = await normalizeEmployeeAllocationsForYear(employee.id);
+        const annualWage = employee.annual_wage || 0;
+        const qreAppliedPercentage = applyEightyPercentThreshold(finalApplied);
+        const calculatedQRE = Math.round((annualWage * qreAppliedPercentage) / 100);
+        await supabase
+          .from('rd_employee_year_data')
+          .update({ calculated_qre: calculatedQRE, applied_percent: finalApplied })
+          .eq('employee_id', employee.id)
+          .eq('business_year_id', businessYearId);
+        setHasUnsavedChanges(false);
+        onUpdate();
+        onClose();
+        return;
+      }
+
       console.log('💾 BATCH SAVE: Saving all allocation changes for employee:', employee.id);
       console.log('🎯 All UI changes are now batched and saved only when Save button is clicked');
+
+      // Preload Non-R&D percentages per step and subcomponent->step map for this business year
+      const stepNonRdMap: Record<string, number> = {};
+      const subToStepMap: Record<string, string> = {};
+      try {
+        const [{ data: stepsForYear }, { data: subsForYear }] = await Promise.all([
+          supabase.from('rd_selected_steps').select('step_id, non_rd_percentage').eq('business_year_id', businessYearId),
+          supabase.from('rd_selected_subcomponents').select('subcomponent_id, step_id').eq('business_year_id', businessYearId)
+        ]);
+        (stepsForYear || []).forEach((s: any) => { if (s.step_id) stepNonRdMap[s.step_id] = Number(s.non_rd_percentage || 0); });
+        (subsForYear || []).forEach((s: any) => { if (s.subcomponent_id && s.step_id) subToStepMap[s.subcomponent_id] = s.step_id; });
+      } catch (e) {
+        console.warn('⚠️ Could not preload Non-R&D or subcomponent-step maps; proceeding without reductions', e);
+      }
       
       // FIRST: Save activity enabled states to rd_selected_activities
       for (const activity of activities) {
@@ -1391,159 +1437,181 @@ const ManageAllocationsModal: React.FC<ManageAllocationsModalProps> = ({
       // Calculate and save allocations for enabled activities
       let totalAppliedPercentage = 0;
       
-      for (const activity of activities) {
-        if (activity.isEnabled) {
-          for (const subcomponent of activity.subcomponents) {
-            if (subcomponent.isIncluded) {
-              // Calculate applied percentage using modal's formula: Practice% × Year% × Frequency% × Time%
-              const appliedPercentage = (activity.practicePercentage / 100) * 
-                                     (subcomponent.yearPercentage / 100) * 
-                                     (subcomponent.frequencyPercentage / 100) * 
-                                     (subcomponent.timePercentage / 100) * 100;
-              
-              console.log('🔍 Calculated applied percentage for subcomponent:', {
-                subcomponent: subcomponent.name,
-                practicePercentage: activity.practicePercentage,
-                yearPercentage: subcomponent.yearPercentage,
-                frequencyPercentage: subcomponent.frequencyPercentage,
-                timePercentage: subcomponent.timePercentage,
-                appliedPercentage: appliedPercentage
-              });
-              
-              // Add to total
-              totalAppliedPercentage += appliedPercentage;
-              
-              // Prepare upsert data - save exact values from modal calculations
-              // NO BASELINE CONSTRAINTS - all data goes to standard columns
-              const upsertData: any = {
-                employee_id: employee.id,
-                business_year_id: businessYearId,
-                subcomponent_id: subcomponent.id,
-                time_percentage: subcomponent.timePercentage,
-                applied_percentage: appliedPercentage, // Use exact calculated value (no constraints)
-                practice_percentage: activity.practicePercentage,
-                year_percentage: subcomponent.yearPercentage,
-                frequency_percentage: subcomponent.frequencyPercentage,
-                is_included: subcomponent.isIncluded,
-                updated_at: new Date().toISOString(),
-                created_at: new Date().toISOString()
-              };
-              
-              // Save to database
-              const { error } = await supabase
-                .from('rd_employee_subcomponents')
-                .upsert(upsertData, {
-                  onConflict: 'employee_id,business_year_id,subcomponent_id'
-                });
-              
-              if (error) {
-                console.error('❌ Error saving subcomponent allocation:', error);
-                throw error;
-              } else {
-                console.log('✅ Saved subcomponent allocation:', {
-                  subcomponent: subcomponent.name,
-                  appliedPercentage: appliedPercentage
-                });
-              }
-            } else {
-              // Remove unselected subcomponents
-              const { error: deleteError } = await supabase
-                .from('rd_employee_subcomponents')
-                .delete()
-                .eq('employee_id', employee.id)
-                .eq('business_year_id', businessYearId)
-                .eq('subcomponent_id', subcomponent.id);
-              
-              if (deleteError) {
-                console.error('❌ Error removing unselected subcomponent:', deleteError);
-              } else {
-                console.log('✅ Removed unselected subcomponent allocation:', subcomponent.name);
-              }
-            }
-          }
-        }
-      }
-      
-      console.log('📊 Total applied percentage calculated:', totalAppliedPercentage);
-      
-      // CRITICAL FIX: Always use calculated total, never fall back to baseline
-      const finalAppliedPercentage = totalAppliedPercentage; // NO baseline fallback
-      const annualWage = employee.annual_wage || 0;
-      // Apply 80% threshold rule for QRE calculation in allocation modal
-      const qreAppliedPercentage = applyEightyPercentThreshold(finalAppliedPercentage);
-      const calculatedQRE = Math.round((annualWage * qreAppliedPercentage) / 100);
+      // Collect pending allocations first to allow normalization/capping
+      const pendingAllocations: Array<{
+        subcomponentId: string;
+        timePercentage: number;
+        appliedPercentage: number;
+        practicePercentage: number;
+        yearPercentage: number;
+        frequencyPercentage: number;
+        isIncluded: boolean;
+      }> = [];
+       
+       for (const activity of activities) {
+         if (activity.isEnabled) {
+           for (const subcomponent of activity.subcomponents) {
+              if (subcomponent.isIncluded) {
+                // Calculate applied percentage using modal's core formula only (RD step already accounts for non‑R&D)
+                const appliedPercentage = (activity.practicePercentage / 100) * 
+                                          (subcomponent.yearPercentage / 100) * 
+                                          (subcomponent.frequencyPercentage / 100) * 
+                                          (subcomponent.timePercentage / 100) * 100;
+               
+               console.log('🔍 Calculated applied percentage for subcomponent:', {
+                 subcomponent: subcomponent.name,
+                 practicePercentage: activity.practicePercentage,
+                 yearPercentage: subcomponent.yearPercentage,
+                 frequencyPercentage: subcomponent.frequencyPercentage,
+                 timePercentage: subcomponent.timePercentage,
+                 appliedPercentage
+               });
+               
+               // Queue allocation for normalization/capping pass
+               pendingAllocations.push({
+                 subcomponentId: subcomponent.id,
+                 timePercentage: subcomponent.timePercentage,
+                 appliedPercentage,
+                 practicePercentage: activity.practicePercentage,
+                 yearPercentage: subcomponent.yearPercentage,
+                 frequencyPercentage: subcomponent.frequencyPercentage,
+                 isIncluded: subcomponent.isIncluded,
+               });
+             } else {
+               // Remove unselected subcomponents
+               const { error: deleteError } = await supabase
+                 .from('rd_employee_subcomponents')
+                 .delete()
+                 .eq('employee_id', employee.id)
+                 .eq('business_year_id', businessYearId)
+                 .eq('subcomponent_id', subcomponent.id);
+               
+               if (deleteError) {
+                 console.error('❌ Error removing unselected subcomponent:', deleteError);
+               } else {
+                 console.log('✅ Removed unselected subcomponent allocation:', subcomponent.name);
+               }
+             }
+           }
+         }
+       }
+       
+       // Normalize/cap total applied% across all included subcomponents to max 100%
+       const rawTotal = pendingAllocations.reduce((sum, a) => sum + a.appliedPercentage, 0);
+       const scale = rawTotal > 100 ? (100 / rawTotal) : 1;
+       totalAppliedPercentage = +(rawTotal * scale).toFixed(4);
 
-      console.log('📊 Final calculations:', {
-        appliedPercentage: finalAppliedPercentage,
-        qreAppliedPercentageWith80Threshold: qreAppliedPercentage,
-        annualWage: annualWage,
-        calculatedQRE: calculatedQRE,
-        note: 'Applied 80% threshold rule for QRE calculation'
-      });
+       console.log('📊 Total applied percentage (pre-cap):', rawTotal, 'scale:', scale, 'final:', totalAppliedPercentage);
 
-      // ✅ ROSTER-MODAL SYNC: Use pure R&D calculation (no non-R&D addition)
-      console.log('✅ [ROSTER-MODAL SYNC] Applied% matches modal exactly:', {
-        appliedPercentage: finalAppliedPercentage,
-        note: 'Pure R&D calculation - identical to modal Applied% display'
-      });
+       // Persist normalized allocations
+       for (const alloc of pendingAllocations) {
+         const normalizedApplied = +(alloc.appliedPercentage * scale).toFixed(6);
+         const upsertData: any = {
+           employee_id: employee.id,
+           business_year_id: businessYearId,
+           subcomponent_id: alloc.subcomponentId,
+           time_percentage: alloc.timePercentage,
+           applied_percentage: normalizedApplied,
+           practice_percentage: alloc.practicePercentage,
+           year_percentage: alloc.yearPercentage,
+           frequency_percentage: alloc.frequencyPercentage,
+           is_included: alloc.isIncluded,
+           updated_at: new Date().toISOString(),
+           created_at: new Date().toISOString()
+         };
 
-      // ✅ ROSTER-MODAL SYNC: Update with pure R&D calculation (no non-R&D column)
-      const { error: yearDataError } = await supabase
-        .from('rd_employee_year_data')
-        .update({
-          calculated_qre: calculatedQRE,
-          applied_percent: finalAppliedPercentage // Use pure R&D calculation to match modal
-        })
-        .eq('employee_id', employee.id)
-        .eq('business_year_id', businessYearId);
-        
-      if (yearDataError) {
-        console.error('❌ Error updating employee year QRE after allocations:', yearDataError);
-      } else {
-        console.log('✅ [ROSTER-MODAL SYNC] Updated employee year data to match modal:', {
-          calculatedQRE: calculatedQRE,
-          appliedPercent: finalAppliedPercentage,
-          note: 'Pure R&D calculation - no non-R&D component to match modal exactly'
-        });
-      }
+         const { error } = await supabase
+           .from('rd_employee_subcomponents')
+           .upsert(upsertData, {
+             onConflict: 'employee_id,business_year_id,subcomponent_id'
+           });
 
-      // Save employee information updates
-      const employeeNeedsUpdate = (
-        editedFirstName !== employee.first_name ||
-        editedLastName !== employee.last_name ||
-        editedIsOwner !== employee.is_owner
-      );
-      
-      if (employeeNeedsUpdate) {
-        console.log('👤 Saving employee information updates:', {
-          oldName: `${employee.first_name} ${employee.last_name}`,
-          newName: `${editedFirstName} ${editedLastName}`,
-          oldIsOwner: employee.is_owner,
-          newIsOwner: editedIsOwner
-        });
-        
-        const { error: employeeUpdateError } = await supabase
-          .from('rd_employees')
-          .update({
-            first_name: editedFirstName.trim(),
-            last_name: editedLastName.trim(),
-            is_owner: editedIsOwner,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', employee.id);
-        
-        if (employeeUpdateError) {
-          console.error('❌ Error updating employee information:', employeeUpdateError);
-          throw employeeUpdateError;
-        } else {
-          console.log('✅ Employee information updated successfully');
-        }
-      }
+         if (error) {
+           console.error('❌ Error saving subcomponent allocation (normalized):', error);
+           throw error;
+         }
+       }
+       
+       console.log('📊 Total applied percentage calculated:', totalAppliedPercentage);
+       
+       // CRITICAL FIX: Always use calculated total, never fall back to baseline
+       const finalAppliedPercentage = totalAppliedPercentage; // NO baseline fallback
+       const annualWage = employee.annual_wage || 0;
+       // Apply 80% threshold rule for QRE calculation in allocation modal
+       const qreAppliedPercentage = applyEightyPercentThreshold(finalAppliedPercentage);
+       const calculatedQRE = Math.round((annualWage * qreAppliedPercentage) / 100);
 
-      console.log('✅ Allocations and employee information saved successfully - employee roster should now match allocation modal');
-      setHasUnsavedChanges(false); // Reset unsaved changes flag after successful save
-      onUpdate();
-      onClose();
+       console.log('📊 Final calculations:', {
+         appliedPercentage: finalAppliedPercentage,
+         qreAppliedPercentageWith80Threshold: qreAppliedPercentage,
+         annualWage: annualWage,
+         calculatedQRE: calculatedQRE,
+         note: 'Applied 80% threshold rule for QRE calculation'
+       });
+
+       // ✅ ROSTER-MODAL SYNC: Use pure R&D calculation (no non-R&D addition)
+       console.log('✅ [ROSTER-MODAL SYNC] Applied% matches modal exactly:', {
+         appliedPercentage: finalAppliedPercentage,
+         note: 'Pure R&D calculation - identical to modal Applied% display'
+       });
+
+       // ✅ ROSTER-MODAL SYNC: Update with pure R&D calculation (no non-R&D column)
+       const { error: yearDataError } = await supabase
+         .from('rd_employee_year_data')
+         .update({
+           calculated_qre: calculatedQRE,
+           applied_percent: finalAppliedPercentage // Use pure R&D calculation to match modal
+         })
+         .eq('employee_id', employee.id)
+         .eq('business_year_id', businessYearId);
+         
+       if (yearDataError) {
+         console.error('❌ Error updating employee year QRE after allocations:', yearDataError);
+       } else {
+         console.log('✅ [ROSTER-MODAL SYNC] Updated employee year data to match modal:', {
+           calculatedQRE: calculatedQRE,
+           appliedPercent: finalAppliedPercentage,
+           note: 'Pure R&D calculation - no non-R&D component to match modal exactly'
+         });
+       }
+
+       // Save employee information updates
+       const employeeNeedsUpdate = (
+         editedFirstName !== employee.first_name ||
+         editedLastName !== employee.last_name ||
+         editedIsOwner !== employee.is_owner
+       );
+       
+       if (employeeNeedsUpdate) {
+         console.log('👤 Saving employee information updates:', {
+           oldName: `${employee.first_name} ${employee.last_name}`,
+           newName: `${editedFirstName} ${editedLastName}`,
+           oldIsOwner: employee.is_owner,
+           newIsOwner: editedIsOwner
+         });
+         
+         const { error: employeeUpdateError } = await supabase
+           .from('rd_employees')
+           .update({
+             first_name: editedFirstName.trim(),
+             last_name: editedLastName.trim(),
+             is_owner: editedIsOwner,
+             updated_at: new Date().toISOString()
+           })
+           .eq('id', employee.id);
+         
+         if (employeeUpdateError) {
+           console.error('❌ Error updating employee information:', employeeUpdateError);
+           throw employeeUpdateError;
+         } else {
+           console.log('✅ Employee information updated successfully');
+         }
+       }
+
+       console.log('✅ Allocations and employee information saved successfully - employee roster should now match allocation modal');
+       setHasUnsavedChanges(false); // Reset unsaved changes flag after successful save
+       onUpdate();
+       onClose();
     } catch (error) {
       console.error('❌ Error saving allocations:', error);
     } finally {
@@ -2491,12 +2559,14 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           
           // CRITICAL FIX: Load year-specific data only
           const [yearDataResult, subcomponentsResult] = await Promise.all([
-                      // ✅ ROSTER-MODAL SYNC: Get year-specific employee data (no non-R&D column)
+            // ✅ ROSTER-MODAL SYNC: Get latest year-specific employee data (no non-R&D column)
             supabase
               .from('rd_employee_year_data')
-            .select('calculated_qre, applied_percent')
+              .select('calculated_qre, applied_percent, updated_at')
               .eq('employee_id', employee.id)
               .eq('business_year_id', currentBusinessYearId)
+              .order('updated_at', { ascending: false })
+              .limit(1)
               .maybeSingle(),
             
             // Get year-specific subcomponents
@@ -3153,7 +3223,9 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
 
       // ✅ ROSTER-MODAL SYNC: Use IDENTICAL allocation modal methodology for new employee
       console.log('🔄 [ROSTER-MODAL SYNC] Calculating QRE for new employee using IDENTICAL modal methodology');
-      
+      // Normalize saved allocations (cap total to 100%) before we compute applied%
+      await normalizeEmployeeAllocationsForYear(newEmployee.id);
+
       // Calculate applied percentage using IDENTICAL method as allocation modal
       const modalAppliedPercentage = await calculateEmployeeAppliedPercentage(newEmployee.id);
       const finalAppliedPercentage = modalAppliedPercentage > 0 ? modalAppliedPercentage : 0; // No baseline fallback
@@ -3236,6 +3308,91 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
       }
     } catch (error) {
       console.error('❌ EmployeeSetupStep - Error in handleDeleteEmployee:', error);
+    }
+  };
+
+  // Normalize an employee's saved allocations for the current business year so the
+  // total applied percentage across included subcomponents is capped at 100%.
+  // Also updates rd_employee_year_data.applied_percent and calculated_qre.
+  const normalizeEmployeeAllocationsForYear = async (employeeId: string): Promise<number> => {
+    try {
+      const byId = selectedYear || businessYearId;
+      if (!byId) return 0;
+
+      // Only consider subcomponents that are active in the current year's research design
+      const { data: validSubs } = await supabase
+        .from('rd_selected_subcomponents')
+        .select('subcomponent_id')
+        .eq('business_year_id', byId);
+      const validIds = (validSubs || []).map((r: any) => r.subcomponent_id);
+
+      const query = supabase
+        .from('rd_employee_subcomponents')
+        .select('id, subcomponent_id, applied_percentage, is_included')
+        .eq('employee_id', employeeId)
+        .eq('business_year_id', byId)
+        .eq('is_included', true);
+      const { data: rows, error } = validIds.length > 0 ? await query.in('subcomponent_id', validIds) : await query;
+      if (error) {
+        console.error('❌ normalizeEmployeeAllocationsForYear: read error', error);
+        return 0;
+      }
+
+      const rawTotal = (rows || []).reduce((sum: number, r: any) => sum + (Number(r.applied_percentage) || 0), 0);
+      if (!rows || rows.length === 0) {
+        // Still update year data to 0 if nothing is present
+        await supabase
+          .from('rd_employee_year_data')
+          .update({ applied_percent: 0, calculated_qre: 0 })
+          .eq('employee_id', employeeId)
+          .eq('business_year_id', byId);
+        return 0;
+      }
+
+      const scale = rawTotal > 100 ? (100 / rawTotal) : 1;
+
+      // Apply normalization if needed
+      if (scale !== 1) {
+        for (const r of rows) {
+          const newApplied = +(Number(r.applied_percentage || 0) * scale).toFixed(6);
+          const { error: upErr } = await supabase
+            .from('rd_employee_subcomponents')
+            .update({ applied_percentage: newApplied })
+            .eq('id', r.id);
+          if (upErr) {
+            console.error('❌ normalizeEmployeeAllocationsForYear: update error', upErr);
+          }
+        }
+      }
+
+      const finalApplied = +(rawTotal * scale).toFixed(2);
+
+      // Fetch wage for QRE update
+      const { data: emp, error: empErr } = await supabase
+        .from('rd_employees')
+        .select('annual_wage')
+        .eq('id', employeeId)
+        .single();
+      if (empErr) {
+        console.error('❌ normalizeEmployeeAllocationsForYear: wage fetch error', empErr);
+      }
+      const annualWage = Number(emp?.annual_wage || 0);
+      const qreAppliedPercent = finalApplied >= 80 ? 100 : finalApplied;
+      const calculatedQRE = Math.round((annualWage * qreAppliedPercent) / 100);
+
+      const { error: ydErr } = await supabase
+        .from('rd_employee_year_data')
+        .update({ applied_percent: finalApplied, calculated_qre: calculatedQRE })
+        .eq('employee_id', employeeId)
+        .eq('business_year_id', byId);
+      if (ydErr) {
+        console.error('❌ normalizeEmployeeAllocationsForYear: year data update error', ydErr);
+      }
+
+      return finalApplied;
+    } catch (e) {
+      console.error('❌ normalizeEmployeeAllocationsForYear: unexpected error', e);
+      return 0;
     }
   };
 
@@ -3455,37 +3612,11 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         return;
       }
 
-      // 1b. Update activity_roles in rd_employee_year_data for this employee/year
+      // 1b. Update activity_roles in rd_employee_year_data for this employee/year (do not set applied/qre yet)
       if (businessYearId) {
-        // Get the new role's baseline percentage
-        const { data: roleData, error: roleError } = await supabase
-          .from('rd_roles')
-          .select('baseline_applied_percent')
-          .eq('id', newRoleId)
-          .single();
-
-        const baselinePercent = roleData?.baseline_applied_percent || 0;
-        console.log(`💰 Role baseline percentage for ${newRoleId}:`, baselinePercent);
-
-        // Get employee's wage for QRE calculation
-        const { data: employeeData, error: empError } = await supabase
-          .from('rd_employees')
-          .select('annual_wage')
-          .eq('id', employeeId)
-          .single();
-
-        const annualWage = employeeData?.annual_wage || 0;
-        const calculatedQRE = Math.round((annualWage * baselinePercent) / 100);
-        
-        console.log(`📊 Updating employee year data: baselinePercent=${baselinePercent}%, QRE=${calculatedQRE}`);
-
         await supabase
           .from('rd_employee_year_data')
-          .update({ 
-            activity_roles: [newRoleId],
-            applied_percent: baselinePercent,
-            calculated_qre: calculatedQRE
-          })
+          .update({ activity_roles: [newRoleId] })
           .eq('employee_id', employeeId)
           .eq('business_year_id', businessYearId);
       }
@@ -3501,10 +3632,20 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
 
       // 3. Add new subcomponent links for the new role (using the selected year's activities/subcomponents)
       if (businessYearId && newRoleId) {
-        // Fetch all selected subcomponents for this business year and role
+        // Preload Non‑R&D per step
+        const stepNonRdMap: Record<string, number> = {};
+        try {
+          const { data: stepsForYear } = await supabase
+            .from('rd_selected_steps')
+            .select('step_id, non_rd_percentage')
+            .eq('business_year_id', businessYearId);
+          (stepsForYear || []).forEach((s: any) => { if (s.step_id) stepNonRdMap[s.step_id] = Number(s.non_rd_percentage || 0); });
+        } catch {}
+
+        // Fetch all selected subcomponents for this business year and role with detailed fields
         const { data: selectedSubcomponents, error: subcomponentsError } = await supabase
           .from('rd_selected_subcomponents')
-          .select('*')
+          .select('subcomponent_id, step_id, practice_percent, year_percentage, frequency_percentage, time_percentage')
           .eq('business_year_id', businessYearId)
           .filter('selected_roles', 'cs', `[\"${String(newRoleId || '')}\"]`);
 
@@ -3513,50 +3654,45 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         }
 
         if (selectedSubcomponents && selectedSubcomponents.length > 0) {
-          console.log('🔍 Debug - Raw selectedSubcomponents data:', selectedSubcomponents);
-          console.log('🔍 Debug - First subcomponent keys:', Object.keys(selectedSubcomponents[0]));
-
-          // Create employee subcomponent relationships with baseline values
-          const employeeSubcomponentData = selectedSubcomponents.map((subcomponent: any) => {
-            const subData = {
-              employee_id: employeeId,
-              subcomponent_id: subcomponent.subcomponent_id,
-              business_year_id: businessYearId,
-              time_percentage: subcomponent.time_percentage || 0,
-              applied_percentage: subcomponent.applied_percentage || 0,
-              is_included: true,
-              baseline_applied_percent: subcomponent.applied_percentage || 0,
-              practice_percentage: subcomponent.practice_percent || 0,
-              year_percentage: subcomponent.year_percentage || 0,
-              frequency_percentage: subcomponent.frequency_percentage || 0,
-              baseline_practice_percentage: subcomponent.practice_percent || 0,
-              baseline_time_percentage: subcomponent.time_percentage || 0,
-              user_id: userId
-            };
-            
-            console.log(`🔗 Creating subcomponent relationship:`, {
-              subcomponent_id: subData.subcomponent_id,
-              applied_percentage: subData.applied_percentage,
-              baseline_applied_percent: subData.baseline_applied_percent,
-              time_percentage: subData.time_percentage,
-              practice_percentage: subData.practice_percentage
-            });
-            
-            return subData;
+          // Build pending allocations using modal’s formula, then normalize and upsert
+          const pending = selectedSubcomponents.map((s: any) => {
+            const practice = Number(s.practice_percent || 0);
+            const yearPct = Number(s.year_percentage || 100);
+            const freqPct = Number(s.frequency_percentage || 100);
+            const timePct = Number(s.time_percentage || 0);
+            const baselineApplied = (practice / 100) * (yearPct / 100) * (freqPct / 100) * (timePct / 100) * 100;
+            const nonRd = stepNonRdMap[s.step_id] || 0;
+            const applied = nonRd > 0 ? baselineApplied * ((100 - nonRd) / 100) : baselineApplied;
+            return { subcomponentId: s.subcomponent_id, practice, yearPct, freqPct, timePct, applied };
           });
 
-          console.log('🔍 Debug - Employee subcomponent data to insert:', employeeSubcomponentData);
+          const rawTotal = pending.reduce((sum, p) => sum + p.applied, 0);
+          const scale = rawTotal > 100 ? (100 / rawTotal) : 1;
 
-          const { data: insertedSubcomponents, error: insertError } = await supabase
-            .from('rd_employee_subcomponents')
-            .insert(employeeSubcomponentData)
-            .select();
-
-          if (insertError) {
-            console.error('❌ Error inserting employee subcomponents:', insertError);
-          } else {
-            console.log('✅ Successfully inserted employee subcomponents:', insertedSubcomponents);
+          for (const p of pending) {
+            const normalizedApplied = +(p.applied * scale).toFixed(6);
+            const { error: upErr } = await supabase
+              .from('rd_employee_subcomponents')
+              .upsert({
+                employee_id: employeeId,
+                business_year_id: businessYearId,
+                subcomponent_id: p.subcomponentId,
+                time_percentage: p.timePct,
+                applied_percentage: normalizedApplied,
+                practice_percentage: p.practice,
+                year_percentage: p.yearPct,
+                frequency_percentage: p.freqPct,
+                is_included: true,
+                updated_at: new Date().toISOString(),
+                created_at: new Date().toISOString()
+              }, { onConflict: 'employee_id,business_year_id,subcomponent_id' });
+            if (upErr) {
+              console.error('❌ Error upserting normalized allocation (role change):', upErr);
+            }
           }
+
+          // After upserts, ensure final normalization and update year data/QRE
+          await normalizeEmployeeAllocationsForYear(employeeId);
         } else {
           console.warn(`⚠️ No selected subcomponents found for role ${newRoleId} and year ${businessYearId}`);
         }
@@ -4573,39 +4709,42 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     try {
       console.log('🎯 [ROSTER-MODAL SYNC] Getting Applied% directly from modal calculation for employee:', employeeId);
       
-      // ❌ PROBLEM IDENTIFIED: Roster was applying its own calculation instead of using modal's values
-      // ✅ SOLUTION: Don't recalculate - use applied_percentage that modal already calculated and saved
+      // Load valid subcomponents for this year to avoid lingering-row inflation
+      const { data: validSubs } = await supabase
+        .from('rd_selected_subcomponents')
+        .select('subcomponent_id')
+        .eq('business_year_id', selectedYear || businessYearId);
+      const validIds = (validSubs || []).map((r: any) => r.subcomponent_id);
       
-      const { data: subcomponentAllocations, error } = await supabase
+      const query = supabase
         .from('rd_employee_subcomponents')
         .select('applied_percentage, subcomponent_id, practice_percentage, time_percentage, year_percentage, frequency_percentage, is_included')
         .eq('employee_id', employeeId)
         .eq('business_year_id', selectedYear || businessYearId)
         .eq('is_included', true);
+      const { data: subcomponentAllocations, error } = validIds.length > 0
+        ? await query.in('subcomponent_id', validIds)
+        : await query;
       
       if (error) {
         console.error('❌ Error loading subcomponent allocations:', error);
         return 0;
       }
       
-      // ✅ DEBUG: Check what's actually in the database  
       if (subcomponentAllocations?.length === 0) {
-        console.log(`🔍 DEBUG: Employee ${employeeId} has no subcomponent records - QRE will be $0`);
-        console.log(`📋 This likely means: (1) CSV import didn't create subcomponent relationships, or (2) Research Design step not set up for this business year`);
+        console.log(`🔍 DEBUG: Employee ${employeeId} has no valid subcomponent records for this year - QRE will be $0`);
       }
       
-      // ✅ NO RECALCULATION: Just sum the applied_percentage values that modal calculated and saved
       const totalAppliedPercentage = subcomponentAllocations?.reduce((sum, alloc) => {
         return sum + (alloc.applied_percentage || 0);
       }, 0) || 0;
       
       const finalResult = +totalAppliedPercentage.toFixed(2);
       
-      console.log('✅ [ROSTER-MODAL SYNC] Using saved applied_percentage values (no recalculation):', {
+      console.log('✅ [ROSTER-MODAL SYNC] Using saved applied_percentage values (filtered to active subcomponents):', {
         employeeId,
         subcomponentCount: subcomponentAllocations?.length || 0,
-        totalAppliedPercentage: finalResult,
-        note: 'Uses EXACT applied_percentage values that modal calculated and saved - no actualization reapplied'
+        totalAppliedPercentage: finalResult
       });
       
       return finalResult;
@@ -4620,7 +4759,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     return appliedPercentage >= 80 ? 100 : appliedPercentage;
   };
 
-
+  
 
   if (loading) {
     console.log('⏳ EmployeeSetupStep - Rendering loading state');
@@ -4699,31 +4838,19 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                       setEmployeesWithData([]);
                       setContractorsWithData([]);
                       setSupplies([]);
-                      setExpenses([]);
-                      console.log('🧹 ✅ All cached data cleared');
+                      setExpenses([]); // CRITICAL: Clear expenses immediately
+                      setRoles([]);
+                      setSelectedEmployee(null);
+                      setSelectedContractor(null);
+                      setShowEmployeeDetailModal(false);
+                      setShowContractorDetailModal(false);
+                      setActiveTab('employees'); // Reset to employees tab to prevent showing stale data on other tabs
                       
-                      // CRITICAL: Reset QRE locked state to prevent cross-year contamination
-                      console.log('🔒 RESETTING QRE state to prevent year contamination');
-                      setLockedEmployeeQRE(0);
-                      setLockedContractorQRE(0);
-                      setLockedSupplyQRE(0);
-                      setQreLocked(false);
-                      
-                      // CRITICAL: Force complete data reload for new year
-                      console.log('💾 FORCING complete data reload for year:', newYearId);
-                      setLoading(true);
-                      
-                      try {
-                        // Load all data for the new year - CRITICAL: Pass newYearId to prevent stale state
-                        await loadData(newYearId);
-                        // Load QRE values for the new year
-                        await loadQREValues(newYearId);
-                        console.log('✅ Year switch complete - data fully isolated');
-                      } catch (error) {
-                        console.error('❌ Error during year switch:', error);
-                      } finally {
-                        setLoading(false);
-                      }
+                      console.log('🧹 State cleared, loading fresh data for year:', selectedYear);
+                      // Small delay to ensure state is cleared before loading
+                      setTimeout(() => {
+                        loadData(selectedYear || businessYearId);
+                      }, 100);
                     }}
                     className="px-3 py-1 bg-white/10 border border-white/20 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/50"
                   >
@@ -4966,6 +5093,26 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
             >
               <Calculator className="w-4 h-4 mr-2" />
               Recalculate QRE
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  if (!selectedYear) return;
+                  console.log('🔄 Forcing Applied% to match modal logic for all employees in BY:', selectedYear);
+                  for (const emp of employeesWithData) {
+                    await normalizeEmployeeAllocationsForYear(emp.id);
+                  }
+                  await loadData(selectedYear);
+                  toast.success('Applied% synchronized to allocation modal for all employees');
+                } catch (e) {
+                  console.error('❌ Error syncing Applied% to modal logic:', e);
+                  toast.error('Failed to sync Applied%');
+                }
+              }}
+              className="flex items-center px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg hover:from-purple-600 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-200 shadow-md"
+            >
+              <Calculator className="w-4 h-4 mr-2" />
+              Sync Applied% to Modal
             </button>
             <button
               onClick={handleExportCSV}
