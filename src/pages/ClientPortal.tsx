@@ -2296,12 +2296,15 @@ This annual signature covers all business entities and research activities for t
             </div>
             
             <div className="flex-1 overflow-hidden">
-              <div 
-                className="h-full w-full overflow-y-auto px-4 py-2 document-content-container"
-                dangerouslySetInnerHTML={{ __html: currentDocumentContent }}
+              <iframe
+                srcDoc={currentDocumentContent}
                 style={{
-                  minHeight: '100%'
+                  width: '100%',
+                  height: '100%',
+                  border: 'none',
+                  backgroundColor: 'white'
                 }}
+                title="Document Content"
               />
             </div>
           </div>

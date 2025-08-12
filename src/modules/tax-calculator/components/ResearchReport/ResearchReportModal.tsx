@@ -9,6 +9,16 @@ import {
 import { supabase } from '../../lib/supabase';
 import { AIService } from '../../../../services/aiService';
 import './ResearchReportModal.css';
+import cssStyles from './ResearchReportModal.css?raw';
+
+// Debug: Verify CSS raw import is working
+console.log('[CSS_RAW_IMPORT_DEBUG] ResearchReportModal CSS loaded:', {
+  length: cssStyles.length,
+  preview: cssStyles.substring(0, 200),
+  hasModalOverlay: cssStyles.includes('research-report-modal-overlay'),
+  hasModalContainer: cssStyles.includes('research-report-modal'),
+  hasReportLayout: cssStyles.includes('report-layout')
+});
 import {
   generateTableOfContents,
   generateExecutiveSummary,
@@ -1973,7 +1983,7 @@ Please provide:
       }
       
       /* Import all styles from CSS file */
-      ${document.querySelector('style[data-vite-dev-id*="ResearchReportModal.css"]')?.textContent || ''}
+      ${cssStyles}
       
       /* Print-specific styles for 8.5x11 with 0.5-inch margins */
       @media print {
