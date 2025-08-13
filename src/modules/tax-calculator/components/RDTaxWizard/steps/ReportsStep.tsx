@@ -136,7 +136,47 @@ const ReportsStep: React.FC<ReportsStepProps> = ({
   const [selectedYearId, setSelectedYearId] = useState<string>(wizardState.selectedYear?.id || '');
   const [selectedBillingYearIds, setSelectedBillingYearIds] = useState<string[]>(wizardState.selectedYear?.id ? [wizardState.selectedYear.id] : []);
   const [includeStateCreditsForBilling, setIncludeStateCreditsForBilling] = useState<boolean>(true);
+  const [showOlderBillingYears, setShowOlderBillingYears] = useState<boolean>(false);
   
+  // Load available years for Billing Report selection
+  const loadAvailableYears = async () => {
+    try {
+      const businessId: string | undefined = wizardState.business?.id;
+      if (!businessId) {
+        setAvailableYears([]);
+        return;
+      }
+      const { data: years, error } = await supabase
+        .from('rd_business_years')
+        .select('id, year')
+        .eq('business_id', businessId)
+        .order('year', { ascending: false });
+      if (error || !years) {
+        setAvailableYears([]);
+        return;
+      }
+      setAvailableYears(years);
+    } catch (e) {
+      setAvailableYears([]);
+    }
+  };
+
+  // Reload available years when business changes
+  useEffect(() => {
+    loadAvailableYears();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wizardState.business?.id]);
+
+  // Ensure a sensible default selection once years are loaded
+  useEffect(() => {
+    if (availableYears.length === 0) return;
+    if (selectedBillingYearIds.length > 0) return;
+    const currentId = wizardState.selectedYear?.id;
+    const fallbackId = (currentId && availableYears.find(y => y.id === currentId)) ? currentId : availableYears[0].id;
+    setSelectedBillingYearIds([fallbackId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableYears]);
+
   // Jurat signature state
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [signatureData, setSignatureData] = useState<any>(null);
@@ -2182,23 +2222,61 @@ I acknowledge that I had the opportunity to review and revise the report prior t
                 {/* Year multi-select */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Include Years</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {availableYears.map(y => (
-                      <label key={y.id} className="inline-flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          checked={selectedBillingYearIds.includes(y.id)}
-                          onChange={e => {
-                            setSelectedBillingYearIds(prev => {
-                              if (e.target.checked) return Array.from(new Set([...prev, y.id]));
-                              return prev.filter(id => id !== y.id);
-                            });
-                          }}
-                        />
-                        <span className="text-sm text-gray-700">{y.year}</span>
-                      </label>
-                    ))}
-                  </div>
+                  {(() => {
+                    const recentYears = availableYears.slice(0, 4);
+                    const olderYears = availableYears.slice(4);
+                    return (
+                      <>
+                        <div className="grid grid-cols-2 gap-2">
+                          {recentYears.map(y => (
+                            <label key={y.id} className="inline-flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                checked={selectedBillingYearIds.includes(y.id)}
+                                onChange={e => {
+                                  setSelectedBillingYearIds(prev => {
+                                    if (e.target.checked) return Array.from(new Set([...prev, y.id]));
+                                    return prev.filter(id => id !== y.id);
+                                  });
+                                }}
+                              />
+                              <span className="text-sm text-gray-700">{y.year}</span>
+                            </label>
+                          ))}
+                        </div>
+                        {olderYears.length > 0 && (
+                          <div className="mt-2">
+                            <button
+                              type="button"
+                              className="text-sm text-indigo-600 hover:text-indigo-800"
+                              onClick={() => setShowOlderBillingYears(v => !v)}
+                            >
+                              {showOlderBillingYears ? 'Hide older years' : `Show older years (${olderYears.length})`}
+                            </button>
+                            {showOlderBillingYears && (
+                              <div className="mt-2 grid grid-cols-2 gap-2">
+                                {olderYears.map(y => (
+                                  <label key={y.id} className="inline-flex items-center space-x-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedBillingYearIds.includes(y.id)}
+                                      onChange={e => {
+                                        setSelectedBillingYearIds(prev => {
+                                          if (e.target.checked) return Array.from(new Set([...prev, y.id]));
+                                          return prev.filter(id => id !== y.id);
+                                        });
+                                      }}
+                                    />
+                                    <span className="text-sm text-gray-700">{y.year}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
 
                 {/* Action Button */}
