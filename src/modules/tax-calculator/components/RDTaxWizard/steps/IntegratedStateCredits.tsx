@@ -9,13 +9,17 @@ interface IntegratedStateCreditsProps {
   businessData: any;
   wizardState: any; // Get business state from wizard state like CalculationStep does
   qreDataHash?: string; // Hash of QRE data to trigger reload when data changes
+  includeStateEnabled?: boolean;
+  onToggleIncludeState?: (v: boolean) => void;
 }
 
 export const IntegratedStateCredits: React.FC<IntegratedStateCreditsProps> = ({
   selectedYear,
   businessData,
   wizardState,
-  qreDataHash
+  qreDataHash,
+  includeStateEnabled = true,
+  onToggleIncludeState
 }) => {
   // Get business state from wizardState like CalculationStep does (prioritize domicile_state, then contact_info.state)
   const businessState = wizardState?.business?.domicile_state || wizardState?.business?.contact_info?.state || wizardState?.business?.state || 'CA';
@@ -213,7 +217,7 @@ export const IntegratedStateCredits: React.FC<IntegratedStateCreditsProps> = ({
           </div>
           <div className="text-right ml-auto">
             <div className="text-sm text-gray-600">Total State</div>
-            <div className="text-xl font-bold text-green-600">{formatCurrency(totalCredit)}</div>
+            <div className="text-xl font-bold text-green-600">{formatCurrency(includeStateEnabled ? totalCredit : 0)}</div>
           </div>
         </div>
 
@@ -253,14 +257,25 @@ export const IntegratedStateCredits: React.FC<IntegratedStateCreditsProps> = ({
           </div>
         </div>
 
-        {/* Toggle State Pro Forma visibility */}
+        {/* Toggles */}
         <div className="mb-4">
-          <button
-            onClick={() => setShowProForma(!showProForma)}
-            className="w-full px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium"
-          >
-            {showProForma ? 'Hide' : 'Show'} State Credit Pro Forma
-          </button>
+          <div className="flex flex-col md:flex-row gap-3">
+            <button
+              onClick={() => setShowProForma(!showProForma)}
+              className="flex-1 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium"
+            >
+              {showProForma ? 'Hide' : 'Show'} State Credit Pro Forma
+            </button>
+            <label className="inline-flex items-center text-sm px-3 py-2 bg-green-50 text-green-700 rounded">
+              <input
+                type="checkbox"
+                className="mr-2"
+                checked={includeStateEnabled}
+                onChange={(e) => onToggleIncludeState && onToggleIncludeState(e.target.checked)}
+              />
+              Include State Credits (base-level)
+            </label>
+          </div>
         </div>
 
         {/* Loading State */}

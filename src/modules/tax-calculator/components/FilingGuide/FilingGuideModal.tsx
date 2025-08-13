@@ -171,19 +171,28 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
     try {
       // Generate HTML content
       const htmlContent = generateFilingGuideHTML();
+
+      // Compute owner splits from DB for persistence
+      let ownerSplits: Array<{ name: string; percent: number; amount: number }> = [];
+      try {
+        const { data: owners } = await supabase
+          .from('rd_business_owners')
+          .select('owner_name, ownership_percent')
+          .eq('business_id', businessData.id)
+          .eq('year', selectedYear.year);
+        const total = Math.round(calculations.totalCredits || 0);
+        ownerSplits = (owners || []).map(o => ({
+          name: o.owner_name,
+          percent: Number(o.ownership_percent || 0),
+          amount: Math.round(total * Number(o.ownership_percent || 0) / 100)
+        }));
+      } catch {}
       
-      // Fix: Use correct saveReport method signature (businessYearId, htmlContent, reportType)
-      await rdReportService.saveReport(
-        selectedYear.id,
-        htmlContent,
-        'FILING_GUIDE'
-      );
+      // Save report and persist owner_splits JSON
+      await rdReportService.saveReport(selectedYear.id, htmlContent, 'FILING_GUIDE', { owner_splits: ownerSplits });
 
       // Update cached report - Fix: Correct parameter order
-      const newReport = await rdReportService.getReport(
-        selectedYear.id,
-        'FILING_GUIDE'
-      );
+      const newReport = await rdReportService.getReport(selectedYear.id, 'FILING_GUIDE');
       setCachedReport(newReport);
       
       console.log('📄 [Filing Guide] Report generated and saved');

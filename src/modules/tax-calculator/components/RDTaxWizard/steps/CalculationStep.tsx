@@ -498,6 +498,32 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
   const [stateCalculations, setStateCalculations] = useState<any[]>([]);
   const [enableStateCredits, setEnableStateCredits] = useState(true);
 
+  // Persist and load per-year toggle from rd_business_years.include_state_credit
+  useEffect(() => {
+    const loadToggle = async () => {
+      const byId = wizardState.selectedYear?.id;
+      if (!byId) return;
+      const { data, error } = await supabase
+        .from('rd_business_years')
+        .select('include_state_credit')
+        .eq('id', byId)
+        .maybeSingle();
+      if (!error && data && typeof data.include_state_credit === 'boolean') {
+        setEnableStateCredits(data.include_state_credit);
+      }
+    };
+    loadToggle();
+  }, [wizardState.selectedYear?.id]);
+
+  const saveToggle = async (value: boolean) => {
+    const byId = wizardState.selectedYear?.id;
+    if (!byId) return;
+    await supabase
+      .from('rd_business_years')
+      .update({ include_state_credit: value })
+      .eq('id', byId);
+  };
+
   // State gross receipts management
   const [stateGrossReceipts, setStateGrossReceipts] = useState<{[year: string]: number}>({});
   const [showStateGrossReceipts, setShowStateGrossReceipts] = useState(false);
@@ -2092,6 +2118,18 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
                   </span>
                 </span>
                 <span className="text-lg font-bold text-green-700">{formatCurrency(enableStateCredits ? totalStateCredits : 0)}</span>
+                <label className="ml-3 inline-flex items-center text-xs bg-white/20 px-2 py-1 rounded">
+                  <input
+                    type="checkbox"
+                    className="mr-1"
+                    checked={enableStateCredits}
+                    onChange={(e) => {
+                      setEnableStateCredits(e.target.checked);
+                      saveToggle(e.target.checked);
+                    }}
+                  />
+                  Include State Credits
+                </label>
         </div>
               <div className="border-t border-gray-200 w-full my-1"></div>
               <div className="flex items-center justify-between w-full">
@@ -2215,6 +2253,11 @@ const CalculationStep: React.FC<CalculationStepProps> = ({
           selectedYear={selectedYearData}
           wizardState={wizardState}
           qreDataHash={qreDataHash}
+          includeStateEnabled={enableStateCredits}
+          onToggleIncludeState={(v: boolean) => {
+            setEnableStateCredits(v);
+            saveToggle(v);
+          }}
         />
       </div>
 
