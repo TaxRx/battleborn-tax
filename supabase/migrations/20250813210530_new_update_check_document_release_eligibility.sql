@@ -36,20 +36,23 @@ BEGIN
     WHEN 'research_report' THEN
       -- Research Report: Available when QC marks as ready
       RETURN QUERY SELECT 
-        (business_year_record.qc_status IN ('ready_for_review', 'approved', 'complete')),
+        (business_year_record.qc_status IN ('ready_for_review', 'approved', 'complete') 
+        AND COALESCE(control_record.is_released, FALSE)
+        ),
         CASE 
           WHEN business_year_record.qc_status IN ('ready_for_review', 'approved', 'complete') THEN 'Document approved for release'
           ELSE 'Document pending QC approval'
         END,
         jurat_exists,
         COALESCE(business_year_record.payment_received, FALSE),
-        (business_year_record.qc_status IN ('approved', 'complete'));
+        COALESCE(control_record.is_released, FALSE);
         
     WHEN 'filing_guide' THEN
       -- Filing Guide: Available after jurat signed + QC approval + payment
       RETURN QUERY SELECT 
         (jurat_exists AND business_year_record.qc_status IN ('approved', 'complete')
         AND COALESCE(business_year_record.payment_received, FALSE)
+        AND COALESCE(control_record.is_released, FALSE)
         ),
         CASE 
           WHEN NOT jurat_exists THEN 'Jurat must be signed first'
@@ -59,12 +62,14 @@ BEGIN
         END,
         jurat_exists,
         COALESCE(business_year_record.payment_received, FALSE),
-        (business_year_record.qc_status IN ('approved', 'complete'));
+        COALESCE(control_record.is_released, FALSE);
         
     WHEN 'allocation_report' THEN
       -- Allocation Report: Available after QC approval  
       RETURN QUERY SELECT 
-        (business_year_record.qc_status IN ('approved', 'complete')),
+        (business_year_record.qc_status IN ('approved', 'complete')
+        AND COALESCE(control_record.is_released, FALSE)
+        ),
         CASE 
           WHEN business_year_record.qc_status IN ('approved', 'complete') THEN 'Document approved for release'
           ELSE 'Document pending QC approval'
@@ -80,7 +85,7 @@ BEGIN
         'Document pending QC approval',
         jurat_exists,
         COALESCE(business_year_record.payment_received, FALSE),
-        (business_year_record.qc_status IN ('approved', 'complete'));
+        COALESCE(control_record.is_released, FALSE);
   END CASE;
 END;
 $function$;

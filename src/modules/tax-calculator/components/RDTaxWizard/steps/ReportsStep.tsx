@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Download, Eye, Settings, Share2, CheckCircle, Clock, AlertCircle, AlertTriangle, User, Calendar, DollarSign, Lock, Unlock, Upload, Save, Edit, Check, X, ExternalLink, PenTool, Building2, MapPin, Mail, Shield } from 'lucide-react';
+import { FileText, Download, Eye, Settings, Share2, CheckCircle, Clock, AlertCircle, AlertTriangle, Info, User, Calendar, DollarSign, Lock, Unlock, Upload, Save, Edit, Check, X, ExternalLink, PenTool, Building2, MapPin, Mail, Shield } from 'lucide-react';
 import { supabase } from '../../../../../lib/supabase';
 import { FilingGuideModal } from '../../FilingGuide/FilingGuideModal';
 import ResearchReportModal from '../../ResearchReport/ResearchReportModal';
@@ -1247,11 +1247,8 @@ I acknowledge that I had the opportunity to review and revise the report prior t
     
     // If turning ON, check requirements
     if (!currentStatus) {
-      // For filing guide, check payment received requirement
-      if (documentType === 'filing_guide' && !businessYearData?.payment_received) {
-        toast.error('Payment must be received before the Filing Guide can be released to client');
-        return;
-      }
+      // Payment requirement removed for filing guide - admin can now release for QC without payment
+      // Note: Client portal still enforces payment requirement via check_document_release_eligibility function
       
       // For allocation report, check if it has been saved to database
       if (documentType === 'allocation_report' && !allocationReportSaved) {
@@ -1318,48 +1315,8 @@ I acknowledge that I had the opportunity to review and revise the report prior t
         payment_received_at: newPaymentStatus ? new Date().toISOString() : null
       } : null);
 
-      // If payment is being turned off and filing guide is released, warn user and turn off release
-      if (!newPaymentStatus && releaseToggles['filing_guide']) {
-        const confirmUnrelease = confirm(
-          'Payment status is being turned off. This will also unrelease the Filing Guide. Continue?'
-        );
-        
-        if (confirmUnrelease) {
-          // Unrelease the filing guide
-          const { error: releaseError } = await supabase
-            .from('rd_qc_document_controls')
-            .update({
-              is_released: false,
-              released_at: null,
-              updated_at: new Date().toISOString()
-            })
-            .eq('business_year_id', yearId)
-            .eq('document_type', 'filing_guide');
-
-          if (releaseError) throw releaseError;
-          
-          setReleaseToggles(prev => ({ ...prev, filing_guide: false }));
-          await loadReportsData();
-        } else {
-          // Revert payment status change
-          const { error: revertError } = await supabase
-            .from('rd_business_years')
-            .update({
-              payment_received: true,
-              payment_received_at: businessYearData?.payment_received_at || new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', yearId);
-
-          if (revertError) throw revertError;
-          
-          // Revert local state
-          setBusinessYearData(prev => prev ? {
-            ...prev,
-            payment_received: true
-          } : null);
-        }
-      }
+      // Payment status change no longer affects filing guide release status
+      // Admin can now manage filing guide release independently of payment status
 
       toast.success(`Payment status ${newPaymentStatus ? 'marked as received' : 'unmarked'}`);
     } catch (error) {
@@ -2204,11 +2161,8 @@ I acknowledge that I had the opportunity to review and revise the report prior t
                   <span className="text-sm font-medium text-gray-700">Release to Client</span>
                   <button
                     onClick={() => toggleRelease('filing_guide')}
-                    disabled={!businessYearData?.payment_received}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      releaseToggles['filing_guide'] ? 'bg-green-600' : 
-                      !businessYearData?.payment_received ? 'bg-gray-300 cursor-not-allowed' :
-                      'bg-gray-200'
+                      releaseToggles['filing_guide'] ? 'bg-green-600' : 'bg-gray-200'
                     }`}
                   >
                     <span
@@ -2231,13 +2185,13 @@ I acknowledge that I had the opportunity to review and revise the report prior t
                   </div>
                 )}
 
-                {/* Warning for payment requirement */}
+                {/* Info for payment requirement for client portal */}
                 {!businessYearData?.payment_received && (
                   <div className="mb-3">
-                    <div className="inline-flex items-center px-3 py-1 rounded-full bg-amber-50">
-                      <AlertTriangle className="mr-1 text-amber-600" size={16} />
-                      <span className="text-sm font-medium text-amber-600">
-                        Payment must be received before release
+                    <div className="inline-flex items-center px-3 py-1 rounded-full bg-blue-50">
+                      <Info className="mr-1 text-blue-600" size={16} />
+                      <span className="text-sm font-medium text-blue-600">
+                        Note: Payment required for client portal access
                       </span>
                     </div>
                   </div>

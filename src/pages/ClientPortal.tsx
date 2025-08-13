@@ -949,6 +949,9 @@ const ClientPortal: React.FC = () => {
               canRelease = true;
               reason = 'Document approved for release';
               console.log(`✅ [ClientPortal] ${docType} approved for release in business year: ${businessYearId}`);
+            } else {
+              // Update reason with the specific reason from database function
+              reason = result.reason;
             }
             if (result.jurat_signed) juratSigned = true;
             if (result.payment_received) paymentReceived = true;
@@ -2337,57 +2340,6 @@ This annual signature covers all business entities and research activities for t
                     })()}
                   </div>
 
-                  {/* Jurat Section */}
-                  <div className="bg-white rounded-lg shadow p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-lg font-semibold text-gray-900">Jurat & Attestation</h2>
-                      {juratSignatures.length > 0 ? (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                          <CheckCircle className="w-4 h-4 mr-1" />
-                          Signed
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
-                          <PenTool className="w-4 h-4 mr-1" />
-                          Signature Required
-                        </span>
-                      )}
-                    </div>
-
-                    {juratSignatures.length > 0 ? (
-                      <div className="space-y-3">
-                        {juratSignatures.map((signature) => (
-                          <div key={signature.id} className="bg-green-50 border border-green-200 rounded-lg p-4">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="font-medium text-green-900">{signature.signer_name}</p>
-                                <p className="text-sm text-green-700">{signature.signer_title}</p>
-                                <p className="text-sm text-green-700">{signature.signer_email}</p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-sm text-green-700">
-                                  Signed: {new Date(signature.signed_at).toLocaleDateString()}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-6">
-                        <PenTool className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                        <p className="text-gray-600 mb-4">
-                          A jurat signature is required to access certain documents.
-                        </p>
-                        <button
-                          onClick={() => setShowJuratModal(true)}
-                          className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                          Create Digital Signature
-                        </button>
-                      </div>
-                    )}
-                  </div>
 
                   {/* Documents Section */}
                   <div className="bg-white rounded-xl shadow-lg p-6">
@@ -2400,6 +2352,26 @@ This annual signature covers all business entities and research activities for t
                         <p className="text-gray-600">{selectedYear.year} tax year documentation</p>
                       </div>
                     </div>
+
+                    {/* Payment Required Notice */}
+                    {documents.some(doc => !doc.payment_received) && (
+                      <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                        <div className="flex items-start space-x-3">
+                          <div className="flex-shrink-0">
+                            <svg className="w-5 h-5 text-amber-500 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                            </svg>
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-semibold text-amber-800 mb-1">Payment Required</h4>
+                            <p className="text-sm text-amber-700">
+                              Some documents require payment to be completed before they can be accessed. 
+                              Please contact your account manager to finalize payment and billing arrangements.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       {documents.map((doc) => {
