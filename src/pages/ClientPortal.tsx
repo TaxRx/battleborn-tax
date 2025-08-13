@@ -1309,9 +1309,10 @@ const ClientPortal: React.FC = () => {
           .select('generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked')
           .eq('business_year_id', businessYearId)
           .eq('type', queryType)
-          .single();
-        data = result.data;
-        error = result.error;
+          .order('updated_at', { ascending: false })
+          .limit(1);
+        data = result.data?.[0] || null;
+        error = result.error || (!data ? { code: 'PGRST116', message: 'not found' } : null);
       }
 
       // If that fails and we have business context, try with business_id as well
@@ -1346,7 +1347,8 @@ const ClientPortal: React.FC = () => {
             .eq('business_year_id', businessYearId)
             .eq('business_id', portalData.business_id)
             .eq('type', queryType)
-            .single();
+            .order('updated_at', { ascending: false })
+            .limit(1);
         }
         
         if (!retryResult.error) {
@@ -1606,8 +1608,7 @@ const ClientPortal: React.FC = () => {
           const { data: bys } = await client
             .from('rd_business_years')
             .select('id, year, business_id')
-            .in('id', byIds)
-            .eq('business_id', portalData?.business_id || '');
+            .in('id', byIds);
           const grouped = (bys || []).reduce((map: Record<number, any[]>, by: any) => {
             if (!map[by.year]) map[by.year] = [];
             map[by.year].push({ ...by, business_name: portalData?.business_name || '' });
@@ -1663,16 +1664,14 @@ const ClientPortal: React.FC = () => {
           const client = getSupabaseClient();
           const { data: reqs } = await client
             .from('rd_client_requests')
-            .select('business_year_id, status, business_id')
-            .in('status', ['client_in_progress','client_completed'])
-            .eq('business_id', portalData?.business_id || '');
+            .select('business_year_id, status')
+            .in('status', ['client_in_progress','client_completed']);
           const byIds = Array.from(new Set((reqs || []).map(r => r.business_year_id).filter(Boolean)));
           if (byIds.length === 0) { setYears([]); return; }
           const { data: bys } = await client
             .from('rd_business_years')
             .select('id, year, business_id')
-            .in('id', byIds)
-            .eq('business_id', portalData?.business_id || '');
+            .in('id', byIds);
           const grouped = (bys || []).reduce((map: Record<number, any[]>, by: any) => {
             if (!map[by.year]) map[by.year] = [];
             map[by.year].push({ ...by, business_name: portalData?.business_name || '' });
