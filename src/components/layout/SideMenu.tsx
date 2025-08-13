@@ -58,6 +58,11 @@ const menuItems: MenuItem[] = [
     ],
   },
   {
+    name: 'Databank',
+    href: '/databank',
+    icon: DocumentTextIcon,
+  },
+  {
     name: 'Payment',
     href: '/payment',
     icon: CreditCardIcon,
@@ -78,8 +83,8 @@ const SideMenu: React.FC = () => {
   const location = useLocation();
   const [expandedItems, setExpandedItems] = React.useState<Record<string, boolean>>({});
   const { user } = useUser();
-
-  const userRole = user?.user_metadata?.role;
+  // Be tolerant to different shapes; default to 'client'
+  const userRole = (user as any)?.user_metadata?.role || (user as any)?.role || 'client';
 
   const toggleExpand = (name: string) => {
     setExpandedItems(prev => ({

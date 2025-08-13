@@ -132,6 +132,11 @@ const ClientPortal: React.FC = () => {
   const [portalData, setPortalData] = useState<PortalData | null>(null);
   const [approvedYears, setApprovedYears] = useState<ApprovedYear[]>([]);
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
+  // Databank: locked years with credits and released docs
+  const [databankYears, setDatabankYears] = useState<ApprovedYear[]>([]);
+  const [expandedDatabank, setExpandedDatabank] = useState<Record<number, boolean>>({});
+  const [viewMode, setViewMode] = useState<'dashboard' | 'databank'>('dashboard');
+  const [databankRelease, setDatabankRelease] = useState<Record<string, { research_report: boolean; filing_guide: boolean; allocation_report: boolean }>>({});
   const [selectedYear, setSelectedYear] = useState<ApprovedYear | null>(null);
   
   // Annual jurat signature state variables
@@ -881,6 +886,97 @@ const ClientPortal: React.FC = () => {
       .eq('business_year_id', firstById)
       .maybeSingle();
     setDashboardTiles(data || null);
+  };
+
+  // Load Databank years (credits_locked = true) grouped by year for this business
+  const loadDatabankYears = async () => {
+    try {
+      if (!portalData?.business_id) return;
+      const client = getSupabaseClient();
+      let sourceYears: ApprovedYear[] = [];
+      if (approvedYears && approvedYears.length > 0) {
+        // Use the same years shown in the Approved Years sidebar (already sorted desc)
+        sourceYears = [...approvedYears].sort((a, b) => b.year - a.year);
+      } else {
+        // Fallback to querying locked years directly
+        const { data: bys } = await client
+          .from('rd_business_years')
+          .select('id, year, business_id, federal_credit, state_credit, credits_locked')
+          .eq('business_id', portalData.business_id)
+          .eq('credits_locked', true)
+          .order('year', { ascending: false });
+        const grouped = (bys || []).reduce((map: Record<number, any[]>, by: any) => {
+          if (!map[by.year]) map[by.year] = [];
+          map[by.year].push({ ...by, business_name: portalData?.business_name || '' });
+          return map;
+        }, {});
+        sourceYears = Object.entries(grouped).map(([year, arr]) => ({
+          year: parseInt(year, 10),
+          business_years: arr as any,
+          total_qre: 0,
+          jurat_signed: undefined,
+          all_documents_released: false,
+        })).sort((a, b) => b.year - a.year);
+      }
+
+      setDatabankYears(sourceYears);
+
+      // Build release map per BY and docType
+      const byIds: string[] = sourceYears.flatMap(y => (y.business_years || []).map((by: any) => by.id)).filter(Boolean);
+      const docTypes: Array<'research_report' | 'filing_guide' | 'allocation_report'> = ['research_report', 'filing_guide', 'allocation_report'];
+      const releaseMap: Record<string, { research_report: boolean; filing_guide: boolean; allocation_report: boolean }> = {};
+      for (const byId of byIds) {
+        releaseMap[byId] = { research_report: false, filing_guide: false, allocation_report: false };
+        for (const dt of docTypes) {
+          try {
+            const { data, error } = await client.rpc('check_document_release_eligibility', {
+              p_business_year_id: byId,
+              p_document_type: dt
+            });
+            if (!error && Array.isArray(data) && data[0]) {
+              releaseMap[byId][dt] = !!data[0].can_release;
+            }
+          } catch {}
+        }
+      }
+      setDatabankRelease(releaseMap);
+    } catch {
+      setDatabankYears([]);
+    }
+  };
+
+  useEffect(() => {
+    loadDatabankYears();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [portalData?.business_id, approvedYears]);
+
+  const toggleDatabankYear = (year: number) => {
+    setExpandedDatabank(prev => ({ ...prev, [year]: !prev[year] }));
+  };
+
+  const viewDocumentForBusinessYear = async (businessYearId: string, documentType: string, yearLabel: number | string) => {
+    try {
+      const client = getSupabaseClient();
+      let queryType = documentType === 'filing_guide' ? 'FILING_GUIDE' : 'RESEARCH_SUMMARY';
+      const { data, error } = await client
+        .from('rd_reports')
+        .select('generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked')
+        .eq('business_year_id', businessYearId)
+        .eq('type', queryType)
+        .single();
+      if (error) throw error;
+      let htmlContent = '';
+      if (documentType === 'research_report') htmlContent = data.generated_html || '';
+      else if (documentType === 'filing_guide') htmlContent = data.filing_guide || '';
+      else if (documentType === 'allocation_report') htmlContent = data.allocation_report || '';
+      if (!htmlContent) { alert('Document content not available'); return; }
+      setCurrentDocumentContent(htmlContent);
+      setCurrentDocumentTitle(`${getDocumentTitle(documentType)} - ${yearLabel}`);
+      setShowDocumentModal(true);
+    } catch (e) {
+      console.error('Error viewing document for BY:', e);
+      alert('Failed to load document');
+    }
   };
 
   const loadDocumentStatus = async () => {
@@ -1648,9 +1744,10 @@ const ClientPortal: React.FC = () => {
           // Find all BY with client_visible requests and not approved
           const { data: reqs } = await client
             .from('rd_employee_role_designations')
-            .select('business_year_id')
+            .select('business_year_id, business_id')
             .eq('client_visible', true)
-            .neq('status', 'applied');
+            .neq('status', 'applied')
+            .eq('business_id', portalData?.business_id || '');
           const byIds = Array.from(new Set((reqs || []).map(r => r.business_year_id).filter(Boolean)));
           if (byIds.length === 0) { setRequestYears([]); return; }
           const { data: bys } = await client
@@ -2142,13 +2239,111 @@ This annual signature covers all business entities and research activities for t
 
             {/* In Progress (info requested and client has started or submitted) */}
             <InProgressList getSupabaseClient={getSupabaseClient} onSelect={(yr) => setSelectedYear(yr)} />
+
+            {/* Databank (sidebar entry only) */}
+            <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+              <div className="bg-gradient-to-r from-indigo-500 to-violet-600 px-6 py-4 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">Databank</h2>
+                  <p className="text-indigo-100 text-sm">Locked credits and released documents</p>
+                </div>
+                <button
+                  onClick={() => setViewMode('databank')}
+                  className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-md text-sm"
+                >
+                  Open
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Main Content */}
           <div className="lg:col-span-3">
-            {approvedYears.length === 0 ? (
-              <NoApprovedDataMessage />
-            ) : selectedYear && (
+            {viewMode === 'databank' ? (
+              <div className="space-y-8">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h1 className="text-3xl font-bold">Databank</h1>
+                    <p className="text-gray-600">Approved credits and released documents for {portalData?.business_name}</p>
+                  </div>
+                  <button
+                    onClick={() => setViewMode('dashboard')}
+                    className="px-4 py-2 rounded-lg border text-gray-700 hover:bg-gray-50"
+                  >
+                    Back to Year View
+                  </button>
+                </div>
+
+                {(() => {
+                  const allBY = databankYears.flatMap(y => y.business_years as any[]);
+                  const totalFederal = Math.round(allBY.reduce((s, by: any) => s + (by.federal_credit || 0), 0));
+                  const totalState = Math.round(allBY.reduce((s, by: any) => s + (by.state_credit || 0), 0));
+                  const totalCredits = totalFederal + totalState;
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="rounded-xl border p-5 bg-gradient-to-br from-green-50 to-white">
+                        <div className="text-xs uppercase tracking-wide text-gray-500">Total Federal</div>
+                        <div className="text-2xl font-semibold text-green-700">${totalFederal.toLocaleString()}</div>
+                      </div>
+                      <div className="rounded-xl border p-5 bg-gradient-to-br from-purple-50 to-white">
+                        <div className="text-xs uppercase tracking-wide text-gray-500">Total State</div>
+                        <div className="text-2xl font-semibold text-purple-700">${totalState.toLocaleString()}</div>
+                      </div>
+                      <div className="rounded-xl border p-5 bg-gradient-to-br from-indigo-50 to-white">
+                        <div className="text-xs uppercase tracking-wide text-gray-500">All Credits</div>
+                        <div className="text-2xl font-semibold text-indigo-700">${totalCredits.toLocaleString()}</div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div className="mt-4 space-y-3">
+                  {databankYears.map((yr) => {
+                    const totalFederal = Math.round(yr.business_years.reduce((s: number, b: any) => s + (b.federal_credit || 0), 0));
+                    const totalState = Math.round(yr.business_years.reduce((s: number, b: any) => s + (b.state_credit || 0), 0));
+                    return (
+                      <div key={`db-main-${yr.year}`} className="rounded-xl border p-5 bg-white">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-lg font-semibold text-gray-900">Tax Year {yr.year}</div>
+                            <div className="text-sm text-gray-600">Federal ${totalFederal.toLocaleString()} • State ${totalState.toLocaleString()}</div>
+                          </div>
+                        </div>
+                        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {yr.business_years.map((by: any) => {
+                            const rel = databankRelease[by.id] || { research_report: false, filing_guide: false, allocation_report: false };
+                            const commonBtn = 'px-3 py-1 rounded text-sm transition-colors';
+                            return (
+                            <div key={`db-main-${yr.year}-${by.id}`} className="rounded-lg border p-3">
+                              <div className="text-sm text-gray-700 mb-2">{by.business_name}</div>
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    onClick={() => rel.research_report && viewDocumentForBusinessYear(by.id, 'research_report', yr.year)}
+                                    disabled={!rel.research_report}
+                                    className={`${commonBtn} ${rel.research_report ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-200 text-gray-500 cursor-not-allowed'}`}
+                                  >Research Report</button>
+                                  <button
+                                    onClick={() => rel.filing_guide && viewDocumentForBusinessYear(by.id, 'filing_guide', yr.year)}
+                                    disabled={!rel.filing_guide}
+                                    className={`${commonBtn} ${rel.filing_guide ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-200 text-gray-500 cursor-not-allowed'}`}
+                                  >Filing Guide</button>
+                                  <button
+                                    onClick={() => rel.allocation_report && viewDocumentForBusinessYear(by.id, 'allocation_report', yr.year)}
+                                    disabled={!rel.allocation_report}
+                                    className={`${commonBtn} ${rel.allocation_report ? 'bg-violet-600 text-white hover:bg-violet-700' : 'bg-gray-200 text-gray-500 cursor-not-allowed'}`}
+                                  >Allocation</button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) :  approvedYears.length === 0 ? (
+              <NoApprovedDataMessage /> ) : selectedYear && (
               <div className="space-y-8">
                 {/* Dashboard Tiles */}
                 {dashboardTiles && (
@@ -2208,7 +2403,7 @@ This annual signature covers all business entities and research activities for t
                         <div>
                           <h3 className="text-lg font-medium text-green-900">Federal Credit</h3>
                           <div className="text-2xl font-bold text-green-600">
-                            ${(selectedYear.business_years.reduce((sum, by) => sum + (by.federal_credit || 0), 0)).toLocaleString()}
+                            ${Math.round(selectedYear.business_years.reduce((sum, by) => sum + (by.federal_credit || 0), 0)).toLocaleString()}
                           </div>
                         </div>
                         <div className="w-12 h-12 bg-green-500 rounded-lg flex items-center justify-center">
@@ -2223,7 +2418,7 @@ This annual signature covers all business entities and research activities for t
                         <div>
                           <h3 className="text-lg font-medium text-purple-900">State Credit</h3>
                           <div className="text-2xl font-bold text-purple-600">
-                            ${(selectedYear.business_years.reduce((sum, by) => sum + (by.state_credit || 0), 0)).toLocaleString()}
+                            ${Math.round(selectedYear.business_years.reduce((sum, by) => sum + (by.state_credit || 0), 0)).toLocaleString()}
                           </div>
                         </div>
                         <div className="w-12 h-12 bg-purple-500 rounded-lg flex items-center justify-center">
@@ -2416,7 +2611,7 @@ This annual signature covers all business entities and research activities for t
                               </div>
                             </div>
 
-                            {doc.can_release ? (
+                            {(doc.type === 'filing_guide' ? (documents.find(d => d.type === 'filing_guide')?.can_release) : doc.can_release) ? (
                               (() => {
                                 // Determine if all documents are ready and if Filing Guide is released
                                 const allDocumentsReady = documents.every(d => d.can_release && d.qc_approved);
@@ -2447,25 +2642,17 @@ This annual signature covers all business entities and research activities for t
                                   }
                                 }
                                 
-                                // Filing Guide: Download after payment
+                                // Filing Guide: View full guide in modal instead of download; ensure released toggle is true
                                 if (doc.type === 'filing_guide') {
-                                  if (true || paymentReceived) {
-                                    return (
-                                      <button 
-                                        onClick={() => downloadDocument(doc.type)}
-                                        className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-2 px-4 rounded-lg hover:from-green-600 hover:to-green-700 transition-all"
-                                      >
-                                        <Download className="w-4 h-4 inline mr-2" />
-                                        Download
-                                      </button>
-                                    );
-                                  } else {
-                                    return (
-                                      <div className="w-full bg-gray-100 text-gray-500 py-2 px-4 rounded-lg text-center text-sm">
-                                        Payment required for download
-                                      </div>
-                                    );
-                                  }
+                                  return (
+                                    <button 
+                                      onClick={() => viewDocument('filing_guide')}
+                                      className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-2 px-4 rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all"
+                                    >
+                                      <FileText className="w-4 h-4 inline mr-2" />
+                                      View
+                                    </button>
+                                  );
                                 }
                                 
                                 // Allocation Report: View-only (always)
