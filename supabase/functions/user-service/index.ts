@@ -40,6 +40,8 @@ serve(async (req) => {
       return await handleGetProfile(req, supabaseAdmin)
     } else if (pathname === '/user-service/reset-password') {
       return await handlePasswordReset(req, supabaseAdmin)
+    } else if (pathname === '/user-service/send-magic-link') {
+      return await handleSendMagicLink(req, supabaseAdmin)
     } 
 
     return new Response(JSON.stringify({ error: 'Not Found:' + pathname }), {
@@ -512,6 +514,52 @@ async function handlePasswordReset(req, supabaseAdmin) {
   } catch (error) {
     console.error('Password reset request error:', error)
     return new Response(JSON.stringify({ error: 'Failed to send password reset email' }), { status: 500 })
+  }
+}
+
+// --- Handler for Sending Magic Link --- //
+async function handleSendMagicLink(req, supabaseAdmin) {
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
+  }
+
+  const { email } = await req.json()
+
+  // Validate input
+  if (!email?.trim()) {
+    return new Response(JSON.stringify({ error: 'Email is required' }), { status: 400 })
+  }
+
+  try {
+    const redirectTo = `${Deno.env.get('SITE_URL') || 'http://localhost:5174'}/dashboard`
+    console.log('Sending magic link for:', email.trim(), redirectTo)
+    
+    // Send magic link using Supabase auth
+    const { data, error } = await supabaseAdmin.auth.signInWithOtp({
+      email: email.trim(),
+      options: {
+        emailRedirectTo: redirectTo,
+      }
+    })
+
+    if (error) {
+      console.error('Magic link send error:', error)
+      return new Response(JSON.stringify({ error: error.message }), { status: 400 })
+    }
+
+    console.log('Magic link sent successfully for:', email.trim(), data)
+    
+    return new Response(JSON.stringify({ 
+      success: true, 
+      message: 'Login link sent successfully. Please check your email.' 
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
+    })
+
+  } catch (error) {
+    console.error('Magic link send request error:', error)
+    return new Response(JSON.stringify({ error: 'Failed to send login link' }), { status: 500 })
   }
 }
 

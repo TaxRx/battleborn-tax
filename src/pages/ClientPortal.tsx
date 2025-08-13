@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { Calendar, Download, FileText, CheckCircle, Clock, AlertCircle, Eye, PenTool, User, Building2, Shield, Award, ChevronRight, XCircle, Users, Sliders } from 'lucide-react';
+import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
+import { Calendar, Download, FileText, CheckCircle, Clock, AlertCircle, Eye, PenTool, User, Building2, Shield, Award, ChevronRight, XCircle, Users, Sliders, LogOut } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 // Create a separate supabase client instance for the portal
 import { createClient } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase'; // Import main authenticated client
+import useAuthStore from '../store/authStore';
 import { ExpenseDistributionChart } from '../modules/tax-calculator/components/common/ExpenseDistributionChart';
 import SignaturePad from '../components/SignaturePad';
 import { ProgressTrackingService } from '../modules/tax-calculator/services/progressTrackingService';
+import BusinessSelector from '../components/BusinessSelector';
 // Dynamic import for AllocationReportModal to avoid module resolution issues
 // Force cache refresh with comment change
 
@@ -23,6 +25,13 @@ const portalSupabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true
   }
 });
+
+interface Business {
+  id: string;
+  name: string;
+  ein: string;
+  client_id: string;
+}
 
 interface PortalData {
   business_id: string;
@@ -76,15 +85,25 @@ interface JuratSignature {
 }
 
 const ClientPortal: React.FC = () => {
-  const { userId, clientId, businessId, token } = useParams<{ 
-    userId?: string; 
-    clientId?: string; 
-    businessId?: string; 
-    token?: string; 
-  }>();
+  const [searchParams] = useSearchParams();
+  const { clientId } = useParams<{ clientId?: string }>();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Business selection state
+  const [availableBusinesses, setAvailableBusinesses] = useState<Business[]>([]);
+  const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
+  
+  // Auth store for logout
+  const { logout: authLogout } = useAuthStore();
+  
+  // Admin preview support - check both URL path and query parameters
+  const isLegacyAdminPreview = !!(clientId && (searchParams.get('business_id') || searchParams.get('preview_token')));
+  const isQueryAdminPreview = searchParams.get('admin_preview') === 'true';
+  const isAdminPreview = isLegacyAdminPreview || isQueryAdminPreview;
+  const previewBusinessId = searchParams.get('business_id') || '';
+  const previewToken = searchParams.get('preview_token') || '';
 
   // DETAILED DEBUG LOGGING FOR REDIRECT INVESTIGATION
   console.log('🚀 [ClientPortal] COMPONENT MOUNTING - FULL URL DEBUG:', {
@@ -96,12 +115,14 @@ const ClientPortal: React.FC = () => {
     origin: window.location.origin
   });
   
-  console.log('🚀 [ClientPortal] URL PARAMS FROM ROUTER:', {
-    userId,
-    clientId, 
-    businessId,
-    token,
-    allParams: { userId, clientId, businessId, token }
+  console.log('🚀 [ClientPortal] ROUTE AND QUERY PARAMS:', {
+    clientId,
+    isLegacyAdminPreview,
+    isQueryAdminPreview,
+    isAdminPreview,
+    previewBusinessId,
+    previewToken,
+    allParams: Object.fromEntries(searchParams)
   });
   
   console.log('🚀 [ClientPortal] QUERY PARAMETERS:', {
@@ -170,24 +191,14 @@ const ClientPortal: React.FC = () => {
     }
   };
 
-  // Check for admin preview mode and extract URL parameters
-  const searchParams = new URLSearchParams(window.location.search);
-  const isAdminPreview = searchParams.get('admin_preview') === 'true';
-  const previewBusinessId = searchParams.get('business_id');
-  const previewToken = searchParams.get('preview_token');
-  const urlClientId = searchParams.get('client_id');
-
-  // Determine the effective user ID (use clientId for magic link routes)
-  const effectiveUserId = userId || clientId;
-  
   console.log('🔍 [ClientPortal] Component loaded:', { 
-    userId, 
     clientId,
-    effectiveUserId,
+    isLegacyAdminPreview,
     isAdminPreview, 
     previewBusinessId, 
     previewToken,
-    urlClientId
+    selectedBusinessId: selectedBusiness?.id,
+    availableBusinessesCount: availableBusinesses.length
   });
 
   // Get the appropriate supabase client based on mode
@@ -202,29 +213,24 @@ const ClientPortal: React.FC = () => {
 
   const validateSessionAndLoadData = async () => {
     console.log('🔍 [ClientPortal] VALIDATION STARTING - Checking requirements:', {
-      effectiveUserId,
       isAdminPreview,
       previewBusinessId,
       previewToken,
-      hasEffectiveUserId: !!effectiveUserId,
-      hasAdminPreviewParams: !!(isAdminPreview && previewBusinessId && previewToken),
-      willPassValidation: !!(effectiveUserId || (isAdminPreview && previewBusinessId && previewToken))
+      hasAdminPreviewParams: !!(isAdminPreview && previewBusinessId && previewToken)
     });
     
-    // For admin preview mode, we don't need a valid userId - check for admin preview params instead
-    if (!effectiveUserId && !(isAdminPreview && previewBusinessId && previewToken)) {
-      console.error('❌ [ClientPortal] VALIDATION FAILED - Invalid portal link:', {
-        reason: 'Missing required parameters',
-        effectiveUserId,
-        isAdminPreview,
-        previewBusinessId,
-        previewToken,
-        fullUrl: window.location.href,
-        allUrlParams: Object.fromEntries(new URLSearchParams(window.location.search))
-      });
-      setError('Invalid portal link');
-      setLoading(false);
-      return;
+    // For admin preview mode, check for required preview parameters
+    if (isAdminPreview) {
+      if (!previewBusinessId || !previewToken) {
+        console.error('❌ [ClientPortal] ADMIN PREVIEW VALIDATION FAILED - Missing parameters:', {
+          previewBusinessId,
+          previewToken,
+          fullUrl: window.location.href
+        });
+        setError('Invalid admin preview link - missing required parameters');
+        setLoading(false);
+        return;
+      }
     }
 
     try {
@@ -232,7 +238,8 @@ const ClientPortal: React.FC = () => {
       
       // Handle admin preview mode
       if (isAdminPreview && previewBusinessId && previewToken) {
-        console.log('👤 [ClientPortal] Admin preview mode detected');
+        const previewType = isLegacyAdminPreview ? 'Legacy URL format' : 'Query parameter format';
+        console.log(`👤 [ClientPortal] Admin preview mode detected (${previewType}):`);
         
         // Validate preview token (simple time-based validation)
         const tokenTime = parseInt(previewToken);
@@ -260,9 +267,8 @@ const ClientPortal: React.FC = () => {
         return;
       }
 
-      // Normal client authentication flow
-      console.log('🔐 [ClientPortal] AUTHENTICATION CHECK - Starting normal client flow:', {
-        effectiveUserId,
+      // Normal client authentication flow - user must be authenticated
+      console.log('🔐 [ClientPortal] AUTHENTICATION CHECK - Starting client authentication flow:', {
         currentUrl: window.location.href
       });
       
@@ -274,8 +280,7 @@ const ClientPortal: React.FC = () => {
         hasUser: !!session?.user,
         sessionUserId: session?.user?.id,
         sessionError: sessionError?.message,
-        effectiveUserId,
-        userIdsMatch: session?.user?.id === effectiveUserId
+        userEmail: session?.user?.email
       });
       
       if (sessionError) {
@@ -295,44 +300,60 @@ const ClientPortal: React.FC = () => {
         return;
       }
 
-      // Verify the authenticated user matches the requested effectiveUserId
-      if (session.user.id !== effectiveUserId) {
-        console.error('❌ [ClientPortal] USER MISMATCH - Session user does not match portal user:', {
-          sessionUserId: session.user.id,
-          requestedUserId: effectiveUserId,
-          sessionEmail: session.user.email,
-          reason: 'Must use specific magic link for this user'
-        });
-        throw new Error('Authenticated user does not match portal user. Please use your specific magic link.');
-      }
+      // User is authenticated, proceed to load their business data
+      console.log('✅ [ClientPortal] User authenticated successfully:', {
+        userId: session.user.id,
+        email: session.user.email
+      });
       
       console.log('✅ [ClientPortal] AUTHENTICATION SUCCESS - User verified, proceeding to load data');
 
-      // Fetch business data based on the authenticated user's client_id
+      // Fetch user's profile to get account_id
       const client = getSupabaseClient();
       
-      // 🎯 IMPROVED: Only fetch business years with approved data
+      const { data: userProfile, error: profileError } = await client
+        .from('profiles')
+        .select('account_id')
+        .eq('id', session.user.id)
+        .single();
+        
+      if (profileError || !userProfile?.account_id) {
+        console.error('❌ [ClientPortal] Error fetching user profile:', profileError);
+        throw new Error('Could not load user profile information.');
+      }
+      
+      console.log('🔍 [ClientPortal] User profile loaded:', {
+        userId: session.user.id,
+        accountId: userProfile.account_id
+      });
+      
+      // Fetch all businesses associated with user's account_id via clients table
       const { data: clientBusinesses, error: businessError } = await client
-        .from('rd_businesses')
+        .from('clients')
         .select(`
           id,
-          name,
-          ein,
-          rd_business_years (
+          account_id,
+          rd_businesses (
             id,
-            year,
-            gross_receipts,
-            total_qre,
-            qc_status,
-            payment_received,
-            documents_released,
-            federal_credit,
-            state_credit,
-            created_at,
-            updated_at
+            name,
+            ein,
+            client_id,
+            rd_business_years (
+              id,
+              year,
+              gross_receipts,
+              total_qre,
+              qc_status,
+              payment_received,
+              documents_released,
+              federal_credit,
+              state_credit,
+              created_at,
+              updated_at
+            )
           )
         `)
-        .eq('client_id', urlClientId || session.user.id);
+        .eq('account_id', userProfile.account_id);
 
       if (businessError) {
         console.error('Error fetching client business data:', businessError);
@@ -340,35 +361,71 @@ const ClientPortal: React.FC = () => {
       }
 
       if (!clientBusinesses || clientBusinesses.length === 0) {
-        throw new Error('No businesses found for this client.');
+        throw new Error('No businesses found for this account.');
       }
 
-      // 🎯 IMPROVED: Group by year and only include approved business years
+      // Flatten all businesses from all clients in this account
+      const allBusinesses: Business[] = [];
+      clientBusinesses.forEach(client => {
+        if (client.rd_businesses) {
+          client.rd_businesses.forEach(business => {
+            allBusinesses.push({
+              id: business.id,
+              name: business.name,
+              ein: business.ein,
+              client_id: business.client_id
+            });
+          });
+        }
+      });
+      
+      console.log('🔍 [ClientPortal] All businesses for account:', allBusinesses);
+      
+      if (allBusinesses.length === 0) {
+        throw new Error('No businesses found for this account.');
+      }
+      
+      // Set available businesses and select first one by default
+      setAvailableBusinesses(allBusinesses);
+      
+      const defaultBusiness = allBusinesses[0];
+      setSelectedBusiness(defaultBusiness);
+      
+      console.log('🔍 [ClientPortal] Default business selected:', defaultBusiness);
+      
+      // Find the selected business data with years
+      const selectedBusinessData = clientBusinesses
+        .flatMap(client => client.rd_businesses || [])
+        .find(business => business.id === defaultBusiness.id);
+        
+      if (!selectedBusinessData) {
+        throw new Error('Selected business data not found.');
+      }
+
+      // Process business years for the selected business only
       const approvedBusinessYears: { [year: number]: BusinessYear[] } = {};
       
-      console.log('🔍 [ClientPortal] All client businesses:', clientBusinesses);
+      console.log('🔍 [ClientPortal] Selected business data:', selectedBusinessData);
       
-      clientBusinesses.forEach(business => {
-        console.log(`🔍 [ClientPortal] Processing business: ${business.name}, business years:`, business.rd_business_years);
+      console.log(`🔍 [ClientPortal] Processing business: ${selectedBusinessData.name}, business years:`, selectedBusinessData.rd_business_years);
+      
+      selectedBusinessData.rd_business_years?.forEach(businessYear => {
+        console.log(`🔍 [ClientPortal] Business year ${businessYear.year} QC status:`, businessYear.qc_status);
         
-        business.rd_business_years?.forEach(businessYear => {
-          console.log(`🔍 [ClientPortal] Business year ${businessYear.year} QC status:`, businessYear.qc_status);
+        // Only include years with approved QC status (including ready_for_review)
+        if (businessYear.qc_status === 'approved' || businessYear.qc_status === 'complete' || businessYear.qc_status === 'ready_for_review') {
+          console.log(`✅ [ClientPortal] Including business year ${businessYear.year} (${businessYear.qc_status})`);
           
-          // Only include years with approved QC status (including ready_for_review)
-          if (businessYear.qc_status === 'approved' || businessYear.qc_status === 'complete' || businessYear.qc_status === 'ready_for_review') {
-            console.log(`✅ [ClientPortal] Including business year ${businessYear.year} (${businessYear.qc_status})`);
-            
-            if (!approvedBusinessYears[businessYear.year]) {
-              approvedBusinessYears[businessYear.year] = [];
-            }
-            approvedBusinessYears[businessYear.year].push({
-              ...businessYear,
-              business_name: business.name
-            });
-          } else {
-            console.log(`❌ [ClientPortal] Excluding business year ${businessYear.year} (${businessYear.qc_status})`);
+          if (!approvedBusinessYears[businessYear.year]) {
+            approvedBusinessYears[businessYear.year] = [];
           }
-        });
+          approvedBusinessYears[businessYear.year].push({
+            ...businessYear,
+            business_name: selectedBusinessData.name
+          });
+        } else {
+          console.log(`❌ [ClientPortal] Excluding business year ${businessYear.year} (${businessYear.qc_status})`);
+        }
       });
       
       console.log('📋 [ClientPortal] Final approvedBusinessYears:', approvedBusinessYears);
@@ -384,11 +441,10 @@ const ClientPortal: React.FC = () => {
         }))
         .sort((a, b) => b.year - a.year);
 
-      // Set the first business for portal data context
-      const firstBusiness = clientBusinesses[0];
+      // Set the selected business for portal data context
       const transformedData: PortalData = {
-        business_id: firstBusiness.id,
-        business_name: firstBusiness.name,
+        business_id: selectedBusinessData.id,
+        business_name: selectedBusinessData.name,
         user_id: session.user.id,
       };
 
@@ -523,6 +579,17 @@ const ClientPortal: React.FC = () => {
       setPortalData(transformedData);
       setApprovedYears(transformedYears);
       
+      // Set business selector state for admin preview
+      const previewBusiness: Business = {
+        id: clientBusiness.id,
+        name: clientBusiness.name,
+        ein: clientBusiness.ein,
+        client_id: clientBusiness.client_id
+      };
+      setAvailableBusinesses([previewBusiness]);
+      setSelectedBusiness(previewBusiness);
+      
+      console.log('🔍 [ClientPortal] Admin preview - business selector set:', previewBusiness);
       console.log('📋 [ClientPortal] Admin preview - transformedYears:', transformedYears);
       console.log('📊 [ClientPortal] Admin preview - transformedYears length:', transformedYears.length);
       
@@ -641,16 +708,141 @@ const ClientPortal: React.FC = () => {
     }
   };
 
+  // Handle business selection changes
+  const handleBusinessChange = async (business: Business) => {
+    console.log('🔄 [ClientPortal] Business selection changed:', {
+      previousBusiness: selectedBusiness?.name,
+      newBusiness: business.name,
+      businessId: business.id
+    });
+    
+    setSelectedBusiness(business);
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Get the authenticated session
+      const { data: { session } } = await portalSupabase.auth.getSession();
+      if (!session?.user) {
+        throw new Error('User session not found');
+      }
+      
+      // Fetch the business data with years for the selected business
+      const client = getSupabaseClient();
+      const { data: businessData, error: businessError } = await client
+        .from('rd_businesses')
+        .select(`
+          id,
+          name,
+          ein,
+          client_id,
+          rd_business_years (
+            id,
+            year,
+            gross_receipts,
+            total_qre,
+            qc_status,
+            payment_received,
+            documents_released,
+            federal_credit,
+            state_credit,
+            created_at,
+            updated_at
+          )
+        `)
+        .eq('id', business.id)
+        .single();
+        
+      if (businessError || !businessData) {
+        throw new Error('Failed to load business data');
+      }
+      
+      // Process business years for the selected business
+      const approvedBusinessYears: { [year: number]: BusinessYear[] } = {};
+      
+      businessData.rd_business_years?.forEach(businessYear => {
+        if (businessYear.qc_status === 'approved' || businessYear.qc_status === 'complete' || businessYear.qc_status === 'ready_for_review') {
+          if (!approvedBusinessYears[businessYear.year]) {
+            approvedBusinessYears[businessYear.year] = [];
+          }
+          approvedBusinessYears[businessYear.year].push({
+            ...businessYear,
+            business_name: businessData.name
+          });
+        }
+      });
+      
+      // Convert to ApprovedYear format and sort by year descending
+      const transformedYears: ApprovedYear[] = Object.entries(approvedBusinessYears)
+        .map(([year, businessYears]) => ({
+          year: parseInt(year),
+          business_years: businessYears,
+          total_qre: businessYears.reduce((sum, by) => sum + (by.total_qre || 0), 0),
+          jurat_signed: undefined,
+          all_documents_released: businessYears.every(by => by.documents_released)
+        }))
+        .sort((a, b) => b.year - a.year);
+      
+      // Update portal data
+      const transformedData: PortalData = {
+        business_id: businessData.id,
+        business_name: businessData.name,
+        user_id: session.user.id,
+      };
+      
+      setPortalData(transformedData);
+      setApprovedYears(transformedYears);
+      setDocuments([]);
+      
+      // Set the most recent year as selected
+      if (transformedYears.length > 0) {
+        setSelectedYear(transformedYears[0]);
+      } else {
+        setSelectedYear(null);
+      }
+      
+      // Load annual jurat signatures for new business
+      await loadAnnualJuratSignatures(transformedYears.map(y => y.year));
+      
+    } catch (err: any) {
+      console.error('Error changing business:', err);
+      setError(err.message || 'Failed to load business data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle logout
+  const handleLogout = async () => {
+    console.log('Logout clicked - starting logout process...');
+    try {
+      // Don't wait for Supabase signOut - do it in background
+      console.log('Calling supabase.auth.signOut() (not waiting)...');
+      supabase.auth.signOut().catch(error => console.error('Supabase signOut error:', error));
+      
+      console.log('Calling authLogout()...');
+      // Clear auth store state
+      authLogout();
+      console.log('Clearing storage...');
+      // Clear any cached data
+      localStorage.clear();
+      sessionStorage.clear();
+      console.log('Navigating to /login...');
+      navigate('/login');
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
+
   useEffect(() => {
     console.log('🚀 [ClientPortal] USEEFFECT TRIGGERED - Component mounted/dependencies changed:', {
-      dependencies: { userId, clientId, isAdminPreview, previewBusinessId, previewToken },
-      effectiveUserId,
+      dependencies: { isAdminPreview, previewBusinessId, previewToken, clientId },
       currentUrl: window.location.href,
       allUrlParams: Object.fromEntries(new URLSearchParams(window.location.search)),
       willStartValidation: true
     });
     validateSessionAndLoadData();
-  }, [userId, clientId, isAdminPreview, previewBusinessId, previewToken]);
+  }, [isAdminPreview, previewBusinessId, previewToken, clientId]);
 
   useEffect(() => {
     console.log('🔄 [ClientPortal] selectedYear useEffect triggered');
@@ -1777,7 +1969,7 @@ This annual signature covers all business entities and research activities for t
                   currentError: error,
                   currentUrl: window.location.href,
                   allUrlParams: Object.fromEntries(new URLSearchParams(window.location.search)),
-                  routerParams: { userId, clientId, businessId, token },
+                  routerParams: { clientId },
                   reason: 'User manually clicked Return Home due to error'
                 });
                 navigate('/');
@@ -1792,25 +1984,33 @@ This annual signature covers all business entities and research activities for t
     );
   }
 
-  if (approvedYears.length === 0) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-100 flex items-center justify-center">
-        <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full mx-4">
-          <div className="text-center">
-            <Clock className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No Approved Data</h3>
-            <p className="text-gray-600 mb-4">
-              You don't have any years with approved data available for review yet. 
-              Please contact your advisor for updates on your R&D tax credit analysis.
-            </p>
-            <div className="text-sm text-gray-500">
-              Only years with completed QC approval will appear in this portal.
-            </div>
+  // Create a component for the "No Approved Data" message to use in main content
+  const NoApprovedDataMessage = () => (
+    <div className="lg:col-span-3">
+      <div className="bg-white rounded-xl shadow-lg p-8">
+        <div className="text-center">
+          <Clock className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">No Approved Data</h3>
+          <p className="text-gray-600 mb-4">
+            {availableBusinesses.length > 1 
+              ? "This business doesn't have any approved data yet. Try selecting a different business from the sidebar, or contact your advisor for updates."
+              : "You don't have any years with approved data available for review yet. Please contact your advisor for updates on your R&D tax credit analysis."
+            }
+          </p>
+          <div className="text-sm text-gray-500">
+            Only years with completed QC approval will appear in this portal.
           </div>
+          {availableBusinesses.length > 1 && (
+            <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="text-sm text-blue-800">
+                <strong>Tip:</strong> Use the business selector in the sidebar to switch between your businesses.
+              </div>
+            </div>
+          )}
         </div>
       </div>
-    );
-  }
+    </div>
+  );
 
   return (
     <>
@@ -1861,22 +2061,44 @@ This annual signature covers all business entities and research activities for t
               </div>
             </div>
             
-            {isAdminPreview && (
-              <div className="bg-yellow-100 border border-yellow-300 rounded-lg px-4 py-2">
-                <div className="flex items-center text-yellow-800">
-                  <Eye className="w-4 h-4 mr-2" />
-                  <span className="text-sm font-medium">Admin Preview Mode</span>
+            <div className="flex items-center space-x-4">
+              {isAdminPreview && (
+                <div className="bg-yellow-100 border border-yellow-300 rounded-lg px-4 py-2">
+                  <div className="flex items-center text-yellow-800">
+                    <Eye className="w-4 h-4 mr-2" />
+                    <span className="text-sm font-medium">Admin Preview Mode</span>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+              
+              <button 
+                onClick={handleLogout}
+                className="flex items-center space-x-2 p-2 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                title="Logout"
+              >
+                <LogOut className="h-5 w-5" />
+                <span className="text-sm font-medium">Logout</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-           {/* Sidebar - Year Selection */}
+           {/* Sidebar - Business & Year Selection */}
           <div className="lg:col-span-1 space-y-6">
+            {/* Business Selector */}
+            <div className="bg-white rounded-xl shadow-lg p-6">
+              <BusinessSelector
+                businesses={availableBusinesses}
+                selectedBusiness={selectedBusiness}
+                onBusinessChange={handleBusinessChange}
+                loading={loading && availableBusinesses.length === 0}
+              />
+            </div>
+            
+            {/* Year Selection */}
             <div className="bg-white rounded-xl shadow-lg overflow-hidden">
               <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4">
                 <h2 className="text-lg font-semibold text-white">Approved Years</h2>
@@ -1884,7 +2106,18 @@ This annual signature covers all business entities and research activities for t
               </div>
               
               <div className="p-2">
-                {approvedYears.map((year) => {
+                {approvedYears.length === 0 ? (
+                  <div className="p-4 text-center">
+                    <div className="text-gray-500 mb-2">
+                      <Clock className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                    </div>
+                    <p className="text-sm text-gray-600 mb-1">No Approved Years</p>
+                    <p className="text-xs text-gray-500">
+                      Contact your account rep to approve years for review
+                    </p>
+                  </div>
+                ) : (
+                  approvedYears.map((year) => {
                   const isSelected = selectedYear?.year === year.year;
                   const currentYearSignature = juratSignatures.find(sig => sig.year === year.year);
                   
@@ -1944,7 +2177,8 @@ This annual signature covers all business entities and research activities for t
                       )}
                     </button>
                   );
-                })}
+                })
+                )}
               </div>
             </div>
 
@@ -1957,7 +2191,9 @@ This annual signature covers all business entities and research activities for t
 
           {/* Main Content */}
           <div className="lg:col-span-3">
-            {selectedYear && (
+            {approvedYears.length === 0 ? (
+              <NoApprovedDataMessage />
+            ) : selectedYear && (
               <div className="space-y-8">
                 {/* Dashboard Tiles */}
                 {dashboardTiles && (
@@ -2685,6 +2921,7 @@ This annual signature covers all business entities and research activities for t
           </div>
         </div>
       )}
+      
       {/* Allocation Report Modal - Temporarily disabled for cache clearing */}
 
       {/* Signature Pad Modal */}

@@ -357,6 +357,84 @@ class AuthService {
     }
   }
 
+  async sendMagicLink(email: string): Promise<{ success: boolean; error: string | null; message?: string }> {
+    try {
+      // Call user-service send-magic-link endpoint
+      const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL || 'http://localhost:54321/functions/v1';
+      const response = await fetch(`${functionsUrl}/user-service/send-magic-link`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return { success: false, error: data.error || 'Failed to send login link' };
+      }
+
+      if (!data.success) {
+        return { success: false, error: 'Failed to send login link' };
+      }
+
+      return { success: true, error: null, message: data.message };
+    } catch (error) {
+      console.error('Magic link send error:', error);
+      return { success: false, error: 'Failed to send login link' };
+    }
+  }
+
+  async verifyOtp(email: string, otp: string, setUserCallback?: (user: any) => void): Promise<{ user: AuthUser | null; error: string | null }> {
+    try {
+      // Verify OTP using Supabase client
+      const { data: authData, error: verifyError } = await supabase.auth.verifyOtp({
+        email: email,
+        token: otp,
+        type: 'email'
+      });
+
+      if (verifyError) {
+        return { user: null, error: verifyError.message || 'Invalid or expired code' };
+      }
+
+      if (!authData.user) {
+        return { user: null, error: 'OTP verification failed - no user data' };
+      }
+
+      // Call the setUser callback immediately so user data is available before redirect
+      if (setUserCallback) {
+        // Get user profile to set in context
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          // Get current user data via getCurrentUser method
+          const currentUser = await this.getCurrentUser();
+          if (currentUser) {
+            const extendedUser = {
+              id: authData.user.id,
+              email: authData.user.email || '',
+              profile: currentUser.profile,
+              account: currentUser.profile?.account || undefined
+            };
+            setUserCallback(extendedUser);
+          }
+        }
+      }
+
+      // Get user profile and transform to AuthUser format
+      const currentUser = await this.getCurrentUser();
+      if (!currentUser) {
+        return { user: null, error: 'Failed to load user profile after OTP verification' };
+      }
+
+      return { user: currentUser, error: null };
+    } catch (error) {
+      console.error('OTP verification error:', error);
+      return { user: null, error: 'OTP verification failed' };
+    }
+  }
+
   async signOut(): Promise<{ error: string | null }> {
     try {
       const { error } = await supabase.auth.signOut();
@@ -388,9 +466,9 @@ class AuthService {
       return '/expert';
     }
     
-    // Client users go to client dashboard
+    // Client users go to client portal
     if (user.isClientUser && user.clients?.length > 0) {
-      return '/client';
+      return '/client-portal';
     }
     
     // Default fallback based on account type
@@ -399,7 +477,7 @@ class AuthService {
       case 'operator': return '/operator';
       case 'affiliate': return '/affiliate';
       case 'expert': return '/expert';
-      case 'client': return '/client';
+      case 'client': return '/client-portal';
       default: return '/dashboard';
     }
   }

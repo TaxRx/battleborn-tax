@@ -14,7 +14,6 @@ import AcceptInvitation from './pages/AcceptInvitation';
 import LoginPage from './pages/LoginPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
-import ProtectedClientRoute from './components/ProtectedClientRoute';
 import PartnerDashboard from './modules/partner/pages/PartnerDashboard'; // Import the new component
 import OperatorDashboard from './modules/operator/pages/OperatorDashboard';
 import AffiliateDashboard from './modules/affiliate/pages/NewAffiliateDashboard';
@@ -223,25 +222,18 @@ const AppContent: React.FC = () => {
                 element={<ExpertDashboard />} 
               />
 
-              {/* Client Routes */}
+              {/* Client Routes - both routes now use the unified ClientPortal */}
               <Route 
                 path="/client" 
-                element={<ProtectedClientRoute />} 
+                element={<ClientPortal />} 
               />
               
-              {/* Client Portal Routes */}
               <Route 
                 path="/client-portal" 
                 element={<ClientPortal />} 
               />
               
-              {/* Client Portal Routes with parameters */}
-              <Route 
-                path="/client-portal/:businessId/:token" 
-                element={<ClientPortal />} 
-              />
-              
-              {/* Legacy client portal route for admin preview */}
+              {/* Legacy client portal route for admin preview - keep for backward compatibility */}
               <Route 
                 path="/client-portal/:clientId" 
                 element={<ClientPortal />} 
