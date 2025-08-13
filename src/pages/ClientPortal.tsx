@@ -1357,93 +1357,46 @@ const ClientPortal: React.FC = () => {
         });
       }
 
-      // Query logic: Different document types are stored differently
+      // Query logic: Different document types use specific enum types
       // - research_report: type='RESEARCH_SUMMARY' with content in generated_html column
-      // - allocation_report: type='RESEARCH_SUMMARY' with content in allocation_report column  
+      // - allocation_report: type='ALLOCATION_SUMMARY' with content in generated_html column  
       // - filing_guide: type='FILING_GUIDE' with content in filing_guide column
       
-      let data, error;
+      // Simplified logic: use standard type-based lookup for all document types
+      const queryType = documentType === 'filing_guide' ? 'FILING_GUIDE' : 
+                       documentType === 'allocation_report' ? 'ALLOCATION_SUMMARY' :
+                       'RESEARCH_SUMMARY';
       
-      if (documentType === 'allocation_report') {
-        // For allocation reports, get all RESEARCH_SUMMARY records and filter for allocation_report content
-        console.log('🔍 [ClientPortal] Querying for allocation report - getting all RESEARCH_SUMMARY records');
-        const result = await client
-          .from('rd_reports')
-          .select('generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked')
-          .eq('business_year_id', businessYearId)
-          .eq('type', 'RESEARCH_SUMMARY');
-        
-        // Filter for the record that has allocation_report content
-        if (result.data && result.data.length > 0) {
-          const allocationRecord = result.data.find(record => record.allocation_report && record.allocation_report.trim().length > 0);
-          if (allocationRecord) {
-            data = allocationRecord;
-            error = null;
-            console.log('✅ [ClientPortal] Found allocation report record with content');
-          } else {
-            data = null;
-            error = { code: 'PGRST116', message: 'No allocation report content found' };
-            console.log('❌ [ClientPortal] No allocation report content found in any RESEARCH_SUMMARY records');
-          }
-        } else {
-          data = result.data;
-          error = result.error;
-        }
-      } else {
-        // For other document types, use the original logic
-        const queryType = documentType === 'filing_guide' ? 'FILING_GUIDE' : 'RESEARCH_SUMMARY';
-        console.log('🔍 [ClientPortal] Executing query:', {
-          table: 'rd_reports',
-          businessYearId,
-          queryType,
-          documentType,
-          selectFields: 'generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked'
-        });
-        
-        const result = await client
-          .from('rd_reports')
-          .select('generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked')
-          .eq('business_year_id', businessYearId)
-          .eq('type', queryType)
-          .single();
-        data = result.data;
-        error = result.error;
-      }
+      console.log('🔍 [ClientPortal] Executing query:', {
+        table: 'rd_reports',
+        businessYearId,
+        queryType,
+        documentType,
+        selectFields: 'generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked'
+      });
+      
+      const result = await client
+        .from('rd_reports')
+        .select('generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked')
+        .eq('business_year_id', businessYearId)
+        .eq('type', queryType)
+        .single();
+      
+      let data = result.data;
+      let error = result.error;
 
       // If that fails and we have business context, try with business_id as well
       if (error?.code === 'PGRST116' && portalData?.business_id) {
         console.log('🔄 [ClientPortal] Retrying query with business_id context');
-        let retryResult;
         
-        if (documentType === 'allocation_report') {
-          const retryQuery = await client
-            .from('rd_reports')
-            .select('generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked')
-            .eq('business_year_id', businessYearId)
-            .eq('business_id', portalData.business_id)
-            .eq('type', 'RESEARCH_SUMMARY');
-          
-          // Filter for the record that has allocation_report content
-          if (retryQuery.data && retryQuery.data.length > 0) {
-            const allocationRecord = retryQuery.data.find(record => record.allocation_report && record.allocation_report.trim().length > 0);
-            if (allocationRecord) {
-              retryResult = { data: allocationRecord, error: null };
-            } else {
-              retryResult = { data: null, error: { code: 'PGRST116', message: 'No allocation report content found' } };
-            }
-          } else {
-            retryResult = retryQuery;
-          }
-        } else {
-          const queryType = documentType === 'filing_guide' ? 'FILING_GUIDE' : 'RESEARCH_SUMMARY';
-          retryResult = await client
-            .from('rd_reports')
-            .select('generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked')
-            .eq('business_year_id', businessYearId)
-            .eq('business_id', portalData.business_id)
-            .eq('type', queryType)
-            .single();
-        }
+        // Use same simplified query logic for retry
+        const retryResult = await client
+          .from('rd_reports')
+          .select('generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked')
+          .eq('business_year_id', businessYearId)
+          .eq('business_id', portalData.business_id)
+          .eq('type', queryType)
+          .single();
         
         if (!retryResult.error) {
           data = retryResult.data;
@@ -1576,19 +1529,18 @@ const ClientPortal: React.FC = () => {
           return;
         }
       } else if (documentType === 'allocation_report') {
-        // Cast to any to safely access allocation_report column
-        const allocationReportContent = (data as any).allocation_report;
+        // Allocation reports now use generated_html column with ALLOCATION_SUMMARY type
         console.log('🔍 [ClientPortal] Allocation report content check:', {
-          hasContent: !!allocationReportContent,
-          contentType: typeof allocationReportContent,
-          contentLength: allocationReportContent?.length || 0
+          hasContent: !!data.generated_html,
+          contentType: typeof data.generated_html,
+          contentLength: data.generated_html?.length || 0
         });
         
-        if (allocationReportContent) {
-          htmlContent = allocationReportContent;
-          console.log('✅ [ClientPortal] Using allocation_report column for allocation report');
+        if (data.generated_html) {
+          htmlContent = data.generated_html;
+          console.log('✅ [ClientPortal] Using generated_html column for allocation report');
         } else {
-          console.warn('⚠️ [ClientPortal] No allocation_report content found');
+          console.warn('⚠️ [ClientPortal] No allocation report content found');
           alert(
             'Allocation Report is not available for viewing at this time.\n\n' +
             'This may be because:\n' +

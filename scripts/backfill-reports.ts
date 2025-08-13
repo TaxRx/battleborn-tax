@@ -396,8 +396,8 @@ async function main() {
           .from('rd_reports')
           .select('id')
           .eq('business_year_id', businessYear.id)
-          .eq('type', 'RESEARCH_SUMMARY')
-          .not('allocation_report', 'is', null)
+          .eq('type', 'ALLOCATION_SUMMARY')
+          .not('generated_html', 'is', null)
           .single();
 
         // Check if there are calculation results
@@ -458,8 +458,8 @@ async function main() {
             .upsert({
               business_year_id: businessYear.id,
               business_id: businessYear.business_id,
-              type: 'RESEARCH_SUMMARY',
-              allocation_report: allocationHTML,
+              type: 'ALLOCATION_SUMMARY',
+              generated_html: allocationHTML,
               generated_text: 'Auto-generated allocation report',
               ai_version: 'backfill_v1.0'
             }, { 

@@ -1240,7 +1240,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
       case 'filing_guide':
         return 'FILING_GUIDE';
       case 'allocation_report':
-        return 'RESEARCH_SUMMARY'; // ✅ Use RESEARCH_SUMMARY type but save to allocation_report column
+        return 'ALLOCATION_SUMMARY'; // ✅ Use new ALLOCATION_SUMMARY type
       case 'research_design':
         return 'RESEARCH_DESIGN';
       default:

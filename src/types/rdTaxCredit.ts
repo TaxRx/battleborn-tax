@@ -2,7 +2,7 @@
 
 export type RoleType = 'ADMIN' | 'CLIENT' | 'STAFF';
 export type EntityType = 'LLC' | 'SCORP' | 'CCORP' | 'PARTNERSHIP' | 'SOLEPROP' | 'OTHER';
-export type RDReportType = 'RESEARCH_DESIGN' | 'RESEARCH_SUMMARY' | 'FILING_GUIDE';
+export type RDReportType = 'RESEARCH_DESIGN' | 'RESEARCH_SUMMARY' | 'FILING_GUIDE' | 'ALLOCATION_SUMMARY';
 
 export interface User {
   id: string;
