@@ -63,6 +63,46 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
 
+  // Owners editor state
+  const [owners, setOwners] = useState<Array<{ id: string; name: string; percent: number; year: number }>>([]);
+  const [newOwner, setNewOwner] = useState<{ name: string; percent: string; year: number }>({ name: '', percent: '', year: formData.taxYear });
+
+  useEffect(() => {
+    // Load owners from DB if available
+    const loadOwners = async () => {
+      if (!business?.id) return;
+      const { data } = await supabase
+        .from('rd_business_owners')
+        .select('id, owner_name, ownership_percent, year')
+        .eq('business_id', business.id)
+        .order('year', { ascending: true });
+      setOwners((data || []).map(r => ({ id: r.id, name: r.owner_name, percent: Number(r.ownership_percent || 0), year: r.year })));
+    };
+    loadOwners();
+  }, [business?.id]);
+
+  const addOwner = async () => {
+    if (!business?.id) return;
+    const name = newOwner.name.trim();
+    const percent = Number(newOwner.percent || '0');
+    const year = newOwner.year || formData.taxYear;
+    if (!name) return;
+    const { data, error } = await supabase
+      .from('rd_business_owners')
+      .insert({ business_id: business.id, owner_name: name, ownership_percent: percent, year })
+      .select('id, owner_name, ownership_percent, year')
+      .maybeSingle();
+    if (!error && data) {
+      setOwners(prev => [...prev, { id: data.id, name: data.owner_name, percent: Number(data.ownership_percent || 0), year: data.year }]);
+      setNewOwner({ name: '', percent: '', year: formData.taxYear });
+    }
+  };
+
+  const removeOwner = async (id: string) => {
+    await supabase.from('rd_business_owners').delete().eq('id', id);
+    setOwners(prev => prev.filter(o => o.id !== id));
+  };
+
   const entityTypes = [
     { value: 'LLC', label: 'Limited Liability Company (LLC)' },
     { value: 'SCORP', label: 'S Corporation' },
@@ -1372,6 +1412,60 @@ const BusinessSetupStep: React.FC<BusinessSetupStepProps> = ({
               <div className="text-blue-200 text-sm">Tax Year {formData.taxYear}</div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Owners editor */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <h3 className="text-lg font-semibold mb-3">Owners (by Year)</h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+          <input
+            className="border rounded px-3 py-2"
+            placeholder="Owner name"
+            value={newOwner.name}
+            onChange={(e) => setNewOwner(prev => ({ ...prev, name: e.target.value }))}
+          />
+          <input
+            className="border rounded px-3 py-2"
+            placeholder="Ownership %"
+            type="number"
+            min={0}
+            max={100}
+            value={newOwner.percent}
+            onChange={(e) => setNewOwner(prev => ({ ...prev, percent: e.target.value }))}
+          />
+          <input
+            className="border rounded px-3 py-2"
+            placeholder="Year"
+            type="number"
+            value={newOwner.year}
+            onChange={(e) => setNewOwner(prev => ({ ...prev, year: Number(e.target.value || formData.taxYear) }))}
+          />
+          <button onClick={addOwner} className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Add Owner</button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-left text-gray-600">
+                <th className="py-2 pr-4">Year</th>
+                <th className="py-2 pr-4">Name</th>
+                <th className="py-2 pr-4">Ownership %</th>
+                <th className="py-2 pr-4">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {owners.sort((a,b) => a.year - b.year || a.name.localeCompare(b.name)).map(o => (
+                <tr key={o.id} className="border-t">
+                  <td className="py-2 pr-4">{o.year}</td>
+                  <td className="py-2 pr-4">{o.name}</td>
+                  <td className="py-2 pr-4">{o.percent}%</td>
+                  <td className="py-2 pr-4">
+                    <button onClick={() => removeOwner(o.id)} className="text-red-600 hover:text-red-800">Remove</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 

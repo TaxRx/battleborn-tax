@@ -4,6 +4,7 @@ import { supabase } from '../../../../../lib/supabase';
 import { FilingGuideModal } from '../../FilingGuide/FilingGuideModal';
 import ResearchReportModal from '../../ResearchReport/ResearchReportModal';
 import AllocationReportModal from '../../AllocationReport/AllocationReportModal';
+import BillingReportModal from '../../BillingReport/BillingReportModal';
 import SignatureCapture from '../../SignatureCapture/SignatureCapture';
 import { qcService } from '../../../services/qcService';
 import { RDCalculationsService } from '../../../services/rdCalculationsService';
@@ -91,6 +92,7 @@ const ReportsStep: React.FC<ReportsStepProps> = ({
   const [isFilingGuideOpen, setIsFilingGuideOpen] = useState(false);
   const [isResearchReportOpen, setIsResearchReportOpen] = useState(false);
   const [showAllocationReport, setShowAllocationReport] = useState(false);
+  const [showBillingReport, setShowBillingReport] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const [qcControls, setQCControls] = useState<QCDocumentControl[]>([]);
@@ -100,7 +102,40 @@ const ReportsStep: React.FC<ReportsStepProps> = ({
   const [editingControl, setEditingControl] = useState<string | null>(null);
   const [showJuratModal, setShowJuratModal] = useState(false);
   
-  // Year selection is now handled by the footer dropdown in parent wizard
+  // // Payment status toggle (Filing Guide) – defaults to false unless set in DB
+  // const togglePaymentReceived = async (value: boolean) => {
+  //   try {
+  //     const yearId = wizardState.selectedYear?.id;
+  //     if (!yearId) return;
+  //     setLoading(true);
+  //     const { error } = await supabase
+  //       .from('rd_business_years')
+  //       .update({ 
+  //         payment_received: value, 
+  //         payment_received_at: value ? new Date().toISOString() : null 
+  //       })
+  //       .eq('id', yearId);
+  //     if (error) {
+  //       console.error('Error updating payment_received:', error);
+  //       toast.error('Failed to update payment status');
+  //     } else {
+  //       setBusinessYearData(prev => prev ? { 
+  //         ...prev, 
+  //         payment_received: value, 
+  //         payment_received_at: value ? new Date().toISOString() : null 
+  //       } : prev);
+  //       toast.success(value ? 'Marked as paid' : 'Marked as unpaid');
+  //     }
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+  
+  // Year selector state
+  const [availableYears, setAvailableYears] = useState<Array<{id: string, year: number}>>([]);
+  const [selectedYearId, setSelectedYearId] = useState<string>(wizardState.selectedYear?.id || '');
+  const [selectedBillingYearIds, setSelectedBillingYearIds] = useState<string[]>(wizardState.selectedYear?.id ? [wizardState.selectedYear.id] : []);
+  const [includeStateCreditsForBilling, setIncludeStateCreditsForBilling] = useState<boolean>(true);
   
   // Jurat signature state
   const [showSignatureModal, setShowSignatureModal] = useState(false);
@@ -2275,6 +2310,60 @@ I acknowledge that I had the opportunity to review and revise the report prior t
                 )}
               </div>
 
+              {/* Billing Report */}
+              <div className="bg-white rounded-lg border p-6 hover:shadow-lg transition-all duration-200">
+                {/* Header: Icon + Title */}
+                <div className="flex items-center mb-4">
+                  <DollarSign className="text-emerald-600 mr-3" size={24} />
+                  <h4 className="font-semibold text-gray-900">Billing Report</h4>
+                </div>
+
+                {/* Year multi-select */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Include Years</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {availableYears.map(y => (
+                      <label key={y.id} className="inline-flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedBillingYearIds.includes(y.id)}
+                          onChange={e => {
+                            setSelectedBillingYearIds(prev => {
+                              if (e.target.checked) return Array.from(new Set([...prev, y.id]));
+                              return prev.filter(id => id !== y.id);
+                            });
+                          }}
+                        />
+                        <span className="text-sm text-gray-700">{y.year}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Action Button */}
+                <div className="mb-2">
+                  <label className="flex items-center mb-3 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      className="mr-2"
+                      checked={includeStateCreditsForBilling}
+                      onChange={(e) => setIncludeStateCreditsForBilling(e.target.checked)}
+                    />
+                    Include State Credits in Billing Report
+                  </label>
+                  <button
+                    onClick={() => setShowBillingReport(true)}
+                    className="w-full flex items-center justify-between px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm min-w-[160px]"
+                  >
+                    <div className="flex items-center">
+                      <Eye className="mr-2" size={16} />
+                      Preview
+                    </div>
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500">Preview and export a beautifully designed, single-page billing report based on selected years.</p>
+              </div>
+
               {/* Allocation Report QC */}
               <div className="bg-white rounded-lg border p-6 hover:shadow-lg transition-all duration-200 relative">
                 {/* Header: Icon + Title */}
@@ -2957,6 +3046,17 @@ I acknowledge that I had the opportunity to review and revise the report prior t
           businessData={wizardState.business}
           selectedYear={wizardState.selectedYear}
           calculations={wizardState.calculations}
+        />
+      )}
+
+      {showBillingReport && (
+        <BillingReportModal
+          isOpen={showBillingReport}
+          onClose={() => setShowBillingReport(false)}
+          businessId={wizardState.business?.id}
+          selectedYearIds={selectedBillingYearIds}
+          availableYears={availableYears}
+          includeStateCredits={includeStateCreditsForBilling}
         />
       )}
 

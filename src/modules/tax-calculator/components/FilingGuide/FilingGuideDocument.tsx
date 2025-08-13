@@ -132,6 +132,52 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
   const [method, setMethod] = useState('standard'); // Always start with standard
   const [stateProFormaData, setStateProFormaData] = useState<Record<string, number>>({});
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const [ownerSplits, setOwnerSplits] = useState<Array<{ name: string; percent: number; amount: number }>>([]);
+
+  // Load owners for selected year; if none, fall back to most recent prior year
+  useEffect(() => {
+    const loadOwners = async () => {
+      if (!businessData?.id || !selectedYear?.year || !calculations) {
+        setOwnerSplits([]);
+        return;
+      }
+      const bizId = businessData.id;
+      const targetYear = selectedYear.year;
+      // Fetch owners at target year
+      const { data: exact } = await supabase
+        .from('rd_business_owners')
+        .select('owner_name, ownership_percent, year')
+        .eq('business_id', bizId)
+        .eq('year', targetYear)
+        .order('owner_name', { ascending: true });
+      let owners = exact || [];
+      if (!owners.length) {
+        // Fall back to most recent prior year
+        const { data: prior } = await supabase
+          .from('rd_business_owners')
+          .select('owner_name, ownership_percent, year')
+          .eq('business_id', bizId)
+          .lt('year', targetYear)
+          .order('year', { ascending: false })
+          .limit(1000);
+        // Group by owner_name; pick first occurrence (latest year)
+        const seen: Record<string, boolean> = {};
+        owners = (prior || []).filter((o) => {
+          if (seen[o.owner_name]) return false;
+          seen[o.owner_name] = true;
+          return true;
+        });
+      }
+      const totalCredit = Math.round((calculations?.totalCredits || 0));
+      const splits = owners.map((o) => ({
+        name: o.owner_name,
+        percent: Number(o.ownership_percent || 0),
+        amount: Math.round(totalCredit * Number(o.ownership_percent || 0) / 100)
+      }));
+      setOwnerSplits(splits);
+    };
+    loadOwners();
+  }, [businessData?.id, selectedYear?.year, calculations?.totalCredits]);
 
   // Update state when business data changes - enhanced logic
   useEffect(() => {
@@ -144,7 +190,6 @@ export const FilingGuideDocument: React.FC<FilingGuideDocumentProps> = ({
                              'CA';
     if (newBusinessState !== state) {
       setState(newBusinessState);
-      // Reduced logging to prevent connection issues
     }
   }, [businessData, state]);
 

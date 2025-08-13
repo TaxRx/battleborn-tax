@@ -39,7 +39,8 @@ export class RDReportService {
   static async saveReport(
     businessYearId: string, 
     htmlContent: string, 
-    reportType: string = 'RESEARCH_SUMMARY'
+    reportType: string = 'RESEARCH_SUMMARY',
+    extras?: { owner_splits?: Array<{ name: string; percent: number; amount: number }> }
   ): Promise<RDReport> {
     try {
       const existingReport = await this.getReport(businessYearId, reportType);
@@ -50,6 +51,9 @@ export class RDReportService {
         editable_text: null,
         updated_at: new Date().toISOString()
       };
+      if (extras?.owner_splits) {
+        updateData.owner_splits = extras.owner_splits;
+      }
 
       // Save to appropriate column based on report type
       if (reportType === 'FILING_GUIDE') {
@@ -78,6 +82,9 @@ export class RDReportService {
           ai_version: 'gpt-4o-mini-2024-01-25',
           locked: false
         };
+        if (extras?.owner_splits) {
+          insertData.owner_splits = extras.owner_splits;
+        }
 
         // Save to appropriate column based on report type
         if (reportType === 'FILING_GUIDE') {
