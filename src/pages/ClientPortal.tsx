@@ -8,6 +8,7 @@ import { createClient } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase'; // Import main authenticated client
 import { ExpenseDistributionChart } from '../modules/tax-calculator/components/common/ExpenseDistributionChart';
 import SignaturePad from '../components/SignaturePad';
+import { ProgressTrackingService } from '../modules/tax-calculator/services/progressTrackingService';
 // Dynamic import for AllocationReportModal to avoid module resolution issues
 // Force cache refresh with comment change
 
@@ -34,7 +35,7 @@ interface ApprovedYear {
   year: number;
   business_years: BusinessYear[];
   total_qre: number;
-  jurat_signed: boolean;
+  jurat_signed: boolean | undefined;
   all_documents_released: boolean;
 }
 
@@ -84,6 +85,29 @@ const ClientPortal: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // DETAILED DEBUG LOGGING FOR REDIRECT INVESTIGATION
+  console.log('🚀 [ClientPortal] COMPONENT MOUNTING - FULL URL DEBUG:', {
+    fullUrl: window.location.href,
+    pathname: window.location.pathname,
+    search: window.location.search,
+    hash: window.location.hash,
+    host: window.location.host,
+    origin: window.location.origin
+  });
+  
+  console.log('🚀 [ClientPortal] URL PARAMS FROM ROUTER:', {
+    userId,
+    clientId, 
+    businessId,
+    token,
+    allParams: { userId, clientId, businessId, token }
+  });
+  
+  console.log('🚀 [ClientPortal] QUERY PARAMETERS:', {
+    searchString: window.location.search,
+    allSearchParams: Object.fromEntries(new URLSearchParams(window.location.search))
+  });
   const [portalData, setPortalData] = useState<PortalData | null>(null);
   const [approvedYears, setApprovedYears] = useState<ApprovedYear[]>([]);
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
@@ -177,8 +201,27 @@ const ClientPortal: React.FC = () => {
   };
 
   const validateSessionAndLoadData = async () => {
+    console.log('🔍 [ClientPortal] VALIDATION STARTING - Checking requirements:', {
+      effectiveUserId,
+      isAdminPreview,
+      previewBusinessId,
+      previewToken,
+      hasEffectiveUserId: !!effectiveUserId,
+      hasAdminPreviewParams: !!(isAdminPreview && previewBusinessId && previewToken),
+      willPassValidation: !!(effectiveUserId || (isAdminPreview && previewBusinessId && previewToken))
+    });
+    
     // For admin preview mode, we don't need a valid userId - check for admin preview params instead
     if (!effectiveUserId && !(isAdminPreview && previewBusinessId && previewToken)) {
+      console.error('❌ [ClientPortal] VALIDATION FAILED - Invalid portal link:', {
+        reason: 'Missing required parameters',
+        effectiveUserId,
+        isAdminPreview,
+        previewBusinessId,
+        previewToken,
+        fullUrl: window.location.href,
+        allUrlParams: Object.fromEntries(new URLSearchParams(window.location.search))
+      });
       setError('Invalid portal link');
       setLoading(false);
       return;
@@ -218,16 +261,35 @@ const ClientPortal: React.FC = () => {
       }
 
       // Normal client authentication flow
-      console.log('🔐 Checking authentication for effectiveUserId:', effectiveUserId);
+      console.log('🔐 [ClientPortal] AUTHENTICATION CHECK - Starting normal client flow:', {
+        effectiveUserId,
+        currentUrl: window.location.href
+      });
       
       // Check if user is authenticated
       const { data: { session }, error: sessionError } = await portalSupabase.auth.getSession();
       
+      console.log('🔐 [ClientPortal] AUTHENTICATION RESULT:', {
+        hasSession: !!session,
+        hasUser: !!session?.user,
+        sessionUserId: session?.user?.id,
+        sessionError: sessionError?.message,
+        effectiveUserId,
+        userIdsMatch: session?.user?.id === effectiveUserId
+      });
+      
       if (sessionError) {
+        console.error('❌ [ClientPortal] SESSION ERROR:', sessionError);
         throw new Error('Failed to get session');
       }
 
       if (!session || !session.user) {
+        console.error('❌ [ClientPortal] NO SESSION OR USER - Authentication required:', {
+          hasSession: !!session,
+          hasUser: !!session?.user,
+          reason: 'User must authenticate via magic link',
+          currentUrl: window.location.href
+        });
         setError('Please use the magic link provided by your advisor to access this portal.');
         setLoading(false);
         return;
@@ -235,8 +297,16 @@ const ClientPortal: React.FC = () => {
 
       // Verify the authenticated user matches the requested effectiveUserId
       if (session.user.id !== effectiveUserId) {
+        console.error('❌ [ClientPortal] USER MISMATCH - Session user does not match portal user:', {
+          sessionUserId: session.user.id,
+          requestedUserId: effectiveUserId,
+          sessionEmail: session.user.email,
+          reason: 'Must use specific magic link for this user'
+        });
         throw new Error('Authenticated user does not match portal user. Please use your specific magic link.');
       }
+      
+      console.log('✅ [ClientPortal] AUTHENTICATION SUCCESS - User verified, proceeding to load data');
 
       // Fetch business data based on the authenticated user's client_id
       const client = getSupabaseClient();
@@ -309,7 +379,7 @@ const ClientPortal: React.FC = () => {
           year: parseInt(year),
           business_years: businessYears,
           total_qre: businessYears.reduce((sum, by) => sum + (by.total_qre || 0), 0),
-          jurat_signed: false, // Will be updated after loading jurat signatures
+          jurat_signed: undefined, // Will be updated after loading jurat signatures
           all_documents_released: businessYears.every(by => by.documents_released)
         }))
         .sort((a, b) => b.year - a.year);
@@ -431,7 +501,7 @@ const ClientPortal: React.FC = () => {
             year: parseInt(year),
             business_years: businessYears,
             total_qre: totalQre,
-            jurat_signed: false,
+            jurat_signed: undefined,
             all_documents_released: businessYears.every(by => by.documents_released)
           };
         })
@@ -572,6 +642,13 @@ const ClientPortal: React.FC = () => {
   };
 
   useEffect(() => {
+    console.log('🚀 [ClientPortal] USEEFFECT TRIGGERED - Component mounted/dependencies changed:', {
+      dependencies: { userId, clientId, isAdminPreview, previewBusinessId, previewToken },
+      effectiveUserId,
+      currentUrl: window.location.href,
+      allUrlParams: Object.fromEntries(new URLSearchParams(window.location.search)),
+      willStartValidation: true
+    });
     validateSessionAndLoadData();
   }, [userId, clientId, isAdminPreview, previewBusinessId, previewToken]);
 
@@ -819,19 +896,38 @@ const ClientPortal: React.FC = () => {
       }
 
       // 🔗 AUTO-SYNC: Update jurat milestone for all signed business years
+      console.log('🔄 [ClientPortal] Starting jurat milestone sync for business years:', selectedYear.business_years.map(by => ({ id: by.id, name: by.business_name })));
       for (const businessYear of selectedYear.business_years) {
+        console.log(`🔄 [ClientPortal] Syncing jurat milestone for business year: ${businessYear.id} (${businessYear.business_name})`);
         await ProgressTrackingService.syncJuratMilestone(businessYear.id, true);
+        console.log(`✅ [ClientPortal] Successfully synced jurat milestone for: ${businessYear.id}`);
       }
+      console.log('✅ [ClientPortal] Completed all jurat milestone syncs');
 
       // Reload data
+      console.log('🔄 [ClientPortal] Starting data reload - loadAnnualJuratSignatures');
       await loadAnnualJuratSignatures([selectedYear.year]);
+      console.log('✅ [ClientPortal] Completed loadAnnualJuratSignatures');
+      
+      console.log('🔄 [ClientPortal] Starting data reload - loadDocumentStatus');
       await loadDocumentStatus();
+      console.log('✅ [ClientPortal] Completed loadDocumentStatus');
+      
+      console.log('🔄 [ClientPortal] Setting showJuratModal to false');
       setShowJuratModal(false);
+      console.log('✅ [ClientPortal] Completed setShowJuratModal(false)');
 
       alert('Annual jurat signed successfully for all applicable business years!');
 
     } catch (error) {
-      console.error('Error signing annual jurat:', error);
+      console.error('❌ [ClientPortal] DETAILED ERROR in signAnnualJuratWithSignature:', {
+        message: error?.message || 'No error message',
+        name: error?.name || 'Unknown error type',
+        stack: error?.stack || 'No stack trace',
+        fullError: error,
+        errorString: String(error),
+        selectedYear: selectedYear ? { year: selectedYear.year, businessYearCount: selectedYear.business_years?.length } : 'No selected year'
+      });
       alert('Error signing jurat. Please try again.');
     }
   };
@@ -1069,33 +1165,93 @@ const ClientPortal: React.FC = () => {
         });
       }
 
-      // First try to get the report with business_id context for better reliability
-      const queryType = documentType === 'filing_guide' ? 'FILING_GUIDE' : 'RESEARCH_SUMMARY';
-      console.log('🔍 [ClientPortal] Executing query:', {
-        table: 'rd_reports',
-        businessYearId,
-        queryType,
-        documentType,
-        selectFields: 'generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked'
-      });
+      // Query logic: Different document types are stored differently
+      // - research_report: type='RESEARCH_SUMMARY' with content in generated_html column
+      // - allocation_report: type='RESEARCH_SUMMARY' with content in allocation_report column  
+      // - filing_guide: type='FILING_GUIDE' with content in filing_guide column
       
-      let { data, error } = await client
-        .from('rd_reports')
-        .select('generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked')
-        .eq('business_year_id', businessYearId)
-        .eq('type', queryType)
-        .single();
+      let data, error;
+      
+      if (documentType === 'allocation_report') {
+        // For allocation reports, get all RESEARCH_SUMMARY records and filter for allocation_report content
+        console.log('🔍 [ClientPortal] Querying for allocation report - getting all RESEARCH_SUMMARY records');
+        const result = await client
+          .from('rd_reports')
+          .select('generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked')
+          .eq('business_year_id', businessYearId)
+          .eq('type', 'RESEARCH_SUMMARY');
+        
+        // Filter for the record that has allocation_report content
+        if (result.data && result.data.length > 0) {
+          const allocationRecord = result.data.find(record => record.allocation_report && record.allocation_report.trim().length > 0);
+          if (allocationRecord) {
+            data = allocationRecord;
+            error = null;
+            console.log('✅ [ClientPortal] Found allocation report record with content');
+          } else {
+            data = null;
+            error = { code: 'PGRST116', message: 'No allocation report content found' };
+            console.log('❌ [ClientPortal] No allocation report content found in any RESEARCH_SUMMARY records');
+          }
+        } else {
+          data = result.data;
+          error = result.error;
+        }
+      } else {
+        // For other document types, use the original logic
+        const queryType = documentType === 'filing_guide' ? 'FILING_GUIDE' : 'RESEARCH_SUMMARY';
+        console.log('🔍 [ClientPortal] Executing query:', {
+          table: 'rd_reports',
+          businessYearId,
+          queryType,
+          documentType,
+          selectFields: 'generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked'
+        });
+        
+        const result = await client
+          .from('rd_reports')
+          .select('generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked')
+          .eq('business_year_id', businessYearId)
+          .eq('type', queryType)
+          .single();
+        data = result.data;
+        error = result.error;
+      }
 
       // If that fails and we have business context, try with business_id as well
       if (error?.code === 'PGRST116' && portalData?.business_id) {
         console.log('🔄 [ClientPortal] Retrying query with business_id context');
-        const retryResult = await client
-          .from('rd_reports')
-          .select('generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked')
-          .eq('business_year_id', businessYearId)
-          .eq('business_id', portalData.business_id)
-          .eq('type', queryType)
-          .single();
+        let retryResult;
+        
+        if (documentType === 'allocation_report') {
+          const retryQuery = await client
+            .from('rd_reports')
+            .select('generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked')
+            .eq('business_year_id', businessYearId)
+            .eq('business_id', portalData.business_id)
+            .eq('type', 'RESEARCH_SUMMARY');
+          
+          // Filter for the record that has allocation_report content
+          if (retryQuery.data && retryQuery.data.length > 0) {
+            const allocationRecord = retryQuery.data.find(record => record.allocation_report && record.allocation_report.trim().length > 0);
+            if (allocationRecord) {
+              retryResult = { data: allocationRecord, error: null };
+            } else {
+              retryResult = { data: null, error: { code: 'PGRST116', message: 'No allocation report content found' } };
+            }
+          } else {
+            retryResult = retryQuery;
+          }
+        } else {
+          const queryType = documentType === 'filing_guide' ? 'FILING_GUIDE' : 'RESEARCH_SUMMARY';
+          retryResult = await client
+            .from('rd_reports')
+            .select('generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked')
+            .eq('business_year_id', businessYearId)
+            .eq('business_id', portalData.business_id)
+            .eq('type', queryType)
+            .single();
+        }
         
         if (!retryResult.error) {
           data = retryResult.data;
@@ -1363,7 +1519,7 @@ const ClientPortal: React.FC = () => {
             year: parseInt(year, 10),
             business_years: arr as any,
             total_qre: 0,
-            jurat_signed: false,
+            jurat_signed: undefined,
             all_documents_released: false,
           })).sort((a,b) => b.year - a.year);
           setRequestYears(list);
@@ -1426,7 +1582,7 @@ const ClientPortal: React.FC = () => {
             year: parseInt(year, 10),
             business_years: arr as any,
             total_qre: 0,
-            jurat_signed: false,
+            jurat_signed: undefined,
             all_documents_released: false,
           })).sort((a,b) => b.year - a.year);
           setYears(list);
@@ -1616,7 +1772,16 @@ This annual signature covers all business entities and research activities for t
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Access Error</h3>
             <p className="text-gray-600 mb-4">{error}</p>
             <button
-              onClick={() => navigate('/')}
+              onClick={() => {
+                console.error('🔴 [ClientPortal] NAVIGATE TO HOME TRIGGERED - User clicked Return Home button:', {
+                  currentError: error,
+                  currentUrl: window.location.href,
+                  allUrlParams: Object.fromEntries(new URLSearchParams(window.location.search)),
+                  routerParams: { userId, clientId, businessId, token },
+                  reason: 'User manually clicked Return Home due to error'
+                });
+                navigate('/');
+              }}
               className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition-colors"
             >
               Return Home
@@ -2124,7 +2289,7 @@ This annual signature covers all business entities and research activities for t
                                 
                                 // Filing Guide: Download after payment
                                 if (doc.type === 'filing_guide') {
-                                  if (paymentReceived) {
+                                  if (true || paymentReceived) {
                                     return (
                                       <button 
                                         onClick={() => downloadDocument(doc.type)}

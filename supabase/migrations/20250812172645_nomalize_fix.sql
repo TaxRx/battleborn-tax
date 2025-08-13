@@ -82,13 +82,14 @@ WITH sums AS (
   WHERE is_included = true
   GROUP BY business_year_id, employee_id
 )
-INSERT INTO rd_employee_year_data (employee_id, business_year_id, applied_percent, calculated_qre, activity_roles)
+INSERT INTO rd_employee_year_data (employee_id, business_year_id, applied_percent, calculated_qre, activity_roles, updated_at)
 SELECT s.employee_id,
        s.business_year_id,
        s.applied_percent,
        ROUND((COALESCE(e.annual_wage,0) *
               CASE WHEN s.applied_percent >= 80 THEN 100 ELSE s.applied_percent END) / 100.0),
-       '[]'::jsonb
+       '[]'::jsonb,
+       NOW()
 FROM sums s
 JOIN rd_employees e
   ON e.id = s.employee_id

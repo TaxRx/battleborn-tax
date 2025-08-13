@@ -194,6 +194,11 @@ const MagicLinkHandler: React.FC<MagicLinkHandlerProps> = ({ children }) => {
             willRedirect: userType !== 'client'
           });
 
+          // Extract redirect_to parameter before cleaning URL
+          console.log('🔗 MagicLinkHandler: Extracting redirect_to parameter...');
+          const redirectTo = searchParams.get('redirect_to') || hashParams.get('redirect_to');
+          console.log('🔗 MagicLinkHandler: Found redirect_to:', redirectTo);
+
           // Clean up URL parameters
           console.log('🔗 MagicLinkHandler: Cleaning up URL parameters...');
           const url = new URL(window.location.href);
@@ -207,9 +212,14 @@ const MagicLinkHandler: React.FC<MagicLinkHandlerProps> = ({ children }) => {
 
           // Redirect based on user type
           if (userType === 'client') {
-            // Stay on /client page but without URL parameters
-            console.log('🔗 MagicLinkHandler: Client user - staying on /client page');
-            setIsProcessing(false);
+            if (redirectTo) {
+              console.log('🔗 MagicLinkHandler: Client user - redirecting to redirect_to:', redirectTo);
+              navigate(redirectTo, { replace: true });
+            } else {
+              console.log('🔗 MagicLinkHandler: Client user - staying on current page (no redirect_to found)');
+              setIsProcessing(false);
+              return;
+            }
             return;
           } else {
             // Redirect to appropriate dashboard

@@ -80,8 +80,8 @@ const RoleBasedRedirect: React.FC = () => {
     return <Navigate to="/expert" replace />;
   }
   if (finalAccountType === 'client') {
-    console.log('RoleBasedRedirect: Redirecting to /client');
-    return <Navigate to="/client" replace />;
+    console.log('RoleBasedRedirect: Redirecting to /client-portal');
+    return <Navigate to="/client-portal" replace />;
   }
   if (finalAccountType === 'admin') {
     console.log('RoleBasedRedirect: Redirecting to /admin');
@@ -229,7 +229,13 @@ const AppContent: React.FC = () => {
                 element={<ProtectedClientRoute />} 
               />
               
-              {/* Client Portal Routes with original pattern */}
+              {/* Client Portal Routes */}
+              <Route 
+                path="/client-portal" 
+                element={<ClientPortal />} 
+              />
+              
+              {/* Client Portal Routes with parameters */}
               <Route 
                 path="/client-portal/:businessId/:token" 
                 element={<ClientPortal />} 

@@ -100,9 +100,7 @@ const ReportsStep: React.FC<ReportsStepProps> = ({
   const [editingControl, setEditingControl] = useState<string | null>(null);
   const [showJuratModal, setShowJuratModal] = useState(false);
   
-  // Year selector state
-  const [availableYears, setAvailableYears] = useState<Array<{id: string, year: number}>>([]);
-  const [selectedYearId, setSelectedYearId] = useState<string>(wizardState.selectedYear?.id || '');
+  // Year selection is now handled by the footer dropdown in parent wizard
   
   // Jurat signature state
   const [showSignatureModal, setShowSignatureModal] = useState(false);
@@ -164,40 +162,14 @@ To the best of my knowledge and belief, the information I provided during the st
 
 I acknowledge that I had the opportunity to review and revise the report prior to finalization, and I approve its use for tax reporting purposes.`);
 
-  // Load available years for year selector
-  useEffect(() => {
-    const loadAvailableYears = async () => {
-      if (!wizardState.business?.id) return;
-      
-      try {
-        const { data: years, error } = await supabase
-          .from('rd_business_years')
-          .select('id, year')
-          .eq('business_id', wizardState.business.id)
-          .order('year', { ascending: false });
-        
-        if (error) throw error;
-        
-        if (years) {
-          setAvailableYears(years);
-          if (!selectedYearId && years.length > 0) {
-            setSelectedYearId(years[0].id);
-          }
-        }
-      } catch (error) {
-        console.error('Error loading available years:', error);
-      }
-    };
-    
-    loadAvailableYears();
-  }, [wizardState.business?.id]);
+  // Year selection is handled by the footer dropdown - no local year loading needed
 
-  // Reload QC data when year changes
+  // Reload QC data when wizard year changes
   useEffect(() => {
-    if (selectedYearId) {
+    if (wizardState.selectedYear?.id) {
       loadReportsData();
     }
-  }, [selectedYearId]);
+  }, [wizardState.selectedYear?.id]);
 
   // Check if user is admin and load data
   useEffect(() => {
@@ -218,8 +190,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
         }
 
             // Load QC controls and business year data
-    const yearIdToLoad = selectedYearId || wizardState.selectedYear?.id;
-    if (yearIdToLoad) {
+    if (wizardState.selectedYear?.id) {
           await loadReportsData();
         }
       } catch (error) {
@@ -269,11 +240,10 @@ I acknowledge that I had the opportunity to review and revise the report prior t
   };
 
   const loadReportsData = async () => {
-    const yearIdToLoad = selectedYearId || wizardState.selectedYear?.id;
+    const yearIdToLoad = wizardState.selectedYear?.id;
     if (!yearIdToLoad) return;
 
     console.log('🆔 LOAD Business Year ID:', yearIdToLoad);
-    console.log('🔍 selectedYearId:', selectedYearId);
     console.log('🔍 wizardState.selectedYear?.id:', wizardState.selectedYear?.id);
 
     setLoading(true);
@@ -387,7 +357,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
 
   // Save QC notes for a document type
   const saveQCNotes = async (documentType: string) => {
-    const yearIdToSave = selectedYearId || wizardState.selectedYear?.id;
+    const yearIdToSave = wizardState.selectedYear?.id;
     if (!yearIdToSave) return;
     
     try {
@@ -417,7 +387,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
     console.log('🔍 [Load from Wizard] Loading REAL calculated values from wizard...');
     
     try {
-      const yearId = selectedYearId || wizardState.selectedYear?.id;
+      const yearId = wizardState.selectedYear?.id;
       if (!yearId) {
         console.error('❌ [Load from Wizard] No year ID available');
         return;
@@ -461,7 +431,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
   };
 
   const saveCreditValues = async () => {
-    const yearId = selectedYearId || wizardState.selectedYear?.id;
+    const yearId = wizardState.selectedYear?.id;
     if (!yearId) return;
 
     try {
@@ -509,7 +479,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
   };
 
   const toggleCreditsLock = async () => {
-    const yearId = selectedYearId || wizardState.selectedYear?.id;
+    const yearId = wizardState.selectedYear?.id;
     if (!yearId) return;
 
     try {
@@ -1262,7 +1232,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
 
   // Save Jurat notes
   const saveJuratNotes = async () => {
-    const yearIdToSave = selectedYearId || wizardState.selectedYear?.id;
+    const yearIdToSave = wizardState.selectedYear?.id;
     if (!yearIdToSave) return;
     
     try {
@@ -1291,7 +1261,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
 
   // Force refresh jurat status - useful for checking signatures from client portal
   const refreshJuratStatus = async () => {
-    const yearIdToCheck = selectedYearId || wizardState.selectedYear?.id;
+    const yearIdToCheck = wizardState.selectedYear?.id;
     if (!yearIdToCheck) return;
 
     try {
@@ -2757,7 +2727,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
           console.log('Jurat signed:', signatureData);
         }}
         juratText={juratText}
-        businessYearId={selectedYearId}
+        businessYearId={wizardState.selectedYear?.id}
         clientName={wizardState.business?.name}
       />
 
