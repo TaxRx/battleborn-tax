@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Download, Eye, Settings, Share2, CheckCircle, Clock, AlertCircle, User, Calendar, DollarSign, Lock, Unlock, Upload, Save, Edit, Check, X, ExternalLink, PenTool, Building2, MapPin, Mail, Shield } from 'lucide-react';
+import { FileText, Download, Eye, Settings, Share2, CheckCircle, Clock, AlertCircle, AlertTriangle, User, Calendar, DollarSign, Lock, Unlock, Upload, Save, Edit, Check, X, ExternalLink, PenTool, Building2, MapPin, Mail, Shield } from 'lucide-react';
 import { supabase } from '../../../../../lib/supabase';
 import { FilingGuideModal } from '../../FilingGuide/FilingGuideModal';
 import ResearchReportModal from '../../ResearchReport/ResearchReportModal';
@@ -112,6 +112,9 @@ const ReportsStep: React.FC<ReportsStepProps> = ({
   const [qcNotes, setQcNotes] = useState<{ [key: string]: string }>({});
   const [editingNotes, setEditingNotes] = useState<{ [key: string]: boolean }>({});
   const [releaseToggles, setReleaseToggles] = useState<{ [key: string]: boolean }>({});
+  
+  // Allocation Report save status
+  const [allocationReportSaved, setAllocationReportSaved] = useState(false);
   
   // QC Approver Modal states
   const [showQCApproverModal, setShowQCApproverModal] = useState(false);
@@ -292,6 +295,24 @@ I acknowledge that I had the opportunity to review and revise the report prior t
 
       if (businessYearError) throw businessYearError;
       setBusinessYearData(businessYear);
+
+      // Check if allocation report has been saved to database
+      console.log('🔍 [loadReportsData] Checking allocation report save status...');
+      const { data: allocationReport, error: allocationError } = await supabase
+        .from('rd_reports')
+        .select('allocation_report')
+        .eq('business_year_id', yearIdToLoad)
+        .eq('type', 'RESEARCH_SUMMARY')
+        .not('allocation_report', 'is', null)
+        .single();
+
+      const isAllocationReportSaved = !!allocationReport?.allocation_report;
+      console.log('📊 [loadReportsData] Allocation report saved status:', {
+        hasSavedReport: isAllocationReportSaved,
+        error: allocationError,
+        reportLength: allocationReport?.allocation_report?.length || 0
+      });
+      setAllocationReportSaved(isAllocationReportSaved);
 
       // Load credit management data - ONLY load from database if locked, otherwise show 0
       if (businessYear) {
@@ -1197,8 +1218,20 @@ I acknowledge that I had the opportunity to review and revise the report prior t
   const toggleRelease = async (documentType: string) => {
     const currentStatus = releaseToggles[documentType];
     
-    // If turning ON, require QC approval
+    // If turning ON, check requirements
     if (!currentStatus) {
+      // For filing guide, check payment received requirement
+      if (documentType === 'filing_guide' && !businessYearData?.payment_received) {
+        toast.error('Payment must be received before the Filing Guide can be released to client');
+        return;
+      }
+      
+      // For allocation report, check if it has been saved to database
+      if (documentType === 'allocation_report' && !allocationReportSaved) {
+        toast.error('Allocation Report must be saved to database before it can be released to client');
+        return;
+      }
+      
       setPendingToggleType(documentType);
       setShowQCApproverModal(true);
     } else {
@@ -1227,6 +1260,86 @@ I acknowledge that I had the opportunity to review and revise the report prior t
           setLoading(false);
         }
       }
+    }
+  };
+
+  // Toggle payment received status
+  const togglePaymentReceived = async () => {
+    const yearId = wizardState.selectedYear?.id;
+    if (!yearId) return;
+
+    try {
+      setLoading(true);
+      
+      const newPaymentStatus = !businessYearData?.payment_received;
+      
+      const { error } = await supabase
+        .from('rd_business_years')
+        .update({
+          payment_received: newPaymentStatus,
+          payment_received_at: newPaymentStatus ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', yearId);
+
+      if (error) throw error;
+
+      // Update local state
+      setBusinessYearData(prev => prev ? {
+        ...prev,
+        payment_received: newPaymentStatus,
+        payment_received_at: newPaymentStatus ? new Date().toISOString() : null
+      } : null);
+
+      // If payment is being turned off and filing guide is released, warn user and turn off release
+      if (!newPaymentStatus && releaseToggles['filing_guide']) {
+        const confirmUnrelease = confirm(
+          'Payment status is being turned off. This will also unrelease the Filing Guide. Continue?'
+        );
+        
+        if (confirmUnrelease) {
+          // Unrelease the filing guide
+          const { error: releaseError } = await supabase
+            .from('rd_qc_document_controls')
+            .update({
+              is_released: false,
+              released_at: null,
+              updated_at: new Date().toISOString()
+            })
+            .eq('business_year_id', yearId)
+            .eq('document_type', 'filing_guide');
+
+          if (releaseError) throw releaseError;
+          
+          setReleaseToggles(prev => ({ ...prev, filing_guide: false }));
+          await loadReportsData();
+        } else {
+          // Revert payment status change
+          const { error: revertError } = await supabase
+            .from('rd_business_years')
+            .update({
+              payment_received: true,
+              payment_received_at: businessYearData?.payment_received_at || new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', yearId);
+
+          if (revertError) throw revertError;
+          
+          // Revert local state
+          setBusinessYearData(prev => prev ? {
+            ...prev,
+            payment_received: true
+          } : null);
+        }
+      }
+
+      toast.success(`Payment status ${newPaymentStatus ? 'marked as received' : 'unmarked'}`);
+    } catch (error) {
+      console.error('Error updating payment status:', error);
+      toast.error('Failed to update payment status');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -2042,13 +2155,33 @@ I acknowledge that I had the opportunity to review and revise the report prior t
                   </button>
                 </div>
 
+                {/* Payment Received Toggle */}
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-medium text-gray-700">Payment Received</span>
+                  <button
+                    onClick={() => togglePaymentReceived()}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      businessYearData?.payment_received ? 'bg-green-600' : 'bg-gray-200'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        businessYearData?.payment_received ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
                 {/* Release Toggle */}
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm font-medium text-gray-700">Release to Client</span>
                   <button
                     onClick={() => toggleRelease('filing_guide')}
+                    disabled={!businessYearData?.payment_received}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      releaseToggles['filing_guide'] ? 'bg-green-600' : 'bg-gray-200'
+                      releaseToggles['filing_guide'] ? 'bg-green-600' : 
+                      !businessYearData?.payment_received ? 'bg-gray-300 cursor-not-allowed' :
+                      'bg-gray-200'
                     }`}
                   >
                     <span
@@ -2058,6 +2191,30 @@ I acknowledge that I had the opportunity to review and revise the report prior t
                     />
                   </button>
                 </div>
+
+                {/* Payment status indicator */}
+                {businessYearData?.payment_received && businessYearData?.payment_received_at && (
+                  <div className="mb-3">
+                    <div className="inline-flex items-center px-3 py-1 rounded-full bg-blue-50">
+                      <CheckCircle className="mr-1 text-blue-600" size={16} />
+                      <span className="text-sm font-medium text-blue-600">
+                        Payment received: {new Date(businessYearData.payment_received_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Warning for payment requirement */}
+                {!businessYearData?.payment_received && (
+                  <div className="mb-3">
+                    <div className="inline-flex items-center px-3 py-1 rounded-full bg-amber-50">
+                      <AlertTriangle className="mr-1 text-amber-600" size={16} />
+                      <span className="text-sm font-medium text-amber-600">
+                        Payment must be received before release
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 {/* QC Notes */}
                 <div className="space-y-2">
@@ -2157,13 +2314,37 @@ I acknowledge that I had the opportunity to review and revise the report prior t
                   </button>
                 </div>
 
+                {/* Save Status Indicator */}
+                {allocationReportSaved ? (
+                  <div className="mb-3">
+                    <div className="inline-flex items-center px-3 py-1 rounded-full bg-green-50">
+                      <CheckCircle className="mr-1 text-green-600" size={16} />
+                      <span className="text-sm font-medium text-green-600">
+                        Report saved to database
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mb-3">
+                    <div className="inline-flex items-center px-3 py-1 rounded-full bg-amber-50">
+                      <AlertTriangle className="mr-1 text-amber-600" size={16} />
+                      <span className="text-sm font-medium text-amber-600">
+                        Report must be saved before release
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Release Toggle */}
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm font-medium text-gray-700">Release to Client</span>
                   <button
                     onClick={() => toggleRelease('allocation_report')}
+                    disabled={!allocationReportSaved}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      releaseToggles['allocation_report'] ? 'bg-green-600' : 'bg-gray-200'
+                      releaseToggles['allocation_report'] ? 'bg-green-600' : 
+                      !allocationReportSaved ? 'bg-gray-300 cursor-not-allowed' :
+                      'bg-gray-200'
                     }`}
                   >
                     <span
