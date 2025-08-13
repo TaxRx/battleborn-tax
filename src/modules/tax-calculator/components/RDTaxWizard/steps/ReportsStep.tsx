@@ -335,17 +335,17 @@ I acknowledge that I had the opportunity to review and revise the report prior t
       console.log('🔍 [loadReportsData] Checking allocation report save status...');
       const { data: allocationReport, error: allocationError } = await supabase
         .from('rd_reports')
-        .select('allocation_report')
+        .select('generated_html')
         .eq('business_year_id', yearIdToLoad)
-        .eq('type', 'RESEARCH_SUMMARY')
-        .not('allocation_report', 'is', null)
+        .eq('type', 'ALLOCATION_SUMMARY')
+        .not('generated_html', 'is', null)
         .single();
 
-      const isAllocationReportSaved = !!allocationReport?.allocation_report;
+      const isAllocationReportSaved = !!allocationReport?.generated_html;
       console.log('📊 [loadReportsData] Allocation report saved status:', {
         hasSavedReport: isAllocationReportSaved,
         error: allocationError,
-        reportLength: allocationReport?.allocation_report?.length || 0
+        reportLength: allocationReport?.generated_html?.length || 0
       });
       setAllocationReportSaved(isAllocationReportSaved);
 
@@ -1017,24 +1017,16 @@ I acknowledge that I had the opportunity to review and revise the report prior t
           ai_version: 'manual_qc_v1.0'
         };
 
-          // Save HTML to appropriate column based on document type
-          if (pendingToggleType === 'allocation_report') {
-            // Save allocation reports to the allocation_report column
-            if (generatedHTML) {
-              reportData.allocation_report = generatedHTML;
-            }
-          } else {
-            // Only include generated_html if we actually generated new content or for non-Research Report docs
-            // This prevents overwriting the fully formatted Research Report that was generated elsewhere
-            if (generatedHTML && (!hasExistingHTML || pendingToggleType !== 'research_report')) {
-              reportData.generated_html = generatedHTML;
-            }
+          // Save HTML to generated_html column for all document types (allocation reports now use ALLOCATION_SUMMARY type)
+          // Only include generated_html if we actually generated new content or for non-Research Report docs
+          // This prevents overwriting the fully formatted Research Report that was generated elsewhere
+          if (generatedHTML && (!hasExistingHTML || pendingToggleType !== 'research_report')) {
+            reportData.generated_html = generatedHTML;
           }
         
         console.log('📄 Report data to save:', {
           ...reportData,
-            generated_html: reportData.generated_html ? reportData.generated_html.length + ' characters' : 'unchanged',
-            allocation_report: reportData.allocation_report ? reportData.allocation_report.length + ' characters' : 'unchanged'
+            generated_html: reportData.generated_html ? reportData.generated_html.length + ' characters' : 'unchanged'
         });
 
         const { error: reportError } = await supabase

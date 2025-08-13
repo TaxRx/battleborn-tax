@@ -1287,14 +1287,14 @@ const AllocationReportModal: React.FC<AllocationReportModalProps> = ({
       // Generate the full HTML using our existing function
       const allocationHTML = generatePuppeteerHTML();
       
-      // Save to rd_reports table in allocation_report column
+      // Save to rd_reports table with ALLOCATION_SUMMARY type in generated_html column
       const { error } = await supabase
         .from('rd_reports')
         .upsert({
           business_year_id: selectedYear.id,
           business_id: businessData?.id,
-          type: 'RESEARCH_SUMMARY',
-          allocation_report: allocationHTML,
+          type: 'ALLOCATION_SUMMARY',
+          generated_html: allocationHTML,
           generated_text: 'Allocation report saved from modal',
           ai_version: 'allocation_modal_v1.0'
         }, { 

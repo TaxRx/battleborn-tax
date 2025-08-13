@@ -1348,8 +1348,8 @@ const ClientPortal: React.FC = () => {
             generatedHtmlLength: report.generated_html?.length || 0,
             hasFilingGuide: !!report.filing_guide,
             filingGuideLength: report.filing_guide?.length || 0,
-            hasAllocationReport: !!report.allocation_report,
-            allocationReportLength: report.allocation_report?.length || 0,
+            hasAllocationReport: false, // Deprecated: allocation reports now use ALLOCATION_SUMMARY type
+            allocationReportLength: 0, // Deprecated: allocation reports now use generated_html column
             created_at: report.created_at,
             updated_at: report.updated_at,
             htmlPreview: report.generated_html?.substring(0, 200) + '...' || 'None'
@@ -1372,12 +1372,12 @@ const ClientPortal: React.FC = () => {
         businessYearId,
         queryType,
         documentType,
-        selectFields: 'generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked'
+        selectFields: 'generated_html, filing_guide, type, created_at, updated_at, id, business_id, ai_version, locked'
       });
       
       const result = await client
         .from('rd_reports')
-        .select('generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked')
+        .select('generated_html, filing_guide, type, created_at, updated_at, id, business_id, ai_version, locked')
         .eq('business_year_id', businessYearId)
         .eq('type', queryType)
         .single();
@@ -1392,7 +1392,7 @@ const ClientPortal: React.FC = () => {
         // Use same simplified query logic for retry
         const retryResult = await client
           .from('rd_reports')
-          .select('generated_html, filing_guide, allocation_report, type, created_at, updated_at, id, business_id, ai_version, locked')
+          .select('generated_html, filing_guide, type, created_at, updated_at, id, business_id, ai_version, locked')
           .eq('business_year_id', businessYearId)
           .eq('business_id', portalData.business_id)
           .eq('type', queryType)
@@ -1414,10 +1414,10 @@ const ClientPortal: React.FC = () => {
           business_year_id: data.business_year_id,
           hasGeneratedHtml: !!data.generated_html,
           hasFilingGuide: !!data.filing_guide,
-          hasAllocationReport: !!data.allocation_report,
+          hasAllocationReport: false, // Deprecated: allocation reports now use ALLOCATION_SUMMARY type
           generatedHtmlLength: data.generated_html?.length || 0,
           filingGuideLength: data.filing_guide?.length || 0,
-          allocationReportLength: data.allocation_report?.length || 0,
+          allocationReportLength: 0, // Deprecated: allocation reports now use generated_html column
           created_at: data.created_at,
           updated_at: data.updated_at,
           htmlPreview: data.generated_html?.substring(0, 200) + '...' || 'None',
@@ -1515,7 +1515,7 @@ const ClientPortal: React.FC = () => {
             updatedAt: data.updated_at,
             aiVersion: data.ai_version,
             locked: data.locked,
-            hasAnyContent: !!(data.generated_html || data.filing_guide || data.allocation_report)
+            hasAnyContent: !!(data.generated_html || data.filing_guide)
           });
           
           alert(

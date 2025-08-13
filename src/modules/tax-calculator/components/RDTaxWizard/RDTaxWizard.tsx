@@ -148,8 +148,8 @@ const RDTaxWizard: React.FC<RDTaxWizardProps> = ({ onClose, businessId, startSte
         .from('rd_reports')
         .select('created_at, updated_at, business_id')
         .eq('business_year_id', businessYearId)
-        .eq('type', 'RESEARCH_SUMMARY')
-        .not('allocation_report', 'is', null)
+        .eq('type', 'ALLOCATION_SUMMARY')
+        .not('generated_html', 'is', null)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
