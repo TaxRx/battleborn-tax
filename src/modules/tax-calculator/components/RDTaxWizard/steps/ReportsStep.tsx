@@ -2167,15 +2167,16 @@ I acknowledge that I had the opportunity to review and revise the report prior t
                     <Eye className="mr-2" size={16} />
                       Preview
                     </div>
-                    {/* Filing Guide date comes from business year update when saved */}
-                    {businessYearData?.updated_at && (
-                      <div className="flex items-center ml-2 px-2 py-1 bg-purple-700 rounded-full">
-                        <CheckCircle className="mr-1" size={12} />
-                        <span className="text-xs">
-                          {formatGenerationDate(businessYearData.updated_at)}
-                        </span>
-                      </div>
-                    )}
+                    {/* Filing Guide generated chip (uses reportGenerationDates.filing_guide if present, else business year updated_at) */}
+                    {(() => {
+                      const showDate = reportGenerationDates?.filing_guide || businessYearData?.updated_at;
+                      return showDate ? (
+                        <div className="flex items-center ml-2 px-2 py-1 bg-purple-700 rounded-full">
+                          <CheckCircle className="mr-1" size={12} />
+                          <span className="text-xs">{formatGenerationDate(showDate)}</span>
+                        </div>
+                      ) : null;
+                    })()}
                   </button>
                 </div>
 

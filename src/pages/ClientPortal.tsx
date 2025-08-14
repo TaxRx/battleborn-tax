@@ -1484,20 +1484,21 @@ const ClientPortal: React.FC = () => {
          .order('updated_at', { ascending: false });
 
        let data = null as any;
+       let preferredGuideHtml: string | null = null;
        let error = listResult.error;
        if (!error) {
          const rows = listResult.data || [];
          if (documentType === 'filing_guide') {
-           // Pick the filing_guide with the largest content length
-           data = rows
-             .slice()
-             .sort((a, b) => (b.filing_guide?.length || 0) - (a.filing_guide?.length || 0))[0] || null;
-           if (!data || !(data.filing_guide && data.filing_guide.length > 5000)) {
-             // Fallback to generated_html with largest content if filing_guide insufficient
-             data = rows
-               .slice()
-               .sort((a, b) => (b.generated_html?.length || 0) - (a.generated_html?.length || 0))[0] || null;
-           }
+           // Choose the single richest HTML across filing_guide and generated_html
+           let winner: any = null;
+           let winnerLen = -1;
+           rows.forEach(r => {
+             const fgLen = r.filing_guide?.length || 0;
+             const ghLen = r.generated_html?.length || 0;
+             if (fgLen > winnerLen) { winner = r; winnerLen = fgLen; preferredGuideHtml = r.filing_guide || null; }
+             if (ghLen > winnerLen) { winner = r; winnerLen = ghLen; preferredGuideHtml = r.generated_html || null; }
+           });
+           data = winner;
          } else {
            data = rows[0] || null;
          }
@@ -1517,9 +1518,19 @@ const ClientPortal: React.FC = () => {
            .eq('type', queryType)
            .order('updated_at', { ascending: false });
          const rows = retryResult.data || [];
-         data = documentType === 'filing_guide'
-           ? (rows.slice().sort((a, b) => (b.filing_guide?.length || 0) - (a.filing_guide?.length || 0))[0] || null)
-           : (rows[0] || null);
+         if (documentType === 'filing_guide') {
+           let winner: any = null;
+           let winnerLen = -1;
+           rows.forEach(r => {
+             const fgLen = r.filing_guide?.length || 0;
+             const ghLen = r.generated_html?.length || 0;
+             if (fgLen > winnerLen) { winner = r; winnerLen = fgLen; preferredGuideHtml = r.filing_guide || null; }
+             if (ghLen > winnerLen) { winner = r; winnerLen = ghLen; preferredGuideHtml = r.generated_html || null; }
+           });
+           data = winner;
+         } else {
+           data = rows[0] || null;
+         }
          error = retryResult.error || (!data ? { code: 'PGRST116', message: 'not found' } as any : null);
         
         if (!retryResult.error) {
@@ -1676,11 +1687,14 @@ const ClientPortal: React.FC = () => {
           return;
         }
       } else if (documentType === 'filing_guide') {
-        if (data.filing_guide) {
-          htmlContent = data.filing_guide;
-          console.log('✅ [ClientPortal] Using filing_guide for filing guide');
+        if (preferredGuideHtml) {
+          htmlContent = preferredGuideHtml;
+          console.log('✅ [ClientPortal] Using preferred guide HTML (richest)');
+        } else if (data.filing_guide || data.generated_html) {
+          htmlContent = data.filing_guide || data.generated_html || '';
+          console.log('✅ [ClientPortal] Using available guide HTML from record');
         } else {
-          console.warn('⚠️ [ClientPortal] No filing_guide found for filing guide');
+          console.warn('⚠️ [ClientPortal] No filing guide HTML found');
           alert('Filing guide content not available. The guide may not have been generated yet.');
           return;
         }
