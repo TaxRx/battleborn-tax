@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { ClientDetailModal } from './ClientDetailModal';
 import AdminReferralsList from './referrals/AdminReferralsList';
+import ReferralCreditChip from './referrals/ReferralCreditChip';
 import { UnifiedClientDashboard } from './UnifiedClientDashboard';
 import { 
   RDTaxWizardBusiness,
@@ -58,7 +59,7 @@ interface RDClientManagementProps {
 }
 
 // Tab types
-type TabType = 'clients' | 'activities' | 'progress';
+type TabType = 'clients' | 'activities' | 'progress' | 'referrals';
 
 // Business Accordion Component
 interface BusinessAccordionProps {
@@ -413,7 +414,8 @@ const ClientCard: React.FC<ClientCardProps> = ({
                   <Zap className="w-4 h-4 mr-1" />
                   {rdEnrollments.length} R&D enrollment{rdEnrollments.length !== 1 ? 's' : ''}
                 </span>
-
+                {/* Referral credit chip */}
+                <ReferralCreditChip clientId={client.id} />
               </div>
             </div>
           </div>

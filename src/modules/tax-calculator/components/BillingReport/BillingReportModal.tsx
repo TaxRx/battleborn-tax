@@ -3,6 +3,7 @@ import { X, Download, Calendar, DollarSign } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { RDCalculationsService } from '../../services/rdCalculationsService';
+import { getSupabaseClient } from '../../../../lib/supabaseSingleton';
 
 interface BillingReportModalProps {
   isOpen: boolean;
@@ -32,6 +33,7 @@ export const BillingReportModal: React.FC<BillingReportModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [creditsByYear, setCreditsByYear] = useState<YearCredit[]>([]);
+  const [appliedDiscounts, setAppliedDiscounts] = useState<Record<string, number>>({});
 
   // Billing configuration
   const [baseBillingPercent, setBaseBillingPercent] = useState<number>(23);
@@ -41,6 +43,10 @@ export const BillingReportModal: React.FC<BillingReportModalProps> = ({
   const [plan3Percent, setPlan3Percent] = useState<number>(0);
   const [plan6Percent, setPlan6Percent] = useState<number>(0);
   const [plan12Percent, setPlan12Percent] = useState<number>(0);
+  // Per-year inputs
+  const [prepayments, setPrepayments] = useState<Record<string, number>>({});
+  const [unappliedCredits, setUnappliedCredits] = useState<Array<{ id: string; amount: number }>>([]);
+  const [applyCreditSel, setApplyCreditSel] = useState<Record<string, string>>({});
 
   const reportRef = useRef<HTMLDivElement | null>(null);
 
@@ -62,6 +68,7 @@ export const BillingReportModal: React.FC<BillingReportModalProps> = ({
       setLoading(true);
       setError(null);
       try {
+        const supabase = getSupabaseClient();
         const results: YearCredit[] = [];
         for (const byId of selectedYearIds) {
           const calc = await RDCalculationsService.calculateCredits(byId);
@@ -76,6 +83,18 @@ export const BillingReportModal: React.FC<BillingReportModalProps> = ({
           });
         }
         setCreditsByYear(results);
+
+        // Load applied referral discounts for these BYs
+        const { data } = await supabase
+          .from('rd_referral_credits')
+          .select('applied_to_business_year_id, amount')
+          .in('applied_to_business_year_id', selectedYearIds);
+        const map: Record<string, number> = {};
+        (data as any || []).forEach((r: any) => {
+          const k = r.applied_to_business_year_id;
+          map[k] = (map[k] || 0) + Number(r.amount || 0);
+        });
+        setAppliedDiscounts(map);
       } catch (e: any) {
         setError(e?.message || 'Failed to load credits');
       } finally {
@@ -85,7 +104,7 @@ export const BillingReportModal: React.FC<BillingReportModalProps> = ({
     loadCredits();
   }, [visible, selectedYearIds, yearLabelMap]);
 
-  const totals = useMemo(() => {
+  const baseTotals = useMemo(() => {
     const federal = Math.round(creditsByYear.reduce((s, y) => s + y.federal, 0));
     const state = Math.round(creditsByYear.reduce((s, y) => s + y.state, 0));
     const total = Math.round(creditsByYear.reduce((s, y) => s + y.total, 0));
@@ -124,6 +143,18 @@ export const BillingReportModal: React.FC<BillingReportModalProps> = ({
   };
 
   if (!visible) return null;
+
+  // Totals with prepayments and discounts
+  const totals = useMemo(() => {
+    const federal = Math.round(creditsByYear.reduce((s, y) => s + y.federal, 0));
+    const state = Math.round(creditsByYear.reduce((s, y) => s + y.state, 0));
+    const totalCredits = Math.round(creditsByYear.reduce((s, y) => s + y.total, 0));
+    const baseBefore = creditsByYear.reduce((s, y) => s + Math.round((y.total * (baseBillingPercent || 0)) / 100), 0);
+    const totalDiscounts = selectedYearIds.reduce((s, id) => s + (appliedDiscounts[id] || 0), 0);
+    const totalPrepay = selectedYearIds.reduce((s, id) => s + (prepayments[id] || 0), 0);
+    const amountDue = Math.max(0, baseBefore - totalDiscounts - totalPrepay);
+    return { federal, state, totalCredits, baseBefore, totalDiscounts, totalPrepay, amountDue };
+  }, [creditsByYear, baseBillingPercent, appliedDiscounts, prepayments, selectedYearIds]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
@@ -207,6 +238,28 @@ export const BillingReportModal: React.FC<BillingReportModalProps> = ({
               </div>
             </div>
 
+            {/* Referral Discount and Prepayment Inputs */}
+            <div>
+              <h4 className="text-sm font-semibold text-gray-800 mb-2">Prepayments & Referral Discounts</h4>
+              <div className="space-y-2">
+                {selectedYearIds.map(byId => (
+                  <div key={byId} className="flex items-center justify-between text-sm">
+                    <div className="text-gray-700">Year {yearLabelMap[byId] || ''}</div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="number"
+                        placeholder="Prepayment"
+                        value={prepayments[byId] ?? ''}
+                        onChange={e => setPrepayments(prev => ({ ...prev, [byId]: Number(e.target.value || 0) }))}
+                        className="w-28 border rounded px-2 py-1"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="text-xs text-gray-500 mt-2">Use the referral credits chip in Client Management to assign credits to years. Assigned credits appear automatically here and reduce the Base Billing.</div>
+            </div>
+
             <div className="pt-2 border-t">
               <button
                 onClick={handleDownloadPdf}
@@ -240,7 +293,8 @@ export const BillingReportModal: React.FC<BillingReportModalProps> = ({
 
               <div className="grid grid-cols-1 gap-4">
                 {creditsByYear.map((y) => {
-                  const baseBill = computeBaseBill(y.total);
+                  const discount = Math.round(appliedDiscounts[y.businessYearId] || 0);
+                  const baseBill = Math.max(0, computeBaseBill(y.total) - discount);
                   const p3 = plan3Enabled ? computePlan(y.total, plan3Percent, 3) : { total: 0, monthly: 0 };
                   const p6 = plan6Enabled ? computePlan(y.total, plan6Percent, 6) : { total: 0, monthly: 0 };
                   const p12 = plan12Enabled ? computePlan(y.total, plan12Percent, 12) : { total: 0, monthly: 0 };
@@ -263,6 +317,12 @@ export const BillingReportModal: React.FC<BillingReportModalProps> = ({
                           <div className="text-xs uppercase tracking-wide text-gray-500">Base Billing ({baseBillingPercent || 0}%)</div>
                           <div className="text-xl font-semibold">{formatCurrency(baseBill)}</div>
                         </div>
+                        {discount > 0 && (
+                          <div className="rounded-lg border bg-white p-4">
+                            <div className="text-xs uppercase tracking-wide text-gray-500">Referral Discount</div>
+                            <div className="text-xl font-semibold text-emerald-700">- {formatCurrency(discount)}</div>
+                          </div>
+                        )}
                       </div>
 
                       {(plan3Enabled || plan6Enabled || plan12Enabled) && (
@@ -301,24 +361,34 @@ export const BillingReportModal: React.FC<BillingReportModalProps> = ({
 
               {/* Totals */}
               <div className="mt-6 rounded-xl border p-5 bg-white">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div>
                     <div className="text-xs uppercase tracking-wide text-gray-500">Total Federal</div>
-                    <div className="text-xl font-semibold">{formatCurrency(totals.federal)}</div>
+                    <div className="text-xl font-semibold">{formatCurrency(baseTotals.federal)}</div>
                   </div>
                   <div>
                     <div className="text-xs uppercase tracking-wide text-gray-500">Total State</div>
-                    <div className="text-xl font-semibold">{formatCurrency(totals.state)}</div>
+                    <div className="text-xl font-semibold">{formatCurrency(baseTotals.state)}</div>
                   </div>
                   <div>
-                    <div className="text-xs uppercase tracking-wide text-gray-500">All Credits Total</div>
-                    <div className="text-xl font-semibold">{formatCurrency(totals.total)}</div>
+                  <div className="text-xs uppercase tracking-wide text-gray-500">All Credits Total</div>
+                    <div className="text-xl font-semibold">{formatCurrency(totals.totalCredits)}</div>
                   </div>
                   <div>
-                    <div className="text-xs uppercase tracking-wide text-gray-500">Base Billing ({baseBillingPercent || 0}%)</div>
-                    <div className="text-xl font-semibold">{formatCurrency(computeBaseBill(totals.total))}</div>
+                  <div className="text-xs uppercase tracking-wide text-gray-500">Base Billing ({baseBillingPercent || 0}%)</div>
+                  <div className="text-xl font-semibold">{formatCurrency(totals.baseBefore)}</div>
                   </div>
                 </div>
+
+              <div className="mt-3 flex items-center flex-wrap gap-2">
+                {totals.totalDiscounts > 0 && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">Referral Discounts: -{formatCurrency(totals.totalDiscounts)}</span>
+                )}
+                {totals.totalPrepay > 0 && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">Prepayments: -{formatCurrency(totals.totalPrepay)}</span>
+                )}
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800">Amount Due: {formatCurrency(totals.amountDue)}</span>
+              </div>
 
                 {(plan3Enabled || plan6Enabled || plan12Enabled) && (
                   <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">

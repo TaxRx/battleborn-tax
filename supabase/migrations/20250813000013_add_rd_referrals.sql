@@ -28,11 +28,11 @@ $$ language plpgsql;
 drop trigger if exists set_timestamp_rd_referrals on rd_referrals;
 create trigger set_timestamp_rd_referrals before update on rd_referrals for each row execute function trigger_set_timestamp();
 
--- View with referrer info (email/name)
+-- View with referrer info (email/name) sourced from clients table
 create or replace view rd_referrals_view as
-select r.*, p.email as referrer_email, coalesce(p.full_name, p.first_name || ' ' || p.last_name) as referrer_name
+select r.*, c.email as referrer_email, coalesce(c.full_name, c.email) as referrer_name
 from rd_referrals r
-left join profiles p on p.client_id = r.referrer_client_id;
+left join clients c on c.id = r.referrer_client_id;
 
 -- Simple RPC to insert referrals (for row-level policies compatibility if needed)
 create or replace function rd_create_referral(

@@ -34,6 +34,7 @@ const ReferralsPane: React.FC<ReferralsPaneProps> = ({ getSupabaseClient, client
 	const [submitted, setSubmitted] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [referrals, setReferrals] = useState<ReferralRecord[]>([]);
+  const [effectiveBonus, setEffectiveBonus] = useState<number>(0);
 
 	const client = useMemo(() => getSupabaseClient(), [getSupabaseClient]);
 
@@ -54,6 +55,9 @@ const ReferralsPane: React.FC<ReferralsPaneProps> = ({ getSupabaseClient, client
 
 	useEffect(() => {
 		loadReferrals();
+		client.rpc('rd_effective_referral_bonus', { p_client_id: clientId }).then(({ data }) => {
+			setEffectiveBonus(Number(data || 0));
+		});
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [clientId]);
 
@@ -91,7 +95,7 @@ const ReferralsPane: React.FC<ReferralsPaneProps> = ({ getSupabaseClient, client
 			<div className="flex items-center justify-between">
 				<div>
 					<h1 className="text-3xl font-bold bg-gradient-to-r from-fuchsia-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">Referrals</h1>
-					<p className="text-gray-600">Thank you for helping others discover R&D tax credits. Make a referral and earn discounts when they engage.</p>
+					<p className="text-gray-600">Thank you for helping others discover R&D tax credits. Make a referral and earn discounts when they engage. Your current bonus is ${effectiveBonus.toLocaleString()}+ for each engaged referral.</p>
 				</div>
 			</div>
 
