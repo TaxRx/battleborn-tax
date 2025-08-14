@@ -94,6 +94,8 @@ const ReportsStep: React.FC<ReportsStepProps> = ({
   const [showAllocationReport, setShowAllocationReport] = useState(false);
   const [showBillingReport, setShowBillingReport] = useState(false);
   const [loading, setLoading] = useState(false);
+  // Persisted report timestamps
+  const [filingGuideGeneratedAt, setFilingGuideGeneratedAt] = useState<string | null>(null);
 
   const [qcControls, setQCControls] = useState<QCDocumentControl[]>([]);
   const [businessYearData, setBusinessYearData] = useState<BusinessYearData | null>(null);
@@ -371,6 +373,21 @@ I acknowledge that I had the opportunity to review and revise the report prior t
       if (businessYearError) throw businessYearError;
       setBusinessYearData(businessYear);
 
+      // Load Filing Guide generated date from rd_reports (latest updated_at)
+      try {
+        const { data: fgRows } = await supabase
+          .from('rd_reports')
+          .select('updated_at, created_at')
+          .eq('business_year_id', yearIdToLoad)
+          .eq('type', 'FILING_GUIDE')
+          .order('updated_at', { ascending: false })
+          .limit(1);
+        const fg = Array.isArray(fgRows) && fgRows.length > 0 ? fgRows[0] : null;
+        setFilingGuideGeneratedAt((fg?.updated_at as string) || (fg?.created_at as string) || null);
+      } catch (e) {
+        setFilingGuideGeneratedAt(null);
+      }
+
       // Check if allocation report has been saved to database
       console.log('🔍 [loadReportsData] Checking allocation report save status...');
       const { data: allocationReport, error: allocationError } = await supabase
@@ -450,6 +467,14 @@ I acknowledge that I had the opportunity to review and revise the report prior t
       setLoading(false);
     }
   };
+
+  // When Filing Guide modal closes, refresh report data to show chip
+  useEffect(() => {
+    if (!isFilingGuideOpen && wizardState.selectedYear?.id) {
+      loadReportsData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFilingGuideOpen]);
 
   // Save QC notes for a document type
   const saveQCNotes = async (documentType: string) => {
@@ -2169,7 +2194,7 @@ I acknowledge that I had the opportunity to review and revise the report prior t
                     </div>
                     {/* Filing Guide generated chip (uses reportGenerationDates.filing_guide if present, else business year updated_at) */}
                     {(() => {
-                      const showDate = reportGenerationDates?.filing_guide || businessYearData?.updated_at;
+                      const showDate = filingGuideGeneratedAt || reportGenerationDates?.filing_guide || businessYearData?.updated_at;
                       return showDate ? (
                         <div className="flex items-center ml-2 px-2 py-1 bg-purple-700 rounded-full">
                           <CheckCircle className="mr-1" size={12} />
