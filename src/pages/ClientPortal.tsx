@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { Calendar, Download, FileText, CheckCircle, Clock, AlertCircle, Eye, PenTool, User, Building2, Shield, Award, ChevronRight, XCircle, Users, Sliders, LogOut } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { CurrentRDView } from '../modules/current-rd/CurrentRDView';
+import ReferralsPane from '../modules/referrals/ReferralsPane';
 
 // Create a separate supabase client instance for the portal
 import { createClient } from '@supabase/supabase-js';
@@ -136,7 +137,7 @@ const ClientPortal: React.FC = () => {
   // Databank: locked years with credits and released docs
   const [databankYears, setDatabankYears] = useState<ApprovedYear[]>([]);
   const [expandedDatabank, setExpandedDatabank] = useState<Record<number, boolean>>({});
-  const [viewMode, setViewMode] = useState<'dashboard' | 'databank' | 'current-rd'>('dashboard');
+  const [viewMode, setViewMode] = useState<'dashboard' | 'databank' | 'current-rd' | 'referrals'>('dashboard');
   const [databankRelease, setDatabankRelease] = useState<Record<string, { research_report: boolean; filing_guide: boolean; allocation_report: boolean }>>({});
   const [selectedYear, setSelectedYear] = useState<ApprovedYear | null>(null);
   
@@ -2432,6 +2433,22 @@ This annual signature covers all business entities and research activities for t
                 </div>
               </div>
 
+              {/* Referrals Access */}
+              <div className="bg-white rounded-xl shadow-lg overflow-hidden mt-6">
+                <div className="bg-gradient-to-r from-fuchsia-500 to-purple-700 px-6 py-4 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-white">Referrals</h2>
+                    <p className="text-purple-100 text-sm">Make referrals, earn discounts.</p>
+                  </div>
+                  <button
+                    onClick={() => setViewMode('referrals')}
+                    className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-md text-sm"
+                  >
+                    Open
+                  </button>
+                </div>
+              </div>
+
               {/* Contact Us */}
               <div className="mt-6 p-4 rounded-xl border bg-white">
                 <div className="text-sm text-gray-900 font-semibold mb-1">Contact Us</div>
@@ -2540,6 +2557,8 @@ This annual signature covers all business entities and research activities for t
                 businessYearId={selectedYear?.business_years?.[0]?.id || null}
                 yearLabel={selectedYear?.year}
               />
+            ) : viewMode === 'referrals' ? (
+              <ReferralsPane getSupabaseClient={getSupabaseClient} clientId={clientId} businessId={portalData?.business_id} />
             ) :  approvedYears.length === 0 ? (
               <NoApprovedDataMessage /> ) : selectedYear && (
               <div className="space-y-8">

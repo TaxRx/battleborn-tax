@@ -35,9 +35,11 @@ import {
   RefreshCw,
   Zap,
   Circle,
-  BarChart3
+  BarChart3,
+  Send
 } from 'lucide-react';
 import { ClientDetailModal } from './ClientDetailModal';
+import AdminReferralsList from './referrals/AdminReferralsList';
 import { UnifiedClientDashboard } from './UnifiedClientDashboard';
 import { 
   RDTaxWizardBusiness,
@@ -994,6 +996,17 @@ export default function RDClientManagement({
       case 'progress':
         return <ProgressSnapshot />;
 
+      case 'referrals':
+        return (
+          <div>
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold text-gray-900">Referrals</h2>
+              <p className="text-gray-600 text-sm">Track client referrals, update statuses, and view referrer details.</p>
+            </div>
+            <AdminReferralsList />
+          </div>
+        );
+
       default:
         return null;
     }
@@ -1056,6 +1069,17 @@ export default function RDClientManagement({
               >
                 <BarChart3 className="w-4 h-4" />
                 <span>Progress Snapshot</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('referrals')}
+                className={`${
+                  activeTab === 'referrals'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2`}
+              >
+                <Send className="w-4 h-4" />
+                <span>Referrals</span>
               </button>
             </nav>
           </div>
