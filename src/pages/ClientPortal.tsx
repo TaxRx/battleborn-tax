@@ -1474,8 +1474,9 @@ const ClientPortal: React.FC = () => {
          selectFields: 'generated_html, filing_guide, type, created_at, updated_at, id, business_id, ai_version, locked'
        });
 
-       // Fetch all candidate rows and pick the richest content for FILING_GUIDE to avoid
-       // simplified summaries. Preference order: filing_guide with largest length, then generated_html.
+       // Fetch all candidate rows. Preference NOW: latest updated_at row first
+       // (explicitly prefer the most recently saved cached guide),
+       // then fall back to the richest content if needed.
        const listResult = await client
          .from('rd_reports')
          .select('generated_html, filing_guide, type, created_at, updated_at, id, business_id, ai_version, locked')
@@ -1489,16 +1490,23 @@ const ClientPortal: React.FC = () => {
        if (!error) {
          const rows = listResult.data || [];
          if (documentType === 'filing_guide') {
-           // Choose the single richest HTML across filing_guide and generated_html
-           let winner: any = null;
-           let winnerLen = -1;
-           rows.forEach(r => {
-             const fgLen = r.filing_guide?.length || 0;
-             const ghLen = r.generated_html?.length || 0;
-             if (fgLen > winnerLen) { winner = r; winnerLen = fgLen; preferredGuideHtml = r.filing_guide || null; }
-             if (ghLen > winnerLen) { winner = r; winnerLen = ghLen; preferredGuideHtml = r.generated_html || null; }
-           });
-           data = winner;
+           // First try the most recent row (index 0)
+           const latest = rows[0] || null;
+           if (latest && (latest.filing_guide || latest.generated_html)) {
+             data = latest;
+             preferredGuideHtml = latest.filing_guide || latest.generated_html || null;
+           } else {
+             // Fallback to richest content across rows
+             let winner: any = null;
+             let winnerLen = -1;
+             rows.forEach(r => {
+               const fgLen = r.filing_guide?.length || 0;
+               const ghLen = r.generated_html?.length || 0;
+               if (fgLen > winnerLen) { winner = r; winnerLen = fgLen; preferredGuideHtml = r.filing_guide || null; }
+               if (ghLen > winnerLen) { winner = r; winnerLen = ghLen; preferredGuideHtml = r.generated_html || null; }
+             });
+             data = winner;
+           }
          } else {
            data = rows[0] || null;
          }
