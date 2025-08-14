@@ -14,6 +14,7 @@ interface FilingGuideModalProps {
   selectedMethod?: 'asc' | 'standard';
   debugData?: any;
   clientName?: string;
+  onSaved?: () => void; // callback to notify parent when a guide is saved
 }
 
 export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
@@ -24,7 +25,8 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
   calculations,
   selectedMethod,
   debugData,
-  clientName
+  clientName,
+  onSaved
 }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [exportFormat, setExportFormat] = useState<'pdf' | 'html'>('pdf');
@@ -194,6 +196,9 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
       // Update cached report - Fix: Correct parameter order
       const newReport = await rdReportService.getReport(selectedYear.id, 'FILING_GUIDE');
       setCachedReport(newReport);
+      try {
+        onSaved && onSaved();
+      } catch {}
       
       console.log('📄 [Filing Guide] Report generated and saved');
       
@@ -376,6 +381,10 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const handleSaveOnly = async () => {
+    await generateAndSaveReport();
   };
 
   const handlePrint = () => {
@@ -652,17 +661,16 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
                 Back to Summary
               </button>
               
-              {!cachedReport && (
-                <button
-                  onClick={generateAndSaveReport}
-                  disabled={isGenerating}
-                  className="filing-guide-export-btn"
-                  style={{ marginRight: '12px' }}
-                >
-                  <FileText size={16} />
-                  {isGenerating ? 'Generating...' : 'Generate & Save Report'}
-                </button>
-              )}
+              <button
+                onClick={handleSaveOnly}
+                disabled={isGenerating}
+                className="filing-guide-export-btn"
+                style={{ marginRight: '12px' }}
+                title="Save a cached version of the Filing Guide for this year"
+              >
+                <FileText size={16} />
+                {isGenerating ? 'Saving…' : (cachedReport ? 'Save New Version' : 'Generate & Save Report')}
+              </button>
               
               <select
                 value={exportFormat}
