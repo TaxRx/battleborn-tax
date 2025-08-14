@@ -2622,11 +2622,11 @@ This annual signature covers all business entities and research activities for t
                                   if (isFilingGuideReleased && allDocumentsReady && paymentReceived) {
                                     return (
                                       <button 
-                                        onClick={() => downloadDocument(doc.type)}
-                                        className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-2 px-4 rounded-lg hover:from-green-600 hover:to-green-700 transition-all"
+                                        onClick={() => viewDocument(doc.type)}
+                                        className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-2 px-4 rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all"
                                       >
-                                        <Download className="w-4 h-4 inline mr-2" />
-                                        Download
+                                        <FileText className="w-4 h-4 inline mr-2" />
+                                        View
                                       </button>
                                     );
                                   } else {
@@ -2668,14 +2668,14 @@ This annual signature covers all business entities and research activities for t
                                   );
                                 }
                                 
-                                // Default: Download only after Filing Guide released
+                                // Default: always View in portal
                                 return (
                                   <button 
-                                    onClick={() => downloadDocument(doc.type)}
-                                    className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-2 px-4 rounded-lg hover:from-green-600 hover:to-green-700 transition-all"
+                                    onClick={() => viewDocument(doc.type)}
+                                    className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-2 px-4 rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all"
                                   >
-                                    <Download className="w-4 h-4 inline mr-2" />
-                                    Download
+                                    <FileText className="w-4 h-4 inline mr-2" />
+                                    View
                                   </button>
                                 );
                               })()
