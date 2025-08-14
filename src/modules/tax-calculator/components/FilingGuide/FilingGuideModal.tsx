@@ -3,6 +3,10 @@ import { X, Download, FileText, Printer, Eye, EyeOff } from 'lucide-react';
 import { FilingGuideDocument } from './FilingGuideDocument';
 import { FilingGuideService } from './FilingGuideService';
 import './FilingGuide.css';
+// Inline the entire CSS file into saved HTML so client-portal iframe preserves styling
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import filingGuideCss from './FilingGuide.css?raw';
 import { rdReportService } from '../../services/rdReportService';
 // Correct relative import to app-level Supabase client
 import { supabase } from '../../../../lib/supabase';
@@ -339,6 +343,8 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
           break-inside: avoid;
         }
       }
+      /* Embedded component stylesheet */
+      ${filingGuideCss}
     `;
   };
 
