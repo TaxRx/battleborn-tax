@@ -1462,40 +1462,65 @@ const ClientPortal: React.FC = () => {
       // - filing_guide: type='FILING_GUIDE' with content in filing_guide column
       
       // Simplified logic: use standard type-based lookup for all document types
-      const queryType = documentType === 'filing_guide' ? 'FILING_GUIDE' : 
-                       documentType === 'allocation_report' ? 'ALLOCATION_SUMMARY' :
-                       'RESEARCH_SUMMARY';
-      
-      console.log('🔍 [ClientPortal] Executing query:', {
-        table: 'rd_reports',
-        businessYearId,
-        queryType,
-        documentType,
-        selectFields: 'generated_html, filing_guide, type, created_at, updated_at, id, business_id, ai_version, locked'
-      });
-      
-      const result = await client
-        .from('rd_reports')
-        .select('generated_html, filing_guide, type, created_at, updated_at, id, business_id, ai_version, locked')
-        .eq('business_year_id', businessYearId)
-        .eq('type', queryType)
-        .single();
-      
-      let data = result.data;
-      let error = result.error;
+       const queryType = documentType === 'filing_guide' ? 'FILING_GUIDE' : 
+                        documentType === 'allocation_report' ? 'ALLOCATION_SUMMARY' :
+                        'RESEARCH_SUMMARY';
+
+       console.log('🔍 [ClientPortal] Executing query:', {
+         table: 'rd_reports',
+         businessYearId,
+         queryType,
+         documentType,
+         selectFields: 'generated_html, filing_guide, type, created_at, updated_at, id, business_id, ai_version, locked'
+       });
+
+       // Fetch all candidate rows and pick the richest content for FILING_GUIDE to avoid
+       // simplified summaries. Preference order: filing_guide with largest length, then generated_html.
+       const listResult = await client
+         .from('rd_reports')
+         .select('generated_html, filing_guide, type, created_at, updated_at, id, business_id, ai_version, locked')
+         .eq('business_year_id', businessYearId)
+         .eq('type', queryType)
+         .order('updated_at', { ascending: false });
+
+       let data = null as any;
+       let error = listResult.error;
+       if (!error) {
+         const rows = listResult.data || [];
+         if (documentType === 'filing_guide') {
+           // Pick the filing_guide with the largest content length
+           data = rows
+             .slice()
+             .sort((a, b) => (b.filing_guide?.length || 0) - (a.filing_guide?.length || 0))[0] || null;
+           if (!data || !(data.filing_guide && data.filing_guide.length > 5000)) {
+             // Fallback to generated_html with largest content if filing_guide insufficient
+             data = rows
+               .slice()
+               .sort((a, b) => (b.generated_html?.length || 0) - (a.generated_html?.length || 0))[0] || null;
+           }
+         } else {
+           data = rows[0] || null;
+         }
+         if (!data) error = { code: 'PGRST116', message: 'not found' } as any;
+       }
 
       // If that fails and we have business context, try with business_id as well
       if (error?.code === 'PGRST116' && portalData?.business_id) {
         console.log('🔄 [ClientPortal] Retrying query with business_id context');
         
         // Use same simplified query logic for retry
-        const retryResult = await client
-          .from('rd_reports')
-          .select('generated_html, filing_guide, type, created_at, updated_at, id, business_id, ai_version, locked')
-          .eq('business_year_id', businessYearId)
-          .eq('business_id', portalData.business_id)
-          .eq('type', queryType)
-          .single();
+         const retryResult = await client
+           .from('rd_reports')
+           .select('generated_html, filing_guide, type, created_at, updated_at, id, business_id, ai_version, locked')
+           .eq('business_year_id', businessYearId)
+           .eq('business_id', portalData.business_id)
+           .eq('type', queryType)
+           .order('updated_at', { ascending: false });
+         const rows = retryResult.data || [];
+         data = documentType === 'filing_guide'
+           ? (rows.slice().sort((a, b) => (b.filing_guide?.length || 0) - (a.filing_guide?.length || 0))[0] || null)
+           : (rows[0] || null);
+         error = retryResult.error || (!data ? { code: 'PGRST116', message: 'not found' } as any : null);
         
         if (!retryResult.error) {
           data = retryResult.data;
@@ -1753,7 +1778,8 @@ const ClientPortal: React.FC = () => {
           const { data: bys } = await client
             .from('rd_business_years')
             .select('id, year, business_id')
-            .in('id', byIds);
+            .in('id', byIds)
+            .eq('business_id', portalData?.business_id || '');
           const grouped = (bys || []).reduce((map: Record<number, any[]>, by: any) => {
             if (!map[by.year]) map[by.year] = [];
             map[by.year].push({ ...by, business_name: portalData?.business_name || '' });
@@ -1816,7 +1842,8 @@ const ClientPortal: React.FC = () => {
           const { data: bys } = await client
             .from('rd_business_years')
             .select('id, year, business_id')
-            .in('id', byIds);
+            .in('id', byIds)
+            .eq('business_id', portalData?.business_id || '');
           const grouped = (bys || []).reduce((map: Record<number, any[]>, by: any) => {
             if (!map[by.year]) map[by.year] = [];
             map[by.year].push({ ...by, business_name: portalData?.business_name || '' });
