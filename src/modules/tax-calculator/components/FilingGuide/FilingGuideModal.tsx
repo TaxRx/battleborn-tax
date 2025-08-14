@@ -4,7 +4,8 @@ import { FilingGuideDocument } from './FilingGuideDocument';
 import { FilingGuideService } from './FilingGuideService';
 import './FilingGuide.css';
 import { rdReportService } from '../../services/rdReportService';
-import { supabase } from '../../../lib/supabase';
+// Correct relative import to app-level Supabase client
+import { supabase } from '../../../../lib/supabase';
 
 interface FilingGuideModalProps {
   isOpen: boolean;
@@ -15,7 +16,6 @@ interface FilingGuideModalProps {
   selectedMethod?: 'asc' | 'standard';
   debugData?: any;
   clientName?: string;
-  onSaved?: () => void; // callback to notify parent when a guide is saved
 }
 
 export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
@@ -26,8 +26,7 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
   calculations,
   selectedMethod,
   debugData,
-  clientName,
-  onSaved
+  clientName
 }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [exportFormat, setExportFormat] = useState<'pdf' | 'html'>('pdf');
@@ -35,32 +34,7 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
   const [activeSection, setActiveSection] = useState('cover');
   const [cachedReport, setCachedReport] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [computedCalcs, setComputedCalcs] = useState<any | null>(null);
-
-  // Ensure we always have minimal calculations for the document (currentYearQRE at least)
-  useEffect(() => {
-    const ensureCalcs = async () => {
-      if (!isOpen) return;
-      if (calculations && typeof (calculations as any)?.currentYearQRE === 'number') {
-        setComputedCalcs(null);
-        return;
-      }
-      if (!selectedYear?.id) return;
-      try {
-        const { data } = await supabase
-          .from('rd_business_years')
-          .select('total_qre')
-          .eq('id', selectedYear.id)
-          .single();
-        setComputedCalcs({ currentYearQRE: data?.total_qre ?? 0 });
-      } catch {
-        setComputedCalcs({ currentYearQRE: 0 });
-      }
-    };
-    ensureCalcs();
-  }, [isOpen, selectedYear?.id, calculations]);
-
-  const effectiveCalculations = (calculations && (calculations as any)) ?? computedCalcs ?? { currentYearQRE: 0 };
+  const [saving, setSaving] = useState(false);
 
   // Load cached report on mount
   useEffect(() => {
@@ -191,7 +165,7 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
   };
 
   const generateAndSaveReport = async () => {
-    if (!businessData || !selectedYear) {
+    if (!businessData || !selectedYear || !calculations) {
       console.error('Missing required data for filing guide generation');
       return;
     }
@@ -223,9 +197,6 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
       // Update cached report - Fix: Correct parameter order
       const newReport = await rdReportService.getReport(selectedYear.id, 'FILING_GUIDE');
       setCachedReport(newReport);
-      try {
-        onSaved && onSaved();
-      } catch {}
       
       console.log('📄 [Filing Guide] Report generated and saved');
       
@@ -390,7 +361,7 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
         await FilingGuideService.exportToPDF({
           businessData,
           selectedYear,
-          calculations: effectiveCalculations,
+          calculations,
           fileName,
           selectedMethod
         });
@@ -398,7 +369,7 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
         await FilingGuideService.exportToHTML({
           businessData,
           selectedYear,
-          calculations: effectiveCalculations,
+          calculations,
           fileName: fileName.replace('.pdf', '.html'),
           selectedMethod
         });
@@ -410,8 +381,19 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
     }
   };
 
-  const handleSaveOnly = async () => {
-    await generateAndSaveReport();
+  // Dedicated Save button to persist the full CSS Filing Guide HTML into rd_reports (FILING_GUIDE)
+  const handleSave = async () => {
+    if (!businessData || !selectedYear || !calculations) return;
+    setSaving(true);
+    try {
+      await generateAndSaveReport();
+      // Toast via console for now to avoid importing UI libs here
+      console.log('✅ Filing Guide saved for businessYear:', selectedYear.id);
+    } catch (e) {
+      console.error('❌ Failed to save Filing Guide:', e);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handlePrint = () => {
@@ -568,7 +550,7 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
                   <FilingGuideDocument
                     businessData={businessData}
                     selectedYear={selectedYear}
-                    calculations={effectiveCalculations}
+                    calculations={calculations}
                     selectedMethod={selectedMethod}
                     debugData={debugData}
                     clientName={clientName}
@@ -688,16 +670,17 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
                 Back to Summary
               </button>
               
-              <button
-                onClick={handleSaveOnly}
-                disabled={isGenerating}
-                className="filing-guide-export-btn"
-                style={{ marginRight: '12px' }}
-                title="Save a cached version of the Filing Guide for this year"
-              >
-                <FileText size={16} />
-                {isGenerating ? 'Saving…' : (cachedReport ? 'Save New Version' : 'Generate & Save Report')}
-              </button>
+              {!cachedReport && (
+                <button
+                  onClick={generateAndSaveReport}
+                  disabled={isGenerating}
+                  className="filing-guide-export-btn"
+                  style={{ marginRight: '12px' }}
+                >
+                  <FileText size={16} />
+                  {isGenerating ? 'Generating...' : 'Generate & Save Report'}
+                </button>
+              )}
               
               <select
                 value={exportFormat}
@@ -717,6 +700,17 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
                 {isGenerating ? 'Generating...' : 'Export'}
               </button>
               
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="filing-guide-export-btn"
+                style={{ marginLeft: '12px' }}
+                title="Save a cached HTML copy for this year"
+              >
+                <FileText size={16} />
+                {saving ? 'Saving…' : 'Save to DB'}
+              </button>
+
               <button
                 onClick={handlePrint}
                 className="filing-guide-print-btn"

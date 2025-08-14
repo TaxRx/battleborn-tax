@@ -135,7 +135,7 @@ const ClientPortal: React.FC = () => {
   // Databank: locked years with credits and released docs
   const [databankYears, setDatabankYears] = useState<ApprovedYear[]>([]);
   const [expandedDatabank, setExpandedDatabank] = useState<Record<number, boolean>>({});
-  const [viewMode, setViewMode] = useState<'dashboard' | 'databank' | 'current_rd'>('dashboard');
+  const [viewMode, setViewMode] = useState<'dashboard' | 'databank'>('dashboard');
   const [databankRelease, setDatabankRelease] = useState<Record<string, { research_report: boolean; filing_guide: boolean; allocation_report: boolean }>>({});
   const [selectedYear, setSelectedYear] = useState<ApprovedYear | null>(null);
   
@@ -2296,22 +2296,6 @@ This annual signature covers all business entities and research activities for t
                 </button>
               </div>
             </div>
-
-            {/* Current R&D (sidebar entry only) */}
-            <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-              <div className="bg-gradient-to-r from-emerald-500 to-teal-600 px-6 py-4 flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-white">Current R&D</h2>
-                  <p className="text-emerald-100 text-sm">Most recent approved design</p>
-                </div>
-                <button
-                  onClick={() => setViewMode('current_rd') as any}
-                  className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-md text-sm"
-                >
-                  Open
-                </button>
-              </div>
-            </div>
           </div>
 
           {/* Main Content */}
@@ -2397,22 +2381,6 @@ This annual signature covers all business entities and research activities for t
                       </div>
                     );
                   })}
-                </div>
-              </div>
-            ) : viewMode === 'current_rd' ? (
-              <div className="space-y-8">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h1 className="text-3xl font-bold">Current R&D</h1>
-                    <p className="text-gray-600">Most recent approved design for {portalData?.business_name}</p>
-                  </div>
-                  <button onClick={() => setViewMode('dashboard')} className="px-4 py-2 rounded-lg border text-gray-700 hover:bg-gray-50">Back to Year View</button>
-                </div>
-                <div className="lg:col-span-3">
-                  {(() => {
-                    const CurrentRDPane = require('../modules/tax-calculator/components/CurrentRD/CurrentRDPane').default;
-                    return <CurrentRDPane businessId={portalData?.business_id} />;
-                  })()}
                 </div>
               </div>
             ) :  approvedYears.length === 0 ? (
