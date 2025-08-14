@@ -1742,8 +1742,51 @@ const ClientPortal: React.FC = () => {
         preview: htmlContent.substring(0, 100) + '...'
       });
 
-      // Show the EXACT saved document in a modal
-      setCurrentDocumentContent(htmlContent);
+      // Enhance HTML for client portal rendering: ensure Tailwind utilities are present,
+      // disable interactivity, and expand AI/Section G text areas
+      const enhanceHtmlForPortal = (html: string): string => {
+        const headInject = `\n<!-- Portal Enhancements -->\n<script src="https://cdn.tailwindcss.com"></script>\n<style>
+          /* Read-only mode for client portal */
+          .filing-guide-document input,
+          .filing-guide-document select,
+          .filing-guide-document button,
+          .filing-guide-document textarea {
+            pointer-events: none !important;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            outline: none !important;
+          }
+          /* Preserve table and layout styles inside iframe */
+          .filing-guide-document table { width: 100%; border-collapse: collapse; }
+          .filing-guide-document th, .filing-guide-document td { padding: 8px; }
+          /* Expand Section G AI text and any large narrative fields */
+          .filing-guide-document textarea,
+          .filing-guide-document .ai-text,
+          .filing-guide-document .aiDescription {
+            min-height: 240px !important;
+            white-space: pre-wrap !important;
+            display: block !important;
+          }
+          /* Ensure long content does not clip */
+          .filing-guide-document { overflow: visible !important; }
+        </style>`;
+        try {
+          if (html.includes('</head>')) {
+            return html.replace('</head>', `${headInject}\n</head>`);
+          }
+          if (html.includes('<head>')) {
+            return html.replace('<head>', `<head>${headInject}`);
+          }
+          // If no head tag, prepend a basic head
+          return `<!DOCTYPE html><html><head>${headInject}</head><body>${html}</body></html>`;
+        } catch {
+          return html;
+        }
+      };
+
+      // Show the EXACT saved document in a modal with portal enhancements
+      setCurrentDocumentContent(enhanceHtmlForPortal(htmlContent));
       setCurrentDocumentTitle(`${getDocumentTitle(documentType)} - ${selectedYear.year}`);
       setShowDocumentModal(true);
 
