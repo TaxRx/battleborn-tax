@@ -130,7 +130,8 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
           
           // EIN/NAICS from business data
           const ein = businessData?.ein || '';
-          const naics = businessData?.naics_code || '';
+          // Prefer canonical `naics` from business record; fallback to legacy `naics_code`
+          const naics = businessData?.naics || businessData?.naics_code || '';
           
           // Type from research guidelines (default to Technique)
           const type = 'Technique'; // We can enhance this later if needed
@@ -441,26 +442,34 @@ const SectionGTable: React.FC<SectionGTableProps> = ({ businessData, selectedYea
   };
 
   return (
-    <div style={{ overflowX: 'auto' }}>
+    <div className="section-g-table" style={{ overflowX: 'auto' }}>
       <h4 style={{ fontWeight: 'bold', fontSize: 18, marginBottom: 12 }}>Section G — Business Component Information</h4>
       {/* Section 1: 49(a)-(d) */}
-      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 24 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 24, tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <th>BC</th>
-            <th>49(a)<br />EIN</th>
-            <th>49(b)<br />NAICS</th>
-            <th>49(c)<br />Name/ID</th>
-            <th>49(d)<br />Type</th>
+            <th style={{ width: 50 }}>BC</th>
+            <th style={{ width: 140 }}>49(a)<br />EIN</th>
+            <th style={{ width: 120 }}>49(b)<br />NAICS</th>
+            <th style={{ width: 'auto' }}>49(c)<br />Name/ID</th>
+            <th style={{ width: 160 }}>49(d)<br />Type</th>
           </tr>
         </thead>
         <tbody>
           {renderRows((row, idx) => [
-            <td key="ein"><input value={row.ein || ''} onChange={e => {}} style={{ width: 100 }} /></td>,
-            <td key="naics"><input value={row.naics || ''} onChange={e => {}} style={{ width: 80 }} /></td>,
-            <td key="name"><input value={row.name || ''} onChange={e => {}} style={{ width: 180 }} /></td>,
+            <td key="ein"><input value={row.ein || ''} onChange={e => {}} style={{ width: '100%' }} /></td>,
+            <td key="naics"><input value={row.naics || ''} onChange={e => {}} style={{ width: '100%' }} /></td>,
+            <td key="name"><input value={row.name || ''} onChange={e => {}} style={{ width: '100%', whiteSpace: 'normal', wordBreak: 'break-word' }} /></td>,
             <td key="type">
-              <select value={row.type || 'Technique'} onChange={e => {}} style={{ width: 140 }}>
+              <select
+                value={row.type || 'Technique'}
+                onChange={e => {
+                  const newType = e.target.value;
+                  setRows(prev => prev.map((r, i2) => (i2 === idx ? { ...r, type: newType } : r)));
+                }}
+                style={{ width: '100%' }}
+                data-selected={row.type || 'Technique'}
+              >
                 {BUSINESS_COMPONENT_TYPES.map(opt => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}

@@ -239,6 +239,12 @@ const AppContent: React.FC = () => {
                 element={<ClientPortal />} 
               />
 
+              {/* Current R&D route points to same portal shell with different viewMode */}
+              <Route 
+                path="/current-rd" 
+                element={<ClientPortal />} 
+              />
+
               {/* Default redirects based on user role */}
               <Route 
                 path="/dashboard" 

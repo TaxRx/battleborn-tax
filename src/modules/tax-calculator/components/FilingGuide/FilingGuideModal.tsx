@@ -7,6 +7,10 @@ import './FilingGuide.css';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 import filingGuideCss from './FilingGuide.css?raw';
+// Also inline Calculation Specifics CSS so portal formatting matches admin
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import calculationSpecificsCss from './CalculationSpecifics.css?raw';
 import { rdReportService } from '../../services/rdReportService';
 // Correct relative import to app-level Supabase client
 import { supabase } from '../../../../lib/supabase';
@@ -219,6 +223,25 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
       return '';
     }
 
+    // Clone and annotate form controls so saved HTML preserves current selections (notably 49(d) Type)
+    const cloned = documentElement.cloneNode(true) as HTMLElement;
+    try {
+      cloned.querySelectorAll('select').forEach((sel) => {
+        const s = sel as HTMLSelectElement;
+        const current = s.value || '';
+        s.setAttribute('data-selected', current);
+        // Also mark the corresponding option as selected for static HTML fidelity
+        Array.from(s.options).forEach((opt) => {
+          if ((opt.value || opt.text) === current) {
+            opt.setAttribute('selected', 'selected');
+          } else {
+            opt.removeAttribute('selected');
+          }
+        });
+      });
+      // Inputs that are important (like NAICS/EIN) already have value attributes serialized by outerHTML
+    } catch {}
+
     const currentDate = new Date().toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
@@ -246,7 +269,7 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
               <div>Generated: ${currentDate}</div>
             </div>
           </div>
-          ${documentElement.outerHTML}
+          ${cloned.outerHTML}
         </div>
       </body>
       </html>
@@ -345,6 +368,8 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
       }
       /* Embedded component stylesheet */
       ${filingGuideCss}
+      /* Calculation Specifics styles */
+      ${calculationSpecificsCss}
     `;
   };
 

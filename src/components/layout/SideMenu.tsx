@@ -63,6 +63,11 @@ const menuItems: MenuItem[] = [
     icon: DocumentTextIcon,
   },
   {
+    name: 'Current R&D',
+    href: '/current-rd',
+    icon: DocumentTextIcon,
+  },
+  {
     name: 'Payment',
     href: '/payment',
     icon: CreditCardIcon,
@@ -94,7 +99,9 @@ const SideMenu: React.FC = () => {
   };
 
   const isActive = (href: string) => {
-    return location.pathname === href;
+    if (location.pathname === href) return true;
+    if (href === '/current-rd' && location.pathname.includes('current-rd')) return true;
+    return false;
   };
 
   const isChildActive = (children: MenuItem[] = []) => {
@@ -169,16 +176,30 @@ const SideMenu: React.FC = () => {
                 <item.icon
                   className={`mr-3 h-5 w-5 ${
                     isActive(item.href)
-                      ? 'text-blue-500'
+                      ? (item.name === 'Current R&D' ? 'text-green-500' : 'text-blue-500')
                       : 'text-gray-400 group-hover:text-gray-500'
                   }`}
                 />
               )}
-              {item.name}
+              <span className={`${item.name === 'Current R&D' && isActive(item.href) ? 'bg-gradient-to-r from-emerald-500 to-green-600 bg-clip-text text-transparent font-semibold' : ''}`}>{item.name}</span>
             </Link>
           )}
         </div>
       ))}
+      {/* Contact Us */}
+      <div className="mt-6 p-4 rounded-lg border bg-white">
+        <div className="text-sm text-gray-900 font-semibold mb-1">Contact Us</div>
+        <div className="text-sm text-gray-700">admin@directresearchlabs.com</div>
+        <div className="text-sm text-gray-700 mb-2">(801) 318-5097</div>
+        <a
+          href="https://calendar.google.com/calendar/appointments/schedules/AcZssZ2xBuPPNIslKqcljDBcF3w8JmkOpby5840NlDTgyM5V8ZUAAHpZaR5ojHqA5NpXzswb2rydS7Tp"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center px-3 py-1.5 rounded-md bg-gradient-to-r from-emerald-500 to-green-600 text-white text-sm hover:from-emerald-600 hover:to-green-700"
+        >
+          Schedule with us
+        </a>
+      </div>
     </nav>
   );
 };

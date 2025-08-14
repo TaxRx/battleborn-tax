@@ -15,6 +15,7 @@ import ResearchReportModal from "../../ResearchReport/ResearchReportModal";
 import { FileText } from "lucide-react";
 import { AppliedPercentageBar, generateSegmentColors } from '../../common/AppliedPercentageBar';
 import StepCompletionBanner from '../../../../../components/common/StepCompletionBanner';
+import ClientDiffBanner from '../utils/ClientDiffBanner';
 
 interface ResearchDesignStepProps {
   selectedActivities: Array<{ 
@@ -2722,6 +2723,9 @@ const ResearchDesignStep: React.FC<ResearchDesignStepProps> = ({
 
   return (
     <div className="space-y-6">
+      {businessYearId && (
+        <ClientDiffBanner businessYearId={businessYearId} />
+      )}
       {/* Step Completion Banner */}
       <StepCompletionBanner 
         stepName="researchDesign"

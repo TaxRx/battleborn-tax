@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { Calendar, Download, FileText, CheckCircle, Clock, AlertCircle, Eye, PenTool, User, Building2, Shield, Award, ChevronRight, XCircle, Users, Sliders, LogOut } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { CurrentRDView } from '../modules/current-rd/CurrentRDView';
 
 // Create a separate supabase client instance for the portal
 import { createClient } from '@supabase/supabase-js';
@@ -135,7 +136,7 @@ const ClientPortal: React.FC = () => {
   // Databank: locked years with credits and released docs
   const [databankYears, setDatabankYears] = useState<ApprovedYear[]>([]);
   const [expandedDatabank, setExpandedDatabank] = useState<Record<number, boolean>>({});
-  const [viewMode, setViewMode] = useState<'dashboard' | 'databank'>('dashboard');
+  const [viewMode, setViewMode] = useState<'dashboard' | 'databank' | 'current-rd'>('dashboard');
   const [databankRelease, setDatabankRelease] = useState<Record<string, { research_report: boolean; filing_guide: boolean; allocation_report: boolean }>>({});
   const [selectedYear, setSelectedYear] = useState<ApprovedYear | null>(null);
   
@@ -1743,9 +1744,10 @@ const ClientPortal: React.FC = () => {
       });
 
       // Enhance HTML for client portal rendering: ensure Tailwind utilities are present,
-      // disable interactivity, and expand AI/Section G text areas
-      const enhanceHtmlForPortal = (html: string): string => {
-        const headInject = `\n<!-- Portal Enhancements -->\n<script src="https://cdn.tailwindcss.com"></script>\n<style>
+      // disable interactivity, expand AI/Section G text areas, enforce font, and default Technique/NAICS
+      const enhanceHtmlForPortal = (html: string, opts?: { naics?: string }): string => {
+        const naicsSafe = (opts?.naics || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        const headInject = `\n<!-- Portal Enhancements -->\n<script src=\"https://cdn.tailwindcss.com\"></script>\n<style>
           /* Read-only mode for client portal */
           .filing-guide-document input,
           .filing-guide-document select,
@@ -1768,9 +1770,58 @@ const ClientPortal: React.FC = () => {
             white-space: pre-wrap !important;
             display: block !important;
           }
+          /* Enforce font everywhere */
+          .filing-guide-document, .filing-guide-document * { font-family: 'Plus Jakarta Sans', Helvetica, Arial, sans-serif !important; }
+          .summary-amount, .summary-total { font-family: 'Plus Jakarta Sans', Helvetica, Arial, sans-serif !important; }
+          /* Calculation Specifics essentials (backup styles for cached HTML saved before CSS inlining) */
+          .calculation-specifics-table { width: 100%; margin: 0 0 16px 0; }
+          .filing-guide-table { width: 100%; border-collapse: collapse; font-size: 11pt; }
+          .filing-guide-table th { background-color: #f7fafc; border: 1px solid #e2e8f0; padding: 10px; text-align: left; font-weight: 600; color: #2d3748; }
+          .filing-guide-table td { border: 1px solid #e2e8f0; padding: 10px; vertical-align: top; font-size: 10pt; }
+          .activity-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+          .activity-chip { display: inline-block; padding: 2px 6px; border-radius: 9999px; font-size: 10px; font-weight: 600; color: #fff; }
+          .subcomponent-count-chip { display: inline-block; padding: 2px 6px; background: #e2e8f0; border-radius: 9999px; font-size: 10px; color: #4a5568; }
+          .applied-percentage-bar { display: flex; align-items: center; gap: 8px; }
+          .bar-container { flex: 1; height: 12px; background: #f7fafc; border-radius: 4px; overflow: hidden; }
+          .bar-fill { height: 100%; border-radius: 4px; }
+          .bar-fill.high { background: #10b981; }
+          .bar-fill.medium { background: #f59e0b; }
+          .bar-fill.low { background: #ef4444; }
+          .percentage-text { font-size: 10px; font-weight: 700; color: #2d3748; min-width: 32px; text-align: right; }
           /* Ensure long content does not clip */
           .filing-guide-document { overflow: visible !important; }
-        </style>`;
+        </style>
+        <script>
+          document.addEventListener('DOMContentLoaded', function () {
+            try {
+              // Default Section G component type selects to the saved value if present (data-selected), otherwise Technique
+              document.querySelectorAll('.filing-guide-document select').forEach(function (sel) {
+                var current = (sel.getAttribute('data-selected') || sel.value || '').trim();
+                var hasTechnique = Array.from(sel.options || []).some(function (o) { return /Technique/i.test(o.text || o.value || ''); });
+                if (current) {
+                  var match = Array.from(sel.options || []).find(function (o) { return (o.value || o.text || '').toLowerCase() === current.toLowerCase(); });
+                  if (match) sel.value = match.value || match.text;
+                } else if (hasTechnique) {
+                  var opt = Array.from(sel.options || []).find(function (o) { return /Technique/i.test(o.text || o.value || ''); });
+                  if (opt) sel.value = opt.value;
+                }
+              });
+
+              // Fill NAICS inputs if empty and labeled as NAICS (49b)
+              var naics = '${naicsSafe}';
+              if (naics) {
+                document.querySelectorAll('.filing-guide-document input').forEach(function (inp) {
+                  var nearLabel = inp.closest('td') && inp.closest('td').previousElementSibling;
+                  var labelTxt = nearLabel ? (nearLabel.textContent || '') : '';
+                  var name = (inp.getAttribute('name') || '') + ' ' + (inp.id || '');
+                  if (!inp.value && (/naics/i.test(labelTxt) || /naics/i.test(name))) {
+                    inp.value = naics;
+                  }
+                });
+              }
+            } catch (e) { /* no-op */ }
+          });
+        </script>`;
         try {
           if (html.includes('</head>')) {
             return html.replace('</head>', `${headInject}\n</head>`);
@@ -1785,8 +1836,22 @@ const ClientPortal: React.FC = () => {
         }
       };
 
+      // Fetch NAICS for this business (for 49(b) display in portal if missing in cached HTML)
+      let businessNaics = '';
+      try {
+        if (portalData?.business_id) {
+          const client = getSupabaseClient();
+          const { data: biz } = await client
+            .from('rd_businesses')
+            .select('naics, naics_code')
+            .eq('id', portalData.business_id)
+            .single();
+          businessNaics = biz?.naics || biz?.naics_code || '';
+        }
+      } catch {}
+
       // Show the EXACT saved document in a modal with portal enhancements
-      setCurrentDocumentContent(enhanceHtmlForPortal(htmlContent));
+      setCurrentDocumentContent(enhanceHtmlForPortal(htmlContent, { naics: businessNaics }));
       setCurrentDocumentTitle(`${getDocumentTitle(documentType)} - ${selectedYear.year}`);
       setShowDocumentModal(true);
 
@@ -2268,7 +2333,10 @@ This annual signature covers all business entities and research activities for t
                   return (
                     <button
                       key={year.year}
-                      onClick={() => setSelectedYear(year)}
+                      onClick={() => {
+                        setSelectedYear(year);
+                        setViewMode('dashboard');
+                      }}
                       className={`w-full p-4 text-left rounded-lg mb-2 transition-all ${
                         isSelected 
                           ? 'bg-blue-50 border-2 border-blue-200 shadow-md' 
@@ -2347,6 +2415,37 @@ This annual signature covers all business entities and research activities for t
                 </button>
               </div>
             </div>
+
+              {/* Current R&D Access (shown directly below Databank) */}
+              <div className="bg-white rounded-xl shadow-lg overflow-hidden mt-6">
+                <div className="bg-gradient-to-r from-emerald-500 to-green-600 px-6 py-4 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-white">Current R&D</h2>
+                    <p className="text-indigo-100 text-sm">Activities, steps, and selected subcomponents</p>
+                  </div>
+                  <button
+                    onClick={() => setViewMode('current-rd')}
+                    className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-md text-sm"
+                  >
+                    Open
+                  </button>
+                </div>
+              </div>
+
+              {/* Contact Us */}
+              <div className="mt-6 p-4 rounded-xl border bg-white">
+                <div className="text-sm text-gray-900 font-semibold mb-1">Contact Us</div>
+                <div className="text-sm text-gray-700">admin@directresearchlabs.com</div>
+                <div className="text-sm text-gray-700 mb-2">(801) 318-5097</div>
+                <a
+                  href="https://calendar.google.com/calendar/appointments/schedules/AcZssZ2xBuPPNIslKqcljDBcF3w8JmkOpby5840NlDTgyM5V8ZUAAHpZaR5ojHqA5NpXzswb2rydS7Tp"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center px-3 py-1.5 rounded-md bg-gradient-to-r from-emerald-500 to-green-600 text-white text-sm hover:from-emerald-600 hover:to-green-700"
+                >
+                  Schedule with us
+                </a>
+              </div>
           </div>
 
           {/* Main Content */}
@@ -2434,6 +2533,13 @@ This annual signature covers all business entities and research activities for t
                   })}
                 </div>
               </div>
+            ) : viewMode === 'current-rd' ? (
+              <CurrentRDView
+                getSupabaseClient={getSupabaseClient}
+                portalData={portalData}
+                businessYearId={selectedYear?.business_years?.[0]?.id || null}
+                yearLabel={selectedYear?.year}
+              />
             ) :  approvedYears.length === 0 ? (
               <NoApprovedDataMessage /> ) : selectedYear && (
               <div className="space-y-8">
