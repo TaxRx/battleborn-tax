@@ -4,6 +4,7 @@ import { FilingGuideDocument } from './FilingGuideDocument';
 import { FilingGuideService } from './FilingGuideService';
 import './FilingGuide.css';
 import { rdReportService } from '../../services/rdReportService';
+import { supabase } from '../../../lib/supabase';
 
 interface FilingGuideModalProps {
   isOpen: boolean;
@@ -34,6 +35,32 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
   const [activeSection, setActiveSection] = useState('cover');
   const [cachedReport, setCachedReport] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [computedCalcs, setComputedCalcs] = useState<any | null>(null);
+
+  // Ensure we always have minimal calculations for the document (currentYearQRE at least)
+  useEffect(() => {
+    const ensureCalcs = async () => {
+      if (!isOpen) return;
+      if (calculations && typeof (calculations as any)?.currentYearQRE === 'number') {
+        setComputedCalcs(null);
+        return;
+      }
+      if (!selectedYear?.id) return;
+      try {
+        const { data } = await supabase
+          .from('rd_business_years')
+          .select('total_qre')
+          .eq('id', selectedYear.id)
+          .single();
+        setComputedCalcs({ currentYearQRE: data?.total_qre ?? 0 });
+      } catch {
+        setComputedCalcs({ currentYearQRE: 0 });
+      }
+    };
+    ensureCalcs();
+  }, [isOpen, selectedYear?.id, calculations]);
+
+  const effectiveCalculations = (calculations && (calculations as any)) ?? computedCalcs ?? { currentYearQRE: 0 };
 
   // Load cached report on mount
   useEffect(() => {
@@ -164,7 +191,7 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
   };
 
   const generateAndSaveReport = async () => {
-    if (!businessData || !selectedYear || !calculations) {
+    if (!businessData || !selectedYear) {
       console.error('Missing required data for filing guide generation');
       return;
     }
@@ -363,7 +390,7 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
         await FilingGuideService.exportToPDF({
           businessData,
           selectedYear,
-          calculations,
+          calculations: effectiveCalculations,
           fileName,
           selectedMethod
         });
@@ -371,7 +398,7 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
         await FilingGuideService.exportToHTML({
           businessData,
           selectedYear,
-          calculations,
+          calculations: effectiveCalculations,
           fileName: fileName.replace('.pdf', '.html'),
           selectedMethod
         });
@@ -541,7 +568,7 @@ export const FilingGuideModal: React.FC<FilingGuideModalProps> = ({
                   <FilingGuideDocument
                     businessData={businessData}
                     selectedYear={selectedYear}
-                    calculations={calculations}
+                    calculations={effectiveCalculations}
                     selectedMethod={selectedMethod}
                     debugData={debugData}
                     clientName={clientName}
