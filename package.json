@@ -49,6 +49,7 @@
     "@emotion/styled": "^11.14.0",
     "@headlessui/react": "^2.2.2",
     "@heroicons/react": "^2.2.0",
+    "@mistralai/mistralai": "^1.7.5",
     "@mui/material": "^7.1.1",
     "@radix-ui/react-dialog": "^1.0.5",
     "@radix-ui/react-label": "^2.0.2",

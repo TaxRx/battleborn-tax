@@ -15,7 +15,7 @@ import path from 'path';
 const CONFIG = {
   // Server configuration (you may need to adjust these based on your setup)
   SUPABASE_URL: process.env.VITE_SUPABASE_URL || 'http://localhost:54321',
-  RD_SERVICE_URL: process.env.RD_SERVICE_URL || 'http://localhost:54321/functions/v1/rd-service',
+  RD_SERVICE_URL: process.env.RD_SERVICE_URL || 'https://kiogxpdjhopdlxhttprg.supabase.co/functions/v1/rd-service',
   
   // PDF settings
   MARGIN: 72, // 1 inch in points
@@ -125,8 +125,8 @@ class RDPDFGenerator {
       
       const headers = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0'}`,
-        'apikey': process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0'
+        'Authorization': `Bearer ${process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtpb2d4cGRqaG9wZGx4aHR0cHJnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQyMTUzNTEsImV4cCI6MjA1OTc5MTM1MX0.DEIHWFAHfXZrwAwORUjWd-G6fdlyufbgwUfGwW_hZng'}`,
+        'apikey': process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtpb2d4cGRqaG9wZGx4aHR0cHJnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQyMTUzNTEsImV4cCI6MjA1OTc5MTM1MX0.DEIHWFAHfXZrwAwORUjWd-G6fdlyufbgwUfGwW_hZng'
       };
       
       const response = await fetch(url, { headers });
@@ -598,12 +598,37 @@ class RDPDFGenerator {
 
     const roles = this.reportData.research_roles || [];
     const employees = this.reportData.employee_allocations || [];
+    const activities = this.reportData.research_activities || [];
     
-    page = this.addText(page, `This section provides an overview of the qualified research activities conducted during the tax year. The research organization includes ${roles.length} distinct roles with ${employees.length} allocated employees. Each activity has been evaluated against the four-part test requirements of IRC Section 41.`, {
+    page = this.addText(page, `This section provides an overview of the ${activities.length} qualified research activities conducted during the tax year. The research organization includes ${roles.length} distinct roles with ${employees.length} allocated employees. Each activity has been evaluated against the four-part test requirements of IRC Section 41.`, {
       sectionTitle: 'Research Activities Overview'
     });
 
     this.currentY -= 20;
+
+    if (activities.length > 0) {
+      page = this.addHeading(page, 'Research Activities Summary', 2);
+
+      activities.forEach((activity, index) => {
+        const activityText = `${index + 1}. ${activity.title}`;
+        page = this.addText(page, activityText, { 
+          sectionTitle: 'Research Activities Overview',
+          font: this.fonts.bold 
+        });
+
+        if (activity.practice_percent) {
+          page = this.addText(page, `Practice Allocation: ${activity.practice_percent}%`, { 
+            sectionTitle: 'Research Activities Overview',
+            indent: 20,
+            font: this.fonts.italic
+          });
+        }
+
+        this.currentY -= 10;
+      });
+
+      this.currentY -= 10;
+    }
 
     if (roles.length > 0) {
       page = this.addHeading(page, 'Research Roles Hierarchy', 2);
@@ -669,21 +694,43 @@ class RDPDFGenerator {
       this.addHeader(page, `Activity ${i + 1}`);
       this.addFooter(page);
 
-      page = this.addHeading(page, `Activity ${i + 1}: ${activity.activity_name}`, 1);
+      page = this.addHeading(page, `Activity ${i + 1}: ${activity.title || 'Research Activity'}`, 1);
 
-      // Activity description
-      if (activity.activity_description) {
-        page = this.addHeading(page, 'Description', 2);
-        page = this.addText(page, activity.activity_description, { 
+      // Practice percentage
+      if (activity.practice_percent) {
+        page = this.addHeading(page, 'Practice Allocation', 2);
+        page = this.addText(page, `${activity.practice_percent}% of practice time allocated to this research activity`, { 
+          sectionTitle: `Activity ${i + 1}`,
+          font: this.fonts.bold
+        });
+        this.currentY -= 15;
+      }
+
+      // Research hypothesis
+      if (activity.research_guidelines?.hypothesis) {
+        page = this.addHeading(page, 'Research Hypothesis', 2);
+        const cleanHypothesis = activity.research_guidelines.hypothesis.replace(/\n/g, ' ').replace(/\r/g, ' ').trim();
+        page = this.addText(page, cleanHypothesis, { 
           sectionTitle: `Activity ${i + 1}` 
         });
         this.currentY -= 15;
       }
 
-      // Research focus
-      if (activity.research_focus) {
-        page = this.addHeading(page, 'Research Focus', 2);
-        page = this.addText(page, activity.research_focus, { 
+      // Development steps
+      if (activity.research_guidelines?.development_steps) {
+        page = this.addHeading(page, 'Development Steps', 2);
+        const cleanSteps = activity.research_guidelines.development_steps.replace(/\n/g, ' ').replace(/\r/g, ' ').trim();
+        page = this.addText(page, cleanSteps, { 
+          sectionTitle: `Activity ${i + 1}` 
+        });
+        this.currentY -= 15;
+      }
+
+      // Data feedback approach
+      if (activity.research_guidelines?.data_feedback) {
+        page = this.addHeading(page, 'Data Feedback Approach', 2);
+        const cleanFeedback = activity.research_guidelines.data_feedback.replace(/\n/g, ' ').replace(/\r/g, ' ').trim();
+        page = this.addText(page, cleanFeedback, { 
           sectionTitle: `Activity ${i + 1}` 
         });
         this.currentY -= 15;

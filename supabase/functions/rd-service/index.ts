@@ -44,37 +44,39 @@ interface RDReportData {
   };
   research_activities: Array<{
     id: string;
-    rd_business_year_id: string;
-    activity_name: string;
-    activity_description: string;
-    research_focus: string;
-    technological_advancement: string;
-    scientific_uncertainty: string;
-    systematic_approach: string;
-    created_at: string;
-    updated_at: string;
+    title: string;
+    focus_id: string;
+    default_roles: any;
+    default_steps: any;
+    selected_config: {
+      id: string;
+      business_year_id: string;
+      activity_id: string;
+      practice_percent: number;
+      selected_roles: any;
+      config: any;
+      research_guidelines: any;
+      is_enabled: boolean;
+      activity_title_snapshot?: string;
+      activity_category_snapshot?: string;
+    };
+    practice_percent: number;
+    selected_roles: any;
+    research_guidelines: any;
     subcomponents: Array<{
       id: string;
+      title: string;
+      description: string;
       research_activity_id: string;
-      subcomponent_name: string;
-      subcomponent_description: string;
-      technological_challenge: string;
-      research_methodology: string;
-      expected_outcome: string;
-      created_at: string;
-      updated_at: string;
+      selected_config: any;
       steps: Array<{
         id: string;
-        subcomponent_id: string;
-        step_name: string;
-        step_description: string;
+        name: string;
+        description: string;
+        research_activity_id: string;
         step_order: number;
-        time_spent_hours: number;
-        resources_used: string;
-        challenges_encountered: string;
-        outcomes_achieved: string;
-        created_at: string;
-        updated_at: string;
+        default_time_percentage: number;
+        selected_config: any;
       }>;
     }>;
   }>;
@@ -253,8 +255,93 @@ async function handleRDReportData(req: Request, supabase: any): Promise<Response
       console.error('Error fetching research roles:', rolesError);
     }
 
-    // 6. Get research activities - this will be built from roles and employee data
-    const researchActivities = [];
+    // 6. Get research activities via rd_selected_activities linked to business_year_id
+    const { data: selectedActivities, error: selectedActivitiesError } = await supabase
+      .from('rd_selected_activities')
+      .select(`
+        *,
+        activity:rd_research_activities (
+          id,
+          title,
+          focus_id,
+          default_roles,
+          default_steps
+        )
+      `)
+      .eq('business_year_id', businessYearId)
+      .eq('is_enabled', true);
+
+    if (selectedActivitiesError) {
+      console.error('Error fetching selected activities:', selectedActivitiesError);
+    }
+
+    // 6a. Get selected subcomponents for this business year
+    const { data: selectedSubcomponents, error: selectedSubcomponentsError } = await supabase
+      .from('rd_selected_subcomponents')
+      .select(`
+        *,
+        subcomponent:rd_research_subcomponents (
+          id,
+          title,
+          description,
+          research_activity_id
+        )
+      `)
+      .eq('business_year_id', businessYearId)
+      .eq('is_enabled', true);
+
+    if (selectedSubcomponentsError) {
+      console.error('Error fetching selected subcomponents:', selectedSubcomponentsError);
+    }
+
+    // 6b. Get selected steps for this business year
+    const { data: selectedSteps, error: selectedStepsError } = await supabase
+      .from('rd_selected_steps')
+      .select(`
+        *,
+        step:rd_research_steps (
+          id,
+          name,
+          description,
+          research_activity_id,
+          step_order,
+          default_time_percentage
+        )
+      `)
+      .eq('business_year_id', businessYearId)
+      .eq('is_enabled', true);
+
+    if (selectedStepsError) {
+      console.error('Error fetching selected steps:', selectedStepsError);
+    }
+
+    // 6c. Build comprehensive research activities structure
+    const researchActivities = (selectedActivities || []).map(selectedActivity => {
+      const activity = selectedActivity.activity;
+      
+      // Find subcomponents for this activity
+      const activitySubcomponents = (selectedSubcomponents || [])
+        .filter(sc => sc.subcomponent?.research_activity_id === activity?.id)
+        .map(sc => ({
+          ...sc.subcomponent,
+          selected_config: sc,
+          steps: (selectedSteps || [])
+            .filter(ss => ss.step?.research_activity_id === activity?.id)
+            .map(ss => ({
+              ...ss.step,
+              selected_config: ss
+            }))
+        }));
+
+      return {
+        ...activity,
+        selected_config: selectedActivity,
+        practice_percent: selectedActivity.practice_percent,
+        selected_roles: selectedActivity.selected_roles,
+        research_guidelines: selectedActivity.research_guidelines,
+        subcomponents: activitySubcomponents
+      };
+    });
 
     // 7. Get employee allocations
     const { data: employeeAllocations, error: employeeError } = await supabase
