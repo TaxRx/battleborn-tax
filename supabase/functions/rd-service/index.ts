@@ -11,7 +11,6 @@ interface RDReportData {
     id: string;
     year: number;
     business_id: string;
-    rd_business_id: string;
     research_design_completed: boolean;
     qre_locked: boolean;
     calculations_completed: boolean;
@@ -20,24 +19,27 @@ interface RDReportData {
   };
   business: {
     id: string;
-    business_name: string;
-    business_type: string;
-    industry: string;
+    name: string;
+    ein?: string;
     client_id: string;
+    entity_type: string;
+    domicile_state: string;
+    contact_info: any;
     created_at: string;
   };
   client: {
     id: string;
     full_name: string;
     email: string;
-    company_name?: string;
   };
   rd_business: {
     id: string;
-    business_name: string;
-    business_type: string;
-    industry: string;
+    name: string;
+    ein?: string;
     client_id: string;
+    entity_type: string;
+    domicile_state: string;
+    contact_info: any;
     created_at: string;
   };
   research_activities: Array<{
@@ -75,6 +77,16 @@ interface RDReportData {
         updated_at: string;
       }>;
     }>;
+  }>;
+  research_roles: Array<{
+    id: string;
+    business_id: string;
+    business_year_id: string;
+    name: string;
+    parent_id?: string;
+    is_default: boolean;
+    baseline_applied_percent?: number;
+    created_at: string;
   }>;
   employee_allocations: Array<{
     id: string;
@@ -197,7 +209,7 @@ async function handleRDReportData(req: Request, supabase: any): Promise<Response
     const { data: rdBusiness, error: rdBusinessError } = await supabase
       .from('rd_businesses')
       .select('*')
-      .eq('id', businessYear.rd_business_id)
+      .eq('id', businessYear.business_id)
       .single();
 
     if (rdBusinessError || !rdBusiness) {
@@ -210,27 +222,13 @@ async function handleRDReportData(req: Request, supabase: any): Promise<Response
       );
     }
 
-    // 3. Get the business record
-    const { data: business, error: businessError } = await supabase
-      .from('businesses')
-      .select('*')
-      .eq('id', businessYear.business_id)
-      .single();
-
-    if (businessError || !business) {
-      return new Response(
-        JSON.stringify({ error: 'Business not found', details: businessError?.message }),
-        { 
-          status: 404, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
-    }
+    // 3. The business record is the same as rdBusiness since we only have rd_businesses table
+    const business = rdBusiness;
 
     // 4. Get the client record
     const { data: client, error: clientError } = await supabase
       .from('clients')
-      .select('id, full_name, email, company_name')
+      .select('id, full_name, email')
       .eq('id', rdBusiness.client_id)
       .single();
 
@@ -244,52 +242,51 @@ async function handleRDReportData(req: Request, supabase: any): Promise<Response
       );
     }
 
-    // 5. Get research activities with subcomponents and steps
-    const { data: researchActivities, error: activitiesError } = await supabase
-      .from('research_activities')
-      .select(`
-        *,
-        subcomponents:rd_subcomponents (
-          *,
-          steps:rd_steps (*)
-        )
-      `)
-      .eq('rd_business_year_id', businessYearId);
+    // 5. Get research roles hierarchy for this business year
+    const { data: researchRoles, error: rolesError } = await supabase
+      .from('rd_roles')
+      .select('*')
+      .eq('business_year_id', businessYearId)
+      .order('name');
 
-    if (activitiesError) {
-      console.error('Error fetching research activities:', activitiesError);
+    if (rolesError) {
+      console.error('Error fetching research roles:', rolesError);
     }
 
-    // 6. Get employee allocations
+    // 6. Get research activities - this will be built from roles and employee data
+    const researchActivities = [];
+
+    // 7. Get employee allocations
     const { data: employeeAllocations, error: employeeError } = await supabase
-      .from('rd_employee_allocations')
+      .from('rd_employee_year_data')
       .select('*')
-      .eq('rd_business_year_id', businessYearId);
+      .eq('business_year_id', businessYearId);
 
     if (employeeError) {
       console.error('Error fetching employee allocations:', employeeError);
     }
 
-    // 7. Get supply allocations
+    // 8. Get supply allocations
     const { data: supplyAllocations, error: supplyError } = await supabase
-      .from('rd_supply_allocations')
+      .from('rd_supply_year_data')
       .select('*')
-      .eq('rd_business_year_id', businessYearId);
+      .eq('business_year_id', businessYearId);
 
     if (supplyError) {
       console.error('Error fetching supply allocations:', supplyError);
     }
 
-    // 8. Calculate totals for QRE amounts and credits
+    // 9. Calculate totals for QRE amounts and credits
     const calculations = calculateRDCredits(employeeAllocations || [], supplyAllocations || []);
 
-    // 9. Build comprehensive report data structure
+    // 10. Build comprehensive report data structure
     const reportData: RDReportData = {
       business_year: businessYear,
       business: business,
       client: client,
       rd_business: rdBusiness,
       research_activities: researchActivities || [],
+      research_roles: researchRoles || [],
       employee_allocations: employeeAllocations || [],
       supply_allocations: supplyAllocations || [],
       calculations: calculations
