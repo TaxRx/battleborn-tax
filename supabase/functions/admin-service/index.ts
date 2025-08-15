@@ -1001,23 +1001,16 @@ async function handleAdminCreateClient(body, supabaseAdmin) {
         } else if (autoLinkAccounts && autoLinkAccounts.length > 0) {
           console.log(`Found ${autoLinkAccounts.length} accounts with auto-link enabled`);
           
-          // Create account_client_access records for all auto-link accounts
-          const autoLinkRecords = autoLinkAccounts.map(account => ({
-            account_id: account.id,
-            client_id: client.id,
+          // Create account_links records for all auto-link accounts to link to the client's account
+          const autoLinkRecords = autoLinkAccounts.map(sourceAccount => ({
+            source_account_id: sourceAccount.id,
+            target_account_id: account.id, // Link to the client's account, not the client directly
             access_level: 'admin', // Default access level for auto-linked accounts
-            granted_by: null, // System-generated link (no specific user)
-            granted_at: new Date().toISOString(),
-            metadata: {
-              auto_linked: true,
-              linked_on_client_creation: true,
-              account_name: account.name,
-              account_type: account.type
-            }
+            is_active: true
           }));
 
           const { data: autoLinkResults, error: autoLinkInsertError } = await supabaseAdmin
-            .from('account_client_access')
+            .from('account_links')
             .insert(autoLinkRecords)
             .select();
 
@@ -1032,7 +1025,7 @@ async function handleAdminCreateClient(body, supabaseAdmin) {
         // Don't fail the whole operation, just log the error
       }
 
-      // Step 6: Check current user's account type and create account_client_access if needed
+      // Step 6: Check current user's account type and create account_links if needed
       try {
         const { data: { user: currentUser } } = await supabaseClient.auth.getUser();
         if (currentUser) {
@@ -1061,33 +1054,32 @@ async function handleAdminCreateClient(body, supabaseAdmin) {
             
             // If current user is NOT admin or client AND auto_link_new_clients is false (to avoid duplicates from Step 5)
             if (currentUserAccountType !== 'admin' && currentUserAccountType !== 'client' && !currentUserAutoLink) {
-              console.log(`Creating account_client_access record for ${currentUserAccountType} account (auto_link is disabled)`);
+              console.log(`Creating account_links record for ${currentUserAccountType} account (auto_link is disabled)`);
               
-              const { data: accessRecord, error: accessError } = await supabaseAdmin
-                .from('account_client_access')
+              const { data: linkRecord, error: linkError } = await supabaseAdmin
+                .from('account_links')
                 .insert({
-                  account_id: currentUserAccountId,
-                  client_id: client.id,
+                  source_account_id: currentUserAccountId,
+                  target_account_id: account.id, // Link to the client's account, not client directly
                   access_level: 'admin', // Default access level for operators/affiliates
-                  granted_by: currentUser.id,
-                  granted_at: new Date().toISOString()
+                  is_active: true
                 })
                 .select()
                 .single();
 
-              if (accessError) {
-                console.error('Error creating account_client_access:', accessError);
+              if (linkError) {
+                console.error('Error creating account_links:', linkError);
                 // Don't fail the whole operation, just log the error
               } else {
-                console.log(`Created account_client_access record:`, accessRecord);
+                console.log(`Created account_links record:`, linkRecord);
               }
             } else {
-              console.log(`Skipping account_client_access creation - user is ${currentUserAccountType} or auto_link is enabled`);
+              console.log(`Skipping account_links creation - user is ${currentUserAccountType} or auto_link is enabled`);
             }
           }
         }
       } catch (accessSetupError) {
-        console.error('Error in account_client_access setup:', accessSetupError);
+        console.error('Error in account_links setup:', accessSetupError);
         // Don't fail the whole operation, just log the error
       }
 

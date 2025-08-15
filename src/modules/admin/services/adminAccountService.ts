@@ -1566,49 +1566,48 @@ class AdminAccountService {
     }
   }
 
-  // ========= CLIENT LINK OPERATIONS =========
+  // ========= ACCOUNT LINK OPERATIONS =========
 
-  async getAccountClientLinks(accountId: string): Promise<{
+  async getAccountLinks(accountId: string): Promise<{
     success: boolean;
     links: any[];
     message?: string;
   }> {
     try {
       const { data, error } = await supabase
-        .from('account_client_access')
+        .from('account_links')
         .select(`
           id,
-          client_id,
+          target_account_id,
           access_level,
-          granted_at,
-          granted_by,
-          clients!inner(
+          created_at,
+          accounts!account_links_target_account_id_fkey(
             id,
-            full_name,
-            email,
-            account:accounts!inner(name)
+            name,
+            type,
+            contact_email
           )
         `)
-        .eq('account_id', accountId);
+        .eq('source_account_id', accountId)
+        .eq('is_active', true);
 
       if (error) {
-        console.error('Error fetching client links:', error);
+        console.error('Error fetching account links:', error);
         return {
           success: false,
           links: [],
-          message: 'Failed to fetch client links'
+          message: 'Failed to fetch account links'
         };
       }
 
       const links = data?.map(link => ({
         id: link.id,
-        client_id: link.client_id,
-        client_name: link.clients.full_name,
-        client_email: link.clients.email,
-        client_account_name: link.clients.account?.name || 'Unknown',
+        target_account_id: link.target_account_id,
+        account_name: link.accounts.name,
+        account_type: link.accounts.type,
+        account_email: link.accounts.contact_email,
         access_level: link.access_level,
-        granted_at: link.granted_at,
-        granted_by: link.granted_by
+        created_at: link.created_at
       })) || [];
 
       return {
@@ -1616,7 +1615,7 @@ class AdminAccountService {
         links
       };
     } catch (error) {
-      console.error('Error in getAccountClientLinks:', error);
+      console.error('Error in getAccountLinks:', error);
       return {
         success: false,
         links: [],
@@ -1625,40 +1624,77 @@ class AdminAccountService {
     }
   }
 
-  async getUnlinkedClients(accountId: string): Promise<{
+  async getUnlinkedAccounts(sourceAccountId: string): Promise<{
     success: boolean;
-    clients: any[];
+    accounts: any[];
     message?: string;
   }> {
     try {
-      // First, get all client IDs that are already linked to this account
-      const { data: linkedClientIds, error: linkedError } = await supabase
-        .from('account_client_access')
-        .select('client_id')
-        .eq('account_id', accountId);
+      // Get the source account details to determine link restrictions
+      const { data: sourceAccount, error: sourceError } = await supabase
+        .from('accounts')
+        .select('type')
+        .eq('id', sourceAccountId)
+        .single();
 
-      if (linkedError) {
-        console.error('Error fetching linked client IDs:', linkedError);
+      if (sourceError) {
+        console.error('Error fetching source account:', sourceError);
         return {
           success: false,
-          clients: [],
-          message: 'Failed to fetch linked clients'
+          accounts: [],
+          message: 'Failed to fetch source account details'
         };
       }
 
-      const linkedIds = linkedClientIds?.map(link => link.client_id) || [];
+      // First, get all account IDs that are already linked to this account
+      const { data: linkedAccountIds, error: linkedError } = await supabase
+        .from('account_links')
+        .select('target_account_id')
+        .eq('source_account_id', sourceAccountId)
+        .eq('is_active', true);
 
-      // Then get all clients that are NOT in the linked IDs list
+      if (linkedError) {
+        console.error('Error fetching linked account IDs:', linkedError);
+        return {
+          success: false,
+          accounts: [],
+          message: 'Failed to fetch linked accounts'
+        };
+      }
+
+      const linkedIds = linkedAccountIds?.map(link => link.target_account_id) || [];
+
+      // Determine which account types this source account can link to
+      let allowedTypes: string[] = [];
+      switch (sourceAccount.type) {
+        case 'operator':
+          allowedTypes = ['client', 'affiliate', 'expert'];
+          break;
+        case 'affiliate':
+        case 'expert':
+          allowedTypes = ['client'];
+          break;
+        default:
+          // Admin and client types cannot create links
+          return {
+            success: true,
+            accounts: []
+          };
+      }
+
+      // Get all accounts that are NOT linked and are of allowed types
       let query = supabase
-        .from('clients')
+        .from('accounts')
         .select(`
           id,
-          full_name,
-          email,
-          account:accounts!inner(name)
-        `);
+          name,
+          type,
+          contact_email
+        `)
+        .in('type', allowedTypes)
+        .neq('id', sourceAccountId); // Don't include self
 
-      // If there are linked clients, exclude them
+      // If there are linked accounts, exclude them
       if (linkedIds.length > 0) {
         query = query.not('id', 'in', `(${linkedIds.join(',')})`);
       }
@@ -1666,30 +1702,30 @@ class AdminAccountService {
       const { data, error } = await query;
 
       if (error) {
-        console.error('Error fetching unlinked clients:', error);
+        console.error('Error fetching unlinked accounts:', error);
         return {
           success: false,
-          clients: [],
-          message: 'Failed to fetch unlinked clients'
+          accounts: [],
+          message: 'Failed to fetch unlinked accounts'
         };
       }
 
-      const clients = data?.map(client => ({
-        id: client.id,
-        full_name: client.full_name,
-        email: client.email,
-        account_name: client.account?.name || 'Unknown'
+      const accounts = data?.map(account => ({
+        id: account.id,
+        name: account.name,
+        type: account.type,
+        contact_email: account.contact_email
       })) || [];
 
       return {
         success: true,
-        clients
+        accounts
       };
     } catch (error) {
-      console.error('Error in getUnlinkedClients:', error);
+      console.error('Error in getUnlinkedAccounts:', error);
       return {
         success: false,
-        clients: [],
+        accounts: [],
         message: 'An unexpected error occurred'
       };
     }
@@ -1726,40 +1762,111 @@ class AdminAccountService {
     }
   }
 
-  async createClientLinks(accountId: string, clientIds: string[], accessLevel: string): Promise<{
+  async createAccountLinks(sourceAccountId: string, targetAccountIds: string[], accessLevel: string): Promise<{
     success: boolean;
     message?: string;
   }> {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      const grantedBy = user?.id || null;
+      // Get source account type for validation
+      const { data: sourceAccount, error: sourceError } = await supabase
+        .from('accounts')
+        .select('type')
+        .eq('id', sourceAccountId)
+        .single();
 
-      const linkRecords = clientIds.map(clientId => ({
-        account_id: accountId,
-        client_id: clientId,
+      if (sourceError || !sourceAccount) {
+        return {
+          success: false,
+          message: 'Source account not found'
+        };
+      }
+
+      // Get target account types for validation
+      const { data: targetAccounts, error: targetError } = await supabase
+        .from('accounts')
+        .select('id, type')
+        .in('id', targetAccountIds);
+
+      if (targetError || !targetAccounts) {
+        return {
+          success: false,
+          message: 'Target accounts not found'
+        };
+      }
+
+      // Validate account linking rules
+      const sourceType = sourceAccount.type;
+      
+      // Admin accounts: No links needed (global access)
+      if (sourceType === 'admin') {
+        return {
+          success: false,
+          message: 'Admin accounts have global access and do not need account links'
+        };
+      }
+
+      // Client accounts: Cannot be source of links (only targets)
+      if (sourceType === 'client') {
+        return {
+          success: false,
+          message: 'Client accounts cannot create links to other accounts'
+        };
+      }
+
+      // Validate target account types based on source type
+      for (const targetAccount of targetAccounts) {
+        const targetType = targetAccount.type;
+        
+        if (sourceType === 'operator') {
+          // Operator accounts: Can link to affiliate, expert, or client accounts
+          if (!['affiliate', 'expert', 'client'].includes(targetType)) {
+            return {
+              success: false,
+              message: `Operator accounts can only link to affiliate, expert, or client accounts. Cannot link to ${targetType} account.`
+            };
+          }
+        } else if (['affiliate', 'expert'].includes(sourceType)) {
+          // Affiliate/Expert accounts: Can only link to client accounts
+          if (targetType !== 'client') {
+            return {
+              success: false,
+              message: `${sourceType} accounts can only link to client accounts. Cannot link to ${targetType} account.`
+            };
+          }
+        } else {
+          return {
+            success: false,
+            message: `Account type ${sourceType} is not allowed to create links`
+          };
+        }
+      }
+
+      // If validation passes, create the link records
+      const linkRecords = targetAccountIds.map(targetAccountId => ({
+        source_account_id: sourceAccountId,
+        target_account_id: targetAccountId,
         access_level: accessLevel,
-        granted_by: grantedBy,
-        granted_at: new Date().toISOString()
+        is_active: true
       }));
 
       const { error } = await supabase
-        .from('account_client_access')
+        .from('account_links')
         .insert(linkRecords);
 
       if (error) {
-        console.error('Error creating client links:', error);
+        console.error('Error creating account links:', error);
         return {
           success: false,
-          message: 'Failed to create client links'
+          message: 'Failed to create account links'
         };
       }
 
       return {
         success: true,
-        message: `Successfully linked ${clientIds.length} client${clientIds.length !== 1 ? 's' : ''}`
+        message: `Successfully linked ${targetAccountIds.length} account${targetAccountIds.length !== 1 ? 's' : ''}`
       };
     } catch (error) {
-      console.error('Error in createClientLinks:', error);
+      console.error('Error in createAccountLinks:', error);
       return {
         success: false,
         message: 'An unexpected error occurred'
@@ -1767,18 +1874,18 @@ class AdminAccountService {
     }
   }
 
-  async updateClientLinkAccess(linkId: string, accessLevel: string): Promise<{
+  async updateAccountLinkAccess(linkId: string, accessLevel: string): Promise<{
     success: boolean;
     message?: string;
   }> {
     try {
       const { error } = await supabase
-        .from('account_client_access')
+        .from('account_links')
         .update({ access_level: accessLevel })
         .eq('id', linkId);
 
       if (error) {
-        console.error('Error updating client link access:', error);
+        console.error('Error updating account link access:', error);
         return {
           success: false,
           message: 'Failed to update access level'
@@ -1790,7 +1897,7 @@ class AdminAccountService {
         message: 'Access level updated successfully'
       };
     } catch (error) {
-      console.error('Error in updateClientLinkAccess:', error);
+      console.error('Error in updateAccountLinkAccess:', error);
       return {
         success: false,
         message: 'An unexpected error occurred'
@@ -1798,30 +1905,30 @@ class AdminAccountService {
     }
   }
 
-  async deleteClientLink(linkId: string): Promise<{
+  async deleteAccountLink(linkId: string): Promise<{
     success: boolean;
     message?: string;
   }> {
     try {
       const { error } = await supabase
-        .from('account_client_access')
-        .delete()
+        .from('account_links')
+        .update({ is_active: false })
         .eq('id', linkId);
 
       if (error) {
-        console.error('Error deleting client link:', error);
+        console.error('Error deleting account link:', error);
         return {
           success: false,
-          message: 'Failed to delete client link'
+          message: 'Failed to delete account link'
         };
       }
 
       return {
         success: true,
-        message: 'Client link deleted successfully'
+        message: 'Account link deleted successfully'
       };
     } catch (error) {
-      console.error('Error in deleteClientLink:', error);
+      console.error('Error in deleteAccountLink:', error);
       return {
         success: false,
         message: 'An unexpected error occurred'

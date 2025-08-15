@@ -13,7 +13,7 @@ interface AccountFormModalProps {
   onSave: (account: Account) => void;
   account?: Account | null; // null = create mode, Account = edit mode
   title?: string;
-  initialTab?: 'account' | 'profiles' | 'client-links';
+  initialTab?: 'account' | 'profiles' | 'account-links';
 }
 
 interface FormData {
@@ -30,20 +30,21 @@ interface FormErrors {
   [key: string]: string[];
 }
 
-interface ClientLink {
+interface AccountLink {
   id: string;
-  client_id: string;
-  client_name: string;
+  target_account_id: string;
+  account_name: string;
+  account_type: string;
+  account_email: string;
   access_level: string;
-  granted_at: string;
-  granted_by: string;
+  created_at: string;
 }
 
-interface UnlinkedClient {
+interface UnlinkedAccount {
   id: string;
-  full_name: string;
-  email: string;
-  account_name: string;
+  name: string;
+  type: string;
+  contact_email: string;
 }
 
 const adminAccountService = AdminAccountService.getInstance();
@@ -69,19 +70,31 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'account' | 'profiles' | 'client-links'>('account');
+  const [activeTab, setActiveTab] = useState<'account' | 'profiles' | 'account-links'>('account');
   
-  // Client Links state
-  const [clientLinks, setClientLinks] = useState<ClientLink[]>([]);
-  const [unlinkedClients, setUnlinkedClients] = useState<UnlinkedClient[]>([]);
-  const [showAddClients, setShowAddClients] = useState(false);
-  const [selectedClients, setSelectedClients] = useState<Set<string>>(new Set());
+  // Account Links state
+  const [accountLinks, setAccountLinks] = useState<AccountLink[]>([]);
+  const [unlinkedAccounts, setUnlinkedAccounts] = useState<UnlinkedAccount[]>([]);
+  const [showAddAccounts, setShowAddAccounts] = useState(false);
+  const [selectedAccounts, setSelectedAccounts] = useState<Set<string>>(new Set());
   const [newAccessLevel, setNewAccessLevel] = useState('admin');
   const [loadingLinks, setLoadingLinks] = useState(false);
   const [linksError, setLinksError] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   const isEditMode = account !== null;
   const modalTitle = title || (isEditMode ? `Edit Account - ${account?.name}` : 'Create New Account');
+
+  // Filter unlinked accounts based on search query
+  const filteredUnlinkedAccounts = unlinkedAccounts.filter(account => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      account.name.toLowerCase().includes(query) ||
+      account.contact_email?.toLowerCase().includes(query) ||
+      account.type.toLowerCase().includes(query)
+    );
+  });
 
   // Reset form when modal opens/closes or account changes
   useEffect(() => {
@@ -112,14 +125,15 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
       setErrors({});
       setSubmitError('');
       setActiveTab(initialTab); // Use the specified initial tab
+      setSearchQuery(''); // Reset search when modal opens
     }
   }, [isOpen, account, initialTab]);
 
-  // Load client links when client-links tab is selected
+  // Load account links when account-links tab is selected
   useEffect(() => {
-    if (isOpen && isEditMode && activeTab === 'client-links') {
-      loadClientLinks();
-      loadUnlinkedClients();
+    if (isOpen && isEditMode && activeTab === 'account-links') {
+      loadAccountLinks();
+      loadUnlinkedAccounts();
     }
   }, [isOpen, isEditMode, activeTab]);
 
@@ -195,39 +209,39 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
     }
   };
 
-  // Client Links handlers
-  const loadClientLinks = async () => {
+  // Account Links handlers
+  const loadAccountLinks = async () => {
     if (!account) return;
     
     setLoadingLinks(true);
     setLinksError('');
     
     try {
-      const response = await adminAccountService.getAccountClientLinks(account.id);
+      const response = await adminAccountService.getAccountLinks(account.id);
       if (response.success) {
-        setClientLinks(response.links);
+        setAccountLinks(response.links);
       } else {
-        setLinksError(response.message || 'Failed to load client links');
+        setLinksError(response.message || 'Failed to load account links');
       }
     } catch (error) {
-      setLinksError('Failed to load client links');
+      setLinksError('Failed to load account links');
     } finally {
       setLoadingLinks(false);
     }
   };
 
-  const loadUnlinkedClients = async () => {
+  const loadUnlinkedAccounts = async () => {
     if (!account) return;
     
     try {
-      const response = await adminAccountService.getUnlinkedClients(account.id);
+      const response = await adminAccountService.getUnlinkedAccounts(account.id);
       if (response.success) {
-        setUnlinkedClients(response.clients);
+        setUnlinkedAccounts(response.accounts);
       } else {
-        console.error('Failed to load unlinked clients:', response.message);
+        console.error('Failed to load unlinked accounts:', response.message);
       }
     } catch (error) {
-      console.error('Failed to load unlinked clients:', error);
+      console.error('Failed to load unlinked accounts:', error);
     }
   };
 
@@ -246,20 +260,20 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
     }
   };
 
-  const handleDeleteClientLink = async (linkId: string) => {
+  const handleDeleteAccountLink = async (linkId: string) => {
     if (!account) return;
     
     try {
-      const response = await adminAccountService.deleteClientLink(linkId);
+      const response = await adminAccountService.deleteAccountLink(linkId);
       if (response.success) {
-        setClientLinks(prev => prev.filter(link => link.id !== linkId));
-        // Reload unlinked clients to show the newly unlinked client
-        await loadUnlinkedClients();
+        setAccountLinks(prev => prev.filter(link => link.id !== linkId));
+        // Reload unlinked accounts to show the newly unlinked account
+        await loadUnlinkedAccounts();
       } else {
-        setLinksError(response.message || 'Failed to delete client link');
+        setLinksError(response.message || 'Failed to delete account link');
       }
     } catch (error) {
-      setLinksError('Failed to delete client link');
+      setLinksError('Failed to delete account link');
     }
   };
 
@@ -267,9 +281,9 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
     if (!account) return;
     
     try {
-      const response = await adminAccountService.updateClientLinkAccess(linkId, newAccessLevel);
+      const response = await adminAccountService.updateAccountLinkAccess(linkId, newAccessLevel);
       if (response.success) {
-        setClientLinks(prev => prev.map(link => 
+        setAccountLinks(prev => prev.map(link => 
           link.id === linkId ? { ...link, access_level: newAccessLevel } : link
         ));
       } else {
@@ -280,56 +294,67 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
     }
   };
 
-  const handleAddClientLinks = async () => {
-    if (!account || selectedClients.size === 0) return;
+  const handleAddAccountLinks = async () => {
+    if (!account || selectedAccounts.size === 0) return;
     
     try {
-      const response = await adminAccountService.createClientLinks(
+      const response = await adminAccountService.createAccountLinks(
         account.id, 
-        Array.from(selectedClients), 
+        Array.from(selectedAccounts), 
         newAccessLevel
       );
       
       if (response.success) {
-        // Reset state
-        setSelectedClients(new Set());
-        setShowAddClients(false);
-        setNewAccessLevel('admin');
+        // Reset state and close modal
+        handleCloseAddAccountsModal();
         
         // Reload links
-        await loadClientLinks();
-        await loadUnlinkedClients();
+        await loadAccountLinks();
+        await loadUnlinkedAccounts();
       } else {
-        setLinksError(response.message || 'Failed to add client links');
+        setLinksError(response.message || 'Failed to add account links');
       }
     } catch (error) {
-      setLinksError('Failed to add client links');
+      setLinksError('Failed to add account links');
     }
   };
 
-  const handleSelectAllClients = () => {
-    if (selectedClients.size === unlinkedClients.length) {
-      setSelectedClients(new Set());
+  const handleSelectAllAccounts = () => {
+    if (selectedAccounts.size === filteredUnlinkedAccounts.length && filteredUnlinkedAccounts.every(account => selectedAccounts.has(account.id))) {
+      // Deselect all filtered accounts
+      const newSelected = new Set(selectedAccounts);
+      filteredUnlinkedAccounts.forEach(account => newSelected.delete(account.id));
+      setSelectedAccounts(newSelected);
     } else {
-      setSelectedClients(new Set(unlinkedClients.map(client => client.id)));
+      // Select all filtered accounts
+      const newSelected = new Set(selectedAccounts);
+      filteredUnlinkedAccounts.forEach(account => newSelected.add(account.id));
+      setSelectedAccounts(newSelected);
     }
   };
 
-  const handleToggleClientSelection = (clientId: string) => {
-    const newSelected = new Set(selectedClients);
-    if (newSelected.has(clientId)) {
-      newSelected.delete(clientId);
+  const handleToggleAccountSelection = (accountId: string) => {
+    const newSelected = new Set(selectedAccounts);
+    if (newSelected.has(accountId)) {
+      newSelected.delete(accountId);
     } else {
-      newSelected.add(clientId);
+      newSelected.add(accountId);
     }
-    setSelectedClients(newSelected);
+    setSelectedAccounts(newSelected);
+  };
+
+  const handleCloseAddAccountsModal = () => {
+    setShowAddAccounts(false);
+    setSearchQuery('');
+    setSelectedAccounts(new Set());
+    setNewAccessLevel('admin');
   };
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+      <div className="flex items-center justify-center min-h-screen px-4 py-4">
         {/* Backdrop */}
         <div 
           className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75"
@@ -337,7 +362,7 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
         />
 
         {/* Modal */}
-        <div className="inline-block w-full max-w-4xl p-6 my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-lg">
+        <div className="relative w-full max-w-4xl h-[calc(100vh-2rem)] p-6 overflow-hidden text-left transition-all transform bg-white shadow-xl rounded-lg flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-medium text-gray-900 flex items-center">
@@ -383,21 +408,22 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('client-links')}
+                  onClick={() => setActiveTab('account-links')}
                   className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === 'client-links'
+                    activeTab === 'account-links'
                       ? 'border-blue-500 text-blue-600'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
                   <Link className="h-4 w-4 mr-2 inline" />
-                  Client Links
+                  Account Links
                 </button>
               </nav>
             </div>
           )}
 
           {/* Content */}
+          <div className="flex-1 overflow-y-auto">
           {activeTab === 'account' ? (
             /* Account Info Form */
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -572,7 +598,7 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
                   <span className="ml-2 text-sm text-gray-700">
-                    Automatically link to all new clients
+                    Automatically link to all new client accounts
                   </span>
                 </label>
                 {errors.auto_link_new_clients && (
@@ -586,7 +612,7 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
                   </div>
                 )}
                 <p className="mt-1 text-xs text-gray-500">
-                  When enabled, this account will automatically gain access to all new clients created in the system.
+                  When enabled, this account will automatically gain access to all new client accounts created in the system.
                 </p>
               </div>
             )}
@@ -641,7 +667,7 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
               )}
             </div>
           ) : (
-            /* Client Links Tab Content */
+            /* Account Links Tab Content */
             <div className="space-y-6">
               {/* Admin Account Message */}
               {account?.type === 'admin' ? (
@@ -651,12 +677,12 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
                   </div>
                   <h3 className="text-lg font-medium text-gray-900 mb-2">Admin Account Access</h3>
                   <p className="text-gray-600 max-w-md mx-auto">
-                    Admin accounts have full access to all clients in the system by default. 
-                    No client link configuration is needed.
+                    Admin accounts have full access to all accounts in the system by default. 
+                    No account link configuration is needed.
                   </p>
                   <div className="mt-4 px-4 py-2 bg-blue-50 rounded-md inline-block">
                     <p className="text-sm text-blue-800 font-medium">
-                      ✓ Full access to all current and future clients
+                      ✓ Full access to all current and future accounts
                     </p>
                   </div>
                 </div>
@@ -673,11 +699,11 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
                   <span className="ml-2 text-sm text-gray-700">
-                    Automatically link to all new clients
+                    Automatically link to all new client accounts
                   </span>
                 </label>
                 <p className="mt-1 text-xs text-gray-500">
-                  When enabled, this account will automatically gain access to all new clients created in the system.
+                  When enabled, this account will automatically gain access to all new client accounts created in the system.
                 </p>
               </div>
 
@@ -691,16 +717,16 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
                 </div>
               )}
 
-              {/* Linked Clients Section */}
+              {/* Linked Accounts Section */}
               <div>
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-medium text-gray-900">Linked Clients</h3>
+                  <h3 className="text-sm font-medium text-gray-900">Linked Accounts</h3>
                   <button
-                    onClick={() => setShowAddClients(true)}
+                    onClick={() => setShowAddAccounts(true)}
                     className="flex items-center px-3 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <Plus className="h-4 w-4 mr-2" />
-                    Add Client Links
+                    Add Account Links
                   </button>
                 </div>
 
@@ -709,11 +735,11 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
                     <p className="text-sm text-gray-500 mt-2">Loading client links...</p>
                   </div>
-                ) : clientLinks.length === 0 ? (
+                ) : accountLinks.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <Link className="mx-auto h-12 w-12 text-gray-300 mb-4" />
-                    <p className="text-sm">No client links found</p>
-                    <p className="text-xs text-gray-400 mt-1">Click "Add Client Links" to get started</p>
+                    <p className="text-sm">No account links found</p>
+                    <p className="text-xs text-gray-400 mt-1">Click "Add Account Links" to get started</p>
                   </div>
                 ) : (
                   <div className="bg-white border border-gray-200 rounded-lg">
@@ -722,7 +748,7 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
                         <thead className="bg-gray-50">
                           <tr>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Client
+                              Account
                             </th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                               Access Level
@@ -736,10 +762,11 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                          {clientLinks.map((link) => (
+                          {accountLinks.map((link) => (
                             <tr key={link.id}>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                {link.client_name}
+                                {link.account_name}
+                                <div className="text-xs text-gray-500">{link.account_type}</div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <select
@@ -752,13 +779,13 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
                                 </select>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {new Date(link.granted_at).toLocaleDateString()}
+                                {new Date(link.created_at).toLocaleDateString()}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                 <button
                                   onClick={() => {
-                                    if (window.confirm('Are you sure you want to remove this client link?')) {
-                                      handleDeleteClientLink(link.id);
+                                    if (window.confirm('Are you sure you want to remove this account link?')) {
+                                      handleDeleteAccountLink(link.id);
                                     }
                                   }}
                                   className="text-red-600 hover:text-red-900"
@@ -776,17 +803,17 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
                 )}
               </div>
 
-              {/* Add Client Links Modal */}
-              {showAddClients && (
-                <div className="fixed inset-0 z-50 overflow-y-auto">
+              {/* Add Account Links Modal */}
+              {showAddAccounts && (
+                <div className="fixed inset-0 z-[60] overflow-y-auto">
                   <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-                    <div className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" onClick={() => setShowAddClients(false)} />
+                    <div className="fixed inset-0 transition-opacity bg-gray-900 bg-opacity-50" onClick={handleCloseAddAccountsModal} />
                     
-                    <div className="inline-block w-full max-w-2xl p-6 my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-lg">
+                    <div className="inline-block w-full max-w-3xl p-6 my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-lg relative z-10">
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-medium text-gray-900">Add Client Links</h3>
+                        <h3 className="text-lg font-medium text-gray-900">Add Account Links</h3>
                         <button
-                          onClick={() => setShowAddClients(false)}
+                          onClick={handleCloseAddAccountsModal}
                           className="text-gray-400 hover:text-gray-600"
                         >
                           <X className="h-5 w-5" />
@@ -797,7 +824,7 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
                         {/* Access Level Selection */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Access Level for Selected Clients
+                            Access Level for Selected Accounts
                           </label>
                           <select
                             value={newAccessLevel}
@@ -809,38 +836,54 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
                           </select>
                         </div>
 
-                        {/* Client Selection */}
+                        {/* Account Selection */}
                         <div>
                           <div className="flex items-center justify-between mb-3">
                             <label className="block text-sm font-medium text-gray-700">
-                              Select Clients to Link
+                              Select Accounts to Link
                             </label>
                             <button
-                              onClick={handleSelectAllClients}
+                              onClick={handleSelectAllAccounts}
                               className="text-sm text-blue-600 hover:text-blue-800"
                             >
-                              {selectedClients.size === unlinkedClients.length ? 'Deselect All' : 'Select All'}
+                              {filteredUnlinkedAccounts.length > 0 && selectedAccounts.size === filteredUnlinkedAccounts.length && filteredUnlinkedAccounts.every(account => selectedAccounts.has(account.id)) ? 'Deselect All' : 'Select All'}
                             </button>
                           </div>
                           
-                          {unlinkedClients.length === 0 ? (
+                          {/* Search Input */}
+                          <div className="mb-3">
+                            <input
+                              type="text"
+                              placeholder="Search accounts by name, email, or type..."
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                          </div>
+                          
+                          {unlinkedAccounts.length === 0 ? (
                             <div className="text-center py-8 text-gray-500">
-                              <p className="text-sm">No unlinked clients available</p>
+                              <p className="text-sm">No unlinked accounts available</p>
+                            </div>
+                          ) : filteredUnlinkedAccounts.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500">
+                              <p className="text-sm">No accounts match your search</p>
+                              <p className="text-xs text-gray-400 mt-1">Try adjusting your search terms</p>
                             </div>
                           ) : (
                             <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-md">
-                              {unlinkedClients.map((client) => (
-                                <label key={client.id} className="flex items-center p-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0">
+                              {filteredUnlinkedAccounts.map((account) => (
+                                <label key={account.id} className="flex items-center p-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0">
                                   <input
                                     type="checkbox"
-                                    checked={selectedClients.has(client.id)}
-                                    onChange={() => handleToggleClientSelection(client.id)}
+                                    checked={selectedAccounts.has(account.id)}
+                                    onChange={() => handleToggleAccountSelection(account.id)}
                                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                   />
                                   <div className="ml-3">
-                                    <p className="text-sm font-medium text-gray-900">{client.full_name}</p>
-                                    <p className="text-xs text-gray-500">{client.email}</p>
-                                    <p className="text-xs text-gray-400">{client.account_name}</p>
+                                    <p className="text-sm font-medium text-gray-900">{account.name}</p>
+                                    <p className="text-xs text-gray-500">{account.contact_email}</p>
+                                    <p className="text-xs text-gray-400">{account.type}</p>
                                   </div>
                                 </label>
                               ))}
@@ -851,18 +894,18 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
                         {/* Action Buttons */}
                         <div className="flex items-center justify-end space-x-3 pt-4 border-t border-gray-200">
                           <button
-                            onClick={() => setShowAddClients(false)}
+                            onClick={handleCloseAddAccountsModal}
                             className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
                           >
                             Cancel
                           </button>
                           <button
-                            onClick={handleAddClientLinks}
-                            disabled={selectedClients.size === 0}
+                            onClick={handleAddAccountLinks}
+                            disabled={selectedAccounts.size === 0}
                             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
                           >
                             <Check className="h-4 w-4 mr-2" />
-                            Add {selectedClients.size} Client{selectedClients.size !== 1 ? 's' : ''}
+                            Add {selectedAccounts.size} Account{selectedAccounts.size !== 1 ? 's' : ''}
                           </button>
                         </div>
                       </div>
@@ -874,6 +917,7 @@ export const AccountFormModal: React.FC<AccountFormModalProps> = ({
               )}
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>

@@ -941,24 +941,38 @@ export class CentralizedClientService {
         clientsQuery = clientsQuery.eq('created_by', params.adminId);
       }
 
-      // Add operator filtering if provided - only show clients linked via account_client_access
+      // Add operator filtering if provided - only show clients linked via account_links
       if (params.operatorAccountId) {
-        // Join with account_client_access to filter by operator account
-        const { data: linkedClientIds, error: linkError } = await supabase
-          .from('account_client_access')
-          .select('client_id')
-          .eq('account_id', params.operatorAccountId);
+        // Join with account_links to filter by operator account
+        // Get target account IDs linked to this operator
+        const { data: linkedAccounts, error: linkError } = await supabase
+          .from('account_links')
+          .select(`
+            target_account_id,
+            accounts!account_links_target_account_id_fkey(type)
+          `)
+          .eq('source_account_id', params.operatorAccountId)
+          .eq('is_active', true);
         
         if (linkError) {
-          console.error('Error fetching linked client IDs for operator:', linkError);
+          console.error('Error fetching linked accounts for operator:', linkError);
           throw linkError;
         }
         
-        if (linkedClientIds && linkedClientIds.length > 0) {
-          const clientIds = linkedClientIds.map(link => link.client_id);
-          clientsQuery = clientsQuery.in('id', clientIds);
+        if (linkedAccounts && linkedAccounts.length > 0) {
+          // Filter for client-type accounts only
+          const clientAccountIds = linkedAccounts
+            .filter(link => link.accounts?.type === 'client')
+            .map(link => link.target_account_id);
+          
+          if (clientAccountIds.length > 0) {
+            clientsQuery = clientsQuery.in('account_id', clientAccountIds);
+          } else {
+            // No linked client accounts - return empty result
+            return [];
+          }
         } else {
-          // No linked clients - return empty result
+          // No linked accounts - return empty result
           return [];
         }
       }
