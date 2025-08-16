@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
-import { Plus, Edit, Trash2, Users, Settings, ChevronDown, ChevronRight, Check, X, Download, Calculator, Calendar, Briefcase, Package, FileText } from 'lucide-react';
+import { Plus, Edit, Trash2, Users, Settings, ChevronDown, ChevronRight, Check, X, Download, Calculator, Calendar, Briefcase, Package, FileText, Upload, File, AlertCircle, CheckCircle, Clock } from 'lucide-react';
 import { supabase } from '../../../../../lib/supabase';
 import { EmployeeManagementService } from '../../../../../services/employeeManagementService';
 import { ExpenseManagementService } from '../../../../../services/expenseManagementService';
@@ -16,6 +16,7 @@ import LockBanner from '../../../../../components/common/LockBanner';
 import useLockStore from '../../../../../store/lockStore';
 import ProgressTrackingService from '../../../services/progressTrackingService';
 import { useUser } from '../../../../../context/UserContext';
+import W2ImportModal from '../../../../../components/W2ImportModal';
 
 // Extend RDSupply to include calculated_qre for local use
 interface RDSupply extends RDSupplyBase {
@@ -2092,6 +2093,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
   const { user } = useUser();
   const [loading, setLoading] = useState(true);
   const [employeesWithData, setEmployeesWithData] = useState<EmployeeWithExpenses[]>([]);
+  const [allEmployees, setAllEmployees] = useState<any[]>([]); // All employees for W-2 matching
   const [contractorsWithData, setContractorsWithData] = useState<ContractorWithExpenses[]>([]);
   const [expenses, setExpenses] = useState<RDExpense[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -2122,6 +2124,18 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
   const [lockedContractorQRE, setLockedContractorQRE] = useState<number>(0);
   const [lockedSupplyQRE, setLockedSupplyQRE] = useState<number>(0);
   const [qreLocked, setQreLocked] = useState<boolean>(false);
+
+  // W-2 Upload state management
+  const [w2Uploading, setW2Uploading] = useState<boolean>(false);
+  const [w2ProcessingStatus, setW2ProcessingStatus] = useState<{
+    processing: number;
+    completed: number;
+    failed: number;
+  }>({ processing: 0, completed: 0, failed: 0 });
+  const [w2Results, setW2Results] = useState<any[]>([]); // Store extracted W-2 data for matching
+  
+  // W-2 Import Modal state
+  const [showW2ImportModal, setShowW2ImportModal] = useState<boolean>(false);
 
   console.log('🔍 EmployeeSetupStep - Component props:', {
     businessYearId,
@@ -2421,6 +2435,32 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         console.error('❌ EmployeeSetupStep - Error loading roles:', rolesError);
       } else {
         setRoles(rolesData || []);
+      }
+
+      // Load ALL employees for W-2 matching (not filtered by year)
+      const { data: allEmployeesData, error: allEmployeesError } = await supabase
+        .from('rd_employees')
+        .select('id, first_name, last_name, role_id, user_id')
+        .eq('business_id', businessId);
+
+      if (allEmployeesError) {
+        console.error('❌ EmployeeSetupStep - Error loading all employees:', allEmployeesError);
+        setAllEmployees([]);
+      } else {
+        console.log('✅ Loaded all employees for W-2 matching:', allEmployeesData?.length || 0);
+        // Transform the data to include a combined 'name' field for compatibility
+        const transformedEmployees = (allEmployeesData || []).map(emp => ({
+          ...emp,
+          name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim(),
+          role: emp.role_id // Keep role_id as role for now
+        }));
+        
+        // Ensure unique employee IDs in case there are duplicates in the database
+        const uniqueEmployees = transformedEmployees.filter((emp, index, self) => 
+          index === self.findIndex(e => e.id === emp.id)
+        );
+        console.log('🔍 Unique employees after deduplication:', uniqueEmployees.length, 'vs original:', transformedEmployees.length);
+        setAllEmployees(uniqueEmployees);
       }
 
       // Load employees with calculated QRE - CORRECT: Filter by employees who have data for the selected year
@@ -2789,6 +2829,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
              // IMMEDIATE state clearing - no delays
        setLoading(true);
        setEmployeesWithData([]);
+       setAllEmployees([]);
        setContractorsWithData([]);
        setSupplies([]);
        setExpenses([]); // CRITICAL: Clear expenses immediately
@@ -4606,6 +4647,154 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
     }
   };
 
+  // W-2 Upload handler
+
+  const handleW2Process = async (documentId: string) => {
+    try {
+      console.log('🤖 Processing W-2 document with AI:', documentId);
+
+      const { data: authData } = await supabase.auth.getSession();
+      const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL || 'http://localhost:54321/functions/v1';
+      const processResponse = await fetch(`${functionsUrl}/rd-service/w2-process`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authData.session?.access_token || ''}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ document_id: documentId })
+      });
+
+      if (!processResponse.ok) {
+        const errorData = await processResponse.json();
+        throw new Error(errorData.error || `Processing failed with status ${processResponse.status}`);
+      }
+
+      const processResult = await processResponse.json();
+      console.log('✅ W-2 processing successful:', processResult);
+
+      // Add extracted data to results for employee matching
+      if (processResult.extracted_data) {
+        setW2Results(prev => [...prev, {
+          ...processResult.extracted_data,
+          document_id: documentId,
+          confidence: processResult.confidence
+        }]);
+      }
+
+      setW2ProcessingStatus(prev => ({ 
+        ...prev, 
+        processing: Math.max(0, prev.processing - 1),
+        completed: prev.completed + 1 
+      }));
+
+      toast.success(`W-2 processed successfully with ${Math.round((processResult.confidence || 0.8) * 100)}% confidence`);
+
+    } catch (error) {
+      console.error('❌ W-2 processing error:', error);
+      toast.error(`Failed to process W-2: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setW2ProcessingStatus(prev => ({ 
+        ...prev, 
+        processing: Math.max(0, prev.processing - 1),
+        failed: prev.failed + 1 
+      }));
+    }
+  };
+
+  const handleW2Upload = async (files: FileList) => {
+    if (!files || files.length === 0) {
+      toast.error('Please select files to upload');
+      return;
+    }
+
+    console.log('📤 Starting bulk W-2 upload:', files.length, 'files');
+    setW2ProcessingStatus(prev => ({ ...prev, processing: prev.processing + files.length }));
+
+    let successCount = 0;
+    let failureCount = 0;
+
+    // Process files sequentially to avoid overwhelming the API
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      
+      try {
+        // Validate file size (50MB max)
+        if (file.size > 52428800) {
+          console.error(`❌ File ${file.name} exceeds 50MB limit`);
+          failureCount++;
+          setW2ProcessingStatus(prev => ({ 
+            ...prev, 
+            processing: Math.max(0, prev.processing - 1),
+            failed: prev.failed + 1 
+          }));
+          continue;
+        }
+
+        // Validate file type
+        const allowedTypes = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/tiff', 'image/bmp'];
+        if (!allowedTypes.includes(file.type)) {
+          console.error(`❌ File ${file.name} has invalid file type: ${file.type}`);
+          failureCount++;
+          setW2ProcessingStatus(prev => ({ 
+            ...prev, 
+            processing: Math.max(0, prev.processing - 1),
+            failed: prev.failed + 1 
+          }));
+          continue;
+        }
+
+        console.log(`📤 Uploading bulk file ${i + 1}/${files.length}: ${file.name}`);
+
+        // Upload file without employee association - employee will be determined after AI extraction
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('business_year_id', businessYearId);
+        formData.append('tax_year', displayYear.toString());
+
+        // Upload to rd-service w2-upload endpoint
+        const { data: authData } = await supabase.auth.getSession();
+        const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL || 'http://localhost:54321/functions/v1';
+        const uploadResponse = await fetch(`${functionsUrl}/rd-service/w2-upload`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authData.session?.access_token || ''}`,
+          },
+          body: formData
+        });
+
+        if (!uploadResponse.ok) {
+          const errorData = await uploadResponse.json();
+          throw new Error(errorData.error || `Upload failed with status ${uploadResponse.status}`);
+        }
+
+        const uploadResult = await uploadResponse.json();
+        console.log(`✅ Bulk upload successful for ${file.name}:`, uploadResult);
+
+        // Trigger AI processing - this will extract employee data from the document
+        await handleW2Process(uploadResult.document_id);
+        
+        successCount++;
+
+      } catch (error) {
+        console.error(`❌ Failed to upload ${file.name}:`, error);
+        failureCount++;
+        setW2ProcessingStatus(prev => ({ 
+          ...prev, 
+          processing: Math.max(0, prev.processing - 1),
+          failed: prev.failed + 1 
+        }));
+      }
+    }
+
+    const message = `Bulk upload completed: ${successCount} successful, ${failureCount} failed`;
+    if (failureCount > 0) {
+      toast.warning(message);
+    } else {
+      toast.success(message);
+    }
+    
+    console.log('📋 Bulk upload summary:', { successCount, failureCount, totalFiles: files.length });
+  };
+
   // Add useEffect to sync with businessYearId prop changes
   useEffect(() => {
     if (businessYearId && businessYearId !== selectedYear) {
@@ -4836,6 +5025,7 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                       console.log('🧹 CRITICAL: Clearing ALL cached data before year switch');
                       console.log('🧹 Previous supplies:', supplies.length, 'supplies');
                       setEmployeesWithData([]);
+                      setAllEmployees([]);
                       setContractorsWithData([]);
                       setSupplies([]);
                       setExpenses([]); // CRITICAL: Clear expenses immediately
@@ -5250,7 +5440,58 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
                   </div>
                 </div>
 
-
+                  {/* W-2 Upload Section */}
+                  <div className="flex flex-col space-y-2">
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                      <div className="flex items-center mb-3">
+                        <div className="flex items-center space-x-2">
+                          <Upload className="w-5 h-5 text-green-600" />
+                          <h5 className="text-sm font-semibold text-green-800">W-2 Document Upload</h5>
+                        </div>
+                      </div>
+                      
+                      <p className="text-xs text-green-700 mb-3">
+                        Upload W-2 documents for automatic data extraction and employee matching (Tax Year: {displayYear})
+                      </p>
+                      
+                      {/* W-2 Import Modal Button */}
+                      <div className="mb-3">
+                        <button
+                          onClick={() => setShowW2ImportModal(true)}
+                          disabled={w2Uploading}
+                          className={`w-full px-4 py-3 rounded border transition-colors text-sm font-medium text-center ${
+                            w2Uploading 
+                              ? 'bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed' 
+                              : 'bg-green-100 text-green-700 border-green-200 hover:bg-green-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-center space-x-2">
+                            <Upload className="w-5 h-5" />
+                            <span>{w2Uploading ? 'Processing W-2 Documents...' : 'Upload W-2\'s (PDF, PNG, JPG)'}</span>
+                          </div>
+                          <div className="text-xs text-green-600 mt-1">
+                            {w2Uploading ? 'Extracting data and matching employees' : 'Bulk upload with AI extraction and employee matching'}
+                          </div>
+                        </button>
+                      </div>
+                      
+                      {/* Processing Status */}
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                        <div className="flex items-center space-x-2 text-gray-600">
+                          <Clock className="w-3 h-3" />
+                          <span>{w2ProcessingStatus.processing} Processing</span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-green-600">
+                          <CheckCircle className="w-3 h-3" />
+                          <span>{w2ProcessingStatus.completed} Completed</span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-red-600">
+                          <AlertCircle className="w-3 h-3" />
+                          <span>{w2ProcessingStatus.failed} Failed</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
               </div>
                 {employeesWithData.length === 0 ? (
                 <div className="text-center py-12">
@@ -5873,6 +6114,21 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
           onUpdate={loadData}
         />
       )}
+
+      {/* W-2 Import Modal */}
+      <W2ImportModal
+        isOpen={showW2ImportModal}
+        onClose={() => setShowW2ImportModal(false)}
+        onSuccess={() => {
+          setShowW2ImportModal(false);
+          // Reload data to show newly imported W-2 data
+          loadData(selectedYear);
+        }}
+        businessYearId={selectedYear || businessYearId}
+        taxYear={displayYear}
+        employees={allEmployees}
+        roles={roles}
+      />
 
       {/* Allocation Report Modal */}
       <AllocationReportModal
