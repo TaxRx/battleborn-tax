@@ -2437,30 +2437,45 @@ const EmployeeSetupStep: React.FC<EmployeeSetupStepProps> = ({
         setRoles(rolesData || []);
       }
 
-      // Load ALL employees for W-2 matching (not filtered by year)
-      const { data: allEmployeesData, error: allEmployeesError } = await supabase
-        .from('rd_employees')
-        .select('id, first_name, last_name, role_id, user_id')
-        .eq('business_id', businessId);
+      // Load employees for W-2 matching (filtered by current business year)
+      console.log('🔍 Loading employees for W-2 matching for specific year:', targetYearId);
+      
+      // First, get employees who have year data for the selected year
+      const { data: w2EmployeeYearData, error: w2YearDataError } = await supabase
+        .from('rd_employee_year_data')
+        .select('employee_id')
+        .eq('business_year_id', targetYearId);
 
-      if (allEmployeesError) {
-        console.error('❌ EmployeeSetupStep - Error loading all employees:', allEmployeesError);
+      if (w2YearDataError) {
+        console.error('❌ EmployeeSetupStep - Error loading employee year data for W-2 matching:', w2YearDataError);
+        setAllEmployees([]);
+      } else if (!w2EmployeeYearData || w2EmployeeYearData.length === 0) {
+        console.log('⚠️ No employees found with data for this year for W-2 matching');
         setAllEmployees([]);
       } else {
-        console.log('✅ Loaded all employees for W-2 matching:', allEmployeesData?.length || 0);
-        // Transform the data to include a combined 'name' field for compatibility
-        const transformedEmployees = (allEmployeesData || []).map(emp => ({
-          ...emp,
-          name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim(),
-          role: emp.role_id // Keep role_id as role for now
-        }));
+        const w2EmployeeIdsForYear = w2EmployeeYearData.map(data => data.employee_id);
+        console.log('🔍 Found employee IDs with data for W-2 matching in this year:', w2EmployeeIdsForYear.length);
         
-        // Ensure unique employee IDs in case there are duplicates in the database
-        const uniqueEmployees = transformedEmployees.filter((emp, index, self) => 
-          index === self.findIndex(e => e.id === emp.id)
-        );
-        console.log('🔍 Unique employees after deduplication:', uniqueEmployees.length, 'vs original:', transformedEmployees.length);
-        setAllEmployees(uniqueEmployees);
+        // Then get employee details for those IDs
+        const { data: allEmployeesData, error: allEmployeesError } = await supabase
+          .from('rd_employees')
+          .select('id, first_name, last_name, role_id, user_id')
+          .in('id', w2EmployeeIdsForYear);
+
+        if (allEmployeesError) {
+          console.error('❌ EmployeeSetupStep - Error loading employee details for W-2 matching:', allEmployeesError);
+          setAllEmployees([]);
+        } else {
+          console.log('✅ Loaded year-specific employees for W-2 matching:', allEmployeesData?.length || 0);
+          // Transform the data to include a combined 'name' field for compatibility
+          const transformedEmployees = (allEmployeesData || []).map(emp => ({
+            ...emp,
+            name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim(),
+            role: emp.role_id // Keep role_id as role for now
+          }));
+          
+          setAllEmployees(transformedEmployees);
+        }
       }
 
       // Load employees with calculated QRE - CORRECT: Filter by employees who have data for the selected year

@@ -1451,14 +1451,30 @@ async function handleW2Finalize(req: Request, supabase: any): Promise<Response> 
           
           const annualWage = w2_data.box_1_wages ? parseFloat(w2_data.box_1_wages.toString().replace(/[,$]/g, '')) : 0;
           
+          // Update the employee record with the annual wage from W-2
+          const { error: employeeUpdateError } = await supabase
+            .from('rd_employees')
+            .update({ 
+              annual_wage: annualWage,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', finalEmployeeId);
+
+          if (employeeUpdateError) {
+            console.error('Error updating employee annual wage:', employeeUpdateError);
+            // Continue with year data creation even if wage update fails
+          } else {
+            console.log('✅ Updated new employee annual wage from W-2:', annualWage);
+          }
+          
           const { data: yearData, error: yearDataError } = await supabase
             .from('rd_employee_year_data')
             .insert({
               employee_id: finalEmployeeId,
               business_year_id: w2_data.business_year_id,
-              annual_wage: annualWage,
-              applied_percentage: 0, // Default to 0%, user can adjust later
+              applied_percent: 0, // Default to 0%, user can adjust later
               calculated_qre: 0, // Will be calculated when user sets R&D percentage
+              activity_roles: {},
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
             })
@@ -1500,14 +1516,31 @@ async function handleW2Finalize(req: Request, supabase: any): Promise<Response> 
             // Create employee year data record to link employee to this business year
             console.log('Creating employee/year link for existing employee:', finalEmployeeId, 'in year:', w2_data.business_year_id);
             
+            // Update the employee record with the annual wage from W-2
+            const annualWage = w2_data.box_1_wages ? parseFloat(w2_data.box_1_wages.toString().replace(/[,$]/g, '')) : 0;
+            const { error: employeeUpdateError } = await supabase
+              .from('rd_employees')
+              .update({ 
+                annual_wage: annualWage,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', finalEmployeeId);
+
+            if (employeeUpdateError) {
+              console.error('Error updating employee annual wage:', employeeUpdateError);
+              // Continue with year data creation even if wage update fails
+            } else {
+              console.log('✅ Updated existing employee annual wage from W-2:', annualWage);
+            }
+            
             const { data: yearData, error: yearDataError } = await supabase
               .from('rd_employee_year_data')
               .insert({
                 employee_id: finalEmployeeId,
                 business_year_id: w2_data.business_year_id,
-                annual_wage: w2_data.box_1_wages ? parseFloat(w2_data.box_1_wages.toString().replace(/[,$]/g, '')) : 0,
-                applied_percentage: 0, // Default to 0%, user can adjust later
+                applied_percent: 0, // Default to 0%, user can adjust later
                 calculated_qre: 0, // Will be calculated when user sets R&D percentage
+                activity_roles: {},
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
               })
@@ -1527,12 +1560,12 @@ async function handleW2Finalize(req: Request, supabase: any): Promise<Response> 
             if (w2_data.box_1_wages) {
               const annualWage = parseFloat(w2_data.box_1_wages.toString().replace(/[,$]/g, ''));
               const { error: updateError } = await supabase
-                .from('rd_employee_year_data')
+                .from('rd_employees')
                 .update({ 
                   annual_wage: annualWage,
                   updated_at: new Date().toISOString()
                 })
-                .eq('id', existingYearData.id);
+                .eq('id', finalEmployeeId);
 
               if (updateError) {
                 console.error('Error updating employee annual wage:', updateError);
